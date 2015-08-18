@@ -1,0 +1,204 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r792 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r792%20-%20trunk/src&In-Reply-To=%3C200706202136.l5KLahIv020045%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000226.html">
+   <LINK REL="Next"  HREF="000228.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r792 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r792%20-%20trunk/src&In-Reply-To=%3C200706202136.l5KLahIv020045%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r792 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Jun 20 23:36:43 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000226.html">[Enigma-game-svn] r791 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="000228.html">[Enigma-game-svn] r793 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#227">[ date ]</a>
+              <a href="thread.html#227">[ thread ]</a>
+              <a href="subject.html#227">[ subject ]</a>
+              <a href="author.html#227">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-06-20 23:36:42 +0200 (Wed, 20 Jun 2007)
+New Revision: 792
+
+Modified:
+   trunk/src/actors.hh
+   trunk/src/world.cc
+Log:
+Trunk 1.1: 
+- fix actors pushing other actors into walls (workaround)
+- increase max actor contacts to 7 for small actors
+- commenting collision code
+ToDo:
+- the collision forces should respect each others constraining force
+
+Modified: trunk/src/actors.hh
+===================================================================
+--- trunk/src/actors.hh	2007-06-19 21:14:41 UTC (rev 791)
++++ trunk/src/actors.hh	2007-06-20 21:36:42 UTC (rev 792)
+@@ -62,7 +62,7 @@
+         : pos(pos_), normal (normal_) {} 
+     };
+     
+-#define MAX_CONTACTS 5
++#define MAX_CONTACTS 7
+ 
+     struct Field;
+     /*!  
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2007-06-19 21:14:41 UTC (rev 791)
++++ trunk/src/world.cc	2007-06-20 21:36:42 UTC (rev 792)
+@@ -676,6 +676,18 @@
+       is filled is filled with information about the closest feature
+       on the stone and `is_contact' is set to false. 
+ */
++
++/**
++ * Examine a possible contact of an actor with stone at a given grid position. Joins
++ * of outer corners have to be announced. All other cases are handeled.
++ * @arg a  the actor that may cause a contact
++ * @arg p  the grid position
++ * @arg c  the contact info to be filled
++ * @arg winFacesActorStone  the faces of a Window stone on the actors grid position
++ * @arg isRounded  defaults to true and can be set to false for a join of the
++ *         relevant outer edge
++ * @arg st  stone at gridposition if already known
++ */
+ void World::find_contact_with_stone(Actor *a, GridPos p, StoneContact &amp;c,
+         DirectionBits winFacesActorStone, bool isRounded, Stone *st) {
+             
+@@ -710,29 +722,41 @@
+     // Inner bounce of a window stone
+     if ((ax &gt;= x) &amp;&amp; (ax &lt; x+1) &amp;&amp; (ay &gt;= y) &amp;&amp; (ay &lt; y+1) ) {
+         if (isWindow) {
++            // preparations for inner corners of a window stone:
++            // 8 inner corners can cause bounces if they are not joined with a 
++            // neighbour window face:
++            // .1....2.
++            // 8......3
++            // ..    ..
++            // ..    ..
++            // ..    ..
++            // ..    ..
++            // 7......4
++            // .6....5.
++            // the actor can hit just one of the corners - get the candidate first:
+             int xcorner = (ax &gt;= x+0.5);
+             int ycorner = (ay &gt;= y+0.5);
++            
++            // get the neighbour window that might eliminate the corner by a join
+             int xoff_neighbour = (ax &lt; x+erad_window_const) ? -1 : (ax &gt; x+1-erad_window_const); 
+             int yoff_neighbour = (ay &lt; y+erad_window_const) ? -1 : (ay &gt; y+1-erad_window_const);
+-            
+-//            Log &lt;&lt; &quot;xc &quot; &lt;&lt; xcorner &lt;&lt; &quot;  yc &quot; &lt;&lt; ycorner &lt;&lt; &quot;  xn &quot; &lt;&lt; xoff_neighbour &lt;&lt; &quot;  yn &quot; &lt;&lt; yoff_neighbour &lt;&lt; &quot;\n&quot;;
+-            
+-            DirectionBits face = NODIRBIT;
++                        
++            // get the candidate face of the window
++            DirectionBits face = NODIRBIT;  
+             if      (!xcorner &amp;&amp; yoff_neighbour) face = WESTBIT;
+             else if ( xcorner &amp;&amp; yoff_neighbour) face = EASTBIT;
+             else if (!ycorner &amp;&amp; xoff_neighbour) face = NORTHBIT;
+             else if ( ycorner &amp;&amp; xoff_neighbour) face = SOUTHBIT;
+             
++            // the faces that the neighbour window owns
+             stones::ConnectiveStone * neighbour = dynamic_cast&lt;stones::ConnectiveStone *&gt;
+                     (world::GetStone(GridPos(x+xoff_neighbour, y+yoff_neighbour)));
+             DirectionBits face_neighbour = (neighbour) ? neighbour-&gt;get_connections() : NODIRBIT;
+             
+-//            Log &lt;&lt; &quot;face &quot; &lt;&lt; face &lt;&lt; &quot;  facen &quot; &lt;&lt; face_neighbour &lt;&lt; &quot;  winface &quot; &lt;&lt; winFacesActorStone &lt;&lt; &quot;\n&quot;;
+             
+             if ((winFacesActorStone&amp;face) &amp;&amp; !(face_neighbour&amp;face)) {
+-                // contact to a inner corner of a window stone
++                // contact to an inner corner of a window stone
+                 // same code as external corner below
+-//                Log &lt;&lt; &quot;inner corner\n&quot;;
+                 double cx[2] = {cdist, -cdist};
+         
+                 V2 corner(x+xcorner+cx[xcorner], y+ycorner+cx[ycorner]);
+@@ -747,7 +771,8 @@
+                 c.normal        = normalize(b);
+                 c.contact_point = corner + c.normal*cdist;
+                 isInnerContact = true;
+-                
++            
++            // all straight contacts to inner window faces including the corners that are joined    
+             } else if ((winFacesActorStone&amp;SOUTHBIT) &amp;&amp; (ay &gt; y+1-2*erad_window_const-r-contact_e)) {
+                 c.contact_point = V2(ax, y+1-2*erad_window_const);
+                 c.normal        = V2(0,-1);
+@@ -1107,6 +1132,13 @@
+                 }
+             }
+ 
++            // remove collision forces components from actor-actor collisions 
++            // in direction of stone
++            double normal_component = sc.normal * ai.collforce;
++            if (normal_component &lt; 0) {
++                ai.collforce -= normal_component * sc.normal;
++            }
++
+             double dt = ActorTimeStep;
+             ai.collforce -= (1 + restitution)*(ai.vel*sc.normal)*sc.normal / dt * ai.mass;
+         }
+@@ -1321,7 +1353,7 @@
+    H the size of the integration step. */
+ void World::advance_actor (Actor *a, double dtime)
+ {
+-    const double MAXVEL = 70;
++    const double MAXVEL = 70;  // 70 grids/s  &lt; min_actor_radius/timestep !
+ 
+     ActorInfo &amp;ai = *a-&gt;get_actorinfo();
+     V2 force = ai.force;
+@@ -1350,6 +1382,7 @@
+     if (ai.pos[0] &gt;= w) ai.pos[0] = w - 1e-12;
+     if (ai.pos[1] &lt; 0) ai.pos[1] = 0.0;
+     if (ai.pos[1] &gt;= h) ai.pos[1] = h - 1e-12;
++    
+ 
+     did_move_actor(a);
+ }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000226.html">[Enigma-game-svn] r791 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="000228.html">[Enigma-game-svn] r793 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#227">[ date ]</a>
+              <a href="thread.html#227">[ thread ]</a>
+              <a href="subject.html#227">[ subject ]</a>
+              <a href="author.html#227">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

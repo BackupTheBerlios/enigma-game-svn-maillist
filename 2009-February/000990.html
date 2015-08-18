@@ -1,0 +1,666 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1560 - in trunk: data data/schemas src src/items	src/others src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1560%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/items%0A%09src/others%20src/stones&In-Reply-To=%3C200902280038.n1S0cSQS005068%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000989.html">
+   <LINK REL="Next"  HREF="000991.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1560 - in trunk: data data/schemas src src/items	src/others src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1560%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/items%0A%09src/others%20src/stones&In-Reply-To=%3C200902280038.n1S0cSQS005068%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1560 - in trunk: data data/schemas src src/items	src/others src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Feb 28 01:38:28 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000989.html">[Enigma-game-svn] r1559 - in trunk/data/levels: enigma_cross	enigma_iv
+</A></li>
+        <LI>Next message: <A HREF="000991.html">[Enigma-game-svn] r1561 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#990">[ date ]</a>
+              <a href="thread.html#990">[ thread ]</a>
+              <a href="subject.html#990">[ subject ]</a>
+              <a href="author.html#990">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-02-28 01:38:27 +0100 (Sat, 28 Feb 2009)
+New Revision: 1560
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/items/Bomb.cc
+   trunk/src/items/Crack.cc
+   trunk/src/items/Dynamite.cc
+   trunk/src/items/SimpleItems.cc
+   trunk/src/others/CannonBall.cc
+   trunk/src/stones/BoulderStone.cc
+   trunk/src/stones/FakeStone.cc
+   trunk/src/stones/FakeStone.hh
+   trunk/src/stones/GlassStones.cc
+   trunk/src/stones/JambStone.cc
+   trunk/src/stones/OxydStone.cc
+   trunk/src/stones/SimpleStones.cc
+   trunk/src/stones/SimpleStones.hh
+   trunk/src/stones/StandardStones.cc
+   trunk/src/stones/StandardStones.hh
+   trunk/src/stones/StoneImpulse.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1: new API reengineering
+- support old API get_kind for fake stone
+- st_beads: no more sticky (similar to oneway)
+- drunken algorithm: add a smaller 5 Hz randomness
+- rename internal message &quot;_spitter&quot; -&gt; &quot;_cannonball&quot;
+- st_spitter:
+  - add attribute &quot;secure&quot;, default false
+  - break on cannonball if not secure, and leave an it_meditation
+- st_jamb: react on matching colors instead of matching marble id
+- st_brownpyramide add feature: &quot;break&quot; on cannonball
+- st_yinyang add feature: activate on cannonball
+- st_stoneimpulse add feature:
+  - break on cannonball in non Enigma modes
+  - pulse on cannonball in Enigma mode
+- st_boulder add feature: just in PerOxyd mode break on cannonball
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/data/api1init.lua	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -682,6 +682,10 @@
+         local obj = enigma._MakeObject(&quot;st_fake_oxydd&quot;)
+         enigma._SetAttrib(obj, &quot;state&quot;, 1)
+         return obj
++    elseif name == &quot;st-spitter&quot; then
++        local obj = enigma._MakeObject(&quot;st_spitter&quot;)
++        enigma._SetAttrib(obj, &quot;secure&quot;, true)
++        return obj
+     end
+     newname = RenamingObjectsOld2New[name]
+ 
+@@ -754,6 +758,14 @@
+     if _newname == &quot;fl_slope&quot; then
+         return &quot;fl-gradient&quot;
+     end
++    if _newname == &quot;st_fake_oxydc&quot; then
++        local state = enigma._GetAttrib(obj, &quot;state&quot;)
++        if state == 0 then
++            return &quot;st-likeoxydc&quot;
++        else
++            return &quot;st-likeoxydc-open&quot;
++        end
++    end
+     if _oldname ~= nil then
+         return _oldname
+     else
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/data/schemas/objects.xml	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -133,6 +133,7 @@
+     &lt;msg name=&quot;_dispenser&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_booze&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_brush&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;_cannonball&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_capture&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_checkflood&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_disappear&quot; type=&quot;nil&quot;/&gt;
+@@ -159,7 +160,6 @@
+     &lt;msg name=&quot;_shatter&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_shield&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_shogun&quot; type=&quot;int&quot;/&gt;
+-    &lt;msg name=&quot;_spitter&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_start&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_suicide&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_trigger&quot; type=&quot;bool&quot;/&gt;
+@@ -1005,6 +1005,7 @@
+       &lt;msg name=&quot;turn&quot;/&gt;
+       &lt;msg name=&quot;turnback&quot;/&gt;
+       &lt;msg name=&quot;flip&quot;/&gt;
++      &lt;msg name=&quot;_cannonball&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;st_boulder_w&quot;&gt;
+       &lt;attr name=&quot;orientation&quot; value=&quot;0&quot;/&gt;
+@@ -1117,7 +1118,9 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;st_brownie&quot;/&gt;
+     &lt;object name=&quot;st_brownmarble&quot;/&gt;
+-    &lt;object name=&quot;st_brownpyramide&quot;/&gt;
++    &lt;object name=&quot;st_brownpyramide&quot;&gt;
++      &lt;msg name=&quot;_cannonball&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_camouflage&quot;&gt;
+       &lt;attr name=&quot;hollow&quot; rw=&quot;r&quot;/&gt;
+     &lt;/object&gt;
+@@ -1500,7 +1503,7 @@
+       &lt;msg name=&quot;peepall&quot;/&gt;
+       &lt;msg name=&quot;shuffle&quot;/&gt;
+       &lt;msg name=&quot;_trigger&quot;/&gt;
+-      &lt;msg name=&quot;_spitter&quot;/&gt;
++      &lt;msg name=&quot;_cannonball&quot;/&gt;
+       &lt;msg name=&quot;_init&quot;/&gt;
+       &lt;msg name=&quot;open&quot;/&gt;
+       &lt;msg name=&quot;close&quot;/&gt;
+@@ -1731,6 +1734,8 @@
+       &lt;attr name=&quot;hit_distortion_xy&quot;/&gt;
+       &lt;attr name=&quot;hit_distortion_yx&quot;/&gt;
+       &lt;attr name=&quot;hit_distortion_yy&quot;/&gt;
++      &lt;attr name=&quot;secure&quot;/&gt;
++      &lt;msg name=&quot;_cannonball&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;st_stoneimpulse&quot;&gt;
+       &lt;attr name=&quot;hollow&quot;/&gt;
+@@ -1740,6 +1745,7 @@
+       &lt;msg name=&quot;signal&quot;/&gt;
+       &lt;msg name=&quot;ignite&quot;/&gt;
+       &lt;msg name=&quot;_model_reanimated&quot;/&gt;
++      &lt;msg name=&quot;_cannonball&quot;/&gt;
+       &lt;msg name=&quot;_init&quot;/&gt;
+       &lt;msg name=&quot;_trigger&quot;/&gt;
+     &lt;/object&gt;
+@@ -1889,6 +1895,7 @@
+     &lt;object name=&quot;st_yinyang&quot;&gt;
+       &lt;attr name=&quot;instant&quot;/&gt;
+       &lt;attr name=&quot;loop&quot;/&gt;
++      &lt;msg name=&quot;_cannonball&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;st_yinyang_instant&quot;&gt;
+       &lt;attr name=&quot;instant&quot; value=&quot;true&quot;/&gt;
+
+Modified: trunk/src/items/Bomb.cc
+===================================================================
+--- trunk/src/items/Bomb.cc	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/src/items/Bomb.cc	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -47,7 +47,7 @@
+     }
+     
+     Value Bomb::message(const Message &amp;m) {
+-        if (m.message == &quot;ignite&quot;  || m.message == &quot;_explosion&quot;|| m.message == &quot;_spitter&quot;) {
++        if (m.message == &quot;ignite&quot;  || m.message == &quot;_explosion&quot;|| m.message == &quot;_cannonball&quot;) {
+             if (isDisplayable())
+                 burn();
+             return Value();
+
+Modified: trunk/src/items/Crack.cc
+===================================================================
+--- trunk/src/items/Crack.cc	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/src/items/Crack.cc	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -37,7 +37,7 @@
+         if (m.message == &quot;crack&quot; || m.message == &quot;ignite&quot; ) {
+             crack();
+             return Value();
+-        } else if (m.message == &quot;heat&quot; || m.message == &quot;_explosion&quot; || m.message == &quot;_spitter&quot;) {
++        } else if (m.message == &quot;heat&quot; || m.message == &quot;_explosion&quot; || m.message == &quot;_cannonball&quot;) {
+             sound_event(&quot;crack&quot;);
+             replace(&quot;it_debris&quot;);
+             return true;
+
+Modified: trunk/src/items/Dynamite.cc
+===================================================================
+--- trunk/src/items/Dynamite.cc	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/src/items/Dynamite.cc	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -38,7 +38,7 @@
+             if (isDisplayable())
+                 burn();
+             return Value();
+-        } else if (m.message == &quot;explode&quot; || m.message == &quot;_spitter&quot;) { // currently unused in c++ code
++        } else if (m.message == &quot;explode&quot; || m.message == &quot;_cannonball&quot;) { // currently unused in c++ code
+             if (isDisplayable())
+                 explode();
+             return Value();
+
+Modified: trunk/src/items/SimpleItems.cc
+===================================================================
+--- trunk/src/items/SimpleItems.cc	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/src/items/SimpleItems.cc	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -130,7 +130,7 @@
+     }
+     
+     Value Explosion::message(const Message &amp;m) {
+-        if (m.message == &quot;_spitter&quot;) {
++        if (m.message == &quot;_cannonball&quot;) {
+             state = 3;
+             return Value();
+         }
+
+Modified: trunk/src/others/CannonBall.cc
+===================================================================
+--- trunk/src/others/CannonBall.cc	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/src/others/CannonBall.cc	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -36,12 +36,12 @@
+     void CannonBall::animcb() {
+         GridPos p(pos);
+         if (Stone *st = GetStone(p)) {
+-            SendMessage (st, &quot;_spitter&quot;);
++            SendMessage (st, &quot;_cannonball&quot;);
+         } else if (Item *it = GetItem(p)) {
+             if (!has_flags(it, itf_indestructible))
+                 SetItem (p, MakeItem(&quot;it_explosion_debris&quot;));
+             else
+-                SendMessage (it, &quot;_spitter&quot;);
++                SendMessage (it, &quot;_cannonball&quot;);
+         } else if (Floor *fl = GetFloor(p)) {
+             if (fl-&gt;is_destructible())
+                 SetItem (p, MakeItem(&quot;it_explosion_debris&quot;));
+
+Modified: trunk/src/stones/BoulderStone.cc
+===================================================================
+--- trunk/src/stones/BoulderStone.cc	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/src/stones/BoulderStone.cc	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -54,6 +54,9 @@
+         } else if (m.message == &quot;flip&quot; &amp;&amp; state != FALLING &amp;&amp; isDisplayable()) {
+             setDir(reverse(getDir()));
+             return Value();
++        } else if (m.message == &quot;_cannonball&quot; &amp;&amp; server::GameCompatibility == enigma::GAMET_PEROXYD) {
++            KillStone(get_pos());
++            return Value();
+         }
+         return Stone::message(m);
+     }
+
+Modified: trunk/src/stones/FakeStone.cc
+===================================================================
+--- trunk/src/stones/FakeStone.cc	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/src/stones/FakeStone.cc	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -32,6 +32,16 @@
+         return &quot;st_fake&quot;;
+     }
+     
++    const char *FakeStone::get_kind() const {
++        std::string fl = getAttr(&quot;flavor&quot;).to_string();
++        if (fl == &quot;quake&quot;) return &quot;st_fake_quake&quot;;
++        else if (fl == &quot;oxyda&quot;) return &quot;st_fake_oxyda&quot;;
++        else if (fl == &quot;oxydb&quot;) return &quot;st_fake_oxydb&quot;;
++        else if (fl == &quot;oxydc&quot;) return &quot;st_fake_oxydc&quot;;
++        else if (fl == &quot;oxydd&quot;) return &quot;st_fake_oxydd&quot;;
++        else if (fl == &quot;oxyde&quot;) return &quot;st_fake_oxyde&quot;;
++    }
++    
+     void FakeStone::setAttr(const string&amp; key, const Value &amp;val) {
+         if (key == &quot;flavor&quot;) {
+             std::string fl = val.to_string();
+
+Modified: trunk/src/stones/FakeStone.hh
+===================================================================
+--- trunk/src/stones/FakeStone.hh	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/src/stones/FakeStone.hh	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -54,6 +54,7 @@
+         
+         // Object interface
+         virtual std::string getClass() const;
++        virtual const char *get_kind() const;
+         virtual void setAttr(const string&amp; key, const Value &amp;val);
+         virtual Value getAttr(const std::string &amp;key) const;
+         
+
+Modified: trunk/src/stones/GlassStones.cc
+===================================================================
+--- trunk/src/stones/GlassStones.cc	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/src/stones/GlassStones.cc	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -84,7 +84,7 @@
+     }
+     
+     bool GlassStone::is_sticky(const Actor *a) const {
+-        return !is_floating() &amp;&amp; !a-&gt;is_invisible();
++        return !is_floating() &amp;&amp; !a-&gt;is_invisible() &amp;&amp; state != BEADS;
+     }
+     
+     bool GlassStone::is_transparent(Direction d) const {
+
+Modified: trunk/src/stones/JambStone.cc
+===================================================================
+--- trunk/src/stones/JambStone.cc	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/src/stones/JambStone.cc	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -42,8 +42,7 @@
+                 
+                 Actor *a = dynamic_cast&lt;Actor *&gt;(o);
+                 int c = getAttr(&quot;color&quot;);
+-                if ((c == BLACK &amp;&amp; a &amp;&amp; get_id(a) == ac_marble_black) || 
+-                        (c == WHITE &amp;&amp; a &amp;&amp; get_id(a) == ac_marble_white) ||
++                if ((a &amp;&amp; a-&gt;getAttr(&quot;color&quot;) &amp;&amp; a-&gt;getAttr(&quot;color&quot;) == c) || 
+                         (m.sender-&gt;getObjectType() != Object::ITEM &amp;&amp; m.message == &quot;signal&quot;)) {
+                     if (p.y == sender-&gt;get_pos().y) {
+                         SendMessage (GetStone (move (p, EAST)),  &quot;signal&quot;, 1.0);
+
+Modified: trunk/src/stones/OxydStone.cc
+===================================================================
+--- trunk/src/stones/OxydStone.cc	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/src/stones/OxydStone.cc	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -869,7 +869,7 @@
+         } else if (m.message == &quot;shuffle&quot;) {
+             shuffleColors();
+             return Value();
+-        } else if ((m.message == &quot;_trigger&quot;  &amp;&amp; m.value.to_bool()) || m.message == &quot;_spitter&quot;) {
++        } else if ((m.message == &quot;_trigger&quot;  &amp;&amp; m.value.to_bool()) || m.message == &quot;_cannonball&quot;) {
+             tryOpen();   // just internal messages on displayable oxyds
+             return Value();
+         } else if (m.message == &quot;_init&quot;) {
+
+Modified: trunk/src/stones/SimpleStones.cc
+===================================================================
+--- trunk/src/stones/SimpleStones.cc	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/src/stones/SimpleStones.cc	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -83,6 +83,22 @@
+         }
+     }
+ 
++/* -------------------- BrownPyramide stone -------------------- */
++    BrownPyramide::BrownPyramide() : Stone (&quot;st_brownpyramide&quot;) {
++    }
++    
++    std::string BrownPyramide::getClass() const {
++        return &quot;st_brownpyramide&quot;;
++    }
++
++    Value BrownPyramide::message(const Message &amp;m) {
++        if (m.message == &quot;_cannonball&quot;) {
++            KillStone(get_pos());
++            return Value();
++        }
++        return Stone::message(m);
++    }
++    
+ /* -------------------- Charge stone -------------------- */
+ 
+     ChargeStone::ChargeStone(double charge) : Stone (&quot;st_charge&quot;) {
+@@ -230,20 +246,33 @@
+         // block any calls
+     }
+     
++    Value SpitterStone::message(const Message &amp;m) {
++        if (m.message == &quot;_cannonball&quot;) {
++            if (!getAttr(&quot;secure&quot;).to_bool() || server::GameCompatibility == enigma::GAMET_PEROXYD) {
++                state = BREAKING;
++                init_model();
++            }
++            return Value();
++        }
++        return Stone::message(m);
++    }
++    
+     void SpitterStone::init_model() {
+         if (state == IDLE)
+             set_model(&quot;st_spitter&quot;);
+         else if (state == LOADING)
+             set_anim(&quot;st_spitter_loading&quot;);
++        else if (state == SPITTING)
++            set_anim(&quot;st_spitter_spitting&quot;);
+         else
+-            set_anim(&quot;st_spitter_spitting&quot;);
++            set_anim(&quot;st_break_plain-anim&quot;);
+     }
+     
+     void SpitterStone::animcb() {
+         switch (state) {
+-            case IDLE:
++            case IDLE :
+                 ASSERT(false, XLevelRuntime, &quot;SpitterStone: animcb called with inconsistent state&quot;); 
+-            case LOADING: {
++            case LOADING : {
+                 Other *cb = dynamic_cast&lt;Other *&gt;(MakeObject(&quot;ot_cannonball&quot;));
+                 ecl::V2 center  = get_pos().center();
+                 cb-&gt;setAttr(&quot;$position&quot;, center);
+@@ -254,11 +283,15 @@
+                 init_model();
+                 break;
+             }
+-            case SPITTING:
++            case SPITTING : 
+                 state = IDLE;
+                 init_model();
+                 break;
+-            }
++            case BREAKING :
++                SetItem(get_pos(), MakeItem(&quot;it_meditation&quot;));
++                KillStone(get_pos());
++                break;
++        }
+     }
+ 
+     void SpitterStone::actor_hit (const StoneContact &amp;sc) {
+@@ -290,6 +323,19 @@
+         return &quot;st_yinyang&quot;;
+     }
+     
++    Value YinyangStone::message(const Message &amp;m) {
++        if (m.message == &quot;_cannonball&quot;) {
++            if (state == IDLE) {
++                state = ACTIVE;
++                init_model();
++                if (getAttr(&quot;instant&quot;).to_bool())
++                    switchPlayer();
++            }
++            return Value();
++        }
++        return Stone::message(m);
++    }
++    
+     int YinyangStone::maxState() const {
+         return 2;
+     }
+@@ -349,6 +395,7 @@
+         BootRegister(new BlurStone(0), &quot;st_blur_straight&quot;);
+         BootRegister(new BlurStone(1), &quot;st_blur_cross&quot;);
+         BootRegister(new BlurStone(2), &quot;st_blur_magic&quot;);
++        BootRegister(new BrownPyramide(), &quot;st_brownpyramide&quot;);
+         BootRegister(new ChargeStone(0.0), &quot;st_charge&quot;);
+         BootRegister(new ChargeStone(0.0), &quot;st_charge_zero&quot;);
+         BootRegister(new ChargeStone(1.0), &quot;st_charge_plus&quot;);
+
+Modified: trunk/src/stones/SimpleStones.hh
+===================================================================
+--- trunk/src/stones/SimpleStones.hh	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/src/stones/SimpleStones.hh	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -56,6 +56,19 @@
+     };
+     
+     /** 
++     * BrownPyramide
++     */
++    class BrownPyramide : public Stone {
++        CLONEOBJ(BrownPyramide);
++    public:
++        BrownPyramide();
++        
++         // Object interface
++        virtual std::string getClass() const;
++        virtual Value message(const Message &amp;m);
++    };
++    
++    /** 
+      * ChargeStone
+      */
+     class ChargeStone : public Stone {
+@@ -156,7 +169,8 @@
+         enum iState {
+             IDLE, 
+             LOADING,
+-            SPITTING
++            SPITTING,
++            BREAKING
+         };
+ 
+     public:
+@@ -164,6 +178,7 @@
+         
+         // StateObject interface
+         virtual void setState(int extState);
++        virtual Value message(const Message &amp;m);
+ 
+         // GridObject interface
+         virtual void init_model();
+@@ -192,6 +207,7 @@
+         
+          // Object interface
+         virtual std::string getClass() const;        
++        virtual Value message(const Message &amp;m);
+         
+         // StateObject interface
+         virtual int maxState() const;
+
+Modified: trunk/src/stones/StandardStones.cc
+===================================================================
+--- trunk/src/stones/StandardStones.cc	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/src/stones/StandardStones.cc	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -92,7 +92,7 @@
+         return state;
+     }
+         
+-    StoneTraits StandardStone::traits[25] = {
++    StoneTraits StandardStone::traits[24] = {
+         {&quot;st_granite&quot;, st_standard, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
+         {&quot;st_granite&quot;, st_standard, stf_none, material_stone, 1.0, MOVABLE_STANDARD},
+         {&quot;st_darkgray&quot;, st_standard, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
+@@ -103,7 +103,6 @@
+         {&quot;st_concrete&quot;, st_standard, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
+         {&quot;st_ancient&quot;, st_standard, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
+         {&quot;st_brownmarble&quot;, st_standard, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
+-        {&quot;st_brownpyramide&quot;, st_standard, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
+         {&quot;st_redmarble&quot;, st_standard, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
+         {&quot;st_bluegray&quot;, st_standard, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
+         {&quot;st_brownie&quot;, st_standard, stf_none, material_stone, 1.0, MOVABLE_STANDARD},
+@@ -133,26 +132,25 @@
+         BootRegister(new StandardStone(7, false, false), &quot;st_concrete&quot;);
+         BootRegister(new StandardStone(8, false, false), &quot;st_ancient&quot;);
+         BootRegister(new StandardStone(9, false, false), &quot;st_brownmarble&quot;);
+-        BootRegister(new StandardStone(10, false, false), &quot;st_brownpyramide&quot;);
+-        BootRegister(new StandardStone(11, false, false), &quot;st_redmarble&quot;);
+-        BootRegister(new StandardStone(12, false, false), &quot;st_bluegray&quot;);
+-        BootRegister(new StandardStone(12, true, false),  &quot;st_bluegray_hollow&quot;);
+-        BootRegister(new StandardStone(13, false, true, true),  &quot;st_brownie&quot;);
+-        BootRegister(new StandardStone(14, false, false), &quot;st_pinkbumps&quot;);
+-        BootRegister(new StandardStone(15, false, false, true), &quot;st_camouflage&quot;);
+-        BootRegister(new StandardStone(15, true, false),  &quot;st_camouflage_hollow&quot;);
+-        BootRegister(new StandardStone(16, false, true, true),  &quot;st_camouflage_movable&quot;);
+-        BootRegister(new StandardStone(17, false, false), &quot;st_redbrown&quot;);
+-        BootRegister(new StandardStone(17, true, false),  &quot;st_redbrown_hollow&quot;);
+-        BootRegister(new StandardStone(18, false, true),  &quot;st_redbrown_movable&quot;);
+-        BootRegister(new StandardStone(19, false, false), &quot;st_metal&quot;);
+-        BootRegister(new StandardStone(19, true, false),  &quot;st_metal_hollow&quot;);
+-        BootRegister(new StandardStone(20, false, false), &quot;st_redrock&quot;);
+-        BootRegister(new StandardStone(21, false, false), &quot;st_woven&quot;);
+-        BootRegister(new StandardStone(22, false, false), &quot;st_yellow&quot;);
+-        BootRegister(new StandardStone(23, false, false), &quot;st_invisible&quot;);
+-        BootRegister(new StandardStone(23, true, false),  &quot;st_invisible_hollow&quot;);
+-        BootRegister(new StandardStone(24, false, true),  &quot;st_invisible_movable&quot;);
++        BootRegister(new StandardStone(10, false, false), &quot;st_redmarble&quot;);
++        BootRegister(new StandardStone(11, false, false), &quot;st_bluegray&quot;);
++        BootRegister(new StandardStone(11, true, false),  &quot;st_bluegray_hollow&quot;);
++        BootRegister(new StandardStone(12, false, true, true),  &quot;st_brownie&quot;);
++        BootRegister(new StandardStone(13, false, false), &quot;st_pinkbumps&quot;);
++        BootRegister(new StandardStone(14, false, false, true), &quot;st_camouflage&quot;);
++        BootRegister(new StandardStone(14, true, false),  &quot;st_camouflage_hollow&quot;);
++        BootRegister(new StandardStone(15, false, true, true),  &quot;st_camouflage_movable&quot;);
++        BootRegister(new StandardStone(16, false, false), &quot;st_redbrown&quot;);
++        BootRegister(new StandardStone(16, true, false),  &quot;st_redbrown_hollow&quot;);
++        BootRegister(new StandardStone(17, false, true),  &quot;st_redbrown_movable&quot;);
++        BootRegister(new StandardStone(18, false, false), &quot;st_metal&quot;);
++        BootRegister(new StandardStone(18, true, false),  &quot;st_metal_hollow&quot;);
++        BootRegister(new StandardStone(19, false, false), &quot;st_redrock&quot;);
++        BootRegister(new StandardStone(20, false, false), &quot;st_woven&quot;);
++        BootRegister(new StandardStone(21, false, false), &quot;st_yellow&quot;);
++        BootRegister(new StandardStone(22, false, false), &quot;st_invisible&quot;);
++        BootRegister(new StandardStone(22, true, false),  &quot;st_invisible_hollow&quot;);
++        BootRegister(new StandardStone(23, false, true),  &quot;st_invisible_movable&quot;);
+     BOOT_REGISTER_END
+ 
+ } // namespace enigma
+
+Modified: trunk/src/stones/StandardStones.hh
+===================================================================
+--- trunk/src/stones/StandardStones.hh	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/src/stones/StandardStones.hh	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -30,7 +30,7 @@
+      */
+     class StandardStone : public Stone {
+         CLONEOBJ(StandardStone);
+-        DECL_TRAITS_ARRAY(25, traitsIdx());
++        DECL_TRAITS_ARRAY(24, traitsIdx());
+     private:
+         enum iState {
+             GRANITE,         ///&lt; 
+
+Modified: trunk/src/stones/StoneImpulse.cc
+===================================================================
+--- trunk/src/stones/StoneImpulse.cc	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/src/stones/StoneImpulse.cc	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -113,6 +113,15 @@
+                 init_model();
+             }
+             return Value();
++        } else if (m.message == &quot;_cannonball&quot;) {
++            if ((server::GameCompatibility != GAMET_ENIGMA &amp;&amp; state == IDLE)) {
++                state = BREAKING;
++                init_model();
++            } else {
++                // Enigma mode do pulse
++                setIState(EXPANDING);
++            }
++            return Value();
+         } else
+             return Stone::message(m);
+     }
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2009-02-27 17:18:21 UTC (rev 1559)
++++ trunk/src/world.cc	2009-02-28 00:38:27 UTC (rev 1560)
+@@ -566,13 +566,12 @@
+     V2 f = mforce;
+     if (a-&gt;get_controllers() != 0) {
+         if (a-&gt;is_drunken()) {
+-//            double time = fmod(server::LevelTime, 2.0) - 1.0;
+-            int t = (int)server::LevelTime;
+-            double time = fmod(t * M_PI, 2.0) - 1.0;
++            int t1 = (int)server::LevelTime;
++            double base1 = fmod(t1 * M_PI, 2.0) - 1.0;
++            int t2 = (int)(5.0 * server::LevelTime);
++            double base2 = fmod(t2 * M_PI, 2.0) - 1.0;
+             // rotate mouse force by random angle
+-            double maxangle = M_PI * 0.4;
+-            double angle = maxangle * time;
+-//            double angle = DoubleRand (-maxangle, maxangle);
++            double angle = M_PI * (0.3 * base1 + 0.15 * base2);
+             f = V2(f[0]*cos(angle) - f[1]*sin(angle),
+                    f[0]*sin(angle) + f[1]*cos(angle));
+         }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000989.html">[Enigma-game-svn] r1559 - in trunk/data/levels: enigma_cross	enigma_iv
+</A></li>
+	<LI>Next message: <A HREF="000991.html">[Enigma-game-svn] r1561 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#990">[ date ]</a>
+              <a href="thread.html#990">[ thread ]</a>
+              <a href="subject.html#990">[ subject ]</a>
+              <a href="author.html#990">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

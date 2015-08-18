@@ -1,0 +1,287 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1192 - in trunk: data data/schemas src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1192%20-%20in%20trunk%3A%20data%20data/schemas%20src&In-Reply-To=%3C200806251127.m5PBRZJH010368%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000625.html">
+   <LINK REL="Next"  HREF="000627.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1192 - in trunk: data data/schemas src</H1>
+    <B>ral at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1192%20-%20in%20trunk%3A%20data%20data/schemas%20src&In-Reply-To=%3C200806251127.m5PBRZJH010368%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1192 - in trunk: data data/schemas src">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Jun 25 13:27:35 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000625.html">[Enigma-game-svn] r1191 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000627.html">[Enigma-game-svn] r1193 - in trunk: data data/schemas src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#626">[ date ]</a>
+              <a href="thread.html#626">[ thread ]</a>
+              <a href="subject.html#626">[ subject ]</a>
+              <a href="author.html#626">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-06-25 13:27:17 +0200 (Wed, 25 Jun 2008)
+New Revision: 1192
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Object.cc
+   trunk/src/items.cc
+Log:
+Trunk 1.1: new API reengineering
+- it_trap
+  - fix spotting with glasses
+  - no trap opening while jumping over it
+- it_landmine
+  - no explosion while jumping over it
+- Object:
+  - add general message &quot;kill&quot;
+- reengineering it-death
+  - renamed to it_death
+  
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-06-24 23:13:18 UTC (rev 1191)
++++ trunk/data/api1init.lua	2008-06-25 11:27:17 UTC (rev 1192)
+@@ -53,6 +53,7 @@
+     it_coin_l = &quot;it-coin4&quot;,
+     it_cross = &quot;it-cross&quot;,
+     it_extralife = &quot;it-extralife&quot;,
++    it_death = &quot;it-death&quot;,
+     it_floppy = &quot;it-floppy&quot;,
+     it_glasses = &quot;it-glasses&quot;,
+     it_glasses_broken = &quot;it-glasses-broken&quot;,
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-06-24 23:13:18 UTC (rev 1191)
++++ trunk/data/models-2d.lua	2008-06-25 11:27:17 UTC (rev 1192)
+@@ -558,8 +558,8 @@
+ -- it-death --
+ do
+     local images = DefSubimages(&quot;it-death&quot;, {h=4})
+-    DefAlias(&quot;it-death&quot;, images[1])
+-    DefAnim(&quot;it-death-anim&quot;, BuildFrames(images, 100))
++    DefAlias(&quot;it_death&quot;, images[1])
++    DefAnim(&quot;it_death_anim&quot;, BuildFrames(images, 100))
+ end
+ 
+ -- Explosion --
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-06-24 23:13:18 UTC (rev 1191)
++++ trunk/data/schemas/objects.xml	2008-06-25 11:27:17 UTC (rev 1192)
+@@ -48,6 +48,7 @@
+     &lt;msg name=&quot;closeall&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;hit&quot; type=&quot;object&quot;/&gt;
+     &lt;msg name=&quot;inner_pull&quot; type=&quot;dir&quot;/&gt;
++    &lt;msg name=&quot;kill&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;off&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;on&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;open&quot; type=&quot;nil&quot;/&gt;
+@@ -82,6 +83,7 @@
+       &lt;attr name=&quot;state&quot;/&gt;
+       &lt;attr name=&quot;target&quot;/&gt;
+       &lt;action type=&quot;bool&quot;/&gt;
++      &lt;msg name=&quot;kill&quot;/&gt;
+       &lt;msg name=&quot;toggle&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;it&quot; abstract=&quot;true&quot;/&gt;
+@@ -115,6 +117,7 @@
+       &lt;msg name=&quot;_brush&quot;/&gt;
+       &lt;msg name=&quot;signal&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;it_death&quot;/&gt;
+     &lt;object name=&quot;it_extralife&quot;/&gt;
+     &lt;object name=&quot;it_extralife_new&quot; init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;it_floppy&quot;/&gt;
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2008-06-24 23:13:18 UTC (rev 1191)
++++ trunk/src/Object.cc	2008-06-25 11:27:17 UTC (rev 1192)
+@@ -150,6 +150,15 @@
+         if (m.message == &quot;_init&quot;) {
+             // finalize nearest target and destination
+             finalizeNearestObjectReferences();
++        } else if (m.message == &quot;kill&quot;) {
++            switch (getObjectType()) {
++                case FLOOR:
++                    KillFloor(dynamic_cast&lt;GridObject *&gt;(this)-&gt;get_pos()); break;
++                case ITEM:
++                    KillItem(dynamic_cast&lt;GridObject *&gt;(this)-&gt;get_pos()); break;
++                case STONE:
++                    KillStone(dynamic_cast&lt;GridObject *&gt;(this)-&gt;get_pos()); break;
++            }
+         }
+         return Value();
+     }
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-06-24 23:13:18 UTC (rev 1191)
++++ trunk/src/items.cc	2008-06-25 11:27:17 UTC (rev 1192)
+@@ -3419,7 +3419,8 @@
+             ACTORIMPULSE    =  4,
+             SENSOR          =  8,
+             LIGHTPASSENGER  = 16,
+-            MAX             = 31
++            TRAP            = 32,
++            MAX             = 63
+         };
+         
+         static void updateGlasses();
+@@ -3569,10 +3570,12 @@
+     }
+     
+     bool Trap::actor_hit(Actor *a) {
+-        SendMessage(a, &quot;fall&quot;);
+-        if (state == 0) {
+-            state = 1;
+-            set_anim(&quot;it_trap_breaking&quot;);
++        if (!a-&gt;is_flying()) {
++            SendMessage(a, &quot;fall&quot;);
++            if (state == 0) {
++                state = 1;
++                set_anim(&quot;it_trap_breaking&quot;);
++            }
+         }
+         return false;
+     }
+@@ -3601,9 +3604,11 @@
+     
+     bool Landmine::actor_hit (Actor *a) {
+         const double ITEM_RADIUS = 0.3;
+-        double dist = length(a-&gt;get_pos() - get_pos().center());
+-        if (dist &lt; ITEM_RADIUS)
+-            explode();
++        if (!a-&gt;is_flying()) {
++            double dist = length(a-&gt;get_pos() - get_pos().center());
++            if (dist &lt; ITEM_RADIUS)
++                explode();
++        }
+         return false;
+     }
+     
+@@ -3835,36 +3840,44 @@
+ }
+ 
+ /* -------------------- it-death -------------------- */
+-namespace
+-{
+-    class Death : public Item {
+-        CLONEOBJ(Death);
++    class DeathItem : public Item {
++        CLONEOBJ(DeathItem);
+         DECL_TRAITS;
++        
++    public:
++        DeathItem();
++        
++        // ModelCallback interface
++        virtual void animcb();
+ 
+-        bool active;
++        // Item interface
++        virtual bool actor_hit(Actor *a);
++        
++    };
++    
++    DeathItem::DeathItem() {
++    }
++    
++    void DeathItem::animcb() { 
++        set_model(&quot;it_death&quot;); 
++        state = 0;
++     }
+ 
+-        bool actor_hit(Actor *a) {
+-            ActorInfo &amp;ai = * a-&gt;get_actorinfo();
+-            if (!ai.grabbed) {
+-                SendMessage(a, &quot;shatter&quot;);
+-                if (!active) {
+-                    active=true;
+-                    set_anim(&quot;it-death-anim&quot;);
+-                }
++    bool DeathItem::actor_hit(Actor *a) {
++        ActorInfo &amp;ai = * a-&gt;get_actorinfo();
++        if (!ai.grabbed) {
++            SendMessage(a, &quot;shatter&quot;);
++            if (state == 0) {
++                state = 1;
++                set_anim(&quot;it_death_anim&quot;);
+             }
+-            return false;
+         }
++        return false;
++    }
++    
++    DEF_TRAITSF(DeathItem, &quot;it_death&quot;, it_death, itf_static | itf_indestructible);
+ 
+-    protected:
+-        void animcb() { set_model(&quot;it-death&quot;); active=false; }
+ 
+-    public:
+-        Death() : active(false) {}
+-    };
+-
+-    DEF_TRAITSF(Death, &quot;it-death&quot;, it_death, itf_static | itf_indestructible);
+-}
+-
+ /* -------------------- HStrip and VStrip -------------------- */
+ namespace
+ {
+@@ -4123,7 +4136,7 @@
+     Coin::setup();
+     Crack::setup();
+     RegisterItem (new Cross);
+-    RegisterItem (new Death);
++    RegisterItem (new DeathItem);
+     RegisterItem (new Debris);
+     RegisterItem (new Document);
+     RegisterItem (new Drop);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000625.html">[Enigma-game-svn] r1191 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000627.html">[Enigma-game-svn] r1193 - in trunk: data data/schemas src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#626">[ date ]</a>
+              <a href="thread.html#626">[ thread ]</a>
+              <a href="subject.html#626">[ subject ]</a>
+              <a href="author.html#626">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

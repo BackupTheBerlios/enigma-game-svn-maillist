@@ -1,0 +1,840 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1085 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1085%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200803301220.m2UCKbQJ002147%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000517.html">
+   <LINK REL="Next"  HREF="000519.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1085 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1085%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200803301220.m2UCKbQJ002147%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1085 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Mar 30 14:20:37 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000517.html">[Enigma-game-svn] r1084 - in feature_branches/hp_lotm: images/lotm	input input/lotm
+</A></li>
+        <LI>Next message: <A HREF="000519.html">[Enigma-game-svn] r1086 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#518">[ date ]</a>
+              <a href="thread.html#518">[ thread ]</a>
+              <a href="subject.html#518">[ subject ]</a>
+              <a href="author.html#518">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-03-30 14:20:35 +0200 (Sun, 30 Mar 2008)
+New Revision: 1085
+
+Added:
+   trunk/src/stones/MonoFlopStone.cc
+   trunk/src/stones/MonoFlopStone.hh
+Removed:
+   trunk/src/st_switches.cc
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/ox_extra.cc
+   trunk/src/ox_magnum.cc
+   trunk/src/ox_oxyd1.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/stones.cc
+   trunk/src/stones/LaserSwitch.cc
+   trunk/src/stones/LaserSwitch.hh
+Log:
+Trunk 1.1: new API reengineering st-(laser)timeswitch
+- st-lasertimeswitch as st_laserflop
+- st-timeswitch as st_monoflop
+- adjusted logic: both flops continue activity for interval after the
+  last activation by laser or actor hit
+- both flops made swappable
+- attribute &quot;delay&quot; renamed to &quot;interval&quot;
+- both flops respect snapshot principle on initialization
+- both flops as StateObjects (state, toggle, signal support)
+  - due to monoflop basic principle the flops can just be activated
+- st_switches.cc eliminated
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-03-28 14:05:51 UTC (rev 1084)
++++ trunk/data/api1init.lua	2008-03-30 12:20:35 UTC (rev 1085)
+@@ -72,6 +72,8 @@
+     st_laser_e = &quot;st-laser-e&quot;,
+     st_laser_n = &quot;st-laser-n&quot;,
+     st_laserswitch = &quot;st-laserswitch&quot;,
++    st_lasertimeswitch = &quot;st-laserflop&quot;,
++    st_monoflop = &quot;st-timeswitch&quot;,
+     st_polarswitch = &quot;st-polarswitch&quot;,
+     st_oxyd = &quot;st-oxyd&quot;,
+     st_switch = &quot;st-switch&quot;,
+@@ -177,17 +179,9 @@
+              _key = &quot;oxydcolor&quot;
+ 	 end
+      end
+---     if (_obj_name == &quot;st-switch&quot;) or (_obj_name == &quot;st-switch_black&quot;)
+---             or (_obj_name == &quot;st-switch_white&quot;) 
+---             or (_obj_name == &quot;st-floppy&quot;) 
+---             or (_obj_name == &quot;it-magnet&quot;) or (_obj_name == &quot;it-magnet-on&quot;)
+---             or (_obj_name == &quot;it-magnet-off&quot;) or (_obj_name == &quot;it-wormhole&quot;)
+---             or (_obj_name == &quot;it-wormhole-off&quot;) or (_obj_name == &quot;st-laser&quot;)
+---             or (_obj_name == &quot;st-polarswitch&quot;) or (_obj_name == &quot;st-timer&quot;) then
+---         if key == &quot;on&quot; then
+---	     _key = &quot;state&quot;   -- new attr name
+---	 end
+---     end
++     if key == &quot;delay&quot; then
++         _key = &quot;interval&quot;
++     end
+      if key == &quot;dir&quot; or key == &quot;direction&quot; then
+          _key = &quot;orientation&quot;
+      end
+@@ -245,17 +239,9 @@
+ function enigma.GetAttrib(obj, key)
+      local _key = key
+      local _obj_name = enigma.GetKind(obj)
+---     if (_obj_name == &quot;st-switch&quot;) or (_obj_name == &quot;st-switch_black&quot;)
+---             or (_obj_name == &quot;st-switch_white&quot;) 
+---             or (_obj_name == &quot;st-floppy&quot;)
+---             or (_obj_name == &quot;it-magnet&quot;) or (_obj_name == &quot;it-magnet-on&quot;)
+---             or (_obj_name == &quot;it-magnet-off&quot;)  or (_obj_name == &quot;it-wormhole&quot;)
+---             or (_obj_name == &quot;it-wormhole-off&quot;)  or (_obj_name == &quot;st-laser&quot;)
+---             or (_obj_name == &quot;st-polarswitch&quot;)  or (_obj_name == &quot;st-timer&quot;) then
+---         if key == &quot;on&quot; then
+---	     _key = &quot;state&quot;
+---	     end
+---     end
++     if key == &quot;delay&quot; then
++         _key = &quot;interval&quot;
++     end
+      if key == &quot;blackball&quot; or key == &quot;whiteball&quot; then
+          _key = &quot;color&quot;
+      end
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-03-28 14:05:51 UTC (rev 1084)
++++ trunk/data/schemas/objects.xml	2008-03-30 12:20:35 UTC (rev 1085)
+@@ -174,11 +174,21 @@
+     &lt;object name=&quot;st_laser_n&quot;&gt;
+       &lt;attr name=&quot;orientation&quot; value=&quot;3&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_laserflop&quot;&gt;
++      &lt;attr name=&quot;interval&quot; default=&quot;1.8&quot;/&gt;
++      &lt;msg name=&quot;on&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_laserswitch&quot;&gt;
+       &lt;attr name=&quot;state&quot; rw=&quot;r&quot;/&gt;
+       &lt;msg name=&quot;_init&quot;/&gt;
+       &lt;msg name=&quot;_model_reanimated&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_monoflop&quot;&gt;
++      &lt;attr name=&quot;interval&quot; default=&quot;1.8&quot;/&gt;
++      &lt;msg name=&quot;on&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_polarswitch&quot;&gt;
+       &lt;msg name=&quot;on&quot;/&gt;
+       &lt;msg name=&quot;off&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-03-28 14:05:51 UTC (rev 1084)
++++ trunk/src/Makefile.am	2008-03-30 12:20:35 UTC (rev 1085)
+@@ -123,7 +123,6 @@
+ 	stones_internal.hh 	\
+ 	stones_simple.cc 	\
+ 	stones_complex.cc  	\
+-	st_switches.cc		\
+ 	Utf8ToXML.cc		\
+ 	Utf8ToXML.hh		\
+ 	util.cc 		\
+@@ -215,6 +214,8 @@
+ 	stones/LaserStone.hh	\
+ 	stones/LaserSwitch.cc	\
+ 	stones/LaserSwitch.hh	\
++	stones/MonoFlopStone.cc	\
++	stones/MonoFlopStone.hh	\
+ 	stones/OxydStone.cc	\
+ 	stones/OxydStone.hh	\
+ 	stones/PolarSwitchStone.cc	\
+
+Modified: trunk/src/ox_extra.cc
+===================================================================
+--- trunk/src/ox_extra.cc	2008-03-28 14:05:51 UTC (rev 1084)
++++ trunk/src/ox_extra.cc	2008-03-30 12:20:35 UTC (rev 1085)
+@@ -286,7 +286,7 @@
+     &quot;st-turnstile-w&quot;,    // OxydExtra stone 0xa1
+     &quot;st-turnstile-e&quot;,    // OxydExtra stone 0xa2
+     UNUSED,              // OxydExtra stone 0xa3
+-    &quot;st-fakeoxyd&quot;,       // OxydExtra stone 0xa4
++    &quot;st_laserflop_on&quot;,   // OxydExtra stone 0xa4
+     UNUSED,              // OxydExtra stone 0xa5
+     UNUSED,              // OxydExtra stone 0xa6
+     UNUSED,              // OxydExtra stone 0xa7
+@@ -334,9 +334,9 @@
+     ITEMSPEC(it_coin1),                   // OxydExtra item 0x11
+     ITEMSPEC(it_coin2),                   // OxydExtra item 0x12
+     ITEMSPEC(it_coin4),                   // OxydExtra item 0x13
+-    ITEMSPEC(it_MISSING),                 // OxydExtra item 0x14
+-    ITEMSPEC(it_MISSING),                 // OxydExtra item 0x15
+-    ITEMSPEC(it_key_a),                   // OxydExtra item 0x16
++    ITEMSPEC(it_key_a),                   // OxydExtra item 0x14
++    ITEMSPEC(it_key_b),                   // OxydExtra item 0x15
++    ITEMSPEC(it_key_c),                   // OxydExtra item 0x16
+     ITEMSPEC(it_floppy),                  // OxydExtra item 0x17
+     ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x18
+     ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x19
+@@ -380,6 +380,6 @@
+     ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x3f
+     ITEMSPEC(it_trigger),                 // OxydExtra item 0x40
+     ITEMSPEC(it_brush),                   // OxydExtra item 0x41
+-    ITEMSPEC(it_MISSING),                 // OxydExtra item 0x42
++    ITEMSPEC(it_banana),                  // OxydExtra item 0x42
+     // codes &gt;= 0x43 are unused
+ };
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2008-03-28 14:05:51 UTC (rev 1084)
++++ trunk/src/ox_magnum.cc	2008-03-30 12:20:35 UTC (rev 1085)
+@@ -171,7 +171,7 @@
+     UNUSED,                     // OxydMagnum stone 0x2e
+     &quot;st_fourswitch&quot;,            // OxydMagnum stone 0x2f (Level 89 and 92)
+     &quot;st_key&quot;,                   // OxydMagnum stone 0x30
+-    &quot;st-floppy&quot;,                // OxydMagnum stone 0x31
++    &quot;st_floppy&quot;,                // OxydMagnum stone 0x31
+     &quot;st-knight&quot;,                // OxydMagnum stone 0x32
+     &quot;st_fourswitch&quot;,            // OxydMagnum stone 0x33 (Level 51 and 100)
+     &quot;st-death&quot;,                 // OxydMagnum stone 0x34
+@@ -232,7 +232,7 @@
+     &quot;st-thief&quot;,                 // OxydMagnum stone 0x6b
+     &quot;st-shogun-s&quot;,              // OxydMagnum stone 0x6c
+     &quot;st-stoneimpulse&quot;,          // OxydMagnum stone 0x6d
+-    &quot;st-lasertimeswitch&quot;,       // OxydMagnum stone 0x6e
++    &quot;st_laserflop&quot;,             // OxydMagnum stone 0x6e
+     &quot;st-mail-n&quot;,                // OxydMagnum stone 0x6f
+     &quot;st-mail-w&quot;,                // OxydMagnum stone 0x70
+     &quot;st-mail-e&quot;,                // OxydMagnum stone 0x71
+@@ -244,7 +244,7 @@
+     UNUSED,                     // OxydMagnum stone 0x77
+     &quot;st-door-v-open&quot;,           // OxydMagnum stone 0x78 (st-door-h-open was wrong, look at level #32)
+     UNUSED,                     // OxydMagnum stone 0x79
+-    &quot;st-timeswitch&quot;,            // OxydMagnum stone 0x7a (Level 66, this is a solid stone)
++    &quot;st_laserflop_on&quot;,          // OxydMagnum stone 0x7a (Level 66, this is a solid stone)
+     UNUSED,                     // OxydMagnum stone 0x7b
+     UNUSED,                     // OxydMagnum stone 0x7c
+     UNUSED,                     // OxydMagnum stone 0x7d
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2008-03-28 14:05:51 UTC (rev 1084)
++++ trunk/src/ox_oxyd1.cc	2008-03-30 12:20:35 UTC (rev 1085)
+@@ -262,7 +262,7 @@
+     &quot;st-thief&quot;,                 // Oxyd1 stone 0x6b
+     &quot;st-shogun-s&quot;,              // Oxyd1 stone 0x6c
+     &quot;st-stoneimpulse&quot;,          // Oxyd1 stone 0x6d
+-    &quot;st-lasertimeswitch&quot;,       // Oxyd1 stone 0x6e
++    &quot;st_laserflop&quot;,             // Oxyd1 stone 0x6e
+     &quot;st-mail-n&quot;,                // Oxyd1 stone 0x6f
+     &quot;st-mail-w&quot;,                // Oxyd1 stone 0x70
+     &quot;st-mail-e&quot;,                // Oxyd1 stone 0x71
+@@ -274,7 +274,7 @@
+     &quot;st-door-h-open&quot;,           // Oxyd1 stone 0x77
+     &quot;st-door-v-open&quot;,           // Oxyd1 stone 0x78
+     UNUSED,                     // Oxyd1 stone 0x79
+-    &quot;st-timeswitch&quot;,            // Oxyd1 stone 0x7a (only used in level #23)
++    &quot;st_laserflop_on&quot;,          // Oxyd1 stone 0x7a (only used in level #23)
+     UNUSED,                     // Oxyd1 stone 0x7b
+     UNUSED,                     // Oxyd1 stone 0x7c
+     UNUSED,                     // Oxyd1 stone 0x7d
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-03-28 14:05:51 UTC (rev 1084)
++++ trunk/src/ox_peroxyd.cc	2008-03-30 12:20:35 UTC (rev 1085)
+@@ -304,7 +304,7 @@
+     &quot;st-shogun-sl&quot;,             // PerOxyd stone 0x6b
+     &quot;st-shogun-sm&quot;,             // PerOxyd stone 0x6c
+     &quot;st-stoneimpulse&quot;,          // PerOxyd stone 0x6d
+-    &quot;st-lasertimeswitch&quot;,       // PerOxyd stone 0x6e
++    &quot;st_laserflop&quot;,             // PerOxyd stone 0x6e
+     &quot;st-mail-n&quot;,                // PerOxyd stone 0x6f
+     &quot;st-mail-w&quot;,                // PerOxyd stone 0x70
+     &quot;st-mail-e&quot;,                // PerOxyd stone 0x71
+@@ -358,7 +358,7 @@
+     &quot;st-turnstile-w&quot;,           // PerOxyd stone 0xa1
+     &quot;st-turnstile-e&quot;,           // PerOxyd stone 0xa2
+     UNUSED,                     // PerOxyd stone 0xa3
+-    &quot;st-likeoxydc&quot;,             // PerOxyd stone 0xa4 laserswitch on
++    &quot;st_laserflop_on&quot;,        // PerOxyd stone 0xa4 laserswitch on
+     UNUSED,                     // PerOxyd stone 0xa5
+     UNUSED,                     // PerOxyd stone 0xa6
+     UNUSED,                     // PerOxyd stone 0xa7
+
+Deleted: trunk/src/st_switches.cc
+===================================================================
+--- trunk/src/st_switches.cc	2008-03-28 14:05:51 UTC (rev 1084)
++++ trunk/src/st_switches.cc	2008-03-30 12:20:35 UTC (rev 1085)
+@@ -1,210 +0,0 @@
+-/*
+- * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2007 Ronald Lamprecht
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License
+- * as published by the Free Software Foundation; either version 2
+- * of the License, or (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along
+- * with this program; if not, write to the Free Software Foundation, Inc.,
+- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+- *
+- */
+-
+-#include &quot;errors.hh&quot;
+-#include &quot;laser.hh&quot;
+-#include &quot;player.hh&quot;
+-#include &quot;server.hh&quot;
+-#include &quot;Inventory.hh&quot;
+-#include &quot;stones_internal.hh&quot;
+-
+-using namespace std;
+-
+-namespace enigma {
+-
+-
+-/* -------------------- Laser / Time switches -------------------- */
+-
+-namespace
+-{
+-    class LaserTimeSwitchBase : public PhotoStone, public TimeHandler {
+-    public:
+-        LaserTimeSwitchBase(const char *kind);
+-        virtual ~LaserTimeSwitchBase();
+-
+-    private:
+-        // LaserTimeSwitchBase interface
+-        virtual const char *get_active_model() const   = 0;
+-        virtual const char *get_inactive_model() const = 0;
+-        virtual double timer_delay() const;
+-
+-        // Stone interface
+-        void on_creation (GridPos p);
+-        void on_removal (GridPos p);
+-        const char *collision_sound() { return &quot;metal&quot;; }
+-
+-        // PhotoStone interface.
+-        void notify_laseron();
+-        void notify_laseroff();
+-
+-        // TimeHandler interface
+-        void alarm();
+-
+-    protected:
+-        // variables :
+-        enum State { IDLE, LIGHTED, TOUCHED };
+-        State state;
+-
+-        void change_state(State newstate);
+-    };
+-
+-    class LaserTimeSwitch : public LaserTimeSwitchBase {
+-        CLONEOBJ(LaserTimeSwitch);
+-    public:
+-        LaserTimeSwitch(const char *kind = &quot;st-lasertimeswitch&quot;);
+-    private:
+-        // LaserTimeSwitchBase interface
+-        const char *get_active_model() const;
+-        const char *get_inactive_model() const;
+-        double timer_delay() const;
+-
+-        // Stone interface
+-        void actor_hit(const StoneContact &amp;sc);
+-    };
+-
+-    class TimeSwitch : public LaserTimeSwitch {
+-        CLONEOBJ(TimeSwitch);
+-    public:
+-        TimeSwitch();
+-    private:
+-        // ignore laser:
+-        void notify_laseron();
+-        void notify_laseroff();
+-    };
+-}
+-
+-
+-LaserTimeSwitchBase::LaserTimeSwitchBase(const char *kind)
+-: PhotoStone(kind) , state(IDLE) 
+-{}
+-
+-LaserTimeSwitchBase::~LaserTimeSwitchBase() {
+-    GameTimer.remove_alarm (this);
+-}
+-
+-void LaserTimeSwitchBase::change_state(State newstate) {
+-    if (state == newstate)
+-        return;
+-
+-    if (state == IDLE) {
+-//         sound_event (&quot;st-switch&quot;);
+-        set_model(get_active_model());
+-        performAction(true);
+-        if (newstate == TOUCHED) {
+-            double delay = timer_delay();
+-            ASSERT(delay&gt;0.0, XLevelRuntime, &quot;LaserTimeSwitchBase: delay non-positive&quot;);
+-            GameTimer.set_alarm(this, delay, false);
+-        }
+-    }
+-    else if (newstate == IDLE) {
+-//         sound_event (&quot;st-switch&quot;);
+-        set_model(get_inactive_model());
+-        performAction(false);
+-    }
+-    else {
+-        // it's not allowed to switch from LIGHTED to TOUCHED
+-       ASSERT(!(state == LIGHTED &amp;&amp; newstate == TOUCHED), XLevelRuntime,
+-           &quot;LaserTimeSwitchBase: trying to switch from lighted to touched&quot;);
+-    }
+-    state = newstate;
+-}
+-
+-void LaserTimeSwitchBase::on_creation(GridPos) 
+-{
+-    set_model(get_inactive_model());
+-    photo_activate();
+-}
+-
+-void LaserTimeSwitchBase::on_removal(GridPos)
+-{
+-    photo_deactivate();
+-}
+-
+-void LaserTimeSwitchBase::notify_laseron()  {
+-    if (state != LIGHTED)
+-        change_state(LIGHTED);
+-}
+-
+-void LaserTimeSwitchBase::notify_laseroff() {
+-    if (state == LIGHTED)
+-        change_state(IDLE);
+-}
+-
+-void LaserTimeSwitchBase::alarm() {
+-    if (state == TOUCHED)
+-        change_state(IDLE);
+-}
+-
+-double LaserTimeSwitchBase::timer_delay() const {
+-    return -1; // we have no timer delay
+-}
+-
+-/* ---------- LaserTimeSwitch ---------- */
+-
+-LaserTimeSwitch::LaserTimeSwitch(const char *kind)
+-    : LaserTimeSwitchBase(kind)
+-{
+-    setAttr(&quot;delay&quot;, 1.8);
+-}
+-
+-const char *LaserTimeSwitch::get_active_model() const { 
+-    return &quot;st-time1switch&quot;; 
+-}
+-
+-const char *LaserTimeSwitch::get_inactive_model() const { 
+-    return &quot;st-timeswitch&quot;; 
+-}
+-
+-double LaserTimeSwitch::timer_delay() const {
+-    if (Value v = getAttr(&quot;delay&quot;))
+-        return v;
+-    else
+-        ASSERT(0, XLevelRuntime, &quot;LaserTimeSwitch: delay not properly defined&quot;);
+-}
+-
+-void LaserTimeSwitch::actor_hit(const StoneContact &amp;sc) {
+-    if (sc.actor &amp;&amp; state == IDLE)
+-        change_state(TOUCHED);
+-}
+-
+-/* ---------- TimeSwitch ---------- */
+-
+-// Attributes:
+-//
+-// :on              1 or 0
+-// :target,action   as usual
+-
+-TimeSwitch::TimeSwitch()
+-: LaserTimeSwitch(&quot;st-timeswitch&quot;)
+-{
+-}
+-
+-void TimeSwitch::notify_laseron()  {} // ignore laser
+-void TimeSwitch::notify_laseroff() {}
+-
+-/* -------------------- Functions -------------------- */
+-
+-void InitSwitches()
+-{
+-    Register (new LaserTimeSwitch);
+-    Register (new TimeSwitch);
+-}
+-
+-} // namespace enigma
+
+Modified: trunk/src/stones/LaserSwitch.cc
+===================================================================
+--- trunk/src/stones/LaserSwitch.cc	2008-03-28 14:05:51 UTC (rev 1084)
++++ trunk/src/stones/LaserSwitch.cc	2008-03-30 12:20:35 UTC (rev 1085)
+@@ -85,6 +85,10 @@
+         }
+     }
+ 
++    const char *LaserSwitch::collision_sound() {
++        return &quot;metal&quot;;
++    }
++
+     BOOT_REGISTER_START
+         BootRegister(new LaserSwitch(), &quot;st_laserswitch&quot;);
+     BOOT_REGISTER_END
+
+Modified: trunk/src/stones/LaserSwitch.hh
+===================================================================
+--- trunk/src/stones/LaserSwitch.hh	2008-03-28 14:05:51 UTC (rev 1084)
++++ trunk/src/stones/LaserSwitch.hh	2008-03-30 12:20:35 UTC (rev 1085)
+@@ -52,6 +52,9 @@
+         virtual void init_model();
+         virtual void on_creation(GridPos p);
+         virtual void lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs);
++
++        // Stone interface
++        const char *collision_sound();
+     };
+ 
+ } // namespace enigma
+
+Added: trunk/src/stones/MonoFlopStone.cc
+===================================================================
+--- trunk/src/stones/MonoFlopStone.cc	2008-03-28 14:05:51 UTC (rev 1084)
++++ trunk/src/stones/MonoFlopStone.cc	2008-03-30 12:20:35 UTC (rev 1085)
+@@ -0,0 +1,159 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/MonoFlopStone.hh&quot;
++
++#include &quot;errors.hh&quot;
++#include &quot;main.hh&quot;
++#include &quot;util.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    
++    MonoFlopStone::MonoFlopStone(bool lightsensitive, bool isOn) : Stone(&quot;st_monoflop&quot;) {
++        if (lightsensitive)
++            objFlags |= OBJBIT_LASER;
++        state = isOn ? ON_PENDING : OFF_NEW;
++    }
++    
++    MonoFlopStone::~MonoFlopStone() {
++        GameTimer.remove_alarm(this);
++    }
++    
++    std::string MonoFlopStone::getClass() const {
++        return objFlags &amp; OBJBIT_LASER ? &quot;st_laserflop&quot; : &quot;st_monoflop&quot;;
++    }
++    
++    Value MonoFlopStone::message(const Message &amp;m) {
++        if (m.message == &quot;_model_reanimated&quot;) {
++            init_model();
++            return Value();
++        }
++        return Stone::message(m);
++    }
++    
++    int MonoFlopStone::externalState() const {
++        return (state &lt;= OFF_NEW) ? 0 : 1;
++    }
++    
++    void MonoFlopStone::setState(int extState) {
++        if (isDisplayable()) { 
++            if (extState == 1) {
++                if (state == ON_TIMER) {
++                    // renew timer by first removing it
++                    GameTimer.remove_alarm(this);
++                    GameTimer.set_alarm(this, (double)getAttr(&quot;interval&quot;), false);
++                } else if (state == OFF) {
++                    state = ON_TIMER;
++                    GameTimer.set_alarm(this, (double)getAttr(&quot;interval&quot;), false);
++                    init_model();
++                    performAction(true);
++                }
++            }
++            // ignore requests on switch OFF
++        } else {
++            state = (extState == 0) ? OFF_NEW : ON_PENDING;
++        }
++    }
++    
++    void MonoFlopStone::init_model() {
++        set_model(state &lt;= OFF_NEW ? &quot;st-timeswitch&quot; : &quot;st-time1switch&quot;);
++    }
++    
++    void MonoFlopStone::on_creation (GridPos p) {
++        if (state == ON_PENDING) {
++            GameTimer.set_alarm(this, (double)getAttr(&quot;interval&quot;), false);
++            state = ON_TIMER;
++            // no action
++        }
++        if (objFlags &amp; OBJBIT_LASER) {
++            activatePhoto();
++            if (updateCurrentLightDirs() != NODIRBIT) {
++                switch (state) {
++                    case OFF :
++                        performAction(true);
++                        break;
++                    case OFF_NEW :
++                        // no action
++                        break;
++                    case ON_TIMER :
++                        GameTimer.remove_alarm(this);
++                        break;
++                    default :
++                        ASSERT(false, XLevelRuntime, ecl::strf(&quot;Monoflop set onto grid in illegal state %d&quot;, state).c_str());
++                }
++                state = ON_LASER;
++            }
++        }
++        if (state == OFF_NEW)
++            state = OFF;
++        Stone::on_creation(p);    // init the model
++    }
++    
++    void MonoFlopStone::on_removal(GridPos p) {
++        if (state == ON_LASER) {
++            // start final timer
++            state = ON_TIMER;
++            GameTimer.set_alarm(this, (double)getAttr(&quot;interval&quot;), false);
++        }
++        Stone::on_removal(p);
++    }
++    
++    void MonoFlopStone::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
++        if (oldDirs == 0 &amp;&amp; state != ON_LASER) {
++            // new light
++            int oldState = state;
++            if (state == ON_TIMER)
++                 GameTimer.remove_alarm(this);
++            state = ON_LASER;
++            init_model();
++            if (oldState == OFF)
++                performAction(true);
++        } else if (newDirs == 0) {
++            // light off
++            GameTimer.set_alarm(this, (double)getAttr(&quot;interval&quot;), false);
++            state = ON_TIMER;
++        }
++    }
++        
++    const char *MonoFlopStone::collision_sound() {
++        return &quot;metal&quot;;
++    }
++    
++    void MonoFlopStone::actor_hit(const StoneContact &amp;sc) {
++        if (sc.actor) {
++            setState(1);
++        }
++    }
++    
++    void MonoFlopStone::alarm() {
++        state = OFF;
++        if (isDisplayable()) { 
++            init_model();
++        }
++        performAction(false);
++    }
++
++    BOOT_REGISTER_START
++        BootRegister(new MonoFlopStone(false, false), &quot;st_monoflop&quot;);
++        BootRegister(new MonoFlopStone(true, false), &quot;st_laserflop&quot;);
++        BootRegister(new MonoFlopStone(true, true), &quot;st_laserflop_on&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/MonoFlopStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/MonoFlopStone.hh
+===================================================================
+--- trunk/src/stones/MonoFlopStone.hh	2008-03-28 14:05:51 UTC (rev 1084)
++++ trunk/src/stones/MonoFlopStone.hh	2008-03-30 12:20:35 UTC (rev 1085)
+@@ -0,0 +1,77 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef MONOFLOPSTONE_HH
++#define MONOFLOPSTONE_HH
++
++#include &quot;stones.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     * 
++     * Note that a monoflop has to continue to run even if it is removed from the grid
++     * to support swapping. Thus the alarm has to removed on delete or destructor.
++     */
++    class MonoFlopStone : public Stone, public TimeHandler {
++        CLONEOBJ(MonoFlopStone);
++    private:
++        enum iState {
++            OFF,          ///&lt; monoflop is inactive
++            OFF_NEW,      ///&lt; monoflop that is new and shoud start in off state (needed to handle swap/laser)
++            ON_LASER,     ///&lt; monoflop is permanent active due to light
++            ON_TIMER,     ///&lt; monoflop is touched or light just switched off and active until timer goes off
++            ON_PENDING    ///&lt; monoflop that should start on grid set
++        };
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_LASER   =  1&lt;&lt;24  ///&lt; Object is laser light sensitive 
++        };
++
++    public:
++        MonoFlopStone(bool lightsensitive, bool isOn);
++        ~MonoFlopStone();
++
++        // Object interface
++        virtual std::string getClass() const;
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual int externalState() const;
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
++        virtual void lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs);
++        
++        // Stone interface
++        const char *collision_sound();
++        void actor_hit(const StoneContact &amp;sc);
++        
++        // TimeHandler interface
++        virtual void alarm();
++
++    private:
++        void updateAlarm();
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/MonoFlopStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-03-28 14:05:51 UTC (rev 1084)
++++ trunk/src/stones.cc	2008-03-30 12:20:35 UTC (rev 1085)
+@@ -986,8 +986,6 @@
+ 
+ // --------------------------------------------------------------------------------
+ 
+-extern void InitSwitches();
+-
+ void InitStones() {
+ 
+     // Register(new ...);
+@@ -1019,6 +1017,5 @@
+     // Init stones from stones_simple.cc and stones_complex.cc:
+     Init_simple();
+     Init_complex();
+-    InitSwitches();
+ }
+ } // namespace enigma
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000517.html">[Enigma-game-svn] r1084 - in feature_branches/hp_lotm: images/lotm	input input/lotm
+</A></li>
+	<LI>Next message: <A HREF="000519.html">[Enigma-game-svn] r1086 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#518">[ date ]</a>
+              <a href="thread.html#518">[ thread ]</a>
+              <a href="subject.html#518">[ subject ]</a>
+              <a href="author.html#518">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,236 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r993 - trunk/data/levels/lib
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r993%20-%20trunk/data/levels/lib&In-Reply-To=%3C200801201400.m0KE0j7V031573%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000424.html">
+   <LINK REL="Next"  HREF="000426.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r993 - trunk/data/levels/lib</H1>
+    <B>andreasl at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r993%20-%20trunk/data/levels/lib&In-Reply-To=%3C200801201400.m0KE0j7V031573%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r993 - trunk/data/levels/lib">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Sun Jan 20 15:00:45 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000424.html">[Enigma-game-svn] r992 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000426.html">[Enigma-game-svn] r994 - in trunk: data/gfx16 doc doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#425">[ date ]</a>
+              <a href="thread.html#425">[ thread ]</a>
+              <a href="subject.html#425">[ subject ]</a>
+              <a href="author.html#425">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2008-01-20 15:00:44 +0100 (Sun, 20 Jan 2008)
+New Revision: 993
+
+Modified:
+   trunk/data/levels/lib/libluatools.xml
+   trunk/data/levels/lib/libsoko-endphase.xml
+Log:
+Trunk 1.1:
+ - libsoko:
+    - Fixed endphase &quot;knock&quot;
+ - libluatools:
+    - Renamed luatools.conditional -&gt; luatools.cond
+    - Added warning comment to luatools.cond:
+       Be aware that all arguments are evaluated!
+    - Disabled the cases table.getn(t) &lt; 2 in
+       luatools.shuffle_table, and optimized for-loop.
+
+
+Modified: trunk/data/levels/lib/libluatools.xml
+===================================================================
+--- trunk/data/levels/lib/libluatools.xml	2008-01-20 11:51:33 UTC (rev 992)
++++ trunk/data/levels/lib/libluatools.xml	2008-01-20 14:00:44 UTC (rev 993)
+@@ -76,8 +76,12 @@
+ 
+ -- shuffle_table resorts the table T randomly. Note that only those entries
+ -- of T can be sorted, that are indexed with integers from 1 to table.getn(T).
++-- No return value, the table itself is shuffled.
+ function luatools.shuffle_table(t)
+-  for n = table.getn(t), 1, -1 do
++  if table.getn(t) &lt; 2 then
++    return
++  end
++  for n = table.getn(t), 2, -1 do
+     local m = math.random(n)
+     t[n], t[m] = t[m], t[n]
+   end
+@@ -111,8 +115,12 @@
+ -- versions, it's sometimes better to wrap them.
+ luatools.mod = math.fmod or math.mod
+ 
+--- A wrapper of if to resemble the ternary ?:-function
+-function luatools.conditional(condition, iftrue, iffalse)
++-- A wrapper of &quot;if&quot; to resemble the ternary ?:-function.
++-- Note that this function evaluates both IFTRUE as well as IFFALSE, e.g.
++--   luatools.cond(t == 0, 1/t, error(&quot;Division by zero&quot;))
++-- will evaluate the error-function and thus hold for any T.
++-- Hence: Make sure there are no sideeffects in IFTRUE and IFFALSE!
++function luatools.cond(condition, iftrue, iffalse)
+   if condition then
+     return iftrue
+   else
+
+Modified: trunk/data/levels/lib/libsoko-endphase.xml
+===================================================================
+--- trunk/data/levels/lib/libsoko-endphase.xml	2008-01-20 11:51:33 UTC (rev 992)
++++ trunk/data/levels/lib/libsoko-endphase.xml	2008-01-20 14:00:44 UTC (rev 993)
+@@ -659,13 +659,13 @@
+     local it = enigma.GetItem(x, y)
+     local fl = enigma.GetFloor(x, y)
+     if st and enigma.GetAttrib(st, &quot;_sokoarea&quot;) then
+-      SendMessage(st, luatools.conditional(open, &quot;open&quot;, &quot;close&quot;))
++      SendMessage(st, luatools.cond(open, &quot;open&quot;, &quot;close&quot;))
+     end
+     if it and enigma.GetAttrib(it, &quot;_sokoarea&quot;) then
+-      SendMessage(it, luatools.conditional(open, &quot;open&quot;, &quot;close&quot;))
++      SendMessage(it, luatools.cond(open, &quot;open&quot;, &quot;close&quot;))
+     end
+     if fl then
+-      SendMessage(fl, luatools.conditional(open, &quot;close&quot;, &quot;open&quot;))
++      SendMessage(fl, luatools.cond(open, &quot;close&quot;, &quot;open&quot;))
+     end
+   end  
+ end
+@@ -740,15 +740,16 @@
+ end
+ 
+ function endphase_set_knocking(sokoarea_number, param)
+-  local flavor = sokoarea[sokoarea_number].design.oxyd or &quot;b&quot;
++  local nr = sokoarea_number
++  local flavor = sokoarea[nr].design.oxyd or &quot;b&quot;
+   local places = {}
+   local itemkind = param
+   if (itemkind == nil) or (itemkind == &quot;&quot;) then
+-    itemkind = &quot;it-burnable&quot;
++    itemkind = &quot;it-sensor&quot;
+   end
+ 
+   -- add all blockers
+-  for p, v in pairs(sokoarea[sokoarea_number].list_blocker) do
++  for p, v in pairs(sokoarea[nr].list_blocker) do
+     table.insert(places, v)
+   end
+ 
+@@ -757,11 +758,21 @@
+   -- set items (for Enigma 1.0), set attributes of door (&gt;= 1.1)
+   for j, v in pairs(places) do
+     set_item(itemkind, v.lx, v.ly, {action=&quot;callback&quot;,
+-        target=&quot;endphase_call_knocking&quot;, _number=j, _sokoarea=sokoarea_number})
++        target=&quot;endphase_call_knocking&quot;, _number=j, _sokoarea=nr})
+     local st = enigma.GetStone(v.lx, v.ly)
+     if st then
+       enigma.SetAttrib(st, &quot;action&quot;, &quot;callback&quot;)
+       enigma.SetAttrib(st, &quot;target&quot;, &quot;endphase_call_knocking&quot;)
++      local closepos = places[luatools.mod(j, table.getn(places)) + 1]
++      local openpos = places[luatools.mod(j+1, table.getn(places)) + 1]
++      enigma.SetAttrib(st, &quot;_close_x&quot;, closepos.lx)
++      enigma.SetAttrib(st, &quot;_close_y&quot;, closepos.ly)
++      enigma.SetAttrib(st, &quot;_open_x&quot;, openpos.lx)
++      enigma.SetAttrib(st, &quot;_open_y&quot;, openpos.ly)
++      --enigma.SetAttrib(st, &quot;_close&quot;,
++      --  luatools.deep_copy(places[luatools.mod(j+1, table.getn(places)) + 1]))
++      --enigma.SetAttrib(st, &quot;_open&quot;,
++      --  luatools.deep_copy(places[luatools.mod(j+2, table.getn(places)) + 1]))
+     end
+   end
+ end
+@@ -772,32 +783,38 @@
+   if (not nr) or (not j) then
+     myerror(&quot;libsoko: Knocking's source has no number or no sokoarea.&quot;)
+   end
++  -- Check that it-sensor did not send its message because of
++  -- the marble standing on it:
++  local x, y = enigma.GetPos(sender)
++  local mx, my = enigma.GetPos(enigma.GetNamedObject(&quot;marble_&quot;..nr..&quot;_1&quot;))
++  if (x == mx) and (y == my) then
++    return
++  end
+   mydebug(&quot;Knocked on &quot;..j..&quot;/&quot;..sokoarea[nr].number_oxyds)
+   -- Deactivate the first door until endphase has started.
+   if (j == 1) and (not sokoarea[nr].endphase_started) then
++    mydebug(&quot;Door deactivated until endphase.&quot;)
+     return
+   end
+-  -- Close the next door in the circle ...
+-  j = j + 1
+-  if j &gt; sokoarea[nr].number_oxyds then
+-    j = 1
++  -- Get the door (possibly it already is sender), and open or close
++  -- the neccessary doors given as attributes.
++  local mydoor = enigma.GetStone(x, y)
++  if enigma.GetAttrib(mydoor, &quot;_sokoarea&quot;) == nr then
++    local close_x = enigma.GetAttrib(mydoor, &quot;_close_x&quot;)
++    local close_y = enigma.GetAttrib(mydoor, &quot;_close_y&quot;)
++    local open_x = enigma.GetAttrib(mydoor, &quot;_open_x&quot;)
++    local open_y = enigma.GetAttrib(mydoor, &quot;_open_y&quot;)
++    local closedoor = enigma.GetStone(close_x, close_y)
++    local opendoor = enigma.GetStone(open_x, open_y)
++    if closedoor then
++      SendMessage(closedoor, &quot;close&quot;)
++    end
++    if opendoor then
++      SendMessage(opendoor, &quot;open&quot;)
++    end
+   end
+-  local mydoor = enigma.GetStone(places[j].lx, places[j].ly)
+-  if mydoor then
+-    SendMessage(mydoor, &quot;close&quot;)
+-  end
+-  -- ... and open the door after next.
+-  j = j + 1
+-  if j &gt; sokoarea[nr].number_oxyds then
+-    j = 1
+-  end
+-  mydoor = enigma.GetStone(places[j].lx, places[j].ly)
+-  if mydoor then
+-    SendMessage(mydoor, &quot;open&quot;)
+-  end
+ end
+ 
+-
+     ]]&gt;&lt;/el:luamain&gt;
+     &lt;el:i18n&gt;
+     &lt;/el:i18n&gt;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000424.html">[Enigma-game-svn] r992 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000426.html">[Enigma-game-svn] r994 - in trunk: data/gfx16 doc doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#425">[ date ]</a>
+              <a href="thread.html#425">[ thread ]</a>
+              <a href="subject.html#425">[ subject ]</a>
+              <a href="author.html#425">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

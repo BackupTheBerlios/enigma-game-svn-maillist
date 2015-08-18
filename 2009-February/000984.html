@@ -1,0 +1,657 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1554 - in trunk: data data/schemas src src/items	src/others src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1554%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/items%0A%09src/others%20src/stones&In-Reply-To=%3C200902232341.n1NNft9A022589%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000983.html">
+   <LINK REL="Next"  HREF="000985.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1554 - in trunk: data data/schemas src src/items	src/others src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1554%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/items%0A%09src/others%20src/stones&In-Reply-To=%3C200902232341.n1NNft9A022589%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1554 - in trunk: data data/schemas src src/items	src/others src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Feb 24 00:41:55 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000983.html">[Enigma-game-svn] r1553 - in trunk/data/levels: enigma_cross	enigma_viii
+</A></li>
+        <LI>Next message: <A HREF="000985.html">[Enigma-game-svn] r1555 - in trunk: data doc/reference src/items
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#984">[ date ]</a>
+              <a href="thread.html#984">[ thread ]</a>
+              <a href="subject.html#984">[ subject ]</a>
+              <a href="author.html#984">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-02-24 00:41:52 +0100 (Tue, 24 Feb 2009)
+New Revision: 1554
+
+Modified:
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/items/BlockerItem.cc
+   trunk/src/items/Bomb.cc
+   trunk/src/items/Crack.cc
+   trunk/src/items/CrossItem.cc
+   trunk/src/items/DocumentItem.cc
+   trunk/src/items/Dynamite.cc
+   trunk/src/items/Sensor.cc
+   trunk/src/items/ShogunDot.cc
+   trunk/src/items/SimpleItems.cc
+   trunk/src/items/SimpleItems.hh
+   trunk/src/items/SurpriseItem.cc
+   trunk/src/items/Umbrella.cc
+   trunk/src/items/Vortex.cc
+   trunk/src/items/WormHole.cc
+   trunk/src/others/CannonBall.cc
+   trunk/src/stones/BrakeStone.cc
+   trunk/src/stones/BreakStone.cc
+   trunk/src/stones/DispenserStone.cc
+   trunk/src/stones/FlatStone.cc
+   trunk/src/stones/PlasterStone.cc
+   trunk/src/stones/StoneImpulse.cc
+   trunk/src/world.cc
+   trunk/src/world.hh
+Log:
+Trunk 1.1: new API reengineering
+- explosion handling reengineering:
+  - make indestructible to bomb, dynamite explosions and cannonballs: 
+      it_blocker, it_cross, it_sensor, it_shogun, it_vortex, it_wormhole
+  - make it_crack destructible by bomb, cannonball, just crack on ignite
+  - make it_bomb explode on cannonball hit
+  - make it_dynamite explode on cannonball hit, leaving a meditation hill
+  - do not let explosion protect floors of falling cannonballs
+  - breakable stones do not explode on st_dispenser destruction
+  - black bomb explosions: do not ignite diagonal neighbors if not Enigma mode
+  - white bomb explosions: do not explode diagonal neighbors if not Enigma mode
+- rename internal message &quot;_bombstone&quot; to &quot;_dispenser&quot;
+- fix it_surprise missing renaming on default selection
+- fix it_umbrella missing renaming on explosion effect
+- use new animation for it_sensor_exit
+- it_bomb:
+  - do not explode on hit by st_box_hay in Enigma mode
+Note:
+- the changes of black bomb explosions causes problems on some Enigma LP levels
+  that run in oxyd* modes!
+- cannonball explosion feature still incomplete
+
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/data/models-2d.lua	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -534,9 +534,6 @@
+     DefAlias(&quot;it-key_a&quot;, &quot;it-key&quot;)
+     DefAlias(&quot;it-key_b&quot;, &quot;it-key&quot;)
+     DefAlias(&quot;it-key_c&quot;, &quot;it-key&quot;)
+-    -- DefAlias(&quot;it-bridge-oxyd&quot;, &quot;invisible&quot;)
+-    -- DefAlias(&quot;it-sensor&quot;, &quot;invisible&quot;)
+-    -- DefAlias(&quot;it-inversesensor&quot;, &quot;invisible&quot;)
+ end
+ 
+ --------------------------------------------------------------
+@@ -690,6 +687,9 @@
+     DefTiles(&quot;it_sensor&quot;, {&quot;it_sensor&quot;,&quot;it_sensor1&quot;})
+     local frames = BuildFrames({&quot;it_sensor&quot;,&quot;it_sensor1&quot;}, 300)
+     DefAnim(&quot;it_sensor_hit&quot;, RepeatAnim(frames, 3), false)
++    DefTiles(&quot;it_sensor_exit&quot;, {&quot;it_sensor_exit&quot;,&quot;it_sensor_exit1&quot;})
++    local exitframes = BuildFrames({&quot;it_sensor_exit&quot;,&quot;it_sensor_exit1&quot;}, 300)
++    DefAnim(&quot;it_sensor_exit_hit&quot;, RepeatAnim(exitframes, 3), false)
+ end
+ 
+ -- it-shogun --
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/data/schemas/objects.xml	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -130,7 +130,7 @@
+     &lt;msg name=&quot;turn&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;turnback&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_appear&quot; type=&quot;nil&quot;/&gt;
+-    &lt;msg name=&quot;_bombstone&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;_dispenser&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_booze&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_brush&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_capture&quot; type=&quot;nil&quot;/&gt;
+@@ -472,7 +472,6 @@
+       &lt;msg name=&quot;heat&quot;/&gt;
+       &lt;msg name=&quot;explode&quot;/&gt;
+       &lt;msg name=&quot;_explosion&quot;/&gt;
+-      &lt;msg name=&quot;_bombstone&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;it_bomb_black&quot;&gt;
+       &lt;attr name=&quot;color&quot; value=&quot;0&quot;/&gt;
+@@ -571,7 +570,7 @@
+       &lt;msg name=&quot;heat&quot;/&gt;
+       &lt;msg name=&quot;explode&quot;/&gt;
+       &lt;msg name=&quot;_explosion&quot;/&gt;
+-      &lt;msg name=&quot;_bombstone&quot;/&gt;
++      &lt;msg name=&quot;_dispenser&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;it_dynamite_burning&quot;&gt;
+       &lt;attr name=&quot;state&quot; value=&quot;1&quot;/&gt;
+@@ -1046,7 +1045,6 @@
+     &lt;object name=&quot;st_break&quot;&gt;
+       &lt;attr name=&quot;flavor&quot;/&gt;
+       &lt;msg name=&quot;ignite&quot;/&gt;
+-      &lt;msg name=&quot;_bombstone&quot;/&gt;
+       &lt;msg name=&quot;_explosion&quot;/&gt;
+       &lt;msg name=&quot;_trigger&quot;/&gt;
+     &lt;/object&gt;
+@@ -1207,7 +1205,7 @@
+     &lt;object name=&quot;st_dispenser&quot;&gt;
+       &lt;attr name=&quot;flavor&quot; default=&quot;bombblack&quot; rw=&quot;r&quot;/&gt;
+       &lt;msg name=&quot;_explosion&quot;/&gt;
+-      &lt;msg name=&quot;_bombstone&quot;/&gt;
++      &lt;msg name=&quot;_dispenser&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;st_dispenser_bombblack&quot;&gt;
+       &lt;attr name=&quot;flavor&quot; value=&quot;bombblack&quot;/&gt;
+
+Modified: trunk/src/items/BlockerItem.cc
+===================================================================
+--- trunk/src/items/BlockerItem.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/items/BlockerItem.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -183,7 +183,7 @@
+         kill();
+     }
+ 
+-    DEF_ITEMTRAITSF(BlockerItem, &quot;it_blocker&quot;, it_blocker, itf_static);
++    DEF_ITEMTRAITSF(BlockerItem, &quot;it_blocker&quot;, it_blocker, itf_static | itf_indestructible);
+ 
+     BOOT_REGISTER_START
+         BootRegister(new BlockerItem(false), &quot;it_blocker&quot;);
+
+Modified: trunk/src/items/Bomb.cc
+===================================================================
+--- trunk/src/items/Bomb.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/items/Bomb.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -47,7 +47,7 @@
+     }
+     
+     Value Bomb::message(const Message &amp;m) {
+-        if (m.message == &quot;ignite&quot;  || m.message == &quot;_explosion&quot;) {
++        if (m.message == &quot;ignite&quot;  || m.message == &quot;_explosion&quot;|| m.message == &quot;_spitter&quot;) {
+             if (isDisplayable())
+                 burn();
+             return Value();
+@@ -101,7 +101,8 @@
+                     explode();
+                 break;
+             default :
+-                explode();
++                if (!st-&gt;isKind(&quot;st_box_hay&quot;))
++                    explode();
+                 break;
+         }
+     }
+
+Modified: trunk/src/items/Crack.cc
+===================================================================
+--- trunk/src/items/Crack.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/items/Crack.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -34,12 +34,12 @@
+     }
+     
+     Value Crack::message(const Message &amp;m) {
+-        if (m.message == &quot;crack&quot;) {
++        if (m.message == &quot;crack&quot; || m.message == &quot;ignite&quot; ) {
+             crack();
+             return Value();
+-        } else if (m.message == &quot;heat&quot;) {
++        } else if (m.message == &quot;heat&quot; || m.message == &quot;_explosion&quot; || m.message == &quot;_spitter&quot;) {
+             sound_event(&quot;crack&quot;);
+-            replace(&quot;it-debris&quot;);
++            replace(&quot;it_debris&quot;);
+             return true;
+         }
+         return Item::message(m);
+@@ -127,10 +127,10 @@
+     }
+     
+     ItemTraits Crack::traits[4] = {
+-        {&quot;it_crack_i&quot;,  it_crack_i,  itf_static | itf_indestructible | itf_fireproof, 0.0},
+-        {&quot;it_crack_s&quot;,  it_crack_s,  itf_static | itf_indestructible | itf_fireproof, 0.0},
+-        {&quot;it_crack_m&quot;,  it_crack_m,  itf_static | itf_indestructible | itf_fireproof, 0.0},
+-        {&quot;it_crack_l&quot;,  it_crack_l,  itf_static | itf_indestructible | itf_fireproof, 0.0},
++        {&quot;it_crack_i&quot;,  it_crack_i,  itf_static | itf_fireproof | itf_indestructible, 0.0},
++        {&quot;it_crack_s&quot;,  it_crack_s,  itf_static | itf_fireproof | itf_indestructible, 0.0},
++        {&quot;it_crack_m&quot;,  it_crack_m,  itf_static | itf_fireproof | itf_indestructible, 0.0},
++        {&quot;it_crack_l&quot;,  it_crack_l,  itf_static | itf_fireproof | itf_indestructible, 0.0},
+     };
+ 
+     BOOT_REGISTER_START
+
+Modified: trunk/src/items/CrossItem.cc
+===================================================================
+--- trunk/src/items/CrossItem.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/items/CrossItem.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -70,7 +70,7 @@
+         performAction(true);
+     }
+     
+-    DEF_ITEMTRAITSF(CrossItem, &quot;it_cross&quot;, it_cross, itf_static);
++    DEF_ITEMTRAITSF(CrossItem, &quot;it_cross&quot;, it_cross, itf_static | itf_indestructible);
+ 
+     BOOT_REGISTER_START
+         BootRegister(new CrossItem(), &quot;it_cross&quot;);
+
+Modified: trunk/src/items/DocumentItem.cc
+===================================================================
+--- trunk/src/items/DocumentItem.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/items/DocumentItem.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -37,14 +37,14 @@
+         if (m.message == &quot;ignite&quot;) {
+             // dynamite does not blow up Documents in Oxyd1
+             explode = server::GameCompatibility != GAMET_OXYD1;
+-        } else if (m.message == &quot;_explosion&quot; || m.message == &quot;_bombstone&quot;) {
++        } else if (m.message == &quot;_explosion&quot;) {
+             explode = true;
+         } else {
+             return Item::message(m);
+         }
+ 
+         if (explode)
+-            replace(&quot;it-explosion1&quot;);
++            replace(&quot;it_explosion_nil&quot;);
+         return Value();
+     }
+     
+
+Modified: trunk/src/items/Dynamite.cc
+===================================================================
+--- trunk/src/items/Dynamite.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/items/Dynamite.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -34,11 +34,11 @@
+     }
+     
+     Value Dynamite::message(const Message &amp;m) {
+-        if (m.message == &quot;ignite&quot; || m.message == &quot;_explosion&quot; || m.message == &quot;_bombstone&quot;) {
++        if (m.message == &quot;ignite&quot; || m.message == &quot;_explosion&quot; || m.message == &quot;_dispenser&quot;) {
+             if (isDisplayable())
+                 burn();
+             return Value();
+-        } else if (m.message == &quot;explode&quot;) { // currently unused in c++ code
++        } else if (m.message == &quot;explode&quot; || m.message == &quot;_spitter&quot;) { // currently unused in c++ code
+             if (isDisplayable())
+                 explode();
+             return Value();
+
+Modified: trunk/src/items/Sensor.cc
+===================================================================
+--- trunk/src/items/Sensor.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/items/Sensor.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -64,6 +64,8 @@
+             return;
+         } else if (key == &quot;exit&quot;) {
+             objFlags = (objFlags &amp; ~OBJBIT_EXIT) | (val.to_bool() ? OBJBIT_EXIT : 0);
++            if (isDisplayable())
++                init_model();
+             return;
+         }
+         Item::setAttr(key, val);
+@@ -81,6 +83,8 @@
+     void Sensor::init_model() {
+         if ((objFlags &amp; OBJBIT_INVISIBLE) &amp;&amp; ((server::GlassesVisibility &amp; Glasses::SENSOR) == 0))
+             set_model(&quot;invisible&quot;);
++        else if (objFlags &amp; OBJBIT_EXIT)
++            set_model(&quot;it_sensor_exit&quot;);
+         else
+             set_model(&quot;it_sensor&quot;);
+     }
+@@ -96,7 +100,7 @@
+     void Sensor::actor_leave(Actor *a) {
+         if (objFlags &amp; OBJBIT_EXIT) {        
+             if (!(objFlags &amp; OBJBIT_INVISIBLE))
+-                set_anim(&quot;it_sensor_hit&quot;);
++                set_anim(&quot;it_sensor_exit_hit&quot;);
+             performAction(true);
+         }
+     }
+@@ -115,11 +119,11 @@
+     }
+ 
+     ItemTraits Sensor::traits[5] = {
+-        {&quot;it_sensor&quot;,  it_sensor,  itf_static}, 
+-        {&quot;it_sensor_inverse&quot;,  it_inversesensor,  itf_static},
+-        {&quot;it_sensor_filter1&quot;, it_signalfilter1, itf_static | itf_invisible, 0.0},  // DAT only
+-        {&quot;it_sensor_filter0&quot;, it_signalfilter0, itf_static | itf_invisible, 0.0},   // DAT only
+-        {&quot;it_sensor_exit&quot;,  it_exitsensor,  itf_static}
++        {&quot;it_sensor&quot;,  it_sensor,  itf_static | itf_indestructible}, 
++        {&quot;it_sensor_inverse&quot;,  it_inversesensor,  itf_static | itf_indestructible},
++        {&quot;it_sensor_filter1&quot;, it_signalfilter1, itf_static | itf_invisible | itf_indestructible, 0.0},  // DAT only
++        {&quot;it_sensor_filter0&quot;, it_signalfilter0, itf_static | itf_invisible | itf_indestructible, 0.0},   // DAT only
++        {&quot;it_sensor_exit&quot;,  it_exitsensor,  itf_static | itf_indestructible}
+     };
+     
+     BOOT_REGISTER_START
+
+Modified: trunk/src/items/ShogunDot.cc
+===================================================================
+--- trunk/src/items/ShogunDot.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/items/ShogunDot.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -110,9 +110,9 @@
+     
+ 
+     ItemTraits ShogunDot::traits[3] = {
+-        { &quot;it_shogun_s&quot;, it_shogun_s, itf_static, 0.0 },
+-        { &quot;it_shogun_m&quot;, it_shogun_m, itf_static, 0.0 },
+-        { &quot;it_shogun_l&quot;, it_shogun_l, itf_static, 0.0 }
++        { &quot;it_shogun_s&quot;, it_shogun_s, itf_static | itf_indestructible, 0.0 },
++        { &quot;it_shogun_m&quot;, it_shogun_m, itf_static | itf_indestructible, 0.0 },
++        { &quot;it_shogun_l&quot;, it_shogun_l, itf_static | itf_indestructible, 0.0 }
+     };
+ 
+     BOOT_REGISTER_START
+
+Modified: trunk/src/items/SimpleItems.cc
+===================================================================
+--- trunk/src/items/SimpleItems.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/items/SimpleItems.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -129,6 +129,14 @@
+         state = strength;
+     }
+     
++    Value Explosion::message(const Message &amp;m) {
++        if (m.message == &quot;_spitter&quot;) {
++            state = 3;
++            return Value();
++        }
++        return Item::message(m);
++    }
++    
+     void Explosion::setState(int extState) {
+         // no state writes
+     }
+
+Modified: trunk/src/items/SimpleItems.hh
+===================================================================
+--- trunk/src/items/SimpleItems.hh	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/items/SimpleItems.hh	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -122,6 +122,9 @@
+     public:
+         Explosion(int strength);
+         
++        // Object interface
++        virtual Value message(const Message &amp;m);
++        
+         // StateObject interface
+         virtual void setState(int extState);
+         
+
+Modified: trunk/src/items/SurpriseItem.cc
+===================================================================
+--- trunk/src/items/SurpriseItem.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/items/SurpriseItem.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -40,7 +40,7 @@
+             static const char *stonename[] = {
+                 &quot;it_umbrella&quot;,
+                 &quot;it_spring_keep&quot;,
+-                &quot;it-dynamite&quot;,
++                &quot;it_dynamite&quot;,
+                 &quot;it_coffee&quot;,
+                 &quot;it_hammer&quot;
+             };
+
+Modified: trunk/src/items/Umbrella.cc
+===================================================================
+--- trunk/src/items/Umbrella.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/items/Umbrella.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -53,7 +53,7 @@
+     void Umbrella::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
+         if (added_dirs(oldDirs, newDirs) != 0 &amp;&amp; server::GameCompatibility != enigma::GAMET_PEROXYD) {
+             sound_event (&quot;itemtransform&quot;);
+-            replace(&quot;it-explosion1&quot;);
++            replace(&quot;it_explosion_nil&quot;);
+         }
+     }
+     
+
+Modified: trunk/src/items/Vortex.cc
+===================================================================
+--- trunk/src/items/Vortex.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/items/Vortex.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -259,8 +259,8 @@
+     }
+ 
+     ItemTraits Vortex::traits[2] = {
+-        {&quot;it_vortex_closed&quot;, it_vortex_closed, itf_static | itf_fireproof, 0.0},
+-        {&quot;it_vortex_open&quot;, it_vortex_open,     itf_static | itf_fireproof, 0.0}
++        {&quot;it_vortex_closed&quot;, it_vortex_closed, itf_static | itf_fireproof | itf_indestructible, 0.0},
++        {&quot;it_vortex_open&quot;, it_vortex_open,     itf_static | itf_fireproof | itf_indestructible, 0.0}
+     };
+ 
+     BOOT_REGISTER_START
+
+Modified: trunk/src/items/WormHole.cc
+===================================================================
+--- trunk/src/items/WormHole.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/items/WormHole.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -145,8 +145,8 @@
+     }
+     
+     ItemTraits WormHole::traits[2] = {
+-        { &quot;it_wormhole_off&quot;, it_wormhole_off, itf_static, 0.0 },
+-        { &quot;it_wormhole_on&quot;,  it_wormhole_on,  itf_static, 0.0 }
++        { &quot;it_wormhole_off&quot;, it_wormhole_off, itf_static | itf_indestructible, 0.0 },
++        { &quot;it_wormhole_on&quot;,  it_wormhole_on,  itf_static | itf_indestructible, 0.0 }
+     };
+ 
+     BOOT_REGISTER_START
+
+Modified: trunk/src/others/CannonBall.cc
+===================================================================
+--- trunk/src/others/CannonBall.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/others/CannonBall.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -37,12 +37,12 @@
+         GridPos p(pos);
+         if (Stone *st = GetStone(p)) {
+             SendMessage (st, &quot;_spitter&quot;);
+-        }
+-        else if (Item *it = GetItem(p)) {
++        } else if (Item *it = GetItem(p)) {
+             if (!has_flags(it, itf_indestructible))
+                 SetItem (p, MakeItem(&quot;it_explosion_debris&quot;));
+-        }
+-        else if (Floor *fl = GetFloor(p)) {
++            else
++                SendMessage (it, &quot;_spitter&quot;);
++        } else if (Floor *fl = GetFloor(p)) {
+             if (fl-&gt;is_destructible())
+                 SetItem (p, MakeItem(&quot;it_explosion_debris&quot;));
+         }
+
+Modified: trunk/src/stones/BrakeStone.cc
+===================================================================
+--- trunk/src/stones/BrakeStone.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/stones/BrakeStone.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -81,7 +81,7 @@
+     void BrakeStone::explode() {
+         GridPos p = get_pos();
+         KillStone(p);
+-        SetItem(p, MakeItem(&quot;it-explosion1&quot;));
++        SetItem(p, MakeItem(&quot;it_explosion_nil&quot;));
+     }
+             
+     DEF_TRAITSM(BrakeStone, &quot;st_brake&quot;, st_brake, MOVABLE_BREAKABLE);
+
+Modified: trunk/src/stones/BreakStone.cc
+===================================================================
+--- trunk/src/stones/BreakStone.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/stones/BreakStone.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -41,7 +41,7 @@
+     }
+     
+     Value BreakStone::message(const Message &amp;m) {
+-        if (m.message ==&quot;ignite&quot; || m.message == &quot;_explosion&quot; || m.message == &quot;_bombstone&quot;) {
++        if (m.message ==&quot;ignite&quot; || m.message == &quot;_explosion&quot;) {
+             if (typ() != BUG)
+                 doBreak();
+             return Value();
+
+Modified: trunk/src/stones/DispenserStone.cc
+===================================================================
+--- trunk/src/stones/DispenserStone.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/stones/DispenserStone.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -49,7 +49,7 @@
+     }
+ 
+     Value DispenserStone::message(const Message &amp;m) {
+-        if (m.message ==&quot;_explosion&quot; || m.message ==&quot;_bombstone&quot;) {
++        if (m.message ==&quot;_explosion&quot; || m.message ==&quot;_dispenser&quot;) {
+             if (isDisplayable())
+                 doBreak();
+             return Value();
+@@ -71,7 +71,7 @@
+     
+     void DispenserStone::animcb() {
+         GridPos p = get_pos();
+-        SendExplosionEffect(p, EXPLOSION_BOMBSTONE);
++        SendExplosionEffect(p, EXPLOSION_DISPENSER);
+         if (Item *it = GetItem(get_pos())) {
+             SendMessage(it, &quot;ignite&quot;);
+         } else
+
+Modified: trunk/src/stones/FlatStone.cc
+===================================================================
+--- trunk/src/stones/FlatStone.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/stones/FlatStone.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -72,7 +72,7 @@
+             }
+             return Value();
+         } else if (((objFlags &amp; (OBJBIT_BREAKABLE | OBJBIT_MOVABLE)) || state == CRACKED) &amp;&amp; 
+-                (m.message ==&quot;ignite&quot; || m.message == &quot;_explosion&quot; || m.message == &quot;_bombstone&quot;)) {
++                (m.message ==&quot;ignite&quot; || m.message == &quot;_explosion&quot;)) {
+             doBreak();
+             return Value();
+         } else if ((m.message == &quot;_trigger&quot; || m.message == &quot;signal&quot;) &amp;&amp; state == IDLE) {
+@@ -106,7 +106,7 @@
+         else if (state == FALLING)
+             set_anim(&quot;st_flat_falling&quot;);
+         else if (state == CRACKED)
+-            set_anim(&quot;st_flat_cracked&quot;);
++            set_model(&quot;st_flat_cracked&quot;);
+         else if (objFlags &amp; OBJBIT_BURNABLE)
+             set_model(&quot;st_flat_fire&quot;);
+         else
+
+Modified: trunk/src/stones/PlasterStone.cc
+===================================================================
+--- trunk/src/stones/PlasterStone.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/stones/PlasterStone.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -62,7 +62,7 @@
+             }
+             return Value();
+         } else if ((objFlags &amp; OBJBIT_BREAKABLE) &amp;&amp; 
+-                (m.message ==&quot;ignite&quot; || m.message == &quot;_explosion&quot; || m.message == &quot;_bombstone&quot;)) {
++                (m.message ==&quot;ignite&quot; || m.message == &quot;_explosion&quot;)) {
+             doBreak();
+             return Value();
+         }
+
+Modified: trunk/src/stones/StoneImpulse.cc
+===================================================================
+--- trunk/src/stones/StoneImpulse.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/stones/StoneImpulse.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -108,7 +108,7 @@
+                setIState(EXPANDING);     // replace potential bogus model
+             return Value();
+         } else if (m.message == &quot;ignite&quot;) {
+-            if (server::GameCompatibility != GAMET_ENIGMA || (objFlags &amp; OBJBIT_LIGHTNEWDIRS)) {
++            if ((server::GameCompatibility != GAMET_ENIGMA &amp;&amp; state == IDLE) || (objFlags &amp; OBJBIT_LIGHTNEWDIRS)) {
+                 state = BREAKING;
+                 init_model();
+             }
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/world.cc	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -2017,7 +2017,7 @@
+             case EXPLOSION_BLACKBOMB:
+                 if (direct_neighbor) {
+                     explosion(center, dest, &quot;it_explosion_nil&quot;);
+-                } else {
++                } else if (server::GameCompatibility == GAMET_ENIGMA) {
+                     // Note: should not ignite in non-enigma-mode!
+                     if (stone) SendMessage(stone, &quot;ignite&quot;);
+                     if (item)  SendMessage(item, &quot;ignite&quot;);
+@@ -2026,16 +2026,18 @@
+                 break;
+     
+             case EXPLOSION_WHITEBOMB:
+-                // Note: at least in oxyd1 only direct neighbors
+-                // explode, and the others not even ignite
+-                explosion(center, dest, &quot;it_explosion_debris&quot;);            
++                if (direct_neighbor || server::GameCompatibility == GAMET_ENIGMA) {
++                    // Note: at least in oxyd1 only direct neighbors
++                    // explode, and the others not even ignite
++                    explosion(center, dest, &quot;it_explosion_debris&quot;);
++                }
+                 break;
+     
+-            case EXPLOSION_BOMBSTONE:
++            case EXPLOSION_DISPENSER:
+                 if (direct_neighbor) {
+-                    if (stone) SendMessage(stone, &quot;_bombstone&quot;);
+-                    if (item) SendMessage(item, &quot;_bombstone&quot;);
+-                    if (floor) SendMessage(floor, &quot;_bombstone&quot;);
++                    if (stone) SendMessage(stone, &quot;_dispenser&quot;);
++                    if (item) SendMessage(item, &quot;_dispenser&quot;);
++                    if (floor) SendMessage(floor, &quot;_dispenser&quot;);
+                 }
+                 break;
+     
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2009-02-23 16:02:50 UTC (rev 1553)
++++ trunk/src/world.hh	2009-02-23 23:41:52 UTC (rev 1554)
+@@ -318,7 +318,7 @@
+         EXPLOSION_DYNAMITE, 
+         EXPLOSION_BLACKBOMB, 
+         EXPLOSION_WHITEBOMB, 
+-        EXPLOSION_BOMBSTONE,
++        EXPLOSION_DISPENSER,
+         EXPLOSION_SPITTER,
+     };
+     void SendExplosionEffect (GridPos p, ExplosionType type);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000983.html">[Enigma-game-svn] r1553 - in trunk/data/levels: enigma_cross	enigma_viii
+</A></li>
+	<LI>Next message: <A HREF="000985.html">[Enigma-game-svn] r1555 - in trunk: data doc/reference src/items
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#984">[ date ]</a>
+              <a href="thread.html#984">[ thread ]</a>
+              <a href="subject.html#984">[ subject ]</a>
+              <a href="author.html#984">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

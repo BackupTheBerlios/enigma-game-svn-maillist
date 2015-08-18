@@ -1,0 +1,330 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1339 - in trunk: data data/levels/lib	data/schemas src src/items src/others src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1339%20-%20in%20trunk%3A%20data%20data/levels/lib%0A%09data/schemas%20src%20src/items%20src/others%20src/stones&In-Reply-To=%3C200809242118.m8OLIfwB012855%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000768.html">
+   <LINK REL="Next"  HREF="000770.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1339 - in trunk: data data/levels/lib	data/schemas src src/items src/others src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1339%20-%20in%20trunk%3A%20data%20data/levels/lib%0A%09data/schemas%20src%20src/items%20src/others%20src/stones&In-Reply-To=%3C200809242118.m8OLIfwB012855%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1339 - in trunk: data data/levels/lib	data/schemas src src/items src/others src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Sep 24 23:18:41 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000768.html">[Enigma-game-svn] r1338 - in trunk: data/levels/lib data/schemas	doc/reference src/floors
+</A></li>
+        <LI>Next message: <A HREF="000770.html">[Enigma-game-svn] r1340 - trunk/doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#769">[ date ]</a>
+              <a href="thread.html#769">[ thread ]</a>
+              <a href="subject.html#769">[ subject ]</a>
+              <a href="author.html#769">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-09-24 23:18:40 +0200 (Wed, 24 Sep 2008)
+New Revision: 1339
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/levels/lib/libpuzzle_3.xml
+   trunk/data/schemas/objects.xml
+   trunk/src/floors.cc
+   trunk/src/floors.hh
+   trunk/src/items/PipeItem.cc
+   trunk/src/items/RubberbandItem.cc
+   trunk/src/others/Wire.cc
+   trunk/src/player.cc
+   trunk/src/player.hh
+   trunk/src/stones/PuzzleStone.cc
+Log:
+Trunk 1.1: new API reengineering
+- fix puzzle: propagate wire impulse
+- modify puzzle resolver suffix usage: use hollow cluster suffices 5-9
+- floor new API:
+  - rename attribute &quot;mousefactor&quot; to &quot;adhesion&quot;
+  - declare attributes &quot;adhesion&quot; and &quot;friction&quot;
+  - add read access to  &quot;adhesion&quot; and &quot;friction&quot;
+  - fix r1338: eliminate not existing message &quot;expl&quot;
+- fix wires:
+  - in case of a second wire gets added between two stones, the first one
+    is removed.
+- fix rubberband item:
+  - in case of activation the item gets dropped if it would cause a second
+    rubberband between two objects
+- modify brake stone: pickup brake while jumping
+- fix mail pipe: do not drop a brake at the end of a closed pipe
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-09-22 21:21:50 UTC (rev 1338)
++++ trunk/data/api1init.lua	2008-09-24 21:18:40 UTC (rev 1339)
+@@ -599,6 +599,9 @@
+          else _val = &quot;gc&quot;
+          end
+      end
++     if key == &quot;mousefactor&quot; then
++         _key = &quot;adhesion&quot;
++     end
+      enigma._SetAttrib(obj, _key, _val)
+ end
+ 
+
+Modified: trunk/data/levels/lib/libpuzzle_3.xml
+===================================================================
+--- trunk/data/levels/lib/libpuzzle_3.xml	2008-09-22 21:21:50 UTC (rev 1338)
++++ trunk/data/levels/lib/libpuzzle_3.xml	2008-09-24 21:18:40 UTC (rev 1339)
+@@ -120,10 +120,10 @@
+             end
+         else
+             if tile[1]:find(&quot;st_puzzle&quot;, 1, true) then
+-                local clusteridx = (&quot;01234456789&quot;):find(suffix, 1, true)
++                local clusteridx = (&quot;01234pqrstuvwxyz&quot;):find(suffix, 1, true)
+                 local connections = (&quot; abcdefghijklmno&quot;):find(suffix, 1 , true)
+                 if  clusteridx == nil then
+-                    clusteridx = (&quot;)!@#$%^&amp;*(&quot;):find(suffix, 1, true)
++                    clusteridx = (&quot;56789PQRSTUVWXYZ&quot;):find(suffix, 1, true)
+                     if clusteridx ~= nil then
+                         tile[&quot;hollow&quot;] = true
+                     end
+@@ -135,7 +135,11 @@
+                     end
+                 end
+                 if  clusteridx ~= nil then
+-                    tile[&quot;cluster&quot;] = clusteridx - 1
++                    if clusteridx &lt; 6 then
++                        tile[&quot;cluster&quot;] = clusteridx - 1
++                    else   -- pqr...xyz = 10...20
++                        tile[&quot;cluster&quot;] = clusteridx + 4
++                    end
+                 elseif connections ~= nil then
+                     tile[&quot;connections&quot;] = ({&quot;&quot;,&quot;w&quot;,&quot;s&quot;,&quot;sw&quot;,&quot;e&quot;,&quot;ew&quot;,&quot;es&quot;,&quot;esw&quot;,
+                             &quot;n&quot;,&quot;nw&quot;,&quot;ns&quot;,&quot;nsw&quot;,&quot;ne&quot;,&quot;new&quot;,&quot;nes&quot;,&quot;nesw&quot;})[connections]
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-09-22 21:21:50 UTC (rev 1338)
++++ trunk/data/schemas/objects.xml	2008-09-24 21:18:40 UTC (rev 1339)
+@@ -132,16 +132,17 @@
+       &lt;msg name=&quot;toggle&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;fl&quot; abstract=&quot;true&quot;&gt;
++      &lt;attr name=&quot;adhesion&quot;/&gt;
+       &lt;attr name=&quot;burnable&quot;/&gt;
+       &lt;attr name=&quot;eternal&quot;/&gt;
+       &lt;attr name=&quot;fastfire&quot;/&gt;
+       &lt;attr name=&quot;freeze_check&quot;/&gt;
++      &lt;attr name=&quot;friction&quot;/&gt;
+       &lt;attr name=&quot;ignitable&quot;/&gt;
+       &lt;attr name=&quot;initfire&quot;/&gt;      
+       &lt;attr name=&quot;noash&quot;/&gt;
+       &lt;attr name=&quot;push_directions&quot;/&gt;
+       &lt;attr name=&quot;secure&quot;/&gt;
+-      &lt;msg name=&quot;expl&quot;/&gt;
+       &lt;msg name=&quot;heat&quot;/&gt;
+       &lt;msg name=&quot;forcefire&quot;/&gt;
+       &lt;msg name=&quot;ignite&quot;/&gt;
+
+Modified: trunk/src/floors.cc
+===================================================================
+--- trunk/src/floors.cc	2008-09-22 21:21:50 UTC (rev 1338)
++++ trunk/src/floors.cc	2008-09-24 21:18:40 UTC (rev 1339)
+@@ -87,7 +87,7 @@
+ 
+ void Floor::setAttr(const string&amp; key, const Value &amp;val)
+ {
+-    if (key == &quot;mousefactor&quot;)
++    if (key == &quot;adhesion&quot;)
+         var_mousefactor = to_double(val);
+     else if (key == &quot;friction&quot;)
+         var_friction = to_double(val);
+@@ -98,6 +98,16 @@
+     GridObject::setAttr(key, val);
+ }
+ 
++    Value Floor::getAttr(const std::string &amp;key) const {
++        if (key == &quot;adhesion&quot;) {
++            return var_mousefactor;
++        } else if (key == &quot;friction&quot;) {
++            return var_friction;
++        }
++        return GridObject::getAttr(key);
++
++    }
++
+ void Floor::get_sink_speed (double &amp;sinkspeed, double &amp;raisespeed) const {
+ //     sinkspeed = raisespeed = 0.0;
+ }
+
+Modified: trunk/src/floors.hh
+===================================================================
+--- trunk/src/floors.hh	2008-09-22 21:21:50 UTC (rev 1338)
++++ trunk/src/floors.hh	2008-09-24 21:18:40 UTC (rev 1339)
+@@ -96,6 +96,7 @@
+         void dispose();
+         virtual Value message(const Message &amp;m);
+         virtual void setAttr(const string&amp; key, const Value &amp;val);
++        virtual Value getAttr(const std::string &amp;key) const;
+ 
+         // Floor interface
+         virtual ecl::V2 process_mouseforce (Actor *a, ecl::V2 force);
+
+Modified: trunk/src/items/PipeItem.cc
+===================================================================
+--- trunk/src/items/PipeItem.cc	2008-09-22 21:21:50 UTC (rev 1338)
++++ trunk/src/items/PipeItem.cc	2008-09-24 21:18:40 UTC (rev 1339)
+@@ -52,7 +52,7 @@
+                             case SOUTHBIT : move_dir = SOUTH; break;
+                             case EASTBIT : move_dir = EAST; break;
+                             case NORTHBIT : move_dir = NORTH; break;
+-                            default : move_dir = NODIR; break;
++                            default : return GridPos(-1, -1);         // illegal position outside of world
+                         }
+                     } else
+                         move_dir = NODIR;
+
+Modified: trunk/src/items/RubberbandItem.cc
+===================================================================
+--- trunk/src/items/RubberbandItem.cc	2008-09-22 21:21:50 UTC (rev 1338)
++++ trunk/src/items/RubberbandItem.cc	2008-09-24 21:18:40 UTC (rev 1339)
+@@ -54,7 +54,15 @@
+ 
+         sound_event (&quot;rubberband&quot;);
+         
+-        if (anchor2 != a) { // It's not allowed to connect a rubberband to self.
++        bool alreadyConnected = false;
++        ObjectList rubbers = a-&gt;getAttr(&quot;rubbers&quot;);
++        for (ObjectList::iterator it =  rubbers.begin(); it != rubbers.end(); ++it) {
++            if (((Object *)(*it)-&gt;getAttr(&quot;anchor2&quot;)) == anchor2) {
++                alreadyConnected = true;
++                break;
++            }
++        }
++        if (!alreadyConnected &amp;&amp; anchor2 != a) { // It's not allowed to connect a rubberband to self.
+             Object *obj = MakeObject(&quot;ot_rubberband&quot;);
+             obj-&gt;setAttr(&quot;anchor1&quot;, a);
+             obj-&gt;setAttr(&quot;anchor2&quot;, anchor2);
+
+Modified: trunk/src/others/Wire.cc
+===================================================================
+--- trunk/src/others/Wire.cc	2008-09-22 21:21:50 UTC (rev 1338)
++++ trunk/src/others/Wire.cc	2008-09-24 21:18:40 UTC (rev 1339)
+@@ -109,6 +109,20 @@
+             if (otherAnchor != NULL) {
+                 // add both anchors to each others fellows list
+                 olist = newAnchor-&gt;getAttr(&quot;fellows&quot;);
++                ObjectList::iterator it = find(olist.begin(), olist.end(), otherAnchor);
++                if (it != olist.end()) {
++                    // we are a replacement wire for an already existing wire - remove it
++                    olist = newAnchor-&gt;getAttr(&quot;wires&quot;);
++                    for (ObjectList::iterator itr = olist.begin(); itr != olist.end(); ++itr) {
++                        Wire *w = dynamic_cast&lt;Wire *&gt;(*itr);
++                        if (w != NULL &amp;&amp; (((Object *)(w-&gt;getAttr(&quot;anchor1&quot;)) == newAnchor &amp;&amp;  (Object *)(w-&gt;getAttr(&quot;anchor2&quot;)) == otherAnchor)
++                                || ((Object *)(w-&gt;getAttr(&quot;anchor2&quot;)) == newAnchor &amp;&amp;  (Object *)(w-&gt;getAttr(&quot;anchor1&quot;)) == otherAnchor)))
++                            KillOther(w);
++                            break;
++                    }
++                    // reload fellows
++                    olist = newAnchor-&gt;getAttr(&quot;fellows&quot;);
++                }
+                 olist.push_back(otherAnchor);
+                 newAnchor-&gt;setAttr(&quot;fellows&quot;, olist);
+                 olist = otherAnchor-&gt;getAttr(&quot;fellows&quot;);
+
+Modified: trunk/src/player.cc
+===================================================================
+--- trunk/src/player.cc	2008-09-22 21:21:50 UTC (rev 1338)
++++ trunk/src/player.cc	2008-09-24 21:18:40 UTC (rev 1339)
+@@ -548,7 +548,7 @@
+ 
+ /*! Return pointer to inventory if actor may pick up items, 0
+    otherwise. */
+-Inventory *player::MayPickup(Actor *a, Item *it) 
++Inventory *player::MayPickup(Actor *a, Item *it, bool allowFlying) 
+ {
+     int iplayer=-1;
+     if (Value v = a-&gt;getAttr(&quot;player&quot;)) iplayer = v;
+@@ -559,7 +559,7 @@
+ 
+     Inventory *inv = GetInventory(iplayer);
+     bool dont_pickup = players[iplayer].inhibit_pickup 
+-        || a-&gt;is_flying()
++        || (!allowFlying &amp;&amp; a-&gt;is_flying())
+         || !inv-&gt;willAddItem(it)
+         || a-&gt;is_dead();
+ 
+@@ -580,7 +580,7 @@
+ 
+ void player::PickupStoneAsItem (Actor *a, enigma::GridPos p) 
+ {
+-    if (Inventory *inv = MayPickup(a, GetField(p)-&gt;item)) 
++    if (Inventory *inv = MayPickup(a, GetField(p)-&gt;item, true)) 
+     {
+         if (Stone *stone = YieldStone(p)) 
+         {
+
+Modified: trunk/src/player.hh
+===================================================================
+--- trunk/src/player.hh	2008-09-22 21:21:50 UTC (rev 1338)
++++ trunk/src/player.hh	2008-09-24 21:18:40 UTC (rev 1339)
+@@ -72,7 +72,7 @@
+         unsigned NumberOfRealPlayers();
+ 
+ 
+-        Inventory *MayPickup(Actor *a, Item *it);
++        Inventory *MayPickup(Actor *a, Item *it, bool allowFlying = false);
+         Inventory *GetInventory(int iplayer);
+         Inventory *GetInventory(Actor *a);
+         bool       WieldedItemIs(Actor *a, const std::string &amp;kind);
+
+Modified: trunk/src/stones/PuzzleStone.cc
+===================================================================
+--- trunk/src/stones/PuzzleStone.cc	2008-09-22 21:21:50 UTC (rev 1338)
++++ trunk/src/stones/PuzzleStone.cc	2008-09-24 21:18:40 UTC (rev 1339)
+@@ -244,6 +244,7 @@
+ 
+             moveCluster(!actor_with_wand, impulse.dir);
+         }
++        propagateImpulse(impulse);
+     }
+ 
+     void PuzzleStone::on_move() {
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000768.html">[Enigma-game-svn] r1338 - in trunk: data/levels/lib data/schemas	doc/reference src/floors
+</A></li>
+	<LI>Next message: <A HREF="000770.html">[Enigma-game-svn] r1340 - trunk/doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#769">[ date ]</a>
+              <a href="thread.html#769">[ thread ]</a>
+              <a href="subject.html#769">[ subject ]</a>
+              <a href="author.html#769">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

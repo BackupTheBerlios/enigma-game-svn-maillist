@@ -1,0 +1,998 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r978 - in trunk: data src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r978%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200801092331.m09NVCUI002323%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000409.html">
+   <LINK REL="Next"  HREF="000411.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r978 - in trunk: data src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r978%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200801092331.m09NVCUI002323%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r978 - in trunk: data src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Jan 10 00:31:12 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000409.html">[Enigma-game-svn] r977 - homepage/input/articles
+</A></li>
+        <LI>Next message: <A HREF="000411.html">[Enigma-game-svn] r979 - in trunk: data src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#410">[ date ]</a>
+              <a href="thread.html#410">[ thread ]</a>
+              <a href="subject.html#410">[ subject ]</a>
+              <a href="author.html#410">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-01-10 00:31:09 +0100 (Thu, 10 Jan 2008)
+New Revision: 978
+
+Added:
+   trunk/src/stones/BoulderStone.cc
+   trunk/src/stones/BoulderStone.hh
+Modified:
+   trunk/data/init.lua
+   trunk/src/Makefile.am
+   trunk/src/items.cc
+   trunk/src/laser.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/stones.cc
+   trunk/src/stones.hh
+   trunk/src/stones/FourSwitch.cc
+   trunk/src/stones/OxydStone.cc
+   trunk/src/stones/Switch.hh
+   trunk/src/stones_complex.cc
+   trunk/src/stones_simple.cc
+Log:
+Trunk 1.1: Reengineering Bolder
+- renaming &quot;st-bolder&quot; to &quot;st_boulder&quot;
+- abolishing inconsistent message &quot;trigger&quot; by mapping to existing
+  alternative messages for old API
+- new internal message &quot;_trigger&quot; just sent by boulder: 
+  - value true (rising edge): just arrived on neighbour grid - make place or act
+  - value false (falling edge): relax
+- mirror and fourswitch just act on rising edge - they turn just once
+- impulsestones do not push back the boulder that triggered them
+- boulder reverses dir on laser light from back and front once
+- boulder starts faster after init - with blocker items in front and
+  beneath boulder all initial constellations can be set up that occur in
+  runtime, too.
+- rotator impulses on a blocked boulder will not generate trigger messages
+  if the boulder does not change direction.
+- boulder with two rotators aside will trigger a blocker stone independent
+  of rotator sequence (boulder could be trapped in 1.01)
+- fix r973 black/whitestone: force actor check on signals from items
+Note:
+- compatibility of existing levels need to be checked
+- some triggered objects may be changed from rising to falling edge
+
+
+Modified: trunk/data/init.lua
+===================================================================
+--- trunk/data/init.lua	2008-01-07 00:04:32 UTC (rev 977)
++++ trunk/data/init.lua	2008-01-09 23:31:09 UTC (rev 978)
+@@ -44,6 +44,11 @@
+ }
+ 
+ RenamingObjectsNew2Old = {
++    st_boulder = &quot;st-bolder&quot;,
++    st_boulder_n = &quot;st-bolder-n&quot;,
++    st_boulder_e = &quot;st-bolder-e&quot;,
++    st_boulder_s = &quot;st-bolder-s&quot;,
++    st_boulder_w = &quot;st-bolder-w&quot;,
+     st_fourswitch = &quot;st-fourswitch&quot;,
+     st_switch_instant = &quot;st-switch&quot;,
+     st_switch_black_instant = &quot;st-switch_black&quot;,
+@@ -143,9 +148,37 @@
+ end
+ 
+ MessageRenaming = {
++    [&quot;it-blocker__trigger&quot;] = &quot;toggle&quot;,
++    [&quot;it-burnable__trigger&quot;] = &quot;ignite&quot;,
++    [&quot;it-burnable_ignited__trigger&quot;] = &quot;ignite&quot;,
++    [&quot;it-burnable_burning__trigger&quot;] = &quot;ignite&quot;,
++    [&quot;it-burnable_fireproof__trigger&quot;] = &quot;ignite&quot;,
++    [&quot;it-burnable_ash__trigger&quot;] = &quot;ignite&quot;,
++    [&quot;it-burnable_oil__trigger&quot;] = &quot;ignite&quot;,
++    [&quot;it-hill__trigger&quot;] = &quot;flip&quot;,
++    [&quot;it-hollow__trigger&quot;] = &quot;flip&quot;,
++    [&quot;it-tinyhill__trigger&quot;] = &quot;flip&quot;,
++    [&quot;it-tinyhollow__trigger&quot;] = &quot;flip&quot;,
++    [&quot;it-vortex-open__trigger&quot;] = &quot;toggle&quot;,
++    [&quot;it-vortex-closed__trigger&quot;] = &quot;toggle&quot;,
++    [&quot;st-blocker__trigger&quot;] = &quot;toggle&quot;,
++    [&quot;st-blocker-growing__trigger&quot;] = &quot;toggle&quot;,
++    st_boulder__direction = &quot;orientate&quot;,
++    [&quot;st-fart__trigger&quot;] = &quot;toggle&quot;,
++    st_fourswitch__trigger = &quot;toggle&quot;,
++    [&quot;st-stoneimpulse__trigger&quot;] = &quot;signal&quot;,
++    [&quot;st-stoneimpulse-hollow__trigger&quot;] = &quot;signal&quot;,
++    [&quot;st-stoneimpulse_movable__trigger&quot;] = &quot;signal&quot;,
++    [&quot;st-lightpassenger__trigger&quot;] = &quot;toggle&quot;,
++    [&quot;st-lightpassenger__onoff&quot;] = &quot;toggle&quot;,
++    [&quot;st-mirror__trigger&quot;] = &quot;turn&quot;,
++    [&quot;st-oxyd__trigger&quot;] = &quot;toggle&quot;,
++    [&quot;st-plain__trigger&quot;] = &quot;signal&quot;,
++    [&quot;st-plain_hole__trigger&quot;] = &quot;signal&quot;,
+     st_switch_instant__onoff = &quot;toggle&quot;,
+     st_switch_black_instant__onoff = &quot;toggle&quot;,
+-    st_switch_white_instant__onoff = &quot;toggle&quot;
++    st_switch_white_instant__onoff = &quot;toggle&quot;,
++    [&quot;st-volcano__trigger&quot;] = &quot;toggle&quot;
+ }
+ ----------------------
+ -- old API 1.0      --
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-01-07 00:04:32 UTC (rev 977)
++++ trunk/src/Makefile.am	2008-01-09 23:31:09 UTC (rev 978)
+@@ -188,6 +188,8 @@
+ 	lev/ScoreManager.hh	\
+ 	lev/VolatileIndex.cc	\
+ 	lev/VolatileIndex.hh	\
++	stones/BoulderStone.cc	\
++	stones/BoulderStone.hh	\
+ 	stones/ConnectiveStone.cc	\
+ 	stones/ConnectiveStone.hh	\
+ 	stones/FourSwitch.cc	\
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-01-07 00:04:32 UTC (rev 977)
++++ trunk/src/items.cc	2008-01-09 23:31:09 UTC (rev 978)
+@@ -738,7 +738,7 @@
+ 
+ Value HillHollow::message(const Message &amp;m)
+ {
+-    if (m.message == &quot;trigger&quot;) {
++    if (m.message == &quot;flip&quot;) {
+         Type flippedkind[] = {HOLLOW,HILL, TINYHOLLOW,TINYHILL};
+         transmute(flippedkind[m_type]);
+         return Value();
+@@ -1936,7 +1936,7 @@
+         else
+             close();
+         return Value();
+-    } else if (m.message == &quot;openclose&quot; || m.message == &quot;trigger&quot;) {
++    } else if (m.message == &quot;openclose&quot; || m.message == &quot;toggle&quot;) {
+         openclose();
+         return Value();
+     } else if (m.message == &quot;open&quot;) {
+@@ -2509,7 +2509,7 @@
+         kill();   // The brush cleans the floor
+         return Value();
+     } else if (Floor *fl = GetFloor(get_pos())) {
+-        if (m.message == &quot;trigger&quot; || m.message == &quot;ignite&quot; || m.message == &quot;expl&quot;)
++        if (m.message == &quot;ignite&quot; || m.message == &quot;expl&quot;)
+             return SendMessage(fl, &quot;ignite&quot;);
+     }
+     return Item::message(m);
+@@ -2655,7 +2655,7 @@
+ 
+ namespace
+ {
+-    /*! If a 'BolderStone' moves over a 'Blocker' the 'Blocker' starts
++    /*! If a 'BoulderStone' moves over a 'Blocker' the 'Blocker' starts
+       growing and replaces itself by a BlockerStone. */
+     class Blocker : public Item, public TimeHandler {
+         CLONEOBJ(Blocker);
+@@ -2741,7 +2741,16 @@
+ 
+ Value Blocker::message(const Message &amp;m)
+ {
+-    if (m.message == &quot;trigger&quot; || m.message == &quot;openclose&quot;) {
++    if (m.message == &quot;init&quot;) { 
++        if (Stone *st = GetStone(get_pos())) {
++            if (st-&gt;is_kind(&quot;st_boulder&quot;))
++                if (state == IDLE)
++                    change_state(COVERED);
++                else if (state == SHRINKED)
++                    change_state(BOLDERED);
++        }
++        return Item::message(m);
++    } else if (m.message == &quot;toggle&quot; || m.message == &quot;openclose&quot;) {
+         switch (state) {
+             case IDLE:
+             case SHRINKED:
+@@ -2782,7 +2791,7 @@
+ 
+             if (state == IDLE) {
+                 if (Stone *st = GetStone(get_pos())) {
+-                    if (st-&gt;is_kind(&quot;st-bolder&quot;))
++                    if (st-&gt;is_kind(&quot;st_boulder&quot;))
+                         change_state(BOLDERED); // occurs in Per.Oxyd #84
+                     else
+                         change_state(COVERED);
+@@ -2792,13 +2801,15 @@
+                 }
+             }
+         }
++        return Value();
+     }
++    return Item::message(m);
+ }
+ 
+ void Blocker::stone_change(Stone *st)
+ {
+     if (st) {
+-        if (st-&gt;is_kind(&quot;st-bolder&quot;)) { // bolder arrived
++        if (st-&gt;is_kind(&quot;st_boulder&quot;)) { // bolder arrived
+             switch (state) {
+             case IDLE:
+                 change_state(COVERED);
+
+Modified: trunk/src/laser.cc
+===================================================================
+--- trunk/src/laser.cc	2008-01-07 00:04:32 UTC (rev 977)
++++ trunk/src/laser.cc	2008-01-09 23:31:09 UTC (rev 978)
+@@ -503,7 +503,7 @@
+     set_attrib(&quot;transparent&quot;, transparent);
+     set_attrib(&quot;movable&quot;, movable);
+     set_attrib(&quot;orientation&quot;, Value(1));
+-    traits.name = &quot;INVALID&quot;;
++    traits.name = &quot;st-mirror&quot;;
+     traits.id = st_INVALID;
+     traits.flags = stf_none;
+     traits.material = material_stone;
+@@ -520,7 +520,7 @@
+ }
+ 
+ Value MirrorStone::message(const Message &amp;m) {
+-    if (m.message == &quot;trigger&quot; || m.message == &quot;turn&quot;) {
++    if ((m.message == &quot;_trigger&quot; &amp;&amp; m.value.to_bool()) || m.message == &quot;turn&quot;) {
+         rotate_right();
+         return Value();
+     }
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-01-07 00:04:32 UTC (rev 977)
++++ trunk/src/ox_peroxyd.cc	2008-01-09 23:31:09 UTC (rev 978)
+@@ -325,10 +325,10 @@
+     &quot;st-chargeplus&quot;,            // PerOxyd stone 0x80
+     &quot;st-chargeminus&quot;,           // PerOxyd stone 0x81
+     &quot;st-chargezero&quot;,            // PerOxyd stone 0x82
+-    &quot;st-bolder-n&quot;,              // PerOxyd stone 0x83
+-    &quot;st-bolder-s&quot;,              // PerOxyd stone 0x84
+-    &quot;st-bolder-w&quot;,              // PerOxyd stone 0x85
+-    &quot;st-bolder-e&quot;,              // PerOxyd stone 0x86
++    &quot;st_boulder_n&quot;,             // PerOxyd stone 0x83
++    &quot;st_boulder_s&quot;,             // PerOxyd stone 0x84
++    &quot;st_boulder_w&quot;,             // PerOxyd stone 0x85
++    &quot;st_boulder_e&quot;,             // PerOxyd stone 0x86
+     &quot;st-rock5&quot;,                 // PerOxyd stone 0x87
+     UNUSED,                     // PerOxyd stone 0x88
+     UNUSED,                     // PerOxyd stone 0x89
+
+Added: trunk/src/stones/BoulderStone.cc
+===================================================================
+--- trunk/src/stones/BoulderStone.cc	2008-01-07 00:04:32 UTC (rev 977)
++++ trunk/src/stones/BoulderStone.cc	2008-01-09 23:31:09 UTC (rev 978)
+@@ -0,0 +1,180 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/BoulderStone.hh&quot;
++#include &quot;player.hh&quot;
++#include &quot;world.hh&quot;
++//#include &quot;main.hh&quot;
++
++namespace enigma {
++    BoulderStone::BoulderStone(Direction dir) {
++        state = INIT;
++        // do not use set_dir, because this will set the state to ACTIVE
++        Object::set_attrib(&quot;direction&quot;, dir);
++    }
++    
++    void BoulderStone::set_attrib(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;direction&quot;) {
++            if (isDisplayable())
++                setDir(to_direction(val));
++            else
++                Object::set_attrib(key, val);
++            return;
++        }
++        PhotoStone::set_attrib(key, val);
++    }
++
++    Value BoulderStone::message(const Message &amp;m) {
++        if (m.message == &quot;orientate&quot; &amp;&amp; state != FALLING &amp;&amp; isDisplayable()) {
++            setDir(to_direction(m.value));
++            return Value();
++        }
++        return PhotoStone::message(m);
++    }
++
++    int BoulderStone::externalState() const {
++        return 0;   // no external states
++    }
++    
++    void BoulderStone::setState(int extState) {
++        // no external states
++    }
++    
++    void BoulderStone::on_creation(GridPos p) {
++        PhotoStone::on_creation(p);
++        photo_activate();
++    }
++    void BoulderStone::on_removal(GridPos p) {
++        photo_deactivate();
++        PhotoStone::on_removal(p);
++    }
++    
++    void BoulderStone::init_model() {
++        std::string mname  = &quot;st-bolder&quot; + to_suffix(getDir());
++        if (state == FALLING)
++            mname += &quot;-fall-anim&quot;;
++        set_anim(mname);
++    }
++
++    void BoulderStone::animcb() {
++        display::Model *m = get_model();
++        Direction dir = getDir();
++        switch (state) {
++            case FALLING:
++                KillStone(get_pos());
++                break;
++            case INIT:
++                state = IDLE;
++                if (!haveObstacle(dir)) {
++                    move_stone(dir);  // makes object ACTIVE
++                    init_model();
++                } else
++                    m-&gt;restart();  // same pos and dir
++                break;
++            case IDLE:
++                if (!haveObstacle(dir)) {
++                    state = ACTIVE;
++                }
++                m-&gt;restart();  // same dir
++                break;
++            case ACTIVE:
++                triggerObstacle(dir, false);
++                if (!move_stone(dir)) {
++                    state = IDLE;
++                }
++                init_model();
++                break;
++        }
++    }
++
++    void BoulderStone::actor_hit(const StoneContact &amp;sc) {
++        if (state == FALLING)
++            return;
++
++        if (player::WieldedItemIs (sc.actor, &quot;it-magicwand&quot;)) {
++            setDir(reverse(getDir()));
++        }
++    }
++
++    void BoulderStone::on_floor_change() {
++        Floor *fl = GetFloor(get_pos());
++        if (fl-&gt;is_kind(&quot;fl-abyss&quot;)) {
++            state = FALLING;
++            init_model();
++        }
++    }
++    
++    void BoulderStone::on_move() {
++        state = ACTIVE;
++        triggerObstacle(getDir(), true);
++        Stone::on_move();
++    }
++    
++    void BoulderStone::on_impulse(const Impulse&amp; impulse) {
++        if (state == FALLING)
++            return;
++
++        if (impulse.sender &amp;&amp; impulse.sender-&gt;is_kind(&quot;st-rotator&quot;)) {
++            setDir(impulse.dir);  // activate
++        }
++        move_stone(impulse.dir);  // due to rotator and impulsestone
++    }
++
++    void BoulderStone::notify_laseron() {
++        setDir(reverse(getDir()));
++    }
++    
++    void BoulderStone::notify_laseroff() {
++    }
++
++    Direction BoulderStone::getDir() const {
++        return to_direction(getAttr(&quot;direction&quot;));
++    }
++    
++    void BoulderStone::setDir(Direction d) {
++        if (d != getDir() &amp;&amp; (state != FALLING)) {
++            Object::set_attrib(&quot;direction&quot;, d);
++            state = ACTIVE;   // if turned by it-magicwand -&gt; allow triggering
++            triggerObstacle(getDir(), true);
++            init_model();
++        }
++    }
++
++    bool BoulderStone::haveObstacle(Direction dir) {
++        return GetStone(move(get_pos(), dir)) != NULL;
++    }
++
++    void BoulderStone::triggerObstacle(Direction dir, bool isRaising) {
++        if (Stone *st = GetStone(move(get_pos(), dir))) {
++            SendMessage(st, &quot;_trigger&quot;, isRaising, this);
++        }
++    }
++
++    DEF_TRAITSM(BoulderStone, &quot;st_boulder&quot;, st_boulder, MOVABLE_IRREGULAR); // it-blocker requires all boulders to identify as st_boulder
++    
++    BOOT_REGISTER_START
++        BootRegister(new BoulderStone(), &quot;st_boulder&quot;);
++        BootRegister(new BoulderStone(NORTH), &quot;st_boulder_n&quot;);
++        BootRegister(new BoulderStone(EAST), &quot;st_boulder_e&quot;);
++        BootRegister(new BoulderStone(SOUTH), &quot;st_boulder_s&quot;);
++        BootRegister(new BoulderStone(WEST), &quot;st_boulder_w&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/BoulderStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/BoulderStone.hh
+===================================================================
+--- trunk/src/stones/BoulderStone.hh	2008-01-07 00:04:32 UTC (rev 977)
++++ trunk/src/stones/BoulderStone.hh	2008-01-09 23:31:09 UTC (rev 978)
+@@ -0,0 +1,82 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef BOULDERSTONE_HH
++#define BOULDERSTONE_HH
++
++#include &quot;stones.hh&quot;
++#include &quot;laser.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class BoulderStone : public PhotoStone {
++        CLONEOBJ(BoulderStone);
++        DECL_TRAITS;
++    private:
++        enum iState {
++            INIT,       ///&lt; 
++            ACTIVE,     ///&lt; may send trigger into direction
++            IDLE,       ///&lt; already sent trigger w/o success
++            FALLING     ///&lt; falling into abyss
++        };
++    public:
++        BoulderStone(Direction dir = NORTH);
++        
++        // Object interface
++        virtual void set_attrib(const string&amp; key, const Value &amp;val);
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual int externalState() const;
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void on_creation(GridPos);
++        virtual void on_removal(GridPos p);
++        virtual void init_model();
++        
++        // ModelCallback interface
++        virtual void animcb();
++        
++        // Stone interface
++        virtual void actor_hit(const StoneContact &amp;sc);
++        virtual void on_floor_change();
++        virtual void on_move();
++        virtual void on_impulse(const Impulse&amp; impulse);
++//        virtual const char *collision_sound();
++
++        // PhotoStone interface
++        virtual void notify_laseron();
++        virtual void notify_laseroff();
++        
++    private:
++        Direction getDir() const;
++        void setDir(Direction d);
++        bool haveObstacle(Direction dir);
++        void triggerObstacle(Direction dir, bool isRaising);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/BoulderStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones/FourSwitch.cc
+===================================================================
+--- trunk/src/stones/FourSwitch.cc	2008-01-07 00:04:32 UTC (rev 977)
++++ trunk/src/stones/FourSwitch.cc	2008-01-09 23:31:09 UTC (rev 978)
+@@ -28,7 +28,7 @@
+     }
+     
+     Value FourSwitch::message(const Message &amp;m) {
+-        if (m.message == &quot;signal&quot; || m.message == &quot;trigger&quot;) {
++        if (m.message == &quot;signal&quot; || m.message == &quot;_trigger&quot;) {
+             if ((((int)(m.value)) % 2 == 1) || (server::GameCompatibility == enigma::GAMET_ENIGMA
+                     &amp;&amp; (server::EnigmaCompatibility &lt; 1.10))) // Enigma 1.00 did turn on 0, too
+                 turn();
+
+Modified: trunk/src/stones/OxydStone.cc
+===================================================================
+--- trunk/src/stones/OxydStone.cc	2008-01-07 00:04:32 UTC (rev 977)
++++ trunk/src/stones/OxydStone.cc	2008-01-09 23:31:09 UTC (rev 978)
+@@ -863,7 +863,7 @@
+             shuffleColors();
+             return Value();
+         }
+-        else if (m.message == &quot;trigger&quot; || m.message == &quot;spitter&quot;) {
++        else if (m.message == &quot;_trigger&quot; || m.message == &quot;toggle&quot;|| m.message == &quot;spitter&quot;) {
+             tryOpen();
+             return Value();
+         }
+
+Modified: trunk/src/stones/Switch.hh
+===================================================================
+--- trunk/src/stones/Switch.hh	2008-01-07 00:04:32 UTC (rev 977)
++++ trunk/src/stones/Switch.hh	2008-01-09 23:31:09 UTC (rev 978)
+@@ -33,9 +33,13 @@
+      * The switch starts per default in state OFF.&lt;p&gt;
+      * Switches can be recolored by setting the &quot;color&quot; attribute. They can
+      * send inverse action values by setting the &quot;inverse&quot; attribute.&lt;p&gt;
+-     * Note that the state changes not directly on messages and attribute settings.
+-     * The actions will be performed after the turning animation finished. This
+-     * is a small derivation from the inconsistent 1.00 behaviour.
++     * Note that the state changes per default not directly on messages and 
++     * attribute settings. The actions will be performed after the turning 
++     * animation finished. This is a small derivation from the inconsistent
++     * 1.00 behaviour. Authors that need a switch that performs its action instantly
++     * can set the attribute &quot;instant&quot; to true. But the usage of other switches
++     * like &quot;st_fourswitch&quot;, &quot;st_floppy&quot;, &quot;st_key&quot; that provide an instant acton
++     * per default should be preferred.
+      */
+     class Switch : public Stone {
+         CLONEOBJ(Switch);
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-01-07 00:04:32 UTC (rev 977)
++++ trunk/src/stones.cc	2008-01-09 23:31:09 UTC (rev 978)
+@@ -667,7 +667,7 @@
+         const char *collision_sound() {return &quot;stone&quot;;}
+ 
+         virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;trigger&quot; || m.message == &quot;signal&quot;) {
++            if (m.message == &quot;_trigger&quot; || m.message == &quot;signal&quot;) {
+                 ReplaceStone(get_pos(), MakeStone(&quot;st-plain_hole&quot;));
+                 return Value();
+             }
+@@ -698,7 +698,7 @@
+         DECL_TRAITS;
+ 
+         virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;trigger&quot; || m.message == &quot;signal&quot;) {
++            if (m.message == &quot;_trigger&quot; || m.message == &quot;signal&quot;) {
+                 ReplaceStone(get_pos(), MakeStone(&quot;st-plain&quot;));
+                 return Value();
+             }
+@@ -892,7 +892,8 @@
+                         o = SendMessage(m.sender, &quot;_hitactor&quot;);
+                     
+                     Actor *a = dynamic_cast&lt;Actor *&gt;(o);
+-                    if ((a &amp;&amp; get_id(a) == ac_blackball) || (m.message == &quot;signal&quot;)) {
++                    if ((a &amp;&amp; get_id(a) == ac_blackball) || 
++                            (m.sender-&gt;getObjectType() != Object::ITEM &amp;&amp; m.message == &quot;signal&quot;)) {
+                         if (p.y == sender-&gt;get_pos().y) {
+                             SendMessage (GetStone (move (p, EAST)),  &quot;signal&quot;, 1.0);
+                             SendMessage (GetStone (move (p, WEST)),  &quot;signal&quot;, 1.0);
+@@ -931,7 +932,8 @@
+                         o = SendMessage(m.sender, &quot;_hitactor&quot;);
+                         
+                     Actor *a = dynamic_cast&lt;Actor *&gt;(o);
+-                    if ((a &amp;&amp; get_id(a) == ac_whiteball) || (m.message == &quot;signal&quot;)) {
++                    if ((a &amp;&amp; get_id(a) == ac_whiteball) ||
++                             (m.sender-&gt;getObjectType() != Object::ITEM &amp;&amp; m.message == &quot;signal&quot;)) {
+                         if (p.y == sender-&gt;get_pos().y) {
+                             SendMessage (GetStone (move (p, EAST)),  &quot;signal&quot;, 1.0);
+                             SendMessage (GetStone (move (p, WEST)),  &quot;signal&quot;, 1.0);
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2008-01-07 00:04:32 UTC (rev 977)
++++ trunk/src/stones.hh	2008-01-09 23:31:09 UTC (rev 978)
+@@ -38,7 +38,7 @@
+         st_black3,
+         st_black4,
+         st_block,
+-        st_bolder,
++        st_boulder,
+         st_brake,
+         st_break_acblack,
+         st_break_acwhite,
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-01-07 00:04:32 UTC (rev 977)
++++ trunk/src/stones_complex.cc	2008-01-09 23:31:09 UTC (rev 978)
+@@ -460,159 +460,6 @@
+ }
+ 
+ 
+-/* -------------------- BolderStone -------------------- */
+-
+-/** \page st-bolder Bolder Stone
+-
+-The bolder stone will move in one direction until another stone will
+-block.  When hit with a magic wand, the bolder stone reverse its
+-direction. When hitting a blocking stone it can activate switches or
+-oxyd stones.
+-
+-\subsection boldera Attributes
+-
+-- \c direction  \n NORTH, EAST, SOUTH, WEST
+-
+-*/
+-namespace
+-{
+-    class BolderStone : public Stone {
+-        CLONEOBJ(BolderStone);
+-        DECL_TRAITS;
+-    public:
+-        BolderStone(Direction dir=NORTH)
+-        : state(IDLE)
+-        {
+-            set_attrib(&quot;direction&quot;, dir);
+-            // do not use set_dir, because this will set the state to ACTIVE
+-        }
+-
+-    private:
+-        enum State {
+-            ACTIVE,             // may send trigger into direction
+-            IDLE,               // already sent trigger w/o success
+-            FALLING             // falling into abyss
+-        } state;
+-
+-
+-        Direction get_dir() const {
+-            return to_direction(getAttr(&quot;direction&quot;));
+-        }
+-        void set_dir(Direction d) {
+-            if (d != get_dir())
+-                state = ACTIVE; // if turned by it-magicwand -&gt; allow triggering
+-            set_attrib(&quot;direction&quot;, d);
+-        }
+-
+-        void on_floor_change() {
+-            Floor *fl = GetFloor(get_pos());
+-            if (fl-&gt;is_kind(&quot;fl-abyss&quot;)) {
+-                state = FALLING;
+-                init_model();
+-            }
+-        }
+-
+-        bool have_obstacle (Direction dir) {
+-            return GetStone(move(get_pos(), dir)) != 0;
+-        }
+-
+-        void trigger_obstacle (Direction dir) {
+-            if (Stone *st = GetStone(move(get_pos(), dir))) {
+-                SendMessage(st, &quot;trigger&quot;, Value(dir));
+-            }
+-        }
+-
+-        void on_move() {
+-            state = ACTIVE;
+-            trigger_obstacle(get_dir());
+-            Stone::on_move();
+-        }
+-
+-        // Stone interface.
+-        void init_model() {
+-            string mname  = &quot;st-bolder&quot; + to_suffix(get_dir());
+-            if (state == FALLING)
+-                mname += &quot;-fall-anim&quot;;
+-            set_anim(mname);
+-        }
+-
+-        void animcb() {
+-            display::Model *m = get_model();
+-            Direction dir = get_dir();
+-            switch (state) {
+-            case FALLING:
+-                KillStone(get_pos());
+-//                init_model();
+-                break;
+-
+-            case IDLE:
+-                if (!have_obstacle(dir)) {
+-                    state = ACTIVE;
+-                }
+-//                 if (Model *m = get_model())
+-                m-&gt;restart();
+-//                init_model();
+-                break;
+-
+-            case ACTIVE:
+-                trigger_obstacle(dir);
+-                if (!move_stone(dir)) {
+-                    state = IDLE;
+-                }
+-                init_model();
+-                break;
+-            }
+-        }
+-
+-        void actor_hit(const StoneContact &amp;sc) {
+-            if (state == FALLING)
+-                return;
+-
+-            if (player::WieldedItemIs (sc.actor, &quot;it-magicwand&quot;)) {
+-                set_dir(reverse(get_dir()));
+-                init_model();
+-            }
+-        }
+-
+-        void on_laserhit(Direction) {
+-            set_dir(reverse(get_dir()));
+-            init_model();
+-
+-            // @@@ FIXME:  the direction should only be inverted on NEW laserbeam
+-            // not on every light-recalc. Need to use PhotoCell!
+-        }
+-
+-        void on_impulse (const Impulse&amp; impulse) {
+-            if (state == FALLING)
+-                return;
+-
+-            if (impulse.sender &amp;&amp; impulse.sender-&gt;is_kind(&quot;st-rotator&quot;)) {
+-                set_dir(impulse.dir);  // activate
+-            }
+-            init_model();
+-            // try to move, activate - trigger with guarantee
+-            if (!move_stone(impulse.dir))
+-                // the trigger of an activation occurs on animcb - in case of
+-                // two rotators the trigger in one direction would be skipped
+-                // without this explicit trigger statement!
+-                // Furtheron enable stoneimpulse - bolder combi to emit single
+-                // trigger messages
+-                trigger_obstacle(impulse.dir);
+-        }
+-
+-        virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;direction&quot; &amp;&amp; state != FALLING) {
+-                set_dir(to_direction(m.value));
+-                init_model();
+-                return Value();
+-            }
+-            return Stone::message(m);
+-        }
+-    };
+-    DEF_TRAITSM(BolderStone, &quot;st-bolder&quot;, st_bolder, MOVABLE_IRREGULAR);
+-}
+-
+-
+ /* -------------------- BlockerStone -------------------- */
+ 
+ /** \page st-blocker Blocker Stone
+@@ -692,7 +539,7 @@
+         }
+ 
+         virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;trigger&quot; || m.message == &quot;openclose&quot;) {
++            if (m.message == &quot;_trigger&quot; || m.message == &quot;toggle&quot; || m.message == &quot;openclose&quot;) {
+                 if (state == SHRINKING) {
+                     change_state(GROWING);
+                 }
+@@ -782,7 +629,7 @@
+         }
+ 
+         virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;trigger&quot;) {
++            if (m.message == &quot;_trigger&quot; || m.message == &quot;toggle&quot;) {
+                 if (state == INACTIVE) {
+                     state = ACTIVE;
+                     init_model();
+@@ -1924,12 +1771,13 @@
+ {
+     class StoneImpulse_Base : public Stone {
+     protected:
+-        StoneImpulse_Base() : state(IDLE), incoming(NODIR)
++        StoneImpulse_Base() : state(IDLE), incoming(NODIR), nobackfire (false)
+         {}
+ 
+         enum State { IDLE, PULSING, CLOSING };
+         State     state;
+         Direction incoming; // direction of incoming impulse (may be NODIR)
++        bool      nobackfire;
+ 
+         void change_state(State st);
+ 
+@@ -1943,11 +1791,14 @@
+         virtual void notify_state(State st) = 0;
+ 
+         virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;trigger&quot;) {
+-                incoming = (m.value.getType() == Value::DOUBLE)
+-                    ? Direction( static_cast&lt;int&gt; (m.value.get_double()+0.1))
+-                    : NODIR;
+-
++            if (m.message == &quot;_trigger&quot; &amp;&amp; m.value.to_bool()) {
++                incoming = NODIR;
++                if (m.sender != NULL)
++                    incoming = direction_fromto(dynamic_cast&lt;GridObject *&gt;(m.sender)-&gt;get_pos(), get_pos());
++                
++                if (state == IDLE &amp;&amp; incoming != NODIR) {
++                    nobackfire = true;
++                }
+                 change_state(PULSING);
+                 return Value();
+             }
+@@ -2010,12 +1861,15 @@
+ 
+             for (int d = int(incoming)+1; d &lt;= int(incoming)+4; ++d) {
+                 int D = d%4;
+-                if (haveStone[D]) {
+-                    send_impulse(targetpos[D], Direction(D));
++                if (!nobackfire || reverse(incoming) != D) {
++                    if (haveStone[D]) {
++                        send_impulse(targetpos[D], Direction(D));
++                    }
+                 }
+             }
+ 
+             incoming = NODIR;   // forget impulse direction
++            nobackfire = false;
+             break;
+         }
+     }
+@@ -3125,7 +2979,7 @@
+         }
+ 
+         virtual Value message (const Message &amp;m) {
+-            if (m.message == &quot;onoff&quot;) {
++            if (m.message == &quot;toggle&quot;) {
+                 set_on(state == INACTIVE);
+                 return Value();
+             } else if (m.message == &quot;signal&quot;) {
+@@ -3137,7 +2991,7 @@
+             } else if (m.message == &quot;off&quot;) {
+                 set_on(false);
+                 return Value();
+-            } else if (m.message == &quot;trigger&quot;) {
++            } else if (m.message == &quot;_trigger&quot;) {
+                 set_on(state == INACTIVE);
+                 return Value();
+             }
+@@ -3212,11 +3066,6 @@
+ 
+ void Init_complex()
+ {
+-    Register(new BolderStone);
+-    Register(&quot;st-bolder-n&quot;, new BolderStone(NORTH));
+-    Register(&quot;st-bolder-e&quot;, new BolderStone(EAST));
+-    Register(&quot;st-bolder-s&quot;, new BolderStone(SOUTH));
+-    Register(&quot;st-bolder-w&quot;, new BolderStone(WEST));
+ 
+     Register(new BlockerStone(true));
+     Register(new BlockerStone(false));
+@@ -3253,7 +3102,6 @@
+     Register(&quot;st-oneway_white-s&quot;, new OneWayStone_white(SOUTH));
+     Register(&quot;st-oneway_white-w&quot;, new OneWayStone_white(WEST));
+ 
+-//    Register(new OxydStone);
+ 
+     Register (new PullStone);
+ 
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-01-07 00:04:32 UTC (rev 977)
++++ trunk/src/stones_simple.cc	2008-01-09 23:31:09 UTC (rev 978)
+@@ -1317,7 +1317,6 @@
+     }
+ }
+ 
+-
+ /* -------------------- FartStone -------------------- */
+ 
+ /** \page st-fart Fart Stone
+@@ -1405,12 +1404,10 @@
+ }
+ Value FartStone::message(const Message &amp;m) 
+ {
+-    if (m.message == &quot;signal&quot; &amp;&amp; m.value != 0) {
++    if (m.message == &quot;toggle&quot; || (m.message == &quot;signal&quot; &amp;&amp; m.value != 0) ||
++            (m.message == &quot;_trigger&quot; &amp;&amp; m.value.to_bool())) {
+         change_state(FARTING);
+         return Value();
+-    } else if (m.message == &quot;trigger&quot;) {
+-        change_state(FARTING);
+-        return Value();
+     } else if (m.message == &quot;ignite&quot; || m.message == &quot;expl&quot;) { 
+         change_state(BREAKING);
+         return Value();
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000409.html">[Enigma-game-svn] r977 - homepage/input/articles
+</A></li>
+	<LI>Next message: <A HREF="000411.html">[Enigma-game-svn] r979 - in trunk: data src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#410">[ date ]</a>
+              <a href="thread.html#410">[ thread ]</a>
+              <a href="subject.html#410">[ subject ]</a>
+              <a href="author.html#410">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

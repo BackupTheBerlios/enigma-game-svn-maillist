@@ -1,0 +1,172 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1770 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1770%20-%20trunk/src&In-Reply-To=%3C200907222256.n6MMubeP020120%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001198.html">
+   <LINK REL="Next"  HREF="001200.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1770 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1770%20-%20trunk/src&In-Reply-To=%3C200907222256.n6MMubeP020120%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1770 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Jul 23 00:56:37 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001198.html">[Enigma-game-svn] r1769 - trunk/data/gfx/flags25x15
+</A></li>
+        <LI>Next message: <A HREF="001200.html">[Enigma-game-svn] r1771 - in trunk/src: . gui lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1199">[ date ]</a>
+              <a href="thread.html#1199">[ thread ]</a>
+              <a href="subject.html#1199">[ subject ]</a>
+              <a href="author.html#1199">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-07-23 00:56:34 +0200 (Thu, 23 Jul 2009)
+New Revision: 1770
+
+Modified:
+   trunk/src/Object.cc
+   trunk/src/lua.cc
+   trunk/src/stones.cc
+Log:
+Trunk 1.1:
+- second part of fix r1768: repair broken fellow attributes on renaming
+    and name clashes.
+- keep wires and rubberbands on stone transformation like st_ghost, st_magic
+    st_blur
+
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2009-07-22 18:47:20 UTC (rev 1769)
++++ trunk/src/Object.cc	2009-07-22 22:56:34 UTC (rev 1770)
+@@ -196,7 +196,7 @@
+                 objFlags |= OBJBIT_NOP;
+             else
+                 objFlags &amp;= ~OBJBIT_NOP;
+-        
++            
+         } else if (val) {        // only set non-default values
+             if (val.getType() == Value::NIL /*&amp;&amp; server::EnigmaCompatibility &gt;= 1.10*/)
+                 // delete attribute
+@@ -209,9 +209,37 @@
+     
+     void Object::setAttrChecked(const std::string&amp; key, const Value &amp;val) {
+         // allow all user attributes and those system attributes with write allowance
+-        if (key == &quot;name&quot;)
++        if (key == &quot;name&quot;) {
++            std::string oldName = getAttr(&quot;name&quot;).to_string();
++            std::string newName = val.to_string();
++            bool isRename =  oldName.size() &gt; 0 &amp;&amp; newName != oldName;
++            
++            // on name clash unname other object with same name and repair all fellow references
++            Object *victim = GetNamedObject(newName);
++            if (victim != NULL) {
++                UnnameObject(victim);
++                ObjectList olist = victim-&gt;getAttr(&quot;fellows&quot;);
++                for (ObjectList::iterator itr = olist.begin(); itr != olist.end(); ++itr) {
++                    ObjectList olist2 = (*itr)-&gt;getAttr(&quot;fellows&quot;);
++                    olist2.remove(NULL);
++                    olist2.push_back(victim);
++                    (*itr)-&gt;setAttr(&quot;fellows&quot;, olist2);
++                }
++            }
++            
+             NameObject(this, val.to_string());
+-        else if (key.find('_') == 0 || ObjectValidator::instance()-&gt;validateAttributeWrite(this, key, val))
++            
++            // in case of a renaming repair all fellow reference that will now be NULL instead of this
++            if (isRename) {
++                ObjectList olist = getAttr(&quot;fellows&quot;);
++                for (ObjectList::iterator itr = olist.begin(); itr != olist.end(); ++itr) {
++                    ObjectList olist2 = (*itr)-&gt;getAttr(&quot;fellows&quot;);
++                    olist2.remove(NULL);
++                    olist2.push_back(this);
++                    (*itr)-&gt;setAttr(&quot;fellows&quot;, olist2);
++                }
++            }
++        } else if (key.find('_') == 0 || ObjectValidator::instance()-&gt;validateAttributeWrite(this, key, val))
+             setAttr(key, val);
+         else
+             ASSERT(false, XLevelRuntime, ecl::strf(&quot;Object: attribute '%s' write not allowed for kind '%s'&quot;,
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2009-07-22 18:47:20 UTC (rev 1769)
++++ trunk/src/lua.cc	2009-07-22 22:56:34 UTC (rev 1770)
+@@ -1299,7 +1299,7 @@
+             obj-&gt;setAttrChecked(key, to_value(L, -2));  // name set gets handeled by Object
+          } else if (lua_tointeger(L, -1) == 2) {  // second entry without a string key is taken as name
+              if (!lua_isnumber(L, -2) &amp;&amp; lua_isstring(L, -2))
+-                 NameObject(obj, lua_tostring(L, -2));
++                 obj-&gt;setAttrChecked(&quot;name&quot;, lua_tostring(L, -2));
+          }
+          lua_pop(L, 2);  // remove copy key + value, leave original key for loop
+     }    
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2009-07-22 18:47:20 UTC (rev 1769)
++++ trunk/src/stones.cc	2009-07-22 22:56:34 UTC (rev 1770)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -42,6 +43,14 @@
+ void Stone::transform(std::string kind) {
+     Stone *newStone = MakeStone(kind.c_str());
+     transferIdentity(newStone);          // subclasses may hook this call
++    ObjectList olist = getAttr(&quot;rubbers&quot;);
++    for (ObjectList::iterator itr = olist.begin(); itr != olist.end(); ++itr) {
++        (*itr)-&gt;setAttr(&quot;anchor2&quot;, newStone);
++    }
++    olist = getAttr(&quot;wires&quot;);
++    for (ObjectList::iterator itr = olist.begin(); itr != olist.end(); ++itr) {
++        (*itr)-&gt;setAttr((this == (*itr)-&gt;getAttr(&quot;anchor1&quot;)) ? &quot;anchor1&quot; : &quot;anchor2&quot;, newStone);
++    }
+     SetStone(get_pos(), newStone);
+ }
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001198.html">[Enigma-game-svn] r1769 - trunk/data/gfx/flags25x15
+</A></li>
+	<LI>Next message: <A HREF="001200.html">[Enigma-game-svn] r1771 - in trunk/src: . gui lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1199">[ date ]</a>
+              <a href="thread.html#1199">[ thread ]</a>
+              <a href="subject.html#1199">[ subject ]</a>
+              <a href="author.html#1199">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

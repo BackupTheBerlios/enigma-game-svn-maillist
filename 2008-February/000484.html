@@ -1,0 +1,1263 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1052 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1052%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200802292242.m1TMg1Hi002986%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000483.html">
+   <LINK REL="Next"  HREF="000485.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1052 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1052%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200802292242.m1TMg1Hi002986%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1052 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Fri Feb 29 23:42:01 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000483.html">[Enigma-game-svn] r1051 - trunk/data/levels/lib
+</A></li>
+        <LI>Next message: <A HREF="000485.html">[Enigma-game-svn] r1053 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#484">[ date ]</a>
+              <a href="thread.html#484">[ thread ]</a>
+              <a href="subject.html#484">[ subject ]</a>
+              <a href="author.html#484">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-02-29 23:41:59 +0100 (Fri, 29 Feb 2008)
+New Revision: 1052
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/GridObject.cc
+   trunk/src/GridObject.hh
+   trunk/src/Object.cc
+   trunk/src/Object.hh
+   trunk/src/enigma.cc
+   trunk/src/enigma.hh
+   trunk/src/items.cc
+   trunk/src/items.hh
+   trunk/src/laser.cc
+   trunk/src/laser.hh
+   trunk/src/oxyd.cc
+   trunk/src/server.cc
+   trunk/src/stones.cc
+   trunk/src/stones/LaserStone.cc
+   trunk/src/stones/LaserStone.hh
+   trunk/src/stones_complex.cc
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1: new API reengineering sword and hammer, laser light
+- elimination of interface LaserEmitter (GridObject is successor)
+- GridObject as successor of PhotoCell, PhotoStone
+- reengineering sword, hammer:
+  - rename to it_sword, it_hammer
+  - do no longer react on foreign laser beam updates
+  - do transform just once on multiple laser hits at once
+  - keep reacting on added laser lights
+  - do no longer react on switched off lights
+  - latency of 0.2 s after a transformation
+  - it_sword_new, it_hammer_new for level init of items onto beams
+- fix Trigger item broken on initial actors on triggers at a level restart
+- fix LaserStone broken DAT compatibility
+Note:
+- several items like coins need to reengineered like sword/hammer
+- PhotoStone, PhotoCell subclasses need reengineering
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/data/api1init.lua	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -47,9 +47,11 @@
+ RenamingObjectsNew2Old = {
+     it_blocker = &quot;it-blocker&quot;,
+     it_blocker_new = &quot;it-blocker-new&quot;,
++    it_hammer = &quot;it-hammer&quot;,
+     it_magnet = &quot;it-magnet&quot;,
+     it_magnet_on = &quot;it-magnet-on&quot;,
+     it_magnet_off = &quot;it-magnet-off&quot;,
++    it_sword = &quot;it-sword&quot;,
+     it_trigger = &quot;it-trigger&quot;,
+     it_wormhole_on = &quot;it-wormhole&quot;,
+     it_wormhole_off = &quot;it-wormhole-off&quot;,
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/data/models-2d.lua	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -409,7 +409,6 @@
+         &quot;it-floppy&quot;,
+         &quot;it-glasses&quot;,
+         &quot;it-glasses-broken&quot;,
+-        &quot;it-hammer&quot;,
+         &quot;it-hill&quot;,
+         &quot;it-hollow&quot;,
+         &quot;it-hstrip&quot;,
+@@ -427,7 +426,6 @@
+         &quot;it-spring1&quot;,
+         &quot;it-spring2&quot;,
+         &quot;it-surprise&quot;,
+-        &quot;it-sword&quot;,
+         &quot;it-tinyhill&quot;,
+         &quot;it-tinyhollow&quot;,
+         &quot;it-umbrella&quot;,
+@@ -440,6 +438,8 @@
+     DefImages(itemlist)
+ 
+     DefImage(&quot;it-brake&quot;, {filename=&quot;st-brake&quot;})
++    DefImage(&quot;it_hammer&quot;, {filename=&quot;it-hammer&quot;})
++    DefImage(&quot;it_sword&quot;, {filename=&quot;it-sword&quot;})
+ end
+ 
+ -------------------------
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/data/schemas/objects.xml	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -59,6 +59,8 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;it_blocker_new&quot; init=&quot;true&quot;&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;it_hammer&quot;/&gt;
++    &lt;object name=&quot;it_hammer_new&quot; init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;it_magnet&quot;&gt;
+       &lt;attr name=&quot;range&quot; default=&quot;nil&quot;/&gt;
+       &lt;attr name=&quot;strength&quot; default=&quot;nil&quot;/&gt;
+@@ -72,6 +74,8 @@
+     &lt;object name=&quot;it_magnet_on&quot;&gt;
+       &lt;attr name=&quot;state&quot; value=&quot;1&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;it_sword&quot;/&gt;
++    &lt;object name=&quot;it_sword_new&quot; init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;it_wormhole&quot;&gt;
+       &lt;attr name=&quot;destination&quot;/&gt;
+       &lt;attr name=&quot;interval&quot; default=&quot;0&quot;/&gt;
+
+Modified: trunk/src/GridObject.cc
+===================================================================
+--- trunk/src/GridObject.cc	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/src/GridObject.cc	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -22,7 +22,9 @@
+ 
+ #include &quot;errors.hh&quot;
+ #include &quot;game.hh&quot;
++#include &quot;laser.hh&quot;
+ #include &quot;lua.hh&quot;
++#include &quot;main.hh&quot;
+ #include &quot;sound.hh&quot;
+ #include &quot;world.hh&quot;
+ 
+@@ -47,34 +49,8 @@
+ 
+ 
+ /* -------------------- GridObject implementation -------------------- */
+-    std::list&lt;GridObject *&gt; GridObject::photoSensorList;
+ 
+-    void GridObject::preLaserRecalc() {
+-        for (list&lt;GridObject *&gt;::iterator itr = photoSensorList.begin(); itr != photoSensorList.end(); ++itr) {
+-            uint32_t flags = (*itr)-&gt;objFlags;
+-            (*itr)-&gt;objFlags = (flags &amp; ~255) | ((flags &amp; 15) &lt;&lt; 4);  // remember last laser bits, clear current ones
+-        }
+-    }
+-    
+-    void GridObject::postLaserRecalc() {
+-        for (list&lt;GridObject *&gt;::iterator itr = photoSensorList.begin(); itr != photoSensorList.end(); ) {
+-            list&lt;GridObject *&gt;::iterator witr = itr;  // work iterator for possible deletion of object
+-            ++itr;                                    // main iterator does no longer point to critical object
+-            uint32_t flags = (*witr)-&gt;objFlags;
+-            DirectionBits newDirs = (DirectionBits)(flags &amp; 15);
+-            DirectionBits oldDirs = (DirectionBits)((flags &amp; 240) &gt;&gt; 4);
+-            if (newDirs != oldDirs) {
+-                if (!(*witr)-&gt;lightDirChange(oldDirs, newDirs)) {
+-                    if (oldDirs == 0)
+-                        (*witr)-&gt;photoSensorChange(true);
+-                    else if (newDirs == 0)
+-                        (*witr)-&gt;photoSensorChange(false);
+-                }
+-            }
+-        }
+-    }
+ 
+-
+     void GridObject::setOwner(int player) {
+         ASSERT(pos.x &lt; 0, XLevelRuntime,
+             &quot;GridObject: attempt to add object to owner inventory that is still on grid&quot;);
+@@ -200,21 +176,77 @@
+         return DirectionBits(ALL_DIRECTIONS ^ getConnections());
+     }
+     
++    void GridObject::on_creation(GridPos p) {
++        init_model();
++    }
+     
++    void GridObject::on_removal(GridPos p) {
++        kill_model (p);
++        if (objFlags &amp; OBJBIT_PHOTOACTIV)
++            deactivatePhoto();
++    }
++    
++    
++    // GridObject laser light support
++    
++    std::list&lt;GridObject *&gt; GridObject::photoSensorList;
++
++    void GridObject::preLaserRecalc() {
++        for (list&lt;GridObject *&gt;::iterator itr = photoSensorList.begin(); itr != photoSensorList.end(); ++itr) {
++            uint32_t flags = (*itr)-&gt;objFlags;
++            (*itr)-&gt;objFlags = (flags &amp; ~OBJBIT_LIGHTALLDIRS) | ((flags &amp; OBJBIT_LIGHTNEWDIRS) &lt;&lt; 4);  // remember last laser bits, clear current ones
++        }
++    }
++    
++    void GridObject::postLaserRecalc() {
++        for (list&lt;GridObject *&gt;::iterator itr = photoSensorList.begin(); itr != photoSensorList.end(); ) {
++            list&lt;GridObject *&gt;::iterator witr = itr;  // work iterator for possible deletion of object
++            ++itr;                                    // main iterator does no longer point to critical object
++            uint32_t flags = (*witr)-&gt;objFlags;
++            DirectionBits newDirs = (DirectionBits)(flags &amp; OBJBIT_LIGHTNEWDIRS);
++            DirectionBits oldDirs = (DirectionBits)((flags &amp; OBJBIT_LIGHTOLDDIRS) &gt;&gt; 4);
++            if (newDirs != oldDirs) {
++                (*witr)-&gt;lightDirChanged(oldDirs, newDirs);
++            }
++        }
++    }
++    
++    void GridObject::prepareLevel() {
++        photoSensorList.clear();
++    }
++
++    void GridObject::processLight(Direction dir) {
++        objFlags |= to_bits(dir);
++    }
++    
++    DirectionBits GridObject::emissionDirections() const {
++        return NODIRBIT;
++    }
++    
+     void GridObject::activatePhoto() {
+-        ASSERT(std::find(photoSensorList.begin(), photoSensorList.end(), this) == photoSensorList.end(),
+-                XLevelRuntime , &quot;GridObject: double photo sensor activation&quot;);
++        ASSERT((objFlags &amp; OBJBIT_PHOTOACTIV) == 0, XLevelRuntime , &quot;GridObject: double photo sensor activation&quot;);
+         photoSensorList.push_back(this);
++        objFlags |= OBJBIT_PHOTOACTIV;
+     }
++
++    void GridObject::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
++    }
+     
+     void GridObject::deactivatePhoto() {
+         std::list&lt;GridObject *&gt;::iterator itr = std::find(photoSensorList.begin(), photoSensorList.end(), this);
+         if (itr != photoSensorList.end())
+             photoSensorList.erase(itr);
++        objFlags &amp;= ~OBJBIT_PHOTOACTIV;
++        
+     }
+     
+-    void GridObject::on_laserhit(Direction dir) {
+-        objFlags |= to_bits(dir);
++    DirectionBits GridObject::updateCurrentLightDirs() {
++        DirectionBits result = NODIRBIT;
++        for (Direction dir = NORTH; dir != NODIR; dir = (Direction)(dir - 1)) {
++            if (LightFrom(get_pos(), reverse(dir)))
++                result = DirectionBits(result | to_bits(dir));
++        }
++        objFlags = (objFlags &amp; ~OBJBIT_LIGHTNEWDIRS) | result;
++        return result;
+     }
+-    
+ } // namespace enigma
+
+Modified: trunk/src/GridObject.hh
+===================================================================
+--- trunk/src/GridObject.hh	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/src/GridObject.hh	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -41,9 +41,6 @@
+      */
+     class GridObject : public StateObject, public display::ModelCallback {
+     public:
+-        static void preLaserRecalc();
+-        static void postLaserRecalc();
+-    
+         GridObject() : pos (GridPos(-1, -1)) {}
+         GridObject(const char * kind) : StateObject(kind), pos (GridPos(-1, -1)) {}
+ 
+@@ -97,7 +94,7 @@
+         bool isDisplayable();
+ 
+         // GridObject interface
+-        virtual void on_laserhit (Direction d);   // direction of laserbeam
++        
+         virtual void actor_enter (Actor *a) {}
+         virtual void actor_leave (Actor *a) {}
+ 
+@@ -121,24 +118,11 @@
+ 
+         virtual void init_model();
+ 
+-        virtual void on_creation(GridPos p) {
+-            init_model();
+-        }
+-
+-        virtual void on_removal(GridPos p) {
+-            kill_model (p);
+-        }
++        virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
+         
+-        virtual void photoSensorChange(bool isOn) {}
+-        virtual bool lightDirChange(DirectionBits oldDirs, DirectionBits newDirs) {return false;}
+-        
+-        void activatePhoto();
+-        void deactivatePhoto();
+ 
+     private:
+-        static std::list&lt;GridObject *&gt; photoSensorList;
+-        
+-    
+         // ModelCallback interface.
+         void animcb() {}
+ 
+@@ -154,6 +138,43 @@
+          * in the world nor owned by anyone have pos.x = pos.y = -1. 
+          */
+         GridPos pos;
++
++
++    // GridObject laser light support
++    public:
++        static void preLaserRecalc();
++        static void postLaserRecalc();
++        static void prepareLevel();
++    private:
++        static std::list&lt;GridObject *&gt; photoSensorList;
++    
++    public:
++        virtual void processLight(Direction d);   // direction of laserbeam
++        virtual DirectionBits emissionDirections() const;
++        
++    protected:
++        /**
++         * Hook of laser light recalculation that is called for photo active objects
++         * everytime the illumination from any side of the grid did change. You need
++         * to activate a GridObject first by calling &quot;activatePhoto()&quot;. On removal of
++         * an activated GridObject &quot;deactivatePhoto()&quot; is automatically executed. All
++         * reported directions are the directions the laser beams are bound to, not
++         * the objects grid faces. Use the &quot;revert&quot; function to convert the light 
++         * directions to object faces.&lt;p&gt;
++         * To identify a side independent light switch on compare &quot;oldDirs&quot; to 0, 
++         * to identify a side independent light switch off compare &quot;newDirs&quot; to 0.
++         * Apply &quot;added_dirs(oldDirs, newDirs)&quot; to get the directions of new laser
++         * light, apply &quot;removed_dirs(oldDirs, newDirs)&quot; to get the directions of
++         * switched off light.&lt;p&gt;
++         * Note that on level initialization this method will not be called. The
++         * light directions are silently updated, but no actions should be caused
++         * by the initial light beam calculation due to the snapshot principle.
++         */
++        virtual void lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs);
++        
++        void activatePhoto();
++        void deactivatePhoto();
++        DirectionBits updateCurrentLightDirs();
+     };
+ 
+ } // namespace enigma
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/src/Object.cc	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -99,9 +99,10 @@
+         id = getNextId(this, false);
+     }
+     
+-    Object::Object(const Object &amp;src_obj) : objFlags (0) {
++    Object::Object(const Object &amp;src_obj) {
+         id = getNextId(this, false);
+         attribs = src_obj.attribs;
++        objFlags = src_obj.objFlags;
+     }
+     
+     Object::~Object() {
+
+Modified: trunk/src/Object.hh
+===================================================================
+--- trunk/src/Object.hh	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/src/Object.hh	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -32,6 +32,14 @@
+     using std::string;
+     
+     struct Message;
++    
++    enum ObjectFlagsBits {
++        OBJBIT_LIGHTNEWDIRS  =  15,   ///&lt; GridObject 4 direction bits with current/new light
++        OBJBIT_LIGHTOLDDIRS  =  240,  ///&lt; GridObject 4 direction bits with previous light
++        OBJBIT_LIGHTALLDIRS  =  255,  ///&lt; GridObject all 8 direction bits with old an new light
++        OBJBIT_PHOTOACTIV    =  1&lt;&lt;8  ///&lt; GridObject registered as photo activ
++    };
++    
+     class Value;
+ 
+     /**
+@@ -214,7 +222,19 @@
+         bool getDestinationByIndex(int idx, ecl::V2 &amp;dstpos) const;
+         
+         /**
++         * A central managed container for 32 single bit flags to be used by 
++         * subclasses. Object is reponsible of efficiently cloning, saving and
++         * restoring these flags on demand. Subclasses use the bits as follows:
+          * 
++         * - Bit 0-15 are reserved for classes Object to GridObject
++         * 
++         * - Bit 16-23 are reserved for classes Item, Stone, Floor, Actor
++         * 
++         * - Bit 24-31 are reserved for the final subclass
++         * 
++         * See enumeration ObjectFlagsBits for Bitmasks of Bit 0-15. Note that
++         * Bitmasks would not have been an alternative as the subclasses may
++         * and will use the upper bits in a quite different mannor. 
+          */
+         uint32_t  objFlags;
+         
+
+Modified: trunk/src/enigma.cc
+===================================================================
+--- trunk/src/enigma.cc	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/src/enigma.cc	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -112,6 +112,11 @@
+     return sfx[d+1];
+ }
+ 
++std::string toSuffix(Direction d) {
++    static const char *sfx[] = { &quot;&quot;, &quot;_w&quot;, &quot;_s&quot;, &quot;_e&quot;, &quot;_n&quot; };
++    return sfx[d+1];
++}
++
+ /* -------------------- DirectionBits -------------------- */
+ 
+ DirectionBits rotate(DirectionBits d, bool clockwise)
+
+Modified: trunk/src/enigma.hh
+===================================================================
+--- trunk/src/enigma.hh	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/src/enigma.hh	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -117,6 +117,7 @@
+     Direction rotate_ccw (Direction d);
+ 
+     std::string to_suffix(Direction d);
++    std::string toSuffix(Direction d);
+ 
+     enum DirectionBits {
+         NODIRBIT       = 0,
+@@ -130,6 +131,9 @@
+     DirectionBits rotate (DirectionBits d, bool clockwise);
+     DirectionBits to_bits (Direction d);
+     bool has_dir (DirectionBits db, Direction dir);
++    DirectionBits reverse(DirectionBits dirs);
++    DirectionBits added_dirs(DirectionBits oldDirs, DirectionBits newDirs);
++    DirectionBits removed_dirs(DirectionBits oldDirs, DirectionBits newDirs);
+ 
+ 
+ /* -------------------- GridPos -------------------- */
+@@ -280,8 +284,20 @@
+     inline bool has_dir(DirectionBits db, Direction dir) {
+         return (db &amp; to_bits(dir)) != 0;
+     }
++    
++    inline DirectionBits reverse(DirectionBits dirs) {
++        return (DirectionBits) (~dirs &amp; ALL_DIRECTIONS);
++    }
++    
++    inline DirectionBits added_dirs(DirectionBits oldDirs, DirectionBits newDirs) {
++        return (DirectionBits) (~oldDirs &amp; newDirs);
++    }
+ 
++    inline DirectionBits removed_dirs(DirectionBits oldDirs, DirectionBits newDirs) {
++        return (DirectionBits) (oldDirs &amp; ~newDirs);
++    }
+ 
++
+     // ---------- GridPos ----------
+ 
+     inline GridPos::GridPos(int xx, int yy) 
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/src/items.cc	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -102,6 +102,12 @@
+     SetItem (get_pos(), newitem);
+ }
+ 
++void Item::transform(std::string kind) {
++    Item *newitem = MakeItem(kind.c_str());
++    transferIdentity(newitem);          // subclasses may hook this call
++    SetItem(get_pos(), newitem);
++}
++
+ const char *Item::get_kind() const
+ {
+     return get_traits().name;
+@@ -129,10 +135,11 @@
+ void Item::on_stonehit (Stone * /*st*/) {
+ }
+ 
+-void Item::on_laserhit(Direction)
+-{
+-    if (get_traits().flags &amp; itf_inflammable)
++void Item::processLight(Direction d) {
++    if (get_traits().flags &amp; itf_inflammable) {
+         replace (it_explosion1);
++    } else
++        GridObject::processLight(d);
+ }
+ 
+ 
+@@ -186,8 +193,6 @@
+ 
+ 
+ /* -------------------- DummyItem -------------------- */
+-namespace
+-{
+     class Dummyitem : public Item {
+         CLONEOBJ(Dummyitem);
+         DECL_TRAITS;
+@@ -289,7 +294,7 @@
+         CLONEOBJ(Banana);
+         DECL_TRAITS;
+ 
+-        void on_laserhit(Direction /*d*/) {
++        void processLight(Direction d) {
+             sound_event (&quot;itemtransform&quot;);
+             replace(it_cherry);
+         }
+@@ -305,37 +310,116 @@
+ 
+ /* -------------------- Sword -------------------- */
+ 
+-    class Sword : public Item {
++    class Sword : public Item, public TimeHandler {
+         CLONEOBJ(Sword);
+         DECL_TRAITS;
+ 
+-        void on_laserhit(Direction /*d*/) {
+-            sound_event (&quot;itemtransform&quot;);
+-            replace(it_hammer);
+-        }
+     public:
+-        Sword() {}
++        Sword(bool isNew);
++
++        // GridObject interface
++        virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
++        virtual void lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs);
++
++        // TimeHandler interface
++        virtual void alarm();
+     };
+-    DEF_TRAITS(Sword, &quot;it-sword&quot;, it_sword);
+ 
++    Sword::Sword(bool isNew) : Item() {
++        if (isNew) {
++            objFlags |= ALL_DIRECTIONS;
++        }
++    }
++
++    void Sword::on_creation(GridPos p) {
++        if ((objFlags &amp; ALL_DIRECTIONS) == ALL_DIRECTIONS) {
++            // a new transformed hammer
++            GameTimer.set_alarm(this, 0.2, false);
++        } else {
++            updateCurrentLightDirs();
++            activatePhoto();
++        }
++        Item::on_creation(p);
++    }
++    
++    void Sword::on_removal(GridPos p) {
++        GameTimer.remove_alarm(this);
++        objFlags &amp;= ~ALL_DIRECTIONS;
++        Item::on_removal(p);
++    }
++
++    
++    void Sword::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
++        if (added_dirs(oldDirs, newDirs) != 0) {
++            sound_event (&quot;itemtransform&quot;);
++            transform(&quot;it_hammer_new&quot;);
++        }
++    }
++    
++    void Sword::alarm() {
++            updateCurrentLightDirs();
++            activatePhoto();        
++    }
++    
++    DEF_TRAITS(Sword, &quot;it_sword&quot;, it_sword);
++
+ /* -------------------- Hammer -------------------- */
+ 
+-    class Hammer : public Item {
++    class Hammer : public Item, public TimeHandler {
+         CLONEOBJ(Hammer);
+         DECL_TRAITS;
+ 
+-        void on_laserhit(Direction /*d*/) {
+-            if (server::GameCompatibility != enigma::GAMET_PEROXYD) {
+-                sound_event (&quot;itemtransform&quot;);
+-                replace(it_sword);
+-            }
+-        }
+     public:
+-        Hammer() {}
++        Hammer(bool isNew);
++
++        // GridObject interface
++        virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
++        virtual void lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs);
++
++        // TimeHandler interface
++        virtual void alarm();
+     };
+-    DEF_TRAITS(Hammer, &quot;it-hammer&quot;, it_hammer);
+-}
++    
++    Hammer::Hammer(bool isNew) : Item() {
++        if (isNew) {
++            objFlags |= ALL_DIRECTIONS;
++        }
++    }
++    
++    void Hammer::on_creation(GridPos p) {
++        if ((objFlags &amp; ALL_DIRECTIONS) == ALL_DIRECTIONS) {
++            // a new transformed hammer
++            GameTimer.set_alarm(this, 0.2, false);
++        } else {
++            updateCurrentLightDirs();
++            activatePhoto();
++        }
++        Item::on_creation(p);
++    }
++    
++    void Hammer::on_removal(GridPos p) {
++        GameTimer.remove_alarm(this);
++        objFlags &amp;= ~ALL_DIRECTIONS;
++        Item::on_removal(p);
++    }
++    
++    void Hammer::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
++        if (added_dirs(oldDirs, newDirs) != 0 &amp;&amp; server::GameCompatibility != enigma::GAMET_PEROXYD) {
++            sound_event (&quot;itemtransform&quot;);
++            transform(&quot;it_sword_new&quot;);
++        }
++    }
++    
++    void Hammer::alarm() {
++            DirectionBits db = updateCurrentLightDirs();
++            activatePhoto();        
++    }
++    
++    DEF_TRAITS(Hammer, &quot;it_hammer&quot;, it_hammer);
+ 
++
+ /* -------------------- ExtraLife -------------------- */
+ namespace
+ {
+@@ -349,7 +433,7 @@
+                 return &quot;inv-whiteball&quot;;
+         }
+ 
+-        void on_laserhit(Direction /*d*/) {
++        void processLight(Direction d) {
+             sound_event (&quot;itemtransform&quot;);
+             replace (it_glasses);
+         }
+@@ -366,7 +450,7 @@
+     class Umbrella : public Item {
+         CLONEOBJ(Umbrella);
+         DECL_TRAITS;
+-        void on_laserhit (Direction) {
++        void processLight(Direction d) {
+             if (server::GameCompatibility != enigma::GAMET_PEROXYD)
+                 replace(it_explosion1);
+         }
+@@ -505,7 +589,7 @@
+         CLONEOBJ(Coin1);
+         DECL_TRAITS;
+ 
+-        void on_laserhit (Direction) {
++        void processLight(Direction d) {
+             sound_event (&quot;itemtransform&quot;);
+             replace (it_umbrella);
+         }
+@@ -525,9 +609,9 @@
+         CLONEOBJ(Coin2);
+         DECL_TRAITS;
+ 
+-        void on_laserhit (Direction) {
++        void processLight(Direction d) {
+             sound_event (&quot;itemtransform&quot;);
+-            replace (it_hammer);
++            transform(&quot;it_hammer_new&quot;);
+         }
+ 
+         void on_stonehit(Stone *) {
+@@ -545,7 +629,7 @@
+         CLONEOBJ(Coin4);
+         DECL_TRAITS;
+ 
+-        void on_laserhit (Direction) {
++        void processLight(Direction d) {
+             sound_event (&quot;itemtransform&quot;);
+             replace (it_extralife);
+         }
+@@ -1099,7 +1183,7 @@
+             return Item::message(m);
+         }
+         void animcb() { explode(); }
+-        void on_laserhit(Direction) {
++        void processLight(Direction d) {
+             change_state(BURNING);
+         }
+         void on_drop(Actor *) { change_state(BURNING); }
+@@ -1165,7 +1249,7 @@
+ 
+         void animcb() { explode (); }
+ 
+-        void on_laserhit(Direction) {
++        void processLight(Direction d) {
+             explode();
+         }
+ 
+@@ -1387,7 +1471,7 @@
+             state |= 1;   // add stone pressure bit
+         }
+                 
+-//        Log &lt;&lt; &quot;Trigger update old state &quot; &lt;&lt; oldState &lt;&lt; &quot; - new state &quot; &lt;&lt; state &lt;&lt; &quot;\n&quot;;
++//        Log &lt;&lt; &quot;Trigger update old state &quot; &lt;&lt; oldState &lt;&lt; &quot; - new state &quot; &lt;&lt; state &lt;&lt; &quot; refuse action &quot; &lt;&lt; refuseAction &lt;&lt; &quot;\n&quot;;
+     
+         if ((oldState == 0 &amp;&amp; state != 0) || (oldState != 0 &amp;&amp; state == 0)) {
+             init_model();
+@@ -1417,7 +1501,7 @@
+         }
+         void on_drop (Actor *) {start_growing();}
+         void on_stonehit (Stone *) {start_growing();}
+-        void on_laserhit (Direction) {start_growing();}
++        void processLight(Direction d) {start_growing();}
+ 
+         virtual Value message(const Message &amp;m) {
+             if (m.message == &quot;grow&quot; || m.message == &quot;signal&quot;) {
+@@ -3742,7 +3826,8 @@
+     RegisterItem (new Floppy);
+     RegisterItem (new Glasses);
+     RegisterItem (new BrokenGlasses);
+-    RegisterItem (new Hammer);
++    RegisterItem (new Hammer(false));
++    Register (&quot;it_hammer_new&quot;, new Hammer(true));
+     RegisterItem (new Hill);
+     RegisterItem (new Hollow);
+     RegisterItem (new HStrip);
+@@ -3780,7 +3865,8 @@
+     RegisterItem (new Springboard);
+     RegisterItem (new Squashed);
+     RegisterItem (new SurpriseItem);
+-    RegisterItem (new Sword);
++    RegisterItem (new Sword(false));
++    Register (&quot;it_sword_new&quot;, new Sword(true));
+     RegisterItem (new TinyHill);
+     RegisterItem (new TinyHollow);
+     RegisterItem (new Trigger);
+
+Modified: trunk/src/items.hh
+===================================================================
+--- trunk/src/items.hh	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/src/items.hh	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -175,7 +175,7 @@
+         /* ---------- Virtual functions ---------- */
+         const char *get_kind() const;
+         void init_model();
+-        void on_laserhit(Direction);
++        void processLight(Direction d);
+ 
+         /* ---------- Item interface ---------- */
+ 
+@@ -236,6 +236,7 @@
+         virtual void kill_model (GridPos p) {
+             display::KillModel (GridLoc (GRID_ITEMS, p));
+         }
++        void transform(std::string kind);
+         // replace template method hook
+         virtual void setup_successor(Item *newitem) {}
+     };
+
+Modified: trunk/src/laser.cc
+===================================================================
+--- trunk/src/laser.cc	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/src/laser.cc	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -144,7 +144,7 @@
+ //   across an item or a stone that returns `false' from
+ //   Stone::is_transparent().
+ //
+-// - `on_laserhit()' is called for objects in the beam *whenever*
++// - `processLight()' is called for objects in the beam *whenever*
+ //   the beam is recalculated.  For objects that need to be notified
+ //   when the laser goes on or off, use the `PhotoStone'
+ //   mixin.
+@@ -152,7 +152,7 @@
+ std::list&lt;LaserBeam *&gt; LaserBeam::beamList;
+ 
+ 
+-void LaserBeam::Reset() {
++void LaserBeam::prepareLevel() {
+     beamList.clear();
+ }
+ 
+@@ -171,8 +171,7 @@
+         set_model(&quot;it-laserv&quot;);
+ }
+ 
+-void LaserBeam::on_laserhit(Direction dir)
+-{
++void LaserBeam::processLight(Direction dir) {
+     DirectionBits dirbit = to_bits(dir);
+     
+     if ((objFlags &amp; 15 &amp; dirbit) == 0) {
+@@ -207,12 +206,12 @@
+     p.move(dir);
+     if (Stone *st = GetStone(p)) {
+         may_pass = st-&gt;is_transparent (dir);
+-        st-&gt;on_laserhit (dir);
++        st-&gt;processLight(dir);
+     }
+ 
+     if (may_pass) {
+         if (Item *it = GetItem(p))
+-            it-&gt;on_laserhit(dir);
++            it-&gt;processLight(dir);
+         else {
+             LaserBeam *lb = new LaserBeam(dir);
+             SetItem(p, lb);
+@@ -296,7 +295,7 @@
+ namespace
+ {
+     class MirrorStone
+-        : public Stone, public LaserEmitter, public PhotoCell
++        : public Stone, public PhotoCell
+     {
+     protected:
+         MirrorStone(const char *name, bool movable=false, bool transparent=false);
+@@ -324,8 +323,8 @@
+ 	// Object interface.
+         virtual Value message(const Message &amp;m);
+ 
+-        // LaserEmitter interface
+-        DirectionBits emission_directions() const {
++        //GridObject interface
++        DirectionBits emissionDirections() const {
+             return outdirs;
+         }
+ 
+@@ -463,11 +462,11 @@
+             const char *a = &quot; -\\|/&quot;;
+             return a[MirrorStone::get_orientation()];
+         }
+-        void on_laserhit(Direction dir);
++        void processLight(Direction dir);
+     };
+ }
+ 
+-void PlaneMirror::on_laserhit(Direction dir) 
++void PlaneMirror::processLight(Direction dir) 
+ {
+     char orientation = GetOrientation();
+     bool transparent = is_transparent();
+@@ -556,11 +555,11 @@
+             const Direction a[] = {NODIR, NORTH, EAST, SOUTH, WEST};
+             return a[MirrorStone::get_orientation()];
+         }
+-        void on_laserhit (Direction dir);
++        void processLight(Direction dir);
+     };
+ }
+ 
+-void TriangleMirror::on_laserhit(Direction beam_dir)
++void TriangleMirror::processLight(Direction beam_dir)
+     // note: 'beam_dir' is the direction where laserbeam goes to
+ {
+     // direction where flat side of triangle points to
+@@ -653,15 +652,16 @@
+ 
+ bool LightFrom (GridPos p, Direction dir) {
+     p.move(dir);
+-    if (LaserEmitter *le = dynamic_cast&lt;LaserEmitter*&gt;(GetStone(p)))
+-        if (has_dir(le-&gt;emission_directions(), reverse(dir)))
++    if (GridObject *obj = GetStone(p)) 
++        if (has_dir(obj-&gt;emissionDirections(), reverse(dir)))
+             return true;
+-    if (LaserEmitter *le = dynamic_cast&lt;LaserEmitter*&gt;(GetItem(p)))
+-        return (has_dir(le-&gt;emission_directions(), reverse(dir)));
++    if (GridObject *obj = GetItem(p))
++        return (has_dir(obj-&gt;emissionDirections(), reverse(dir)));
++    
+     return false;
+ }
+ 
+-void RecalcLightNow() {
++void PerformRecalcLight(bool isInit) {
+     if (light_recalc_scheduled) {
+ //        light_recalc_scheduled = false;    // this is the right place - but we have first to fix some object like hammer,...
+         PhotoCell::notify_start();
+@@ -669,7 +669,9 @@
+         LaserBeam::kill_all();
+         LaserStone::reemit_all();
+         LaserBeam::all_emitted();
+-        GridObject::postLaserRecalc();
++        if (!isInit)
++            // do not cause actions on initial laser beam generation
++            GridObject::postLaserRecalc();
+         PhotoCell::notify_finish();
+         light_recalc_scheduled = false;
+     }
+
+Modified: trunk/src/laser.hh
+===================================================================
+--- trunk/src/laser.hh	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/src/laser.hh	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -28,15 +28,6 @@
+ #include &lt;list&gt;
+ 
+ namespace enigma {
+-    /**
+-     * This interface must be implemented by all items and stones that
+-     * are capable of emitting light.
+-     */
+-    class LaserEmitter {
+-    public:
+-        virtual ~LaserEmitter() {}
+-        virtual DirectionBits emission_directions() const = 0;
+-    };
+ 
+ /* -------------------- PhotoCell -------------------- */
+ 
+@@ -83,7 +74,7 @@
+     
+       The most prominent example are Oxyd stones -- they open when
+       they are hit by a laser beam.  See the remarks at the beginning
+-      of this file to understand why overriding `on_laserhit' is not
++      of this file to understand why overriding `processLight' is not
+       sufficient for a proper implementation of Oxyd stones.
+     */
+ 
+@@ -106,15 +97,15 @@
+     
+ /* -------------------- LaserBeam -------------------- */
+ 
+-    class LaserBeam : public Item, public LaserEmitter {
++    class LaserBeam : public Item {
+     public:
+         static void emit_from(GridPos p, Direction d);
+         static void kill_all();
+         static void all_emitted();
+-        static void Reset();
++        static void prepareLevel();
+ 
+-    // LaserEmitter interface
+-        DirectionBits emission_directions() const { return (DirectionBits)(objFlags &amp; 15); }
++        // GridObject interface
++        DirectionBits emissionDirections() const { return (DirectionBits)(objFlags &amp; 15); }
+         static ItemTraits traits;
+ 
+         const ItemTraits &amp;get_traits() const {
+@@ -126,7 +117,7 @@
+         }
+ 
+         // Item interface.
+-        void on_laserhit(Direction dir);
++        void processLight(Direction dir);
+         void on_creation (GridPos p);
+         virtual void on_removal(GridPos p);
+         void init_model();
+@@ -149,7 +140,7 @@
+ 
+     /*! This function must be called at the end of each tick; it
+       recalculates the laser beams if necessary. */
+-    void RecalcLightNow();
++    void PerformRecalcLight(bool isInit);
+ 
+     /*! Force all light beams to be recalculated at the end of the
+       current tick.  So far, this is only used by laser stones and in
+
+Modified: trunk/src/oxyd.cc
+===================================================================
+--- trunk/src/oxyd.cc	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/src/oxyd.cc	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -268,10 +268,10 @@
+ 
+     Stone *st = 0;
+     if (dir != NODIR) {
+-        string lasername(&quot;st-laser&quot;);
+-        lasername += to_suffix(dir);
++        string lasername(&quot;st_laser&quot;);
++        lasername += toSuffix(dir);
+         st         = MakeStone(lasername.c_str());
+-        st-&gt;setAttr(&quot;on&quot;, Value(on)); // OnOffStone attribute
++        st-&gt;setAttr(&quot;state&quot;, Value(on ? 1 : 0));
+     }
+     return st;
+ }
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/src/server.cc	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -231,7 +231,7 @@
+     state = sv_waiting_for_clients;
+ 
+     server::NoCollisions = false;
+-
++    server::WorldInitialized  = false;
+     server::LevelTime         = 0.0;
+     server::ConserveLevel     = true;
+     server::TwoPlayerGame     = false;
+
+Modified: trunk/src/stones/LaserStone.cc
+===================================================================
+--- trunk/src/stones/LaserStone.cc	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/src/stones/LaserStone.cc	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -134,6 +134,13 @@
+         state &amp;= 1;
+     }
+     
++    DirectionBits LaserStone::emissionDirections() const {
++        if (externalState() == 1) {
++            return to_bits(getOrientation());
++        }
++        return NODIRBIT;
++    }
++
+     void LaserStone::alarm() {
+         int oldExtState = externalState();
+         switch (state) {
+@@ -158,13 +165,6 @@
+         }
+     }
+     
+-    DirectionBits LaserStone::emission_directions() const {
+-        if (externalState() == 1) {
+-            return to_bits(getOrientation());
+-        }
+-        return NODIRBIT;
+-    }
+-
+     void LaserStone::emit_light() {
+         if (externalState() == 1)
+             LaserBeam::emit_from(get_pos(), getOrientation());
+
+Modified: trunk/src/stones/LaserStone.hh
+===================================================================
+--- trunk/src/stones/LaserStone.hh	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/src/stones/LaserStone.hh	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -33,7 +33,7 @@
+      * the user cannot recognize laser switching is limited. After a switching
+      * a laser stays in a NEW* state where further switch requests are delayed.
+      */
+-    class LaserStone : public Stone, public LaserEmitter, public TimeHandler {
++    class LaserStone : public Stone, public TimeHandler {
+     private:
+         enum iState {
+             OFF, 
+@@ -67,12 +67,11 @@
+         virtual void init_model();
+         virtual void on_creation(GridPos p);
+         virtual void on_removal(GridPos p);
++        virtual DirectionBits emissionDirections() const;
+         
+         // TimeHandler interface
+         virtual void alarm();
+ 
+-        // LaserEmitter interface
+-        virtual DirectionBits emission_directions() const;
+         
+     private:
+         // Private methods.
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/src/stones.cc	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -662,7 +662,7 @@
+         CLONEOBJ(PlainStone);
+         DECL_TRAITS;
+ 
+-        void on_laserhit (Direction) {
++        void processLight(Direction d) {
+             ReplaceStone (get_pos(), MakeStone(&quot;st-plain_cracked&quot;));
+         }
+ 
+@@ -745,7 +745,7 @@
+             sound_event (&quot;stonedestroy&quot;);
+             ReplaceStone(get_pos(), MakeStone (&quot;st-plain_breaking&quot;));
+         }
+-        void on_laserhit (Direction) {
++        void processLight(Direction d) {
+             break_me();
+         }
+         virtual Value message(const Message &amp;m) {
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/src/stones_complex.cc	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -714,7 +714,7 @@
+         void on_creation (GridPos p);
+         void on_removal (GridPos p);
+         void on_impulse (const Impulse&amp; impulse);
+-        void on_laserhit (Direction dir);
++        void processLight(Direction dir);
+ 
+         bool is_floating() const;
+ 
+@@ -1171,7 +1171,7 @@
+     ConnectiveStone::on_removal(p);
+ }
+ 
+-void PuzzleStone::on_laserhit (Direction dir) {
++void PuzzleStone::processLight(Direction dir) {
+     ecl::set_flags (illumination, to_bits(reverse(dir)));
+ }
+ 
+@@ -1695,7 +1695,7 @@
+                 change_state (IDLE);
+         }
+ 
+-        void on_laserhit(Direction dir) {
++        void processLight(Direction dir) {
+             incoming = dir;
+             change_state(PULSING);
+         }
+@@ -1819,7 +1819,7 @@
+             return true;
+         }
+ 
+-        void on_laserhit (Direction) {
++        void processLight(Direction d) {
+             // hollow StoneImpulseStones cannot be activated using lasers
+         }
+     };
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/src/stones_simple.cc	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -582,7 +582,7 @@
+             if (may_be_broken_by(sc.actor))
+                 break_me();
+         }
+-        void on_laserhit(Direction) {
++        void processLight(Direction d) {
+             break_me();
+         }
+         void animcb() {
+@@ -712,7 +712,7 @@
+         Stone_movebreak()
+         {}
+ 
+-        void on_laserhit(Direction) {
++        void processLight(Direction d) {
+         }
+ 
+         string get_break_anim() const  {
+@@ -1359,7 +1359,7 @@
+         void actor_hit(const StoneContact &amp;sc);
+         virtual Value message(const Message &amp;m);
+ 
+-        void on_laserhit(Direction) {
++        void processLight(Direction d) {
+             change_state(BREAKING);
+         }
+     public:
+@@ -2037,7 +2037,7 @@
+             SetItem(p, it_explosion1);
+         }
+ 
+-        void on_laserhit(Direction) {
++        void processLight(Direction d) {
+             explode();
+         }
+ 
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-02-29 20:53:30 UTC (rev 1051)
++++ trunk/src/world.cc	2008-02-29 22:41:59 UTC (rev 1052)
+@@ -460,7 +460,7 @@
+ 
+     GameTimer.tick(dtime);
+ 
+-    RecalcLightNow();   // recalculate laser beams if necessary
++    PerformRecalcLight(false);   // recalculate laser beams if necessary
+ }
+ 
+ /* ---------- Puzzle scrambling -------------------- */
+@@ -1573,8 +1573,9 @@
+ void WorldPrepareLevel ()
+ {
+     GameTimer.clear();
++    GridObject::prepareLevel();
++    LaserBeam::prepareLevel();
+     Resize (20, 13);
+-    LaserBeam::Reset();
+ }
+ 
+ bool WorldInitLevel()
+@@ -1582,7 +1583,7 @@
+     level-&gt;scramble_puzzles();
+ 
+     RecalcLight();
+-    RecalcLightNow();    // recalculate laser beams if necessary
++    PerformRecalcLight(true);    // recalculate laser beams if necessary
+ 
+     bool seen_player0 = false;
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000483.html">[Enigma-game-svn] r1051 - trunk/data/levels/lib
+</A></li>
+	<LI>Next message: <A HREF="000485.html">[Enigma-game-svn] r1053 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#484">[ date ]</a>
+              <a href="thread.html#484">[ thread ]</a>
+              <a href="subject.html#484">[ subject ]</a>
+              <a href="author.html#484">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

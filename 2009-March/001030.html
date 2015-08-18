@@ -1,0 +1,209 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1600 - in trunk/src: . stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1600%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200903272340.n2RNeUaf032394%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001029.html">
+   <LINK REL="Next"  HREF="001031.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1600 - in trunk/src: . stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1600%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200903272340.n2RNeUaf032394%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1600 - in trunk/src: . stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Mar 28 00:40:30 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001029.html">[Enigma-game-svn] r1599 - in trunk: data data/levels/enigma_i	data/levels/enigma_ii data/levels/enigma_iv	data/levels/enigma_vi data/levels/enigma_vii	data/levels/enigma_viii data/levels/lib doc/reference
+</A></li>
+        <LI>Next message: <A HREF="001031.html">[Enigma-game-svn] r1601 - trunk/data/levels/lib
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1030">[ date ]</a>
+              <a href="thread.html#1030">[ thread ]</a>
+              <a href="subject.html#1030">[ subject ]</a>
+              <a href="author.html#1030">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-03-28 00:40:17 +0100 (Sat, 28 Mar 2009)
+New Revision: 1600
+
+Modified:
+   trunk/src/server.cc
+   trunk/src/stones/FlatStone.cc
+   trunk/src/stones/GlassStones.cc
+   trunk/src/stones/GreenBrownStone.cc
+   trunk/src/stones/PlasterStone.cc
+   trunk/src/stones/StandardStones.cc
+Log:
+Trunk 1.1:
+- fix hollow stone visibility on usage of mutiple it_glasses
+- fix meditation-screenshot shortcut
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2009-03-27 18:10:57 UTC (rev 1599)
++++ trunk/src/server.cc	2009-03-27 23:40:17 UTC (rev 1600)
+@@ -200,8 +200,6 @@
+     const double timestep = 0.01; // 10ms
+     int count = 0;
+ 
+-    server::LevelTime += dtime;
+-
+     time_accu += dtime;
+     if (time_accu &gt; 1.0) {
+         fprintf (stderr, &quot;Whoa, system overload!\n&quot;);
+@@ -209,6 +207,7 @@
+     }
+     player::Tick (time_accu);
+     for (;time_accu &gt;= timestep; time_accu -= timestep, count++) {
++        server::LevelTime += timestep;
+         WorldTick(timestep);
+ //        if (lua::CallFunc (lua::LevelState(), &quot;Tick&quot;, timestep, NULL) != 0) {
+ //            throw XLevelRuntime (string(&quot;Calling 'Tick' failed:\n&quot;)
+
+Modified: trunk/src/stones/FlatStone.cc
+===================================================================
+--- trunk/src/stones/FlatStone.cc	2009-03-27 18:10:57 UTC (rev 1599)
++++ trunk/src/stones/FlatStone.cc	2009-03-27 23:40:17 UTC (rev 1600)
+@@ -61,14 +61,10 @@
+     
+     Value FlatStone::message(const Message &amp;m) {
+         if (m.message == &quot;_glasses&quot;) {
+-            if ((to_int(m.value) &amp; Glasses::HOLLOW) &amp;&amp; !(objFlags &amp; OBJBIT_GLASSES)) {  // hollow
+-                objFlags |= OBJBIT_GLASSES;
++            if ((bool)((to_int(m.value) &amp; Glasses::HOLLOW)) != (bool)(objFlags &amp; OBJBIT_GLASSES)) {
++                objFlags ^= OBJBIT_GLASSES;
+                 if (isDisplayable())
+                     init_model();
+-            } else if (objFlags &amp; OBJBIT_GLASSES) {
+-                objFlags &amp;= ~OBJBIT_GLASSES;
+-                if (isDisplayable())
+-                    init_model();
+             }
+             return Value();
+         } else if (((objFlags &amp; (OBJBIT_BREAKABLE | OBJBIT_MOVABLE)) || state == CRACKED) &amp;&amp; 
+
+Modified: trunk/src/stones/GlassStones.cc
+===================================================================
+--- trunk/src/stones/GlassStones.cc	2009-03-27 18:10:57 UTC (rev 1599)
++++ trunk/src/stones/GlassStones.cc	2009-03-27 23:40:17 UTC (rev 1600)
+@@ -49,14 +49,10 @@
+     
+     Value GlassStone::message(const Message &amp;m) {
+         if ((objFlags &amp; OBJBIT_HOLLOW) &amp;&amp; m.message == &quot;_glasses&quot;) {
+-            if ((to_int(m.value) &amp; Glasses::HOLLOW) &amp;&amp; !(objFlags &amp; OBJBIT_GLASSES)) {  // hollow
+-                objFlags |= OBJBIT_GLASSES;
++            if ((bool)((to_int(m.value) &amp; Glasses::HOLLOW)) != (bool)(objFlags &amp; OBJBIT_GLASSES)) {
++                objFlags ^= OBJBIT_GLASSES;
+                 if (isDisplayable())
+                     init_model();
+-            } else if (objFlags &amp; OBJBIT_GLASSES) {
+-                objFlags &amp;= ~OBJBIT_GLASSES;
+-                if (isDisplayable())
+-                    init_model();
+             }
+             return Value();
+         } else if (m.message == &quot;signal&quot; &amp;&amp; server::GameCompatibility == GAMET_OXYD1) {
+
+Modified: trunk/src/stones/GreenBrownStone.cc
+===================================================================
+--- trunk/src/stones/GreenBrownStone.cc	2009-03-27 18:10:57 UTC (rev 1599)
++++ trunk/src/stones/GreenBrownStone.cc	2009-03-27 23:40:17 UTC (rev 1600)
+@@ -49,14 +49,10 @@
+     
+     Value GreenBrownStone::message(const Message &amp;m) {
+         if ((objFlags &amp; OBJBIT_HOLLOW) &amp;&amp; m.message == &quot;_glasses&quot;) {
+-            if ((to_int(m.value) &amp; Glasses::HOLLOW) &amp;&amp; !(objFlags &amp; OBJBIT_GLASSES)) {  // hollow
+-                objFlags |= OBJBIT_GLASSES;
++            if ((bool)((to_int(m.value) &amp; Glasses::HOLLOW)) != (bool)(objFlags &amp; OBJBIT_GLASSES)) {
++                objFlags ^= OBJBIT_GLASSES;
+                 if (isDisplayable())
+                     init_model();
+-            } else if (objFlags &amp; OBJBIT_GLASSES) {
+-                objFlags &amp;= ~OBJBIT_GLASSES;
+-                if (isDisplayable())
+-                    init_model();
+             }
+             return Value();
+         }
+
+Modified: trunk/src/stones/PlasterStone.cc
+===================================================================
+--- trunk/src/stones/PlasterStone.cc	2009-03-27 18:10:57 UTC (rev 1599)
++++ trunk/src/stones/PlasterStone.cc	2009-03-27 23:40:17 UTC (rev 1600)
+@@ -51,14 +51,10 @@
+     
+     Value PlasterStone::message(const Message &amp;m) {
+         if ((objFlags &amp; OBJBIT_HOLLOW) &amp;&amp; m.message == &quot;_glasses&quot;) {
+-            if ((to_int(m.value) &amp; Glasses::HOLLOW) &amp;&amp; !(objFlags &amp; OBJBIT_GLASSES)) {  // hollow
+-                objFlags |= OBJBIT_GLASSES;
++            if ((bool)((to_int(m.value) &amp; Glasses::HOLLOW)) != (bool)(objFlags &amp; OBJBIT_GLASSES)) {
++                objFlags ^= OBJBIT_GLASSES;
+                 if (isDisplayable())
+                     init_model();
+-            } else if (objFlags &amp; OBJBIT_GLASSES) {
+-                objFlags &amp;= ~OBJBIT_GLASSES;
+-                if (isDisplayable())
+-                    init_model();
+             }
+             return Value();
+         } else if ((objFlags &amp; OBJBIT_BREAKABLE) &amp;&amp; 
+
+Modified: trunk/src/stones/StandardStones.cc
+===================================================================
+--- trunk/src/stones/StandardStones.cc	2009-03-27 18:10:57 UTC (rev 1599)
++++ trunk/src/stones/StandardStones.cc	2009-03-27 23:40:17 UTC (rev 1600)
+@@ -49,14 +49,10 @@
+     
+     Value StandardStone::message(const Message &amp;m) {
+         if ((objFlags &amp; OBJBIT_HOLLOW) &amp;&amp; m.message == &quot;_glasses&quot;) {
+-            if ((to_int(m.value) &amp; Glasses::HOLLOW) &amp;&amp; !(objFlags &amp; OBJBIT_GLASSES)) {  // hollow
+-                objFlags |= OBJBIT_GLASSES;
++            if ((bool)((to_int(m.value) &amp; Glasses::HOLLOW)) != (bool)(objFlags &amp; OBJBIT_GLASSES)) {
++                objFlags ^= OBJBIT_GLASSES;
+                 if (isDisplayable())
+                     init_model();
+-            } else if (objFlags &amp; OBJBIT_GLASSES) {
+-                objFlags &amp;= ~OBJBIT_GLASSES;
+-                if (isDisplayable())
+-                    init_model();
+             }
+             return Value();
+         }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001029.html">[Enigma-game-svn] r1599 - in trunk: data data/levels/enigma_i	data/levels/enigma_ii data/levels/enigma_iv	data/levels/enigma_vi data/levels/enigma_vii	data/levels/enigma_viii data/levels/lib doc/reference
+</A></li>
+	<LI>Next message: <A HREF="001031.html">[Enigma-game-svn] r1601 - trunk/data/levels/lib
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1030">[ date ]</a>
+              <a href="thread.html#1030">[ thread ]</a>
+              <a href="subject.html#1030">[ subject ]</a>
+              <a href="author.html#1030">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

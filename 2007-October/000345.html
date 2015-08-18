@@ -1,0 +1,1544 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r913 - in trunk/src: . stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r913%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200710302356.l9UNuWBe019781%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000344.html">
+   
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r913 - in trunk/src: . stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r913%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200710302356.l9UNuWBe019781%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r913 - in trunk/src: . stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Oct 31 00:56:32 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000344.html">[Enigma-game-svn] r912 - in trunk/src: . gui
+</A></li>
+        
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#345">[ date ]</a>
+              <a href="thread.html#345">[ thread ]</a>
+              <a href="subject.html#345">[ subject ]</a>
+              <a href="author.html#345">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-10-31 00:56:30 +0100 (Wed, 31 Oct 2007)
+New Revision: 913
+
+Added:
+   trunk/src/stones/
+   trunk/src/stones/ConnectiveStone.cc
+   trunk/src/stones/ConnectiveStone.hh
+   trunk/src/stones/OxydStone.cc
+   trunk/src/stones/OxydStone.hh
+   trunk/src/stones/WindowStone.cc
+   trunk/src/stones/WindowStone.hh
+Modified:
+   trunk/src/Makefile.am
+   trunk/src/objects.cc
+   trunk/src/objects_decl.hh
+   trunk/src/stones_complex.cc
+   trunk/src/stones_internal.hh
+   trunk/src/world.cc
+   trunk/src/world.hh
+Log:
+Trunk 1.1: Reengineering object template registration
+- extracted classes OxydStone, ConnectiveStone, WindowStone into
+  own files in src/stones
+- eliminated anonymous namespaces braces of these classes
+- added new objec template registration at file boot time
+  (see comments on class Object)
+
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2007-10-29 23:30:45 UTC (rev 912)
++++ trunk/src/Makefile.am	2007-10-30 23:56:30 UTC (rev 913)
+@@ -182,7 +182,13 @@
+ 	lev/ScoreManager.cc	\
+ 	lev/ScoreManager.hh	\
+ 	lev/VolatileIndex.cc	\
+-	lev/VolatileIndex.hh
++	lev/VolatileIndex.hh	\
++	stones/ConnectiveStone.cc	\
++	stones/ConnectiveStone.hh	\
++	stones/OxydStone.cc	\
++	stones/OxydStone.hh	\
++	stones/WindowStone.cc	\
++	stones/WindowStone.hh
+ 
+ datadir = @datadir@
+ 
+
+Modified: trunk/src/objects.cc
+===================================================================
+--- trunk/src/objects.cc	2007-10-29 23:30:45 UTC (rev 912)
++++ trunk/src/objects.cc	2007-10-30 23:56:30 UTC (rev 913)
+@@ -47,11 +47,31 @@
+ int Object::next_id = 1;
+ std::map&lt;int, Object *&gt; Object::objects;
+ 
+-int Object::getNextId(Object *obj) {
+-    objects[next_id] = obj;
+-    return next_id++;
++int Object::getNextId(Object *obj, bool bootFinished) {
++    static bool isBooting = true;
++    static int nextIdBoot = 1;
++    static std::map&lt;int, Object *&gt; objectsBoot;
++    
++    if (isBooting) {
++        if (bootFinished) {
++            isBooting = false;
++            next_id = nextIdBoot;
++            objects = objectsBoot;
++            return 0;
++        } else {
++            objectsBoot[nextIdBoot] = obj;
++            return nextIdBoot++;
++        }
++    } else {
++        objects[next_id] = obj;
++        return next_id++;
++    }
+ }
+ 
++void Object::bootFinished() {
++    getNextId(NULL, true);
++}
++
+ void Object::freeId(int id) {
+     objects.erase(id);
+ }
+@@ -65,16 +85,16 @@
+ }
+ 
+ Object::Object() {
+-    id = getNextId(this);
++    id = getNextId(this, false);
+ }
+ 
+ Object::Object(const char *kind) {
+     set_attrib(&quot;kind&quot;, Value(kind));
+-    id = getNextId(this);
++    id = getNextId(this, false);
+ }
+ 
+ Object::Object(const Object &amp;src_obj) {
+-    id = getNextId(this);
++    id = getNextId(this, false);
+     attribs = src_obj.attribs;
+ }
+ 
+
+Modified: trunk/src/objects_decl.hh
+===================================================================
+--- trunk/src/objects_decl.hh	2007-10-29 23:30:45 UTC (rev 912)
++++ trunk/src/objects_decl.hh	2007-10-30 23:56:30 UTC (rev 913)
+@@ -20,6 +20,16 @@
+ #ifndef OBJECTS_DECL_HH
+ #define OBJECTS_DECL_HH
+ 
++#define BOOT_REGISTER_START        \
++        namespace {                \
++            bool do_boot_register() {
++
++#define BOOT_REGISTER_END          \
++                return true;       \
++            }                      \
++            static bool boot_registered = do_boot_register(); \
++        } 
++
+ #include &quot;display.hh&quot;
+ #include &quot;ecl_alist.hh&quot;
+ #include &lt;map&gt;
+@@ -32,24 +42,39 @@
+ 
+ /* -------------------- Objects -------------------- */
+ 
+-    /*! Object is the base class for all ``objects'' in the world.
+-      The most important facilities this class provides are:
+-     
+-      (1) A way to clone() and dispose() objects.  This is mainly used
+-          in function MakeObject() to create new objects of a given
+-          type.
+-     
+-      (2) A way to pass messages between unrelated objects via message().
+-          This allows us to send messages to objects from Lua and to
+-          decouple objects types as much as possible.
+-     
+-      (3) A way to get and set attributes.  These attributes are quite
+-          similar to instance variables, but they can be easily modified
+-          from Lua.  This makes it possible to modify certain object
+-          parameters (such as the text on a piece of paper or the color
+-          of an oxyd stone) in level descriptions.
++    /**
++     *  Object is the base class for all ``objects'' in the world.
++     * The most important facilities this class provides are:
++     *
++     * (1) A way to clone() and dispose() objects.  This is mainly used
++     *     in function MakeObject() to create new objects of a given
++     *     type.
++     * 
++     * (2) A way to pass messages between unrelated objects via message().
++     *     This allows us to send messages to objects from Lua and to
++     *     decouple objects types as much as possible.
++     * 
++     * (3) A way to get and set attributes.  These attributes are quite
++     *     similar to instance variables, but they can be easily modified
++     *     from Lua.  This makes it possible to modify certain object
++     *     parameters (such as the text on a piece of paper or the color
++     *     of an oxyd stone) in level descriptions.
++     * 
++     * The various Object subclasses instances need to register a template
++     * instance for each object name. To avoid the inclusion of every
++     * subclass declaration file into the registry for registry driven forward
++     * initialization we make use of the static file based initialization
++     * that occurs prior to the main application startup. To be independent of
++     * the undefined sequence in which the files are initialized we store the
++     * template instances, object names and id's in function local static caches.
++     * These caches are copied to the final runtime data structures on the main
++     * application startup. We call this feature &quot;boot&quot;-initialization. The macros
++     * BOOT_REGISTER_START and BOOT_REGISTER_END will be used once at the end of
++     * every subclass file. They embrace the BootRegister() function calls that
++     * register the templates.
+      */
+     class Object {
++
+     public:
+         enum ObjectType { 
+             OTHER,
+@@ -134,11 +159,14 @@
+     protected:
+         virtual Value getDefaultValue(const string &amp;key) const;
+     private:
++        friend void InitWorld();   // for bootFinished() access
++        
+         static int next_id;
+         static std::map&lt;int, Object *&gt; objects;
+         int id;
+         AttribMap attribs;
+-        static int getNextId(Object *obj);
++        static int getNextId(Object *obj, bool bootFinished);
++        static void bootFinished();
+         static void freeId(int id);
+         const Value* get_attrib(const string&amp; key) const;
+     };
+@@ -151,7 +179,6 @@
+      * placed on &quot;The Grid&quot;, i.e., for floor tiles, items, and
+      * stones. 
+      */
+-
+     class GridObject : public Object, public display::ModelCallback {
+     public:
+         GridObject() : pos (GridPos(-1, -1)) {}
+
+Added: trunk/src/stones/ConnectiveStone.cc
+===================================================================
+--- trunk/src/stones/ConnectiveStone.cc	2007-10-29 23:30:45 UTC (rev 912)
++++ trunk/src/stones/ConnectiveStone.cc	2007-10-30 23:56:30 UTC (rev 913)
+@@ -0,0 +1,24 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/ConnectiveStone.hh&quot;
++
++namespace enigma {
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/ConnectiveStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/ConnectiveStone.hh
+===================================================================
+--- trunk/src/stones/ConnectiveStone.hh	2007-10-29 23:30:45 UTC (rev 912)
++++ trunk/src/stones/ConnectiveStone.hh	2007-10-30 23:56:30 UTC (rev 913)
+@@ -0,0 +1,60 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef CONNECTIVESTONE_HH_INCLUDED
++#define CONNECTIVESTONE_HH_INCLUDED
++
++#include &quot;stones.hh&quot;
++
++/* -------------------- ConnectiveStone -------------------- */
++
++// base class for PuzzleStone and BigBrick
++
++namespace enigma {
++    
++    class ConnectiveStone : public Stone {
++    public:
++        ConnectiveStone(const char *kind, int connections): Stone(kind) {
++            set_attrib(&quot;connections&quot;, connections);
++        }
++        ConnectiveStone(int connections) {
++            set_attrib(&quot;connections&quot;, connections);
++        }
++
++        DirectionBits get_connections() const {
++            int conn = (int)getAttr(&quot;connections&quot;) - 1;
++            if (conn &gt;=0 &amp;&amp; conn &lt;16)
++                return DirectionBits(conn);
++            else
++                return NODIRBIT;
++        }
++
++    protected:
++        virtual void init_model() {
++            set_model(get_kind()+ecl::strf(&quot;%d&quot;, get_modelno()));
++        }
++
++        virtual int get_modelno() const {
++            return getAttr(&quot;connections&quot;);
++        }
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/ConnectiveStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/OxydStone.cc
+===================================================================
+--- trunk/src/stones/OxydStone.cc	2007-10-29 23:30:45 UTC (rev 912)
++++ trunk/src/stones/OxydStone.cc	2007-10-30 23:56:30 UTC (rev 913)
+@@ -0,0 +1,232 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/OxydStone.hh&quot;
++#include &quot;server.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++ 
++    OxydStone::InstanceList OxydStone::instances;
++    
++    OxydStone * OxydStone::clone() { 
++        OxydStone *o = new OxydStone(*this); 
++        instances.push_back(o);
++        if (server::EnigmaCompatibility &gt;= 1.10) {
++            int color = ((instances.size() -1) / 2) % 8;
++            o-&gt;set_attrib(&quot;color&quot;, color);
++        }
++        return o;
++    }
++    
++    OxydStone::OxydStone()
++    : PhotoStone(&quot;st-oxyd&quot;),
++      state(CLOSED)
++    {
++        set_attrib(&quot;flavor&quot;, &quot;b&quot;);
++        set_attrib(&quot;color&quot;, 0);
++    }
++    
++    Value OxydStone::message(const string &amp;m, const Value &amp;val) 
++    {
++        if (m==&quot;closeall&quot;) {
++            for (unsigned i=0; i&lt;instances.size(); ++i)
++                instances[i]-&gt;change_state(CLOSING);
++        }
++        else if (m==&quot;shuffle&quot;) {
++            shuffle_colors();
++        }
++        else if (m==&quot;trigger&quot; || m==&quot;spitter&quot;) {
++            maybe_open_stone();
++        }
++        else if (m==&quot;signal&quot; &amp;&amp; to_int(val) != 0) {
++            maybe_open_stone();
++        }
++        else if (m==&quot;init&quot;) {
++            // odd number of oxyd stones in the level? no problem, turn a
++            // random one into a fake oxyd
++    
++            if (instances.size() % 2) {
++                // &quot;odd number of oxyd stones&quot;;
++                // TODO
++            }
++        }
++        return Value();
++    }
++    
++    void OxydStone::shuffle_colors() 
++    {
++        std::vector&lt;size_t&gt; closed_oxyds;
++        size_t         isize = instances.size();
++        for (size_t i=0; i&lt;isize; ++i) {
++            if (instances[i]-&gt;state == CLOSED) {
++                closed_oxyds.push_back(i);
++            }
++        }
++    
++        unsigned size = closed_oxyds.size();
++        if (size&gt;1) {
++            for (unsigned i = 0; i&lt;size; ++i) {
++                unsigned a = IntegerRand(0, static_cast&lt;int&gt; (size-2));
++                if (a &gt;= i) ++a;        // make a always different from j
++    
++                OxydStone *o1 = instances[closed_oxyds[i]];
++                OxydStone *o2 = instances[closed_oxyds[a]];
++    
++                Value icolor = o1-&gt;getAttr(&quot;color&quot;); 
++    
++                o1-&gt;set_attrib(&quot;color&quot;, o2-&gt;getAttr(&quot;color&quot;));
++                o2-&gt;set_attrib(&quot;color&quot;, icolor);
++            }
++        }
++    }
++    
++    void OxydStone::change_state(State newstate) 
++    {
++        string flavor(getAttr(&quot;flavor&quot;,&quot;a&quot;));
++        string color(getAttr(&quot;color&quot;, 0));
++    
++        string modelname = string(&quot;st-oxyd&quot;) + flavor + color;
++    
++        State oldstate = state;
++        state = newstate;
++    
++        switch (newstate) {
++        case CLOSED:
++            set_model(string(&quot;st-oxyd&quot;)+flavor);
++            break;
++    
++        case BLINKING:
++            set_model(modelname + &quot;-blink&quot;);
++            break;
++    
++        case OPEN:
++            if (oldstate == CLOSED) {
++                sound_event(&quot;oxydopen&quot;);
++                sound_event(&quot;oxydopened&quot;);
++                set_anim(modelname+&quot;-opening&quot;);
++            } else {
++                set_model(modelname + &quot;-open&quot;);
++            }
++            /* If this was the last closed oxyd stone, finish the
++               level */
++            if (find_if(instances.begin(),instances.end(),not_open)
++                    == instances.end()) {
++                server::FinishLevel();
++            }
++            break;
++    
++        case OPENING:
++            sound_event(&quot;oxydopen&quot;);
++            if (oldstate == CLOSED)
++                set_anim(modelname + &quot;-opening&quot;);
++            else if (oldstate == CLOSING)
++                get_model()-&gt;reverse();
++    
++            break;
++    
++        case CLOSING:
++            if (oldstate == CLOSED || oldstate==CLOSING) {
++                state = oldstate;
++                return;
++            }
++    
++            sound_event(&quot;oxydclose&quot;);
++            if (oldstate == OPENING)
++                get_model()-&gt;reverse();
++            else if (oldstate == BLINKING || oldstate == OPEN) {
++                set_anim(modelname + &quot;-closing&quot;);
++            }
++            break;
++        }
++    }
++    
++    void OxydStone::animcb() {
++        if (state == CLOSING)
++            change_state(CLOSED);
++        else if (state == OPENING)
++            change_state(BLINKING);
++        else if (state == OPEN)
++            change_state(OPEN); // set the right model
++    }
++    
++    void OxydStone::maybe_open_stone() {
++        if (state == CLOSED || state == CLOSING) {
++            Value mycolor = getAttr(&quot;color&quot;);
++    
++            // Is another oxyd stone currently blinking?
++            InstanceList::iterator i;
++            i=find_if(instances.begin(), instances.end(), blinking_or_opening);
++    
++            if (i != instances.end()) {
++    
++                bool can_open;
++    
++                if (server::GameCompatibility != GAMET_ENIGMA) {
++                    // If colors match and stone (*i) is already blinking,
++                    // open both stones. Close one of them otherwise.
++                    // (This is the Oxyd behaviour; it doesn't work with
++                    // some Enigma levels.)
++                    can_open = (mycolor == (*i)-&gt;getAttr(&quot;color&quot;) &amp;&amp; (*i)-&gt;state==BLINKING);
++                }
++                else 
++                    can_open = (mycolor == (*i)-&gt;getAttr(&quot;color&quot;));
++    
++                if (can_open) {
++                    change_state(OPEN);
++                    (*i)-&gt;change_state(OPEN);
++                } else {
++                    (*i)-&gt;change_state(CLOSING);
++                    change_state(OPENING);
++                }
++            }
++            else {
++                // no blinking stone? -&gt; make this one blink
++                change_state(OPENING);
++            }
++        }
++    }
++    
++    void OxydStone::actor_hit(const StoneContact &amp;/*sc*/) {
++        maybe_open_stone();
++    }
++    
++    void OxydStone::on_creation (GridPos) 
++    {
++        string flavor(getAttr(&quot;flavor&quot;, &quot;a&quot;));
++        set_model(string(&quot;st-oxyd&quot;) + flavor);
++        photo_activate();
++    }
++    
++    bool OxydStone::is_removable() const {
++        return !getAttr(&quot;static&quot;).to_bool();
++    }
++    
++    void OxydStone::on_removal(GridPos p) 
++    {
++        photo_deactivate();
++        kill_model (p);
++    }
++
++    BOOT_REGISTER_START
++        BootRegister(new OxydStone);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/OxydStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/OxydStone.hh
+===================================================================
+--- trunk/src/stones/OxydStone.hh	2007-10-29 23:30:45 UTC (rev 912)
++++ trunk/src/stones/OxydStone.hh	2007-10-30 23:56:30 UTC (rev 913)
+@@ -0,0 +1,111 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef OXYDSTONE_HH_INCLUDED
++#define OXYDSTONE_HH_INCLUDED
++
++#include &quot;stones.hh&quot;
++#include &quot;laser.hh&quot;
++
++/* -------------------- Oxyd stone -------------------- */
++
++/** \page st-oxyd Oxyd Stone
++
++Oxyd stones are characterized by two attributes: Their flavor and
++their color.  The flavor only affects the visual representation of
++the stone; it can be either 'a' (opening like a flower) or 'b'
++(displaying a fade-in animation).  The color attribute determines
++the shape on the oxyd stone.
++
++\b Note: You should usually not to create Oxyd stones manually
++with \c set_stone(). Use the predefined \c oxyd() function instead.
++
++\subsection oxyda Attributes
++
++- \b flavor      &quot;a&quot;, &quot;b&quot;, &quot;c&quot;, or &quot;d&quot;
++- \b color       number between 0 and 7
++
++\subsection oxydm Messages
++
++- \b closeall    close all oxyd stones
++- \b shuffle     interchange the colors of the oxyd stones in the current landscape
++- \b trigger     open the stone
++
++&lt;table&gt;&lt;tr&gt;
++&lt;td&gt;\image html st-oxyda.png &quot;flavor A&quot;
++&lt;td&gt;\image html st-oxydb.png &quot;flavor B&quot;
++&lt;td&gt;\image html st-oxydc.png &quot;flavor C&quot;
++&lt;td&gt;\image html st-oxydd.png &quot;flavor D&quot;
++&lt;/table&gt;
++*/
++
++namespace enigma {
++
++    class OxydStone : public PhotoStone {
++        typedef std::vector&lt;OxydStone *&gt; InstanceList;
++        static InstanceList instances;
++        OxydStone * clone();
++        void dispose() {
++            instances.erase(find(instances.begin(), instances.end(), this));
++            delete this;
++        }
++
++    public:
++        OxydStone();
++
++        static void shuffle_colors();
++        virtual bool is_removable() const;
++    private:
++        enum State { CLOSED, OPEN, OPENING, CLOSING, BLINKING };
++        State state;
++
++        // Stone interface
++        void actor_hit(const StoneContact &amp;sc);
++        void on_creation (GridPos p);
++        void on_removal (GridPos p);
++        const char *collision_sound() { return &quot;stone&quot;; }
++        virtual Value message(const string &amp;m, const Value &amp;);
++
++
++        // PhotoStone interface
++        void notify_laseron() { maybe_open_stone(); }
++        void notify_laseroff() {}
++
++        // Animation callback
++        void animcb();
++
++        // Private methods
++        void maybe_open_stone();
++        void change_state(State newstate);
++
++
++        static bool blinking(OxydStone *a) {
++            return (a-&gt;state==BLINKING);
++        }
++        static bool blinking_or_opening(OxydStone *a) {
++            return (a-&gt;state==BLINKING || a-&gt;state == OPENING);
++        }
++        static bool not_open(OxydStone *a) {
++            return !(a-&gt;state==OPEN || a-&gt;state==OPENING);
++        }
++
++    };
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/OxydStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/WindowStone.cc
+===================================================================
+--- trunk/src/stones/WindowStone.cc	2007-10-29 23:30:45 UTC (rev 912)
++++ trunk/src/stones/WindowStone.cc	2007-10-30 23:56:30 UTC (rev 913)
+@@ -0,0 +1,127 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/WindowStone.hh&quot;
++#include &quot;server.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    DEF_TRAITSM(WindowStone, &quot;st-window&quot;, st_window, MOVABLE_BREAKABLE);
++
++    void WindowStone::actor_hit(const StoneContact &amp;sc) {
++        Actor *a = sc.actor;
++        // TODO do we want to allow breaks while breaking?
++        if (state == IDLE) {
++            double impulse = -(a-&gt;get_vel() * sc.normal) * get_mass(a);
++            if (impulse &gt; 35) {
++                SendMessage(a, &quot;shatter&quot;);
++            }
++
++            else if (impulse &gt; 25) {
++                breakingFaces = sc.faces;
++                set_attrib(&quot;connections&quot;, (get_connections() &amp; ~breakingFaces) +1);
++                sound_event (&quot;shatter&quot;);
++                state = BREAK;
++                set_anim(&quot;st-window-anim&quot;);  // TODO anim with remaining unbroken faces
++            }
++            
++            else if (player::WieldedItemIs (sc.actor, &quot;it-wrench&quot;)) {
++                DirectionBits faces = get_connections();
++                if (sc.faces == WESTBIT &amp;&amp; sc.normal[0] &lt; 0){
++                    tryInnerPull(EAST);
++                } else if (sc.faces == EASTBIT &amp;&amp; sc.normal[0] &gt; 0) {
++                    tryInnerPull(WEST);
++                } else if (sc.faces == SOUTHBIT &amp;&amp; sc.normal[1] &gt; 0) {
++                    tryInnerPull(NORTH);
++                } else if (sc.faces == NORTHBIT &amp;&amp; sc.normal[1] &lt; 0) {
++                    tryInnerPull(SOUTH);
++                }
++            }
++        }
++    }
++    
++    void WindowStone::animcb() {
++        DirectionBits faces = get_connections();
++        DirectionBits newFaces = DirectionBits(faces &amp; ~breakingFaces);
++        if (newFaces == NODIRBIT)
++            KillStone(get_pos());
++        else {
++            ReplaceStone(get_pos(), new WindowStone(newFaces+1));
++        }
++    }
++    
++    bool WindowStone::is_sticky(const Actor *a) const  {
++        return false;
++    }
++    
++    StoneResponse WindowStone::collision_response(const StoneContact &amp;sc) {
++        const double face_width = 3.0/32.0; 
++        DirectionBits faces = get_connections();
++
++        if (((sc.contact_point[0] &lt;= get_pos().x + face_width) &amp;&amp; faces&amp;WESTBIT) ||
++                ((sc.contact_point[0] &gt;= get_pos().x + 1 - face_width) &amp;&amp; faces&amp;EASTBIT) ||
++                ((sc.contact_point[1] &lt;= get_pos().y + face_width) &amp;&amp; faces&amp;NORTHBIT) ||
++                ((sc.contact_point[1] &gt;= get_pos().y + 1 - face_width) &amp;&amp; faces&amp;SOUTHBIT)) {
++            return STONE_REBOUND;
++        } else {
++            return STONE_PASS;
++        }
++    }
++    
++    Value WindowStone::message(const string &amp;msg, const Value &amp;val) {
++        if (msg == &quot;inner_pull&quot; ) {
++            return Value(tryInnerPull(to_direction(val)));
++        }
++        return Value();
++    }
++    
++    bool WindowStone::tryInnerPull(Direction dir) {
++        DirectionBits faces = get_connections();
++        if (!has_dir(faces, dir) &amp;&amp; has_dir(faces, reverse(dir))){
++            Stone *stone = GetStone(move(get_pos(), dir));
++            if (!stone || ((stone-&gt;get_traits().id == st_window) &amp;&amp;  
++                    !has_dir(dynamic_cast&lt;ConnectiveStone *&gt;(stone)-&gt;get_connections(), reverse(dir)))) {
++                ReplaceStone(get_pos(), new WindowStone((faces&amp;(~to_bits(reverse(dir)))|to_bits(dir))+1));
++                return true;
++            }
++        }
++        return has_dir(faces, dir);
++    }
++
++    BOOT_REGISTER_START
++        BootRegister(new WindowStone(3), &quot;st-window&quot;);    // compatibility window with south face only
++        BootRegister(new WindowStone(2), &quot;st-window-w&quot;);
++        BootRegister(new WindowStone(3), &quot;st-window-s&quot;);
++        BootRegister(new WindowStone(4), &quot;st-window-sw&quot;);
++        BootRegister(new WindowStone(5), &quot;st-window-e&quot;);
++        BootRegister(new WindowStone(6), &quot;st-window-ew&quot;);
++        BootRegister(new WindowStone(7), &quot;st-window-es&quot;);
++        BootRegister(new WindowStone(8), &quot;st-window-esw&quot;);
++        BootRegister(new WindowStone(9), &quot;st-window-n&quot;);
++        BootRegister(new WindowStone(10), &quot;st-window-nw&quot;);
++        BootRegister(new WindowStone(11), &quot;st-window-ns&quot;);
++        BootRegister(new WindowStone(12), &quot;st-window-nsw&quot;);
++        BootRegister(new WindowStone(13), &quot;st-window-ne&quot;);
++        BootRegister(new WindowStone(14), &quot;st-window-new&quot;);
++        BootRegister(new WindowStone(15), &quot;st-window-nes&quot;);
++        BootRegister(new WindowStone(16), &quot;st-window-nesw&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/WindowStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/WindowStone.hh
+===================================================================
+--- trunk/src/stones/WindowStone.hh	2007-10-29 23:30:45 UTC (rev 912)
++++ trunk/src/stones/WindowStone.hh	2007-10-30 23:56:30 UTC (rev 913)
+@@ -0,0 +1,68 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef WINDOWSTONE_HH_INCLUDED
++#define WINDOWSTONE_HH_INCLUDED
++
++#include &quot;stones.hh&quot;
++#include &quot;stones/ConnectiveStone.hh&quot;
++
++#include &quot;actors.hh&quot;
++#include &quot;player.hh&quot;
++#include &quot;stones_internal.hh&quot;
++#include &quot;world.hh&quot;
++
++/* -------------------- Window -------------------- */
++
++/** \page st-window Breakable Stone
++
++Hit this window heavily with your marble to blast it into smithereens.
++
++\image html st-window.png
++*/
++
++namespace enigma {
++    
++    class WindowStone : public ConnectiveStone {
++        CLONEOBJ(WindowStone);
++        DECL_TRAITS;
++        const char *collision_sound() {return &quot;glass&quot;;}
++
++        bool is_transparent (Direction) const { return true; }
++        bool is_floating() const { return state != IDLE; }
++        enum State { IDLE, BREAK } state;
++
++        void actor_hit(const StoneContact &amp;sc);
++        void animcb();
++
++    public:
++        WindowStone(int connections) : ConnectiveStone(connections),
++                state(IDLE), breakingFaces(NODIRBIT) {
++        }
++        virtual bool is_sticky(const Actor *a) const;
++        StoneResponse collision_response(const StoneContact &amp;sc);
++        virtual Value message(const string &amp;msg, const Value &amp;val);
++    private:
++        DirectionBits breakingFaces;
++        bool tryInnerPull(Direction dir);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/WindowStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2007-10-29 23:30:45 UTC (rev 912)
++++ trunk/src/stones_complex.cc	2007-10-30 23:56:30 UTC (rev 913)
+@@ -24,6 +24,7 @@
+ #include &quot;player.hh&quot;
+ #include &quot;Inventory.hh&quot;
+ #include &quot;stones_internal.hh&quot;
++#include &quot;stones/ConnectiveStone.hh&quot;
+ #include &quot;actors.hh&quot;
+ #include &quot;main.hh&quot;
+ 
+@@ -852,120 +853,8 @@
+     };
+ }
+ 
+-/* -------------------- Window -------------------- */
+ 
+-/** \page st-window Breakable Stone
+ 
+-Hit this window heavily with your marble to blast it into smithereens.
+-
+-\image html st-window.png
+-*/
+-
+-namespace
+-{
+-    class Window : public ConnectiveStone {
+-        CLONEOBJ(Window);
+-        DECL_TRAITS;
+-        const char *collision_sound() {return &quot;glass&quot;;}
+-
+-        bool is_transparent (Direction) const { return true; }
+-        bool is_floating() const { return state != IDLE; }
+-        enum State { IDLE, BREAK } state;
+-
+-        void actor_hit(const StoneContact &amp;sc) {
+-            Actor *a = sc.actor;
+-            // TODO do we want to allow breaks while breaking?
+-            if (state == IDLE) {
+-                double impulse = -(a-&gt;get_vel() * sc.normal) * get_mass(a);
+-                if (impulse &gt; 35) {
+-                    SendMessage(a, &quot;shatter&quot;);
+-                }
+-    
+-                else if (impulse &gt; 25) {
+-                    breakingFaces = sc.faces;
+-                    set_attrib(&quot;connections&quot;, (get_connections() &amp; ~breakingFaces) +1);
+-                    sound_event (&quot;shatter&quot;);
+-                    state = BREAK;
+-                    set_anim(&quot;st-window-anim&quot;);  // TODO anim with remaining unbroken faces
+-                }
+-                
+-                else if (player::WieldedItemIs (sc.actor, &quot;it-wrench&quot;)) {
+-                    DirectionBits faces = get_connections();
+-                    if (sc.faces == WESTBIT &amp;&amp; sc.normal[0] &lt; 0){
+-                        tryInnerPull(EAST);
+-                    } else if (sc.faces == EASTBIT &amp;&amp; sc.normal[0] &gt; 0) {
+-                        tryInnerPull(WEST);
+-                    } else if (sc.faces == SOUTHBIT &amp;&amp; sc.normal[1] &gt; 0) {
+-                        tryInnerPull(NORTH);
+-                    } else if (sc.faces == NORTHBIT &amp;&amp; sc.normal[1] &lt; 0) {
+-                        tryInnerPull(SOUTH);
+-                    }
+-                }
+-            }
+-        }
+-        void animcb() {
+-            DirectionBits faces = get_connections();
+-            DirectionBits newFaces = DirectionBits(faces &amp; ~breakingFaces);
+-            if (newFaces == NODIRBIT)
+-                KillStone(get_pos());
+-            else {
+-                ReplaceStone(get_pos(), new Window(newFaces+1));
+-            }
+-        }
+-
+-    public:
+-        Window(int connections) : ConnectiveStone(connections),
+-                state(IDLE), breakingFaces(NODIRBIT) {
+-        }
+-        virtual bool is_sticky(const Actor *a) const;
+-        StoneResponse collision_response(const StoneContact &amp;sc);
+-        virtual Value message(const string &amp;msg, const Value &amp;val);
+-    private:
+-        DirectionBits breakingFaces;
+-        bool tryInnerPull(Direction dir);
+-    };
+-    DEF_TRAITSM(Window, &quot;st-window&quot;, st_window, MOVABLE_BREAKABLE);
+-
+-    bool Window::is_sticky(const Actor *a) const  {
+-        return false;
+-    }
+-    
+-    StoneResponse Window::collision_response(const StoneContact &amp;sc) {
+-        const double face_width = 3.0/32.0; 
+-        DirectionBits faces = get_connections();
+-
+-        if (((sc.contact_point[0] &lt;= get_pos().x + face_width) &amp;&amp; faces&amp;WESTBIT) ||
+-                ((sc.contact_point[0] &gt;= get_pos().x + 1 - face_width) &amp;&amp; faces&amp;EASTBIT) ||
+-                ((sc.contact_point[1] &lt;= get_pos().y + face_width) &amp;&amp; faces&amp;NORTHBIT) ||
+-                ((sc.contact_point[1] &gt;= get_pos().y + 1 - face_width) &amp;&amp; faces&amp;SOUTHBIT)) {
+-            return STONE_REBOUND;
+-        } else {
+-            return STONE_PASS;
+-        }
+-    }
+-    
+-    Value Window::message(const string &amp;msg, const Value &amp;val) {
+-        if (msg == &quot;inner_pull&quot; ) {
+-            return Value(tryInnerPull(to_direction(val)));
+-        }
+-        return Value();
+-    }
+-    
+-    bool Window::tryInnerPull(Direction dir) {
+-        DirectionBits faces = get_connections();
+-        if (!has_dir(faces, dir) &amp;&amp; has_dir(faces, reverse(dir))){
+-            Stone *stone = GetStone(move(get_pos(), dir));
+-            if (!stone || ((stone-&gt;get_traits().id == st_window) &amp;&amp;  
+-                    !has_dir(dynamic_cast&lt;ConnectiveStone *&gt;(stone)-&gt;get_connections(), reverse(dir)))) {
+-                ReplaceStone(get_pos(), new Window((faces&amp;(~to_bits(reverse(dir)))|to_bits(dir))+1));
+-                return true;
+-            }
+-        }
+-        return has_dir(faces, dir);
+-    }
+-}
+-
+-
+ /* -------------------- Puzzle stones -------------------- */ 
+ 
+ /** \page st-puzzle Puzzle Stone
+@@ -2243,293 +2132,6 @@
+ }
+ 
+ 
+-/* -------------------- Oxyd stone -------------------- */
+-
+-/** \page st-oxyd Oxyd Stone
+-
+-Oxyd stones are characterized by two attributes: Their flavor and
+-their color.  The flavor only affects the visual representation of
+-the stone; it can be either 'a' (opening like a flower) or 'b'
+-(displaying a fade-in animation).  The color attribute determines
+-the shape on the oxyd stone.
+-
+-\b Note: You should usually not to create Oxyd stones manually
+-with \c set_stone(). Use the predefined \c oxyd() function instead.
+-
+-\subsection oxyda Attributes
+-
+-- \b flavor      &quot;a&quot;, &quot;b&quot;, &quot;c&quot;, or &quot;d&quot;
+-- \b color       number between 0 and 7
+-
+-\subsection oxydm Messages
+-
+-- \b closeall    close all oxyd stones
+-- \b shuffle     interchange the colors of the oxyd stones in the current landscape
+-- \b trigger     open the stone
+-
+-&lt;table&gt;&lt;tr&gt;
+-&lt;td&gt;\image html st-oxyda.png &quot;flavor A&quot;
+-&lt;td&gt;\image html st-oxydb.png &quot;flavor B&quot;
+-&lt;td&gt;\image html st-oxydc.png &quot;flavor C&quot;
+-&lt;td&gt;\image html st-oxydd.png &quot;flavor D&quot;
+-&lt;/table&gt;
+-*/
+-
+-namespace
+-{
+-    class OxydStone : public PhotoStone {
+-        typedef std::vector&lt;OxydStone *&gt; InstanceList;
+-        static InstanceList instances;
+-        OxydStone * clone();
+-        void dispose() {
+-            instances.erase(find(instances.begin(), instances.end(), this));
+-            delete this;
+-        }
+-
+-    public:
+-        OxydStone();
+-
+-        static void shuffle_colors();
+-        virtual bool is_removable() const;
+-    private:
+-        enum State { CLOSED, OPEN, OPENING, CLOSING, BLINKING };
+-        State state;
+-
+-        // Stone interface
+-        void actor_hit(const StoneContact &amp;sc);
+-        void on_creation (GridPos p);
+-        void on_removal (GridPos p);
+-        const char *collision_sound() { return &quot;stone&quot;; }
+-        virtual Value message(const string &amp;m, const Value &amp;);
+-
+-
+-        // PhotoStone interface
+-        void notify_laseron() { maybe_open_stone(); }
+-        void notify_laseroff() {}
+-
+-        // Animation callback
+-        void animcb();
+-
+-        // Private methods
+-        void maybe_open_stone();
+-        void change_state(State newstate);
+-
+-
+-        static bool blinking(OxydStone *a) {
+-            return (a-&gt;state==BLINKING);
+-        }
+-        static bool blinking_or_opening(OxydStone *a) {
+-            return (a-&gt;state==BLINKING || a-&gt;state == OPENING);
+-        }
+-        static bool not_open(OxydStone *a) {
+-            return !(a-&gt;state==OPEN || a-&gt;state==OPENING);
+-        }
+-
+-    };
+-}
+-
+-OxydStone::InstanceList OxydStone::instances;
+-
+-OxydStone * OxydStone::clone() { 
+-    OxydStone *o = new OxydStone(*this); 
+-    instances.push_back(o);
+-    if (server::EnigmaCompatibility &gt;= 1.10) {
+-        int color = ((instances.size() -1) / 2) % 8;
+-        o-&gt;set_attrib(&quot;color&quot;, color);
+-    }
+-    return o;
+-}
+-
+-OxydStone::OxydStone()
+-: PhotoStone(&quot;st-oxyd&quot;),
+-  state(CLOSED)
+-{
+-    set_attrib(&quot;flavor&quot;, &quot;b&quot;);
+-    set_attrib(&quot;color&quot;, 0);
+-}
+-
+-Value OxydStone::message(const string &amp;m, const Value &amp;val) 
+-{
+-    if (m==&quot;closeall&quot;) {
+-        for (unsigned i=0; i&lt;instances.size(); ++i)
+-            instances[i]-&gt;change_state(CLOSING);
+-    }
+-    else if (m==&quot;shuffle&quot;) {
+-        shuffle_colors();
+-    }
+-    else if (m==&quot;trigger&quot; || m==&quot;spitter&quot;) {
+-        maybe_open_stone();
+-    }
+-    else if (m==&quot;signal&quot; &amp;&amp; to_int(val) != 0) {
+-        maybe_open_stone();
+-    }
+-    else if (m==&quot;init&quot;) {
+-        // odd number of oxyd stones in the level? no problem, turn a
+-        // random one into a fake oxyd
+-
+-        if (instances.size() % 2) {
+-            // &quot;odd number of oxyd stones&quot;;
+-            // TODO
+-        }
+-    }
+-    return Value();
+-}
+-
+-void OxydStone::shuffle_colors() 
+-{
+-    vector&lt;size_t&gt; closed_oxyds;
+-    size_t         isize = instances.size();
+-    for (size_t i=0; i&lt;isize; ++i) {
+-        if (instances[i]-&gt;state == CLOSED) {
+-            closed_oxyds.push_back(i);
+-        }
+-    }
+-
+-    unsigned size = closed_oxyds.size();
+-    if (size&gt;1) {
+-        for (unsigned i = 0; i&lt;size; ++i) {
+-            unsigned a = IntegerRand(0, static_cast&lt;int&gt; (size-2));
+-            if (a &gt;= i) ++a;        // make a always different from j
+-
+-            OxydStone *o1 = instances[closed_oxyds[i]];
+-            OxydStone *o2 = instances[closed_oxyds[a]];
+-
+-            Value icolor = o1-&gt;getAttr(&quot;color&quot;); 
+-
+-            o1-&gt;set_attrib(&quot;color&quot;, o2-&gt;getAttr(&quot;color&quot;));
+-            o2-&gt;set_attrib(&quot;color&quot;, icolor);
+-        }
+-    }
+-}
+-
+-void OxydStone::change_state(State newstate) 
+-{
+-    string flavor(getAttr(&quot;flavor&quot;,&quot;a&quot;));
+-    string color(getAttr(&quot;color&quot;, 0));
+-
+-    string modelname = string(&quot;st-oxyd&quot;) + flavor + color;
+-
+-    State oldstate = state;
+-    state = newstate;
+-
+-    switch (newstate) {
+-    case CLOSED:
+-        set_model(string(&quot;st-oxyd&quot;)+flavor);
+-        break;
+-
+-    case BLINKING:
+-        set_model(modelname + &quot;-blink&quot;);
+-        break;
+-
+-    case OPEN:
+-    	if (oldstate == CLOSED) {
+-            sound_event(&quot;oxydopen&quot;);
+-            sound_event(&quot;oxydopened&quot;);
+-            set_anim(modelname+&quot;-opening&quot;);
+-        } else {
+-            set_model(modelname + &quot;-open&quot;);
+-        }
+-        /* If this was the last closed oxyd stone, finish the
+-           level */
+-        if (find_if(instances.begin(),instances.end(),not_open)
+-                == instances.end()) {
+-            server::FinishLevel();
+-        }
+-        break;
+-
+-    case OPENING:
+-        sound_event(&quot;oxydopen&quot;);
+-        if (oldstate == CLOSED)
+-            set_anim(modelname + &quot;-opening&quot;);
+-        else if (oldstate == CLOSING)
+-            get_model()-&gt;reverse();
+-
+-        break;
+-
+-    case CLOSING:
+-        if (oldstate == CLOSED || oldstate==CLOSING) {
+-            state = oldstate;
+-            return;
+-        }
+-
+-        sound_event(&quot;oxydclose&quot;);
+-        if (oldstate == OPENING)
+-            get_model()-&gt;reverse();
+-    	else if (oldstate == BLINKING || oldstate == OPEN) {
+-            set_anim(modelname + &quot;-closing&quot;);
+-        }
+-        break;
+-    }
+-}
+-
+-void OxydStone::animcb() {
+-    if (state == CLOSING)
+-        change_state(CLOSED);
+-    else if (state == OPENING)
+-        change_state(BLINKING);
+-    else if (state == OPEN)
+-        change_state(OPEN); // set the right model
+-}
+-
+-void OxydStone::maybe_open_stone() {
+-    if (state == CLOSED || state == CLOSING) {
+-        Value mycolor = getAttr(&quot;color&quot;);
+-
+-        // Is another oxyd stone currently blinking?
+-        InstanceList::iterator i;
+-        i=find_if(instances.begin(), instances.end(), blinking_or_opening);
+-
+-        if (i != instances.end()) {
+-
+-            bool can_open;
+-
+-            if (server::GameCompatibility != GAMET_ENIGMA) {
+-                // If colors match and stone (*i) is already blinking,
+-                // open both stones. Close one of them otherwise.
+-                // (This is the Oxyd behaviour; it doesn't work with
+-                // some Enigma levels.)
+-                can_open = (mycolor == (*i)-&gt;getAttr(&quot;color&quot;) &amp;&amp; (*i)-&gt;state==BLINKING);
+-            }
+-            else 
+-                can_open = (mycolor == (*i)-&gt;getAttr(&quot;color&quot;));
+-
+-            if (can_open) {
+-                change_state(OPEN);
+-                (*i)-&gt;change_state(OPEN);
+-            } else {
+-                (*i)-&gt;change_state(CLOSING);
+-                change_state(OPENING);
+-            }
+-        }
+-        else {
+-            // no blinking stone? -&gt; make this one blink
+-            change_state(OPENING);
+-        }
+-    }
+-}
+-
+-void OxydStone::actor_hit(const StoneContact &amp;/*sc*/) {
+-    maybe_open_stone();
+-}
+-
+-void OxydStone::on_creation (GridPos) 
+-{
+-    string flavor(getAttr(&quot;flavor&quot;, &quot;a&quot;));
+-    set_model(string(&quot;st-oxyd&quot;) + flavor);
+-    photo_activate();
+-}
+-
+-bool OxydStone::is_removable() const {
+-    return !getAttr(&quot;static&quot;).to_bool();
+-}
+-
+-void OxydStone::on_removal(GridPos p) 
+-{
+-    photo_deactivate();
+-    kill_model (p);
+-}
+-
+-
+ /* -------------------- Turnstiles -------------------- */
+ namespace
+ {
+@@ -3599,7 +3201,7 @@
+     Register(&quot;st-oneway_white-s&quot;, new OneWayStone_white(SOUTH));
+     Register(&quot;st-oneway_white-w&quot;, new OneWayStone_white(WEST));
+ 
+-    Register(new OxydStone);
++//    Register(new OxydStone);
+ 
+     Register (new PullStone);
+ 
+@@ -3700,23 +3302,6 @@
+     Register (&quot;st-rotator_move-right&quot;, new RotatorStone(true, true));
+     Register (&quot;st-rotator_move-left&quot;, new RotatorStone(false, true));
+ 
+-    Register(&quot;st-window&quot;, new Window(3));    // compatibility window with south face only
+-    Register(&quot;st-window-w&quot;, new Window(2));
+-    Register(&quot;st-window-s&quot;, new Window(3));
+-    Register(&quot;st-window-sw&quot;, new Window(4));
+-    Register(&quot;st-window-e&quot;, new Window(5));
+-    Register(&quot;st-window-ew&quot;, new Window(6));
+-    Register(&quot;st-window-es&quot;, new Window(7));
+-    Register(&quot;st-window-esw&quot;, new Window(8));
+-    Register(&quot;st-window-n&quot;, new Window(9));
+-    Register(&quot;st-window-nw&quot;, new Window(10));
+-    Register(&quot;st-window-ns&quot;, new Window(11));
+-    Register(&quot;st-window-nsw&quot;, new Window(12));
+-    Register(&quot;st-window-ne&quot;, new Window(13));
+-    Register(&quot;st-window-new&quot;, new Window(14));
+-    Register(&quot;st-window-nes&quot;, new Window(15));
+-    Register(&quot;st-window-nesw&quot;, new Window(16));
+-    
+     Register(new ShogunStone);
+     Register(&quot;st-shogun-s&quot;, new ShogunStone(1));
+     Register(&quot;st-shogun-m&quot;, new ShogunStone(2));
+@@ -3744,4 +3329,3 @@
+ 
+ } // namespace enigma
+ 
+-
+
+Modified: trunk/src/stones_internal.hh
+===================================================================
+--- trunk/src/stones_internal.hh	2007-10-29 23:30:45 UTC (rev 912)
++++ trunk/src/stones_internal.hh	2007-10-30 23:56:30 UTC (rev 913)
+@@ -116,38 +116,7 @@
+             return Value();
+         }
+     };
+-/* -------------------- ConnectiveStone -------------------- */
+ 
+-// base class for PuzzleStone and BigBrick
+-
+-
+-    class ConnectiveStone : public Stone {
+-    public:
+-        ConnectiveStone(const char *kind, int connections): Stone(kind) {
+-            set_attrib(&quot;connections&quot;, connections);
+-        }
+-        ConnectiveStone(int connections) {
+-            set_attrib(&quot;connections&quot;, connections);
+-        }
+-
+-        DirectionBits get_connections() const {
+-            int conn = (int)getAttr(&quot;connections&quot;) - 1;
+-            if (conn &gt;=0 &amp;&amp; conn &lt;16)
+-                return DirectionBits(conn);
+-            else
+-                return NODIRBIT;
+-        }
+-
+-    protected:
+-        virtual void init_model() {
+-            set_model(get_kind()+ecl::strf(&quot;%d&quot;, get_modelno()));
+-        }
+-
+-        virtual int get_modelno() const {
+-            return getAttr(&quot;connections&quot;);
+-        }
+-    };
+-
+ } // namespace enigma
+ 
+ #endif
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2007-10-29 23:30:45 UTC (rev 912)
++++ trunk/src/world.cc	2007-10-30 23:56:30 UTC (rev 913)
+@@ -27,6 +27,7 @@
+ #include &quot;client.hh&quot;
+ #include &quot;main.hh&quot;
+ #include &quot;stones_internal.hh&quot;
++#include &quot;stones/ConnectiveStone.hh&quot;
+ #include &quot;WorldProxy.hh&quot;
+ 
+ #include &lt;iostream&gt;
+@@ -2367,6 +2368,8 @@
+ 
+ void InitWorld()
+ {
++    Object::bootFinished();
++    BootRegister(NULL, NULL, false);
+     InitActors();
+     InitLasers();
+     InitItems();
+@@ -2474,6 +2477,34 @@
+     vector&lt;Item *&gt; item_repos(it_COUNT);
+ }
+ 
++
++struct BootKindObject {
++    std::string kind;
++    Object *object;
++    BootKindObject(std::string name, Object *o) : kind (name), object (o) {
++    }
++};
++
++void BootRegister(Object *obj, const char * name, bool isRegistration) {
++    static std::list&lt;BootKindObject *&gt; templates;
++    if (isRegistration) {
++        std::string kind = (name != NULL ? std::string(name) : std::string(&quot;&quot;));
++        templates.push_back(new BootKindObject(kind, obj));
++    } else {
++        int count = 0;
++        for (std::list&lt;BootKindObject *&gt;::iterator itr = templates.begin(); itr != templates.end(); ++itr) {
++            if ((*itr)-&gt;kind.empty()) {
++                Register((*itr)-&gt;object);
++            } else {
++                Register((*itr)-&gt;kind.c_str(), (*itr)-&gt;object);                
++            }
++            delete (*itr);
++            count++;
++        }
++        Log &lt;&lt; count &lt;&lt; &quot; boot registered object\n&quot;;
++    }
++}
++
+ void Register (const string &amp;kind, Object *obj) {
+     if (!repos)
+         repos = new ObjectRepos;
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2007-10-29 23:30:45 UTC (rev 912)
++++ trunk/src/world.hh	2007-10-30 23:56:30 UTC (rev 913)
+@@ -394,6 +394,7 @@
+                            const string &amp;firetransform);
+ 
+     /* Register a new object. */
++    void BootRegister(Object *obj, const char * kind = NULL, bool isRegistration = true);
+     void Register (Object *obj);
+     void Register (const string &amp;kind, Object *obj);
+     void Register (const string &amp;kind, Floor *obj);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000344.html">[Enigma-game-svn] r912 - in trunk/src: . gui
+</A></li>
+	
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#345">[ date ]</a>
+              <a href="thread.html#345">[ thread ]</a>
+              <a href="subject.html#345">[ subject ]</a>
+              <a href="author.html#345">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

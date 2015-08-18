@@ -1,0 +1,446 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1734 - in trunk: data data/levels/lib	doc/reference
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1734%20-%20in%20trunk%3A%20data%20data/levels/lib%0A%09doc/reference&In-Reply-To=%3C200906230034.n5N0YQLW014007%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001162.html">
+   <LINK REL="Next"  HREF="001164.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1734 - in trunk: data data/levels/lib	doc/reference</H1>
+    <B>andreasl at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1734%20-%20in%20trunk%3A%20data%20data/levels/lib%0A%09doc/reference&In-Reply-To=%3C200906230034.n5N0YQLW014007%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1734 - in trunk: data data/levels/lib	doc/reference">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Tue Jun 23 02:34:26 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001162.html">[Enigma-game-svn] r1733 - in trunk/doc/reference: . images
+</A></li>
+        <LI>Next message: <A HREF="001164.html">[Enigma-game-svn] r1735 - in trunk: attic/images-items data/gfx16	data/gfx32 data/gfx40 data/gfx48 data/gfx64
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1163">[ date ]</a>
+              <a href="thread.html#1163">[ thread ]</a>
+              <a href="subject.html#1163">[ subject ]</a>
+              <a href="author.html#1163">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2009-06-23 02:34:20 +0200 (Tue, 23 Jun 2009)
+New Revision: 1734
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/data/levels/lib/libmap.xml
+   trunk/data/levels/lib/libmath.xml
+   trunk/doc/reference/enigma-ref.texi
+Log:
+Trunk:
+ - Fix lib.math.digits: Argument &quot;zero&quot; now returns a table with the zero-th
+   digit by default, optionally an empty table.
+ - libmap:
+    - Add assertions for lib.map.get, set, covers and print.
+    - Remove undocumented and unused support for &quot;user attributes&quot; in maps,
+      allow named positions instead.
+    - Adapt Refman, and elaborate on read- and write-accesses to libmap-maps.
+ - Remove Lua-5.0-references from Refman (except for comparison between
+   modulo-functions).
+ - Fix some typos.
+Note:
+ - Adaptions of levels andreas47 and ais06 will come with next level update.
+   andreas47 (&quot;Show Jumper&quot;) might behave different till then.
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2009-06-21 22:35:00 UTC (rev 1733)
++++ trunk/data/api2init.lua	2009-06-23 00:34:20 UTC (rev 1734)
+@@ -479,13 +479,13 @@
+     --         replacements = {key, [key]*, [{key, frequency}]*}
+     assert_bool(is_resolver(subresolver), &quot;res.random first argument (subresolver)&quot;, 2)
+     assert_type(hits, &quot;res.random second argument (hits)&quot;, 2, &quot;non-empty string&quot;, &quot;table&quot;)
+-    assert_type(hits, &quot;res.random third argument (replacements)&quot;, 2, &quot;string&quot;, &quot;table&quot;)
++    assert_type(replacements, &quot;res.random third argument (replacements)&quot;, 2, &quot;string&quot;, &quot;table&quot;)
+     local hit_table = {}
+     if type(hits) == &quot;string&quot; then
+         hit_table[1] = {hits, nil}
+     else  -- table
+         for i, v in ipairs(hits) do
+-            assert_type(v, &quot;res.random seond argument (hits), entry &quot; .. i, 2, &quot;non-empty string&quot;, &quot;table&quot;)
++            assert_type(v, &quot;res.random second argument (hits), entry &quot; .. i, 2, &quot;non-empty string&quot;, &quot;table&quot;)
+             if type(v) == &quot;string&quot; then
+                 hit_table[i] = {v, nil}
+             elseif type(v) == &quot;table&quot; then
+
+Modified: trunk/data/levels/lib/libmap.xml
+===================================================================
+--- trunk/data/levels/lib/libmap.xml	2009-06-21 22:35:00 UTC (rev 1733)
++++ trunk/data/levels/lib/libmap.xml	2009-06-23 00:34:20 UTC (rev 1734)
+@@ -3,7 +3,7 @@
+   &lt;el:protected&gt;
+     &lt;el:info el:type=&quot;library&quot;&gt;
+       &lt;el:identity el:title=&quot;&quot; el:id=&quot;lib/libmap&quot;/&gt;
+-      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;4&quot; el:status=&quot;released&quot;/&gt;
++      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;5&quot; el:status=&quot;released&quot;/&gt;
+       &lt;el:author  el:name=&quot;Enigma Team&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
+       &lt;el:copyright&gt;Copyright &#169; 2008 Enigma Team&lt;/el:copyright&gt;
+       &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
+@@ -340,6 +340,8 @@
+ end
+ 
+ function lib.map.covers(map, pos)
++    assert_type(map, &quot;lib.map.covers first argument (map)&quot;, 2, &quot;map&quot;)
++    assert_type(pos, &quot;lib.map.covers second argument (position)&quot;, 2, &quot;position&quot;, &quot;table&quot;)
+     if type(pos) == &quot;table&quot; then
+         return (pos[1] &gt;= 0) and (pos[2] &gt;= 0)
+             and (pos[1] &lt; map.width) and (pos[2] &lt; map.height)
+@@ -349,8 +351,10 @@
+     end
+ end
+ 
+--- TODO: Add string as posarg, maybe speed up.
+ function lib.map.get(map, posarg)
++    assert_type(map, &quot;lib.map.get first argument (map)&quot;, 2, &quot;map&quot;)
++    assert_type(posarg, &quot;lib.map.get second argument (index key)&quot;, 2, &quot;number&quot;, &quot;position&quot;,
++                &quot;object&quot;, &quot;group&quot;, &quot;polist&quot;, &quot;table&quot;, &quot;string&quot;)
+     if type(posarg) == &quot;number&quot; then
+         return rawget(map, posarg)
+     elseif (usertype(posarg) == &quot;position&quot;) or (usertype(posarg) == &quot;object&quot;) then
+@@ -386,16 +390,21 @@
+         elseif (posarg == &quot;width&quot;) or (posarg == &quot;height&quot;)
+              or (posarg == &quot;defaultkey&quot;) or (posarg == &quot;keylength&quot;) then
+             return rawget(map, &quot;__&quot;..posarg)
+-        else  
+-            return (rawget(map, &quot;user_attributes&quot;))[posarg]
++        else
++            local pos = po[posarg]
++            if pos then
++                return lib.map.get(map, pos)
++            else
++                return rawget(map, &quot;__defaultkey&quot;)
++            end
+         end
+-    else
+-        error(&quot;lib.map.get: Can't understand position argument.&quot;)
+     end
+ end
+ 
+--- TODO: Add string as posarg, maybe speed up.
+ function lib.map.set(map, posarg, value)
++    assert_type(map, &quot;lib.map.set first argument (map)&quot;, 2, &quot;map&quot;)
++    assert_type(posarg, &quot;lib.map.set second argument (index key)&quot;, 2, &quot;number&quot;, &quot;position&quot;,
++                &quot;object&quot;, &quot;group&quot;, &quot;polist&quot;, &quot;table&quot;, &quot;string&quot;)
+     if type(posarg) == &quot;string&quot; then
+         if (posarg == &quot;type&quot;) then
+             if tostring(value) ~= &quot;map&quot; then
+@@ -411,12 +420,16 @@
+         elseif (posarg == &quot;defaultkey&quot;) then
+             map:set_default_key(value)
+             return
++        else
++            local pos = po[posarg]
++            if pos then
++                lib.map.set(map, pos, value)
++            else
++                error(&quot;lib.map.set: Named position '&quot; .. posarg .. &quot;' doesn't exist.&quot;, 2)
++            end
+         end
+-        map.user_attributes[posarg] = value
+     else
+-        if type(value) ~= &quot;string&quot; then
+-            error(&quot;lib.map.set: Key must be of type string, is &quot;..type(value)..&quot;.&quot;, 2)
+-        end
++        assert_type(value, &quot;lib.map.set third argument (value)&quot;, 2, &quot;non-empty string&quot;)
+         local kl = rawget(map, &quot;__keylength&quot;)
+         if string.len(value) ~= kl then
+             error(&quot;lib.map.set: Key must be of the same length as default key &quot;
+@@ -512,9 +525,10 @@
+ end  
+ 
+ function lib.map.print(map, withXYCounts, left_separator, right_separator)
+-    assert_type(map, &quot;lib.map.print first argument&quot;, 2, &quot;map&quot;)
+-    assert_type(left_separator, &quot;lib.map.print second argument&quot;, 2, &quot;nil&quot;, &quot;string&quot;)
+-    assert_type(right_separator, &quot;lib.map.print third argument&quot;, 2, &quot;nil&quot;, &quot;string&quot;)  
++    assert_type(map, &quot;lib.map.print first argument (map)&quot;, 2, &quot;map&quot;)
++    assert_type(withXYCounts, &quot;lib.map.print second argument (with X-Y-counts)&quot;, 2, &quot;nil&quot;, &quot;boolean&quot;)
++    assert_type(left_separator, &quot;lib.map.print third argument (left separator)&quot;, 2, &quot;nil&quot;, &quot;string&quot;)
++    assert_type(right_separator, &quot;lib.map.print fourth argument (right separator)&quot;, 2, &quot;nil&quot;, &quot;string&quot;)  
+     local w, h = map.width, map.height
+     local kl = rawget(map, &quot;__keylength&quot;)
+     if withXYCounts then
+@@ -561,7 +575,7 @@
+ 
+ wo:_register(&quot;newMap&quot;,
+     function(world, defaultKey, arg1, arg2)
+-        local newmap = {user_attributes = {}}
++        local newmap = {}
+         -- Check arguments, create map if necessary.
+         assert_type(defaultKey, &quot;wo:newMap first argument (default key)&quot;, 2, &quot;non-empty string&quot;)
+         local width = 0
+@@ -570,8 +584,7 @@
+         if (type(arg1) == &quot;table&quot;) and (type(arg2) == &quot;nil&quot;) then
+             -- Interpret table as map.
+             for key, entry in pairs(arg1) do
+-                if type(key) == &quot;number&quot; then
+-                    -- This line is going to be a real map entry.
++                if (type(key) == &quot;number&quot;) and (key == math.ceil(key)) and (key &gt; 0) then
+                     height = math.max(height, key)
+                     assert_type(entry, &quot;wo:newMap line &quot; .. key, 2, &quot;string&quot;)
+                     local line_width = string.len(entry) / kl
+@@ -580,10 +593,6 @@
+                     end
+                     width = math.max(width, line_width)
+                     newmap[key] = entry
+-                elseif type(key) == &quot;string&quot; then
+-                    newmap.user_attributes[key] = entry
+-                else
+-                    error(&quot;newMap: Strange type for a map table key: &quot; .. etype(key) .. &quot;.&quot;, 2)
+                 end
+             end
+             -- Now complete the map, make it rectangular.
+
+Modified: trunk/data/levels/lib/libmath.xml
+===================================================================
+--- trunk/data/levels/lib/libmath.xml	2009-06-21 22:35:00 UTC (rev 1733)
++++ trunk/data/levels/lib/libmath.xml	2009-06-23 00:34:20 UTC (rev 1734)
+@@ -3,7 +3,7 @@
+   &lt;el:protected&gt;
+     &lt;el:info el:type=&quot;library&quot;&gt;
+       &lt;el:identity el:title=&quot;&quot; el:id=&quot;lib/libmath&quot;/&gt;
+-      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;6&quot; el:status=&quot;released&quot;/&gt;
++      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;7&quot; el:status=&quot;released&quot;/&gt;
+       &lt;el:author  el:name=&quot;Enigma Team&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
+       &lt;el:copyright&gt;Copyright &#169; 2007, 2008 Enigma Team&lt;/el:copyright&gt;
+       &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
+@@ -85,10 +85,14 @@
+ -- Hexadecimal would be:
+ --   lib.math.digits(x, {0,1,2,3,4,5,6,7,8,9,&quot;A&quot;,&quot;B&quot;,&quot;C&quot;,&quot;D&quot;,&quot;E&quot;,&quot;F&quot;})
+ -- NUMBER is supposed to be a non-negative integer.
+-function lib.math.digits(number, base)
++-- If NUMBER is zero, lib.math.digits returns the zero-digit as
++-- result, unless ZERO_IS_EMPTY is true - in this case, it returns
++-- an empty table.
++function lib.math.digits(number, base, zero_is_empty)
+     -- Check arguments and calculate fullbase and exponent
+     assert_type(number, &quot;lib.math.digits first argument&quot;, 2, &quot;natural&quot;)
+     assert_type(base, &quot;lib.math.digits second argument&quot;, 2, &quot;integer&quot;, &quot;table&quot;)
++    assert_type(zero_is_empty, &quot;lib.math.digits third argument&quot;, 2, &quot;boolean&quot;, &quot;nil&quot;)
+     local fullbase = {}
+     local exponent = 0
+     if type(base) == &quot;number&quot; then
+@@ -105,6 +109,10 @@
+         fullbase = base
+     end
+     exponent = table.getn(fullbase)
++    -- Handle zero
++    if number == 0 then
++        return cond(zero_is_empty, {}, {fullbase[1]})
++    end
+     -- Decompose NUMBER
+     local remains = number
+     local result = {}
+
+Modified: trunk/doc/reference/enigma-ref.texi
+===================================================================
+--- trunk/doc/reference/enigma-ref.texi	2009-06-21 22:35:00 UTC (rev 1733)
++++ trunk/doc/reference/enigma-ref.texi	2009-06-23 00:34:20 UTC (rev 1734)
+@@ -19362,7 +19362,7 @@
+ @node Basic Functions
+ @section Basic Functions
+ 
+-Enigma supports most Lua 5.0 and above statements, i.e. you can freely use
++Enigma supports most Lua 5.1 and above statements, i.e. you can freely use
+ tables and control structures in your level, as you would expect. However, some
+ Lua functions have been deactivated for security reasons or to ensure
+ upwards compatibility. These are @samp{dofile}, @samp{module}, @samp{require}
+@@ -19374,25 +19374,25 @@
+ should not appear in the level's final version anymore.
+ 
+ Of Lua's built-in mathematical functions you may use any of the following:
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{math.abs}, @samp{math.acos}, @samp{math.asin}, @samp{math.atan}, @samp{math.atan2},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{math.ceil}, @samp{math.cos}, @samp{math.deg}, @samp{math.exp}, @samp{math.floor},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{math.frexp}, @samp{math.ldexp}, @samp{math.log}, @samp{math.log10}, @samp{math.max},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{math.min}, @samp{math.pow}, @samp{math.rad}, @samp{math.random}, @samp{math.sin},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{math.sqrt}, @samp{math.tan}. As of Lua 5.1, the following functions are
+-additionally available: @samp{math.cosh}, @samp{math.fmod}, @samp{math.huge},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{math.modf}, @samp{math.pi}, @samp{math.sinh}, @samp{math.tanh}.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{math.abs}, @samp{math.acos}, @samp{math.asin}, @samp{math.atan},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{math.atan2}, @samp{math.ceil}, @samp{math.cos}, @samp{math.cosh},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{math.deg}, @samp{math.exp}, @samp{math.floor}, @samp{math.fmod},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{math.frexp}, @samp{math.huge}, @samp{math.ldexp}, @samp{math.log},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{math.log10}, @samp{math.max}, @samp{math.min}, @samp{math.modf},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{math.pi}, @samp{math.pow}, @samp{math.rad}, @samp{math.random},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{math.sin}, @samp{math.sinh},  @samp{math.sqrt}, @samp{math.tan},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{math.tanh}.
+ 
+ All trigonometric functions use radians, you can use @samp{math.deg} and
+ @samp{math.rad} to convert between radians and degrees. For the differences
+-between @samp{math.mod} and @samp{math.fmod} see @ref{lib.lua.mod}.
++between @samp{math.mod}, @samp{%}, and @samp{math.fmod} see @ref{lib.lua.mod}.
+ 
+ While you have access to nearly all mathematical functions Lua defines, Enigma
+ uses an own random generator, which you access via @samp{math.random} with the
+ same syntax as Lua's random generator. To ensure stability in future versions
+ of Enigma, @samp{math.randomseed} is disabled.
+ 
+-Please read the online manuals of
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at uref</A>{<A HREF="http://www.lua.org/manual/5.0/,">http://www.lua.org/manual/5.0/,</A> Lua 5.0} and 
++Please read the online manual of
+ @uref{<A HREF="http://www.lua.org/manual/5.1/,">http://www.lua.org/manual/5.1/,</A> Lua 5.1} for more detailed information.
+ 
+ 
+@@ -19521,19 +19521,21 @@
+ @end example
+ 
+ @item @b{Details:}
+-Lua 5.0 uses @samp{math.mod} as modulo operation, Lua 5.1 provides @samp{%} and
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{math.fmod}. Whereas all three operations agree on positive numbers and
+-zero as @samp{value}, there are differences on negative numbers:
++Lua 5.0 used @samp{math.mod} as modulo operation, this function is not
++available in Lua 5.1 anymore, and hence not available in Enigma. Lua 5.1
++provides @samp{%} and @samp{math.fmod}. Whereas all three operations agree on
++positive numbers and zero as @samp{value}, there are differences on negative
++numbers:
+ @example
+-math.mod(-1, 4) == -1
+-math.fmod(-1, 4) == -1
+-(-1)%4 == 3
+-lib.lua.mod(-1, 4) == 3
++Lua 5.0:  math.mod(-1, 4) == -1
++Lua 5.1:  math.fmod(-1, 4) == -1
++Lua 5.1:  (-1)%4 == 3
++lib.lua:  lib.lua.mod(-1, 4) == 3
+ @end example
+ While the Lua-own modulo functions yield results even for negative
+ @samp{modul} (with varying signs of the outcome), @samp{lib.lua.mod} will raise
+ an error if @samp{modul &lt;= 0}, and the result @samp{r} is otherwise guaranteed
+-to be @samp{0 &lt;= r &lt; modul}.
++to be @code{0 &lt;= r &lt; modul}.
+ 
+ @item @b{Full Example:}
+ @example
+@@ -19894,7 +19896,7 @@
+ 
+ @table @asis
+ @item @b{Syntax:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at b</A>{lib.math.digits}(@i{number}, @i{base})
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at b</A>{lib.math.digits}(@i{number}, @i{base} [, @i{zero_is_empty}])
+ 
+ @table @asis
+ @item @i{number}
+@@ -19903,6 +19905,10 @@
+ @item @i{base}
+ A positive integer other than 1, or a table with numerical keys.
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{zero_is_empty}
++If @code{number} is zero, a table containing the zero-th digit is returned by
++default. If @code{zero_is_empty} is @code{true}, an empty table is returned
++instead.
+ @end table
+ 
+ @item @b{Syntax Samples:}
+@@ -20587,10 +20593,22 @@
+ the map with @ref{drawMap} to create arbitrarily shaped areas.
+ 
+ If the premap is not rectangular, missing positions are set to the default key.
++However, each line length must be divisible by the default key's length, otherwise
++an error is thrown.
+ 
+-As each libmap-map can be used to replace a premap, you may also use
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at code</A>{wo:newMap} to copy a libmap-map with:
++You may feed arbitrary tables to @code{wo:newMap}, but only their positive
++integer entries are used, all other entries are ignored. You might even skip
++lines, like in this example:
+ @example
++wo:newMap(&quot; &quot;, @{[25] = &quot;g&quot;@})
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++This will return a map of width 1 and height 25 filled with spaces, except for
++the last line, which will be @code{&quot;g&quot;}.
++
++Each libmap-map is a table and can be used as a premap as well. Its default
++key is ignored when a libmap-map is considered as a premap. In particular,
++you may use @code{wo:newMap} to copy a libmap-map with:
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
+ newcopy = wo:newMap(mymap.defaultkey, mymap)
+ @end example
+ @end table
+@@ -20621,8 +20639,8 @@
+ A libmap-map.
+ 
+ @item @i{posarg}
+-A position, object, group, position list, or table (interpretable as single
+-position).
++A position, object, group, position list, string, or table (interpretable as
++single position).
+ @end table
+ 
+ @item @b{Syntax Samples:}
+@@ -20636,10 +20654,22 @@
+ Correspondingly, a write-access with a group or position list changes the key
+ at each position in the group or position list to the given string.
+ 
++A read-access with a string invokes a @ref{Positions Repository Request} to
++retrieve a named position, unless the string equals one of @code{&quot;type&quot;},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{&quot;width&quot;}, @code{&quot;height&quot;}, @code{&quot;defaultkey&quot;}, or @code{&quot;keylength&quot;},
++which return the corresponding properties of the map instead.
++
++A write-access with a string similarly is interpreted as access to a named
++position, unless the string equals @code{&quot;defaultkey&quot;}, see
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at ref</A>{Map Default Keys}. A write-access to a non-existing position throws an
++error.
++
+ You may request any position outside of the scope of the map, even with
+-negative coordinates. If you do so, the default key is returned.
++negative coordinates. If you do so, the default key is returned. This accounts
++for non-existing positions as well (for example positions of items in the
++inventory, or the position of a string which doesn't describe a named position).
+ 
+-If you try to set an entry to a position with a negative coordinate, an error
++If you try to set an entry to a position with a negative coordinate an error
+ is returned. However, if you use non-negative coordinates outside of the scope
+ of the map, the map is subsequently extended to the new position, setting
+ the default key as entry where necessary.
+@@ -21196,7 +21226,7 @@
+ map2 = wo:newMap(&quot;.&quot;, @{&quot;F.E&quot;,
+                        &quot;E.E&quot;@})
+ @end example
+-In this situation, @code{map1:paste(map2, po(1, 1) .. po(5, 3)} will change
++In this situation, @code{map1:paste(map2, po(1, 1) .. po(5, 3))} will change
+ map1 into:
+ @example
+ @{&quot;####### &quot;,
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001162.html">[Enigma-game-svn] r1733 - in trunk/doc/reference: . images
+</A></li>
+	<LI>Next message: <A HREF="001164.html">[Enigma-game-svn] r1735 - in trunk: attic/images-items data/gfx16	data/gfx32 data/gfx40 data/gfx48 data/gfx64
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1163">[ date ]</a>
+              <a href="thread.html#1163">[ thread ]</a>
+              <a href="subject.html#1163">[ subject ]</a>
+              <a href="author.html#1163">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

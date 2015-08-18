@@ -1,0 +1,2147 @@
+From ral at mail.berlios.de  Sat Feb  5 20:09:44 2011
+From: ral at mail.berlios.de (ral at mail.berlios.de)
+Date: Sat,  5 Feb 2011 20:09:44 +0100
+Subject: [Enigma-game-svn] r2200 - trunk/src
+Message-ID: <20110205190944.6987948135F@sheep.berlios.de>
+
+Author: ral
+Date: 2011-02-05 20:09:44 +0100 (Sat, 05 Feb 2011)
+New Revision: 2200
+
+Modified:
+   trunk/src/lua.cc
+Log:
+fix composer problems with key %% 
+
+- problem introduced by feature r2196
+- improve fixes r2198, r2199
+- within tile declaration part:
+  - allow read access to tiles without existing key, if they
+    contain a %% wildcard
+  - reject read access to not existing tile keys
+- within tile evaluation part (resolvers):
+  - nil as return value for detection of invalid keys 
+    including %% containing keys
+
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2011-01-24 12:37:53 UTC (rev 2199)
++++ trunk/src/lua.cc	2011-02-05 19:09:44 UTC (rev 2200)
+@@ -87,6 +87,8 @@
+     lua_State *level_state = 0;  // level-local state
+     lua_State *global_state = 0; // global Lua state
+ 
++    static int tilesReadAccess(lua_State *L, bool direct);
++
+     lua::Error _lua_err_code (int i)
+     {
+         switch (i) {
+@@ -2394,8 +2396,8 @@
+     int y = lua_tointeger(L, -1);
+     
+     if (is_tiles(L, -4)) {
+-        lua_pushvalue(L, -3);       // duplicate key
+-        lua_gettable(L, -5);        // get tile entry in table, remove key duplicate
++        lua_pop(L, 2);                // remove x,y
++        tilesReadAccess(L, false);   // directly read tiles without error corrections
+         return 1;
+     } else if (lua_isfunction(L, -4)) {
+         lua_pushvalue(L, -4);       // duplicate function
+@@ -3009,59 +3011,66 @@
+ MethodMap tilesMethodeMap;
+ 
+ static int dispatchTilesWriteAccess(lua_State *L) {
++    // tiles, key, value
+ //    Log << "Tiles write key - " << lua_tostring(L, 2) << "\n";
+     if (server::EnigmaCompatibility < 1.10) {
+         throwLuaError(L, "Mismatch of new API 2 syntax with level compatibility < 1.10");
+         return 0;
+     }
+-    if (!lua_isstring(L, 2)) {     // sideeffect: numbers are converted to string
++    if (!lua_isstring(L, -2)) {     // sideeffect: numbers are converted to string
+         throwLuaError(L, "Tiles: key is not a string");
+         return 0;
+     }
+-    if (is_table(L, 3) || is_tile(L, 3)) {
++    if (is_table(L, -1) || is_tile(L, -1)) {
+         // convert table to a tile
+-        pushNewTile(L, 1, lua_tostring(L, 2));
+-        lua_remove(L, 3);   
++        pushNewTile(L, 1, lua_tostring(L, -2));
++        lua_remove(L, -2);
+     } else {
+         throwLuaError(L, "Tiles: value is not a tile or table");
+         return 0;
+     }
+-    lua_getmetatable(L, 1);
+-    lua_rawgeti(L, -1, 1);   // content table
+-    lua_pushvalue(L, 2);      // copy key
++    lua_getmetatable(L, -3);
++    lua_rawgeti(L, -1, 1);    // content table
++    lua_pushvalue(L, -4);     // copy key
+     lua_rawget(L, -2);        // check for existing entry in table
+     if (!lua_isnil(L, -1)) {
+-        throwLuaError(L, ecl::strf("Tiles: redefinition of key '%s'", lua_tostring(L, 2)).c_str());
++        throwLuaError(L, ecl::strf("Tiles: redefinition of key '%s'", lua_tostring(L, -4)).c_str());
+         return 0;
+     }
+     lua_pop(L, 1);            // remove nil
+-    lua_pushvalue(L, 2);
+-    lua_pushvalue(L, 3);
++    lua_pushvalue(L, -4);     // key
++    lua_pushvalue(L, -4);     // tile as value
+     lua_rawset(L, -3);        // store tile value for key
++    lua_pop(L, 2);            // remove metatable and content table
+     return 0;
+ }
+ 
+-static int dispatchTilesReadAccess(lua_State *L) {
++static int tilesReadAccess(lua_State *L, bool direct) {
+ //    Log << "Tiles read key - " << lua_tostring(L, 2) << "\n";
+-    if (!lua_isstring(L, 2)) {     // sideeffect: numbers are converted to string
++    if (!lua_isstring(L, -1)) {     // sideeffect: numbers are converted to string
+         throwLuaError(L, "Tiles: key is not a string");
+         return 0;
+     }
+-    std::string key = lua_tostring(L, 2);
+-    lua_getmetatable(L, 1);
++    std::string key = lua_tostring(L, -1);
++    lua_getmetatable(L, -2);
+     lua_rawgeti(L, -1, 1);    // content table
+-    lua_pushvalue(L, 2);      // copy key
++    lua_pushvalue(L, -3);     // copy key
+     lua_rawget(L, -2);        // check for existing entry in table
+-    if (lua_isnil(L, -1) && (key.find("%%") != string::npos)) {  // autotile wildcard
+-        // insert a dummy tile declaration
+-        lua_pop(L, 3);            // cleanup stack
+-        lua_newtable(L);          // dummy declaration as value for key
+-        dispatchTilesWriteAccess(L); // insert dummy entry
+-        // get entry as return value
+-        lua_getmetatable(L, 1);
+-        lua_rawgeti(L, -1, 1);    // content table
+-        lua_pushvalue(L, 2);      // copy key
+-        lua_rawget(L, -2);        // get entry in table
++    if (direct && lua_isnil(L, -1)) {
++        if ((key.find("%%") != string::npos)) {  // autotile wildcard
++            // insert a dummy tile declaration
++            lua_pop(L, 3);            // cleanup stack
++            lua_newtable(L);          // dummy declaration as value for key
++            dispatchTilesWriteAccess(L); // insert dummy entry
++            // get entry as return value
++            lua_getmetatable(L, -2);
++            lua_rawgeti(L, -1, 1);    // content table
++            lua_pushvalue(L, -4);     // copy key
++            lua_rawget(L, -2);        // get entry in table
++        } else {
++            throwLuaError(L, ecl::strf("Tiles: undefined key '%s'", key.c_str()).c_str());
++            return 0;
++        }
+     }
+     // nil is returned as valid value for not existing keys, what is evaluated
+     // by resolvers like autotile to trigger the generation of missing tile
+@@ -3069,6 +3078,10 @@
+     return 1;
+ }
+ 
++static int dispatchTilesReadAccess(lua_State *L) {
++    return tilesReadAccess(L, true);
++}
++
+ static int pushNewTiles(lua_State *L) {
+     // tiles is a singleton
+     
+
+
+
+From raoul at mail.berlios.de  Sun Feb  6 02:37:20 2011
+From: raoul at mail.berlios.de (raoul at mail.berlios.de)
+Date: Sun,  6 Feb 2011 02:37:20 +0100
+Subject: [Enigma-game-svn] r2201 - in trunk/data/levels: enigma_cross
+	enigma_ii enigma_iii enigma_iv enigma_v enigma_vii enigma_viii
+Message-ID: <20110206013720.5EAF948135F@sheep.berlios.de>
+
+Author: raoul
+Date: 2011-02-06 02:37:19 +0100 (Sun, 06 Feb 2011)
+New Revision: 2201
+
+Added:
+   trunk/data/levels/enigma_ii/barry03_2.xml
+   trunk/data/levels/enigma_ii/guy01_2.xml
+   trunk/data/levels/enigma_iv/alain08_2.xml
+   trunk/data/levels/enigma_v/alain07_2.xml
+   trunk/data/levels/enigma_v/alain09_2.xml
+   trunk/data/levels/enigma_v/alain26_3.xml
+Removed:
+   trunk/data/levels/enigma_ii/barry03_1.xml
+   trunk/data/levels/enigma_ii/guy01_1.xml
+   trunk/data/levels/enigma_iv/alain08_1.xml
+   trunk/data/levels/enigma_v/alain07_1.xml
+   trunk/data/levels/enigma_v/alain09_1.xml
+   trunk/data/levels/enigma_v/alain26_2.xml
+Modified:
+   trunk/data/levels/enigma_cross/newlevels-0-92b.xml
+   trunk/data/levels/enigma_cross/newlevels-0-92c.xml
+   trunk/data/levels/enigma_cross/newlevels-1-00.xml
+   trunk/data/levels/enigma_cross/newlevels-1-10.xml
+   trunk/data/levels/enigma_ii/index.xml
+   trunk/data/levels/enigma_iii/duffy99_2.xml
+   trunk/data/levels/enigma_iii/index.xml
+   trunk/data/levels/enigma_iv/index.xml
+   trunk/data/levels/enigma_v/index.xml
+   trunk/data/levels/enigma_vii/mecke12_2.xml
+   trunk/data/levels/enigma_viii/devnull45_1.xml
+   trunk/data/levels/enigma_viii/index.xml
+Log:
+-> Rewrites for some levels (alain, barry, guy)
+-> Small error fixed in duffy99
+-> Small (cosmetic) update for devnull45
+
+
+
+Modified: trunk/data/levels/enigma_cross/newlevels-0-92b.xml
+===================================================================
+--- trunk/data/levels/enigma_cross/newlevels-0-92b.xml	2011-02-05 19:09:44 UTC (rev 2200)
++++ trunk/data/levels/enigma_cross/newlevels-0-92b.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -1,7 +1,7 @@
+ <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+ <index xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="index.xsd">
+ 
+-  <info enigma="1.10" group="Facets" location="15200" network="false" owner="Enigma Team" release="1" revision="53" title="Enigma 0.92 - 2"/>
++  <info enigma="1.10" group="Facets" location="15200" network="false" owner="Enigma Team" release="1" revision="54" title="Enigma 0.92 - 2"/>
+ 
+   <attributes/>
+ 
+@@ -156,7 +156,7 @@
+     <level _seq="148" _title="Bizarro World" _xpath="enigma_iv/duffy73_3" author="Jacob Scott" ctrl="force" easy="true" id="duffy73" rel="3" rev="25" score="2" target="time" unit="duration"/>
+     <level _seq="149" _title="Solvable?" _xpath="enigma_v/barry01_2" author="Barry &amp; Lori Mead" ctrl="force" easy="false" id="barry01" rel="2" rev="0" score="2" target="time" unit="duration"/>
+     <level _seq="150" _title="Where is it?" _xpath="enigma_iv/barry02_1" author="Barry &amp; Lori Mead" ctrl="force" easy="false" id="barry02" rel="1" rev="0" score="1" target="time" unit="duration"/>
+-    <level _seq="151" _title="Tool Time" _xpath="enigma_ii/barry03_1" author="Barry &amp; Lori Mead" ctrl="force" easy="false" id="barry03" rel="1" rev="2" score="1" target="time" unit="duration"/>
++    <level _seq="151" _title="Tool Time" _xpath="enigma_ii/barry03_2" author="Barry &amp; Lori Mead" ctrl="force" easy="false" id="barry03" rel="2" rev="3" score="1" target="time" unit="duration"/>
+     <level _seq="152" _title="(Counter)Clockwise" _xpath="enigma_i/wb13_2" author="Jon 'WB' Sneyers" ctrl="force" easy="false" id="wb13" rel="2" rev="1" score="2" target="time" unit="duration"/>
+     <level _seq="153" _title="Hurry!" _xpath="enigma_iv/wb01_4" author="Jon 'WB' Sneyers" ctrl="force" easy="true" id="wb1" rel="4" rev="3" score="3" target="time" unit="duration"/>
+     <level _seq="154" _title="Lotsa Triggers" _xpath="enigma_iii/wb03_1" author="Jon 'WB' Sneyers" ctrl="force" easy="true" id="wb3" rel="1" rev="0" score="1" target="time" unit="duration"/>
+
+Modified: trunk/data/levels/enigma_cross/newlevels-0-92c.xml
+===================================================================
+--- trunk/data/levels/enigma_cross/newlevels-0-92c.xml	2011-02-05 19:09:44 UTC (rev 2200)
++++ trunk/data/levels/enigma_cross/newlevels-0-92c.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -1,7 +1,7 @@
+ <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+ <index xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="index.xsd">
+ 
+-  <info enigma="1.10" group="Facets" location="15300" network="false" owner="Enigma Team" release="1" revision="38" title="Enigma 0.92 - 3"/>
++  <info enigma="1.10" group="Facets" location="15300" network="false" owner="Enigma Team" release="1" revision="39" title="Enigma 0.92 - 3"/>
+ 
+   <attributes/>
+ 
+@@ -31,7 +31,7 @@
+     <level _seq="23" _title="Alien Glyphs 2" _xpath="enigma_ii/duffy96_2" author="Jacob Scott" ctrl="force" easy="false" id="duffy96" rel="2" rev="1" score="2" target="time" unit="duration"/>
+     <level _seq="24" _title="Alien Glyphs 3" _xpath="enigma_ii/duffy97_1" author="Jacob Scott" ctrl="force" easy="false" id="duffy97" rel="1" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="25" _title="Solar System" _xpath="enigma_ii/duffy98_1" author="Jacob Scott" ctrl="force" easy="false" id="duffy98" rel="1" rev="1" score="1" target="time" unit="duration"/>
+-    <level _seq="26" _title="Blocks and Water" _xpath="enigma_iii/duffy99_2" author="Jacob Scott" ctrl="force" easy="false" id="duffy99" rel="2" rev="2" score="2" target="time" unit="duration"/>
++    <level _seq="26" _title="Blocks and Water" _xpath="enigma_iii/duffy99_2" author="Jacob Scott" ctrl="force" easy="false" id="duffy99" rel="2" rev="3" score="2" target="time" unit="duration"/>
+     <level _seq="27" _title="Island Paradise" _xpath="enigma_i/duffy100_2" author="Jacob Scott" ctrl="force" easy="false" id="duffy100" rel="2" rev="2" score="1" target="time" unit="duration"/>
+     <level _seq="28" _title="Variety Pack" _xpath="enigma_i/duffy101_1" author="Jacob Scott" ctrl="force" easy="false" id="duffy101" rel="1" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="29" _title="Pneumatic Delivery" _xpath="enigma_v/malla01_3" author="Manuel K?nig" ctrl="force" easy="true" id="malla01" rel="3" rev="6" score="2" target="time" unit="duration"/>
+
+Modified: trunk/data/levels/enigma_cross/newlevels-1-00.xml
+===================================================================
+--- trunk/data/levels/enigma_cross/newlevels-1-00.xml	2011-02-05 19:09:44 UTC (rev 2200)
++++ trunk/data/levels/enigma_cross/newlevels-1-00.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -1,7 +1,7 @@
+ <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+ <index xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="index.xsd">
+ 
+-  <info enigma="1.10" group="Facets" location="15400" network="false" owner="Enigma Team" release="1" revision="74" title="Enigma 1.00 new"/>
++  <info enigma="1.10" group="Facets" location="15400" network="false" owner="Enigma Team" release="1" revision="75" title="Enigma 1.00 new"/>
+ 
+   <attributes/>
+ 
+@@ -35,7 +35,7 @@
+     <level _seq="27" _title="- Meditation -" _xpath="enigma_ii/andreas17_2" author="Andreas Lochmann" ctrl="force" easy="false" id="andreas17" rel="2" rev="2" score="1" target="time" unit="duration"/>
+     <level _seq="28" _title="Growing Boxes" _xpath="enigma_ii/luc26_2" author="Lukas Sch?ller" ctrl="force" easy="false" id="luc26" rel="2" rev="2" score="1" target="time" unit="duration"/>
+     <level _seq="29" _title="Enigmastermind" _xpath="enigma_ii/alain16_2" author="Alain Busser" ctrl="force" easy="false" id="alain16" rel="2" rev="5" score="1" target="time" unit="duration"/>
+-    <level _seq="30" _title="Guitar" _xpath="enigma_ii/guy01_1" author="Guy Busser" ctrl="force" easy="false" id="guy01" rel="1" rev="0" score="1" target="time" unit="duration"/>
++    <level _seq="30" _title="Guitar" _xpath="enigma_ii/guy01_2" author="Guy Busser" ctrl="force" easy="false" id="guy01" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="31" _title="Koosnab" _xpath="enigma_ii/rb02_2" author="Roberto Bardin" ctrl="force" easy="false" id="rb02" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="32" _title="More Black Holes" _xpath="enigma_ii/luc18_2" author="Lukas Sch?ller" ctrl="force" easy="false" id="luc18" rel="2" rev="2" score="1" target="time" unit="duration"/>
+     <level _seq="33" _title="Robin's Wood" _xpath="enigma_ii/andreas13_2" author="Andreas Lochmann" ctrl="force" easy="true" id="andreas13" rel="2" rev="3" score="1" target="time" unit="duration"/>
+@@ -77,7 +77,7 @@
+     <level _seq="69" _title="Triple Threat" _xpath="enigma_iii/illmind10_1" author="illmind" ctrl="force" easy="false" id="illmind10" rel="1" rev="0" score="1" target="time" unit="duration"/>
+     <level _seq="70" _title="Changing Positions" _xpath="enigma_iii/luc27_2" author="Lukas Sch?ller" ctrl="force" easy="false" id="luc27" rel="2" rev="2" score="1" target="time" unit="duration"/>
+     <level _seq="71" _title="Waterworld" _xpath="enigma_iii/illmind11_2" author="illmind" ctrl="force" easy="true" id="illmind11" rel="2" rev="6" score="2" target="time" unit="duration"/>
+-    <level _seq="72" _title="Wood robbing" _xpath="enigma_iv/alain08_1" author="Alain Busser" ctrl="force" easy="false" id="alain08" rel="1" rev="0" score="1" target="time" unit="duration"/>
++    <level _seq="72" _title="Wood robbing" _xpath="enigma_iv/alain08_2" author="Alain Busser" ctrl="force" easy="false" id="alain08" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="73" _title="Hurry!" _xpath="enigma_iv/wb01_4" author="Jon 'WB' Sneyers" ctrl="force" easy="true" id="wb1" rel="4" rev="3" score="3" target="time" unit="duration"/>
+     <level _seq="74" _title="Antimaze" _xpath="enigma_iv/luc02_3" author="Lukas Sch?ller" ctrl="force" easy="false" id="luc02" rel="3" rev="4" score="1" target="time" unit="duration"/>
+     <level _seq="75" _title="Sierpinski" _xpath="enigma_iv/alain10_2" author="Alain Busser" ctrl="force" easy="false" id="alain10" rel="2" rev="2" score="2" target="time" unit="duration"/>
+@@ -96,7 +96,7 @@
+     <level _seq="88" _title="Friction Nightmare" _xpath="enigma_iv/luc01_2" author="Lukas Sch?ller" ctrl="force" easy="true" id="luc01" rel="2" rev="3" score="1" target="time" unit="duration"/>
+     <level _seq="89" _title="Laser Games" _xpath="enigma_iv/mp03_1" author="moonpearl" ctrl="force" easy="false" id="mp03" rel="1" rev="10" score="1" target="time" unit="duration"/>
+     <level _seq="90" _title="April 1st" _xpath="enigma_v/alain11_1" author="Alain Busser" ctrl="force" easy="false" id="alain11" rel="1" rev="0" score="1" target="time" unit="duration"/>
+-    <level _seq="91" _title="Send me the keys !" _xpath="enigma_v/alain09_1" author="Alain Busser" ctrl="force" easy="false" id="alain09" rel="1" rev="0" score="1" target="time" unit="duration"/>
++    <level _seq="91" _title="Send me the keys !" _xpath="enigma_v/alain09_2" author="Alain Busser" ctrl="force" easy="false" id="alain09" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="92" _title="Laser Path" _xpath="enigma_v/andreas06_2" author="Andreas Lochmann" ctrl="force" easy="true" id="andreas06" rel="2" rev="15" score="2" target="time" unit="duration"/>
+     <level _seq="93" _title="Hobbyte" _xpath="enigma_v/alain15_2" author="Alain Busser" ctrl="force" easy="false" id="alain15" rel="2" rev="4" score="1" target="time" unit="duration"/>
+     <level _seq="94" _title="Water Castle" _xpath="enigma_v/luc21_2" author="Lukas Sch?ller" ctrl="force" easy="false" id="luc21" rel="2" rev="2" score="1" target="time" unit="duration"/>
+@@ -112,7 +112,7 @@
+     <level _seq="104" _title="Laser Crossing" _xpath="enigma_v/luc24_2" author="Lukas Sch?ller" ctrl="force" easy="true" id="luc24" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="105" _title="The Carousel" _xpath="enigma_v/luc30_1" author="Lukas Sch?ller" ctrl="force" easy="false" id="luc30" rel="1" rev="3" score="1" target="time" unit="duration"/>
+     <level _seq="106" _title="Ocean Cruising" _xpath="enigma_v/duffy131_2" author="Jacob Scott" ctrl="force" easy="false" id="duffy131" rel="2" rev="2" score="1" target="time" unit="duration"/>
+-    <level _seq="107" _title="Pirates Island" _xpath="enigma_v/alain07_1" author="Alain Busser" ctrl="force" easy="false" id="alain07" rel="1" rev="0" score="1" target="time" unit="duration"/>
++    <level _seq="107" _title="Pirates Island" _xpath="enigma_v/alain07_2" author="Alain Busser" ctrl="force" easy="false" id="alain07" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="108" _title="Tropical Island" _xpath="enigma_v/andreas08_2" author="Andreas Lochmann" ctrl="force" easy="true" id="andreas08" rel="2" rev="4" score="1" target="time" unit="duration"/>
+     <level _seq="109" _title="Ghost Islands" _xpath="enigma_v/raoul15_2" author="Raoul Bourquin" ctrl="force" easy="true" id="raoul15" rel="2" rev="1" score="2" target="time" unit="duration"/>
+     <level _seq="110" _title="- Giza Meditation -" _xpath="enigma_v/raoul02_2" author="Raoul Bourquin" ctrl="force" easy="true" id="raoul02" rel="2" rev="2" score="1" target="time" unit="duration"/>
+@@ -157,7 +157,7 @@
+     <level _seq="149" _title="Orbitting" _xpath="enigma_vi/andreas26_2" author="Andreas Lochmann" ctrl="force" easy="true" id="andreas26" rel="2" rev="2" score="1" target="time" unit="duration"/>
+     <level _seq="150" _title="Evil" _xpath="enigma_vi/spaceman04_1" author="Spaceman" ctrl="force" easy="false" id="spaceman4" rel="1" rev="0" score="1" target="time" unit="duration"/>
+     <level _seq="151" _title="Meditation Disturbance" _xpath="enigma_vi/ral04_2" author="Ronald Lamprecht" ctrl="force" easy="true" id="20060429ral006" rel="2" rev="143" score="1" target="time" unit="duration"/>
+-    <level _seq="152" _title="Banana Republic" _xpath="enigma_v/alain26_2" author="Alain Busser" ctrl="force" easy="true" id="alain26" rel="2" rev="2" score="2" target="time" unit="duration"/>
++    <level _seq="152" _title="Banana Republic" _xpath="enigma_v/alain26_3" author="Alain Busser" ctrl="force" easy="true" id="alain26" rel="3" rev="4" score="2" target="time" unit="duration"/>
+     <level _seq="153" _title="Zeus" _xpath="enigma_vi/raoul19_1" author="Raoul Bourquin" ctrl="force" easy="true" id="raoul19" rel="1" rev="5" score="1" target="time" unit="duration"/>
+     <level _seq="154" _title="Rhapsody on Cracks" _xpath="enigma_vi/ral06_2" author="Ronald Lamprecht" ctrl="force" easy="true" id="20060510ral008" rel="2" rev="189" score="2" target="time" unit="duration"/>
+     <level _seq="155" _title="Prepare Your Defense" _xpath="enigma_vi/duffy132_2" author="Jacob Scott" ctrl="force" easy="false" id="duffy132" rel="2" rev="2" score="2" target="time" unit="duration"/>
+
+Modified: trunk/data/levels/enigma_cross/newlevels-1-10.xml
+===================================================================
+--- trunk/data/levels/enigma_cross/newlevels-1-10.xml	2011-02-05 19:09:44 UTC (rev 2200)
++++ trunk/data/levels/enigma_cross/newlevels-1-10.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -1,7 +1,7 @@
+ <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+ <index xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="index.xsd">
+ 
+-  <info enigma="1.10" group="Facets" location="15600" network="false" owner="Enigma Team" release="1" revision="94" title="Enigma 1.10 new"/>
++  <info enigma="1.10" group="Facets" location="15600" network="false" owner="Enigma Team" release="1" revision="95" title="Enigma 1.10 new"/>
+ 
+   <attributes/>
+ 
+@@ -194,7 +194,7 @@
+     <level _seq="186" _title="lower i" _xpath="enigma_ix/devnull39_1" author="/dev/null" ctrl="force" easy="true" id="devnull39" rel="1" rev="5" score="1" target="time" unit="duration"/>
+     <level _seq="187" _title="At the Pool" _xpath="enigma_ix/devnull36_1" author="/dev/null" ctrl="force" easy="true" id="devnull36" rel="1" rev="4" score="1" target="time" unit="duration"/>
+     <level _seq="188" _title="Hide them" _xpath="enigma_ix/devnull44_1" author="/dev/null" ctrl="force" easy="false" id="devnull44" rel="1" rev="2" score="1" target="time" unit="duration"/>
+-    <level _seq="189" _title="Crabwise IV" _xpath="enigma_viii/devnull45_1" author="/dev/null" ctrl="force" easy="true" id="devnull45" rel="1" rev="4" score="1" target="time" unit="duration"/>
++    <level _seq="189" _title="Crabwise IV" _xpath="enigma_viii/devnull45_1" author="/dev/null" ctrl="force" easy="true" id="devnull45" rel="1" rev="5" score="1" target="time" unit="duration"/>
+     <level _seq="190" _title="more is not less" _xpath="enigma_ix/devnull23_1" author="/dev/null" ctrl="force" easy="true" id="devnull23" rel="1" rev="13" score="1" target="time" unit="duration"/>
+     <level _seq="191" _title="Hip to be Square" _xpath="enigma_vii/devnull37_1" author="/dev/null" ctrl="force" easy="true" id="devnull37" rel="1" rev="4" score="1" target="time" unit="duration"/>
+     <level _seq="192" _title="Across the Waterbyss" _xpath="enigma_ix/harry03_1" author="daydreamer" ctrl="force" easy="false" id="harry03" rel="1" rev="4" score="1" target="time" unit="duration"/>
+
+Deleted: trunk/data/levels/enigma_ii/barry03_1.xml
+===================================================================
+--- trunk/data/levels/enigma_ii/barry03_1.xml	2011-02-05 19:09:44 UTC (rev 2200)
++++ trunk/data/levels/enigma_ii/barry03_1.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -1,112 +0,0 @@
+-<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+-<el:level xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://enigma-game.org/schema/level/1 level.xsd" xmlns:el="http://enigma-game.org/schema/level/1">
+-  <el:protected>
+-    <el:info el:type="level">
+-      <el:identity el:title="Tool Time" el:subtitle="" el:id="barry03"/>
+-      <el:version el:score="1" el:release="1" el:revision="2" el:status="released"/>
+-      <el:author  el:name="Barry &amp; Lori Mead" el:email="bmead15 at cox.net" el:homepage=""/>
+-      <el:copyright>Copyright ? 2003 Barry &amp; Lori Mead</el:copyright>
+-      <el:license el:type="GPL version 2" el:open="true"/>
+-      <el:compatibility el:enigma="0.92">
+-       <el:dependency el:path="lib/ant" el:id="lib/ant" el:release="1" el:preload="true"/>
+-      </el:compatibility>
+-      <el:modes el:easy="false" el:single="true" el:network="false"/>
+-      <el:comments>
+-        <el:code>Lua 5.1 and XML converted by Leveladministrators</el:code>
+-      </el:comments>
+-      <el:score el:easy="-" el:difficult="-"/>
+-    </el:info>
+-    <el:luamain><![CDATA[
+-cells={}
+-cells[" "]=cell{floor="fl-black"}
+-cells["~"]=cell{floor="fl-abyss"}
+-cells["`"]=cell{floor="fl-space"}
+-cells[":"]=cell{parent=cells[" "], stone="st-chameleon", item="it-seed"}
+-cells[";"]=cell{parent=cells[" "], stone="st-chameleon", item="it-brush"}
+-cells["h"]=cell{parent=cells[" "], stone="st-chameleon", item="it-hammer"}
+-cells["f"]=cell{parent=cells["`"], stone="st-chameleon", item="it-floppy"}
+-cells["G"]=cell{stone="st-grate1"}
+-cells["g"]=cell{stone="st-knight"}
+-cells["B"]=cell{stone="st-stone_break"}
+-cells["V"]=cell{stone="st-break_invisible"}
+-cells["v"]=cell{stone="st-stonebrush"}
+-cells["I"]=cell{stone={"st-door-v-open", {name="doorA"}}}
+-cells["S"]=cell{item={"it-trigger", {action="openclose",  target="doorA"}}}
+-cells["i"]=cell{stone={"st-door-v", {name="doorB"}}}
+-cells["7"]=cell{stone={"st-door-h", {name="doorC"}}}
+-cells["-"]=cell{stone={"st-door-h", {name="doorD"}}}
+-cells["m"]=cell{stone={"st-coinslot", {action="open", target="doorD"}}}
+-cells["F"]=cell{stone={"st-floppy", {action="openclose", target="doorC"}}}
+-cells["#"]=cell{stone="st-rock1"}
+-cells["C"]=cell{item="it-coffee"}
+-cells["n"]=cell{item={"it-document", {text="text1"}}}
+-cells["1"]=cell{item={"it-coin4", {value=4}}}
+-cells["2"]=cell{item={"it-coin1", {value=1}}}
+-cells["T"]=cell{stone="st-rock1_hole"}
+-cells["t"]=cell{stone= {"st-switch",{action="callback", target="s1"}}}
+-cells["L"]=cell{stone={"st-laser", {on=FALSE, dir=SOUTH, name="laser1"}}}
+-cells["l"]=cell{item={"it-trigger", {action="onoff",  target="laser1"}}}
+-cells["x"]=cell{item={"it-trigger", {action="close",  target="doorA"}}}
+-cells["o"]=cell{item={"it-trigger", {action="open",   target="doorA"}}}
+-cells["$"]=cell{item={"it-trigger", {action="openclose", target="doorB"}}}
+-cells["d"]=cell{stone="st-oneway-s"}
+-
+-level = {
+---01234567890123456789012345678901234567890
+-"#######################################",--0
+-"#0  v        v#0#m G              ~~~;#",--1
+-"#vv v    v   v#-#  G    ggggg     ~0~ #",--2
+-"#   v    v   v     G    gBVBg     ~~~ #",--3
+-"# vvv    v   vvvvvvG    gV0Vg         #",--4
+-"#        v        vG    gBVBg         #",--5
+-"#vvvvvvvvv  vvvvvvvG    ggggg         #",--6
+-"#           v    0vG                  #",--7
+-"#vvvvv vvvvvv vv vvG   VVV     ########",--8
+-"#0     v       v   G   V0V     #     ##",--9
+-"#  vvvvv vvvvvvv $ G   VVV     #d### ##",--10
+-"#        v         G           I xgBo0#",--11
+-"#vvvvvvvvvVvvvvvvvv#T##################",--12
+-"#           ``````f#n   v        L    #",--13
+-"#           ``````0#vvv v             #",--14
+-"#           ########    v             #",--15
+-"#####              # vvvv     O      l#",--16
+-"# 1 #      VgVgV   #                  #",--17
+-"# 2 #      ggggg   #vv                #",--18
+-"# 2 i      Vg0gV   #0V       BBB      #",--19
+-"#####      ggggg   #vv       B0B      #",--20
+-"#          VgVgV   #         BBB      #",--21
+-"##7#F              #               ##d#",--22
+-"#0 0#                             h#~C#",--23
+-"#########T##########################T##",--24
+-"#                  #     #0           #",--21
+-"#0                 TV   :#t           #",--25
+-"#######################################" --26
+---01234567890123456789012345678901234567890
+-}
+-
+-oxyd_default_flavor = "b"
+-set_default_parent(cells[" "])
+-create_world_by_map(level)
+-oxyd_shuffle()
+-
+-i = 0
+-function s1()
+-    i = 1 - i
+-    if i == 1 then
+-        set_stone("st-oneway-n", 37, 22)
+-    else
+-        set_stone("st-oneway-s", 37, 22)
+-    end
+-end
+-    ]]></el:luamain>
+-    <el:i18n>
+-      <el:string el:key="title">
+-        <el:english el:translate="false"/>
+-      </el:string>
+-      <el:string el:key="text1">
+-        <el:english el:translate="true">Make a Sword, &amp; Umbrella.</el:english>
+-      </el:string> 
+-    </el:i18n>
+-  </el:protected>
+-</el:level>
+-
+
+Copied: trunk/data/levels/enigma_ii/barry03_2.xml (from rev 2199, trunk/data/levels/enigma_ii/barry03_1.xml)
+===================================================================
+--- trunk/data/levels/enigma_ii/barry03_2.xml	                        (rev 0)
++++ trunk/data/levels/enigma_ii/barry03_2.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -0,0 +1,92 @@
++<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
++<el:level xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://enigma-game.org/schema/level/1 level.xsd" xmlns:el="http://enigma-game.org/schema/level/1">
++  <el:protected>
++    <el:info el:type="level">
++      <el:identity el:title="Tool Time" el:subtitle="" el:id="barry03"/>
++      <el:version el:score="1" el:release="2" el:revision="3" el:status="released"/>
++      <el:author el:name="Barry &amp; Lori Mead" el:email="bmead15 at cox.net" el:homepage=""/>
++      <el:copyright>Copyright ? 2003 Barry &amp; Lori Mead</el:copyright>
++      <el:license el:type="GPL version 2" el:open="true"/>
++      <el:compatibility el:enigma="1.10"/>
++      <el:modes el:easy="false" el:single="true" el:network="false"/>
++      <el:comments><el:code>New API converted by /dev/null (Feb 2011)</el:code></el:comments>
++      <el:score el:easy="-" el:difficult="-"/>
++    </el:info>
++    <el:luamain><![CDATA[
++ti[" "] = {"fl_dark"}
++ti["~"] = {"fl_abyss"}
++ti[":"] = {"fl_space"}
++ti["#"] = {"st_granite"}
++ti["+"] = {"st_granite_hollow"}
++ti["X"] = {"st_grate"}
++ti["K"] = {"st_knight"}
++ti["H"] = {"st_break_oxydc"}
++ti["="] = {"st_ghost_purplemarble"}
++ti["*"] = {"st_ghost_break"}
++ti["A"] = {"st_door", name = "doorA", faces = "ns"}
++ti["a"] = {"st_floppy", target = "doorA"}
++ti["B"] = {"st_door", name = "doorB", faces = "ew"}
++ti["b"] = {"it_trigger", target = "doorB"}
++ti["C"] = {"st_door", name = "doorC", faces = "ns"}
++ti["c"] = {"st_coinslot", target = "doorC", action = "open"}
++ti["|"] = {"st_door", name = "doorD", faces = "ew", state = OPEN}
++ti["<"] = {"it_trigger", target = "doorD", action = "close"}
++ti[">"] = {"it_trigger", target = "doorD", action = "open"}
++ti["L"] = {"st_laser_s", name = "laser"}
++ti["l"] = {"it_trigger", target = "laser"}
++ti["V"] = {"st_oneway_s"}
++ti["Z"] = {"st_oneway_s", name ="oneway"}
++ti["S"] = {"st_switch", target = "oneway", action="flip"}
++ti["h"] = ti[" "] .. ti({"st_chameleon"}) .. {"it_hammer"}
++ti["s"] = ti[" "] .. ti({"st_chameleon"}) .. {"it_seed"}
++ti["p"] = ti[" "] .. ti({"st_chameleon"}) .. {"it_brush"}
++ti["f"] = ti[":"] .. ti({"st_chameleon"}) .. {"it_floppy"}
++ti["e"] = {"it_coffee"}
++ti["2"] = {"it_coin_s"}
++ti["0"] = {"it_coin_l"}
++ti["d"] = {"it_document", text = "text1"}
++ti["O"] = {"st_oxyd_b"}
++ti["@"] = {"#ac_marble"}
++
++wo(ti, " ", {
++    "#######################################",
++    "#O  =        =#O#c X              ~~~p#",
++    "#== =    =   =#C#  X    KKKKK     ~O~ #",
++    "#   =    =   =     X    KH*HK     ~~~ #",
++    "# ===    =   ======X    K*O*K         #",
++    "#        =        =X    KH*HK         #",
++    "#=========  =======X    KKKKK         #",
++    "#           =    O=X                  #",
++    "#===== ====== == ==X   ***     ########",
++    "#O     =       =   X   *O*     #     ##",
++    "#  ===== ======= b X   ***     #V### ##",
++    "#        =         X           | <KH>O#",
++    "#=========*========#+##################",
++    "#           ::::::f#d   =        L    #",
++    "#           ::::::O#=== =             #",
++    "#           ########    =             #",
++    "#####              # ====     @      l#",
++    "# 0 #      *K*K*   #                  #",
++    "# 2 #      KKKKK   #==                #",
++    "# 2 B      *KOK*   #O*       HHH      #",
++    "#####      KKKKK   #==       HOH      #",
++    "#          *K*K*   #         HHH      #",
++    "##A#a              #               ##Z#",
++    "#O O#                             h#~e#",
++    "#########+##########################+##",
++    "#                  #     #O           #",
++    "#O                 +*   s#S           #",
++    "#######################################"})
++
++wo:shuffleOxyd()
++ ]]></el:luamain>
++    <el:i18n>
++      <el:string el:key="title">
++        <el:english el:translate="false"/>
++      </el:string>
++      <el:string el:key="text1">
++        <el:english el:translate="true">Make a Sword, &amp; Umbrella.</el:english>
++      </el:string> 
++    </el:i18n>
++  </el:protected>
++</el:level>
+
+Deleted: trunk/data/levels/enigma_ii/guy01_1.xml
+===================================================================
+--- trunk/data/levels/enigma_ii/guy01_1.xml	2011-02-05 19:09:44 UTC (rev 2200)
++++ trunk/data/levels/enigma_ii/guy01_1.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -1,115 +0,0 @@
+-<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+-<el:level xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://enigma-game.org/schema/level/1 level.xsd" xmlns:el="http://enigma-game.org/schema/level/1">
+-  <el:protected>
+-    <el:info el:type="level">
+-      <el:identity el:title="Guitar" el:subtitle="" el:id="guy01"/>
+-      <el:version el:score="1" el:release="1" el:revision="0" el:status="released"/>
+-      <el:author  el:name="Guy Busser" el:email="" el:homepage=""/>
+-      <el:copyright>Copyright ? 2005 Guy Busser</el:copyright>
+-      <el:license el:type="GPL v2.0 or above" el:open="true"/>
+-      <el:compatibility el:enigma="0.92">
+-       <el:dependency el:path="lib/ant" el:id="lib/ant" el:release="1" el:preload="true"/>
+-      </el:compatibility>
+-      <el:modes el:easy="false" el:single="true" el:network="false"/>
+-      <el:comments>
+-        <el:code>Lua 5.1 and XML converted by Leveladministrators</el:code>
+-      </el:comments>
+-      <el:score el:easy="-" el:difficult="-"/>
+-    </el:info>
+-    <el:luamain><![CDATA[
+-
+-cells={}
+-cells["."]=cell{floor="fl-leaves"}
+-cells["+"]=cell{{cells["."], {document, "text1"}}}
+-cells["<"]=cell{floor="fl-wood"}
+-cells["-"]=cell{floor="fl-light"}
+-cells["T"]=cell{floor="fl-woven"}
+-cells[">"]=cell{floor="fl-black"}
+-cells["P"]=cell{floor="fl-woven",stone="st-wood"}
+-cells["Q"]=cell{floor="fl-leaves",stone="st-grate1"}
+-cells["&"]=cell{floor="fl-leaves",stone={"st-oneway",{orientation=WEST}}}
+-cells["!"]=cell{floor="fl-leaves",stone={"st-oneway",{orientation=EAST}}}
+-cells["S"]=cell{floor="fl-water"}
+-cells["U"]=cell{floor="fl-leaves",stone="st-wood.growing"}
+-cells["V"]=cell{floor="fl-wood",item="it-tinyhollow"}
+-cells["W"]=cell{floor="fl-leaves",item="it-seed"}
+-cells["w"]=cell{floor="fl-leaves",stone="st-grate1"}
+-cells["x"]=cell{floor="fl-leaves",stone="st-wood"}
+-cells["Z"]=cell{floor="fl-light",stone="st-grate1"}
+-cells["O"]=cell{parent=cells["<"],actor={"ac-blackball",{player=0}}}
+-cells["r"]=cell{stone="st-rock10"}
+-cells["a"]=cell{floor="fl-leaves",item={face="it-trigger"}}
+-cells["A"]=cell{floor="fl-leaves",stone={face="st-door", attr={name="doorA", type="h"}}}
+-cells["B"]=cell{floor="fl-leaves",stone={face="st-door", attr={name="doorB", type="h"}}}
+-cells["C"]=cell{floor="fl-leaves",stone={face="st-door", attr={name="doorC", type="h"}}}
+-cells["D"]=cell{floor="fl-leaves",stone={face="st-door", attr={name="doorD", type="h"}}}
+-cells["E"]=cell{floor="fl-leaves",stone={face="st-door", attr={name="doorE", type="h"}}}
+-cells["F"]=cell{floor="fl-leaves",stone={face="st-door", attr={name="doorF", type="h"}}}
+-cells["G"]=cell{floor="fl-leaves",stone={face="st-door", attr={name="doorG", type="h"}}}
+-cells["H"]=cell{floor="fl-leaves",stone={face="st-door", attr={name="doorH", type="v"}}}
+-cells["I"]=cell{floor="fl-leaves",stone={face="st-door", attr={name="doorI", type="h"}}}
+-cells["1"]=cell{floor="fl-leaves",item={face="it-trigger", attr={action="openclose", target="doorA"}}}
+-cells["2"]=cell{floor="fl-leaves",item={face="it-trigger", attr={action="openclose", target="doorB"}}}
+-cells["3"]=cell{floor="fl-leaves",item={face="it-trigger", attr={action="openclose", target="doorC"}}}
+-cells["4"]=cell{floor="fl-leaves",item={face="it-trigger", attr={action="openclose", target="doorD"}}}
+-cells["5"]=cell{floor="fl-leaves",item={face="it-trigger", attr={action="openclose", target="doorE"}}}
+-cells["6"]=cell{floor="fl-leaves",item={face="it-trigger", attr={action="openclose", target="doorF"}}}
+-cells["7"]=cell{floor="fl-leaves",item={face="it-trigger", attr={action="openclose", target="doorG"}}}
+-cells["8"]=cell{floor="fl-leaves",item={face="it-trigger", attr={action="openclose", target="doorH"}}}
+-cells["9"]=cell{floor="fl-leaves",item={face="it-trigger", attr={action="openclose", target="doorI"}}}
+-cells["0"]=oxyd
+-level = {
+-   
+-"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+-"r..................r.xSSSSSSSSSSSSSS..r",
+-"r..........<<......r..SSSSSSS...SSSSx.r",
+-"r.........<<<......rxWSSSSSSS.S..SSS..r",
+-"r........<<<<......rx.SSSSSSS.SS.SSSx.r",
+-"r........<<<<......r.xSSSSSSS.SS.SSS.xr",
+-"r.......<<<<<......rx.SSSSSSS.S..SSS..r",
+-"r.......<<O<.......rx.SSSSSSS...SSSSxxr",
+-"r........TTT.......r..SSSSS...SSSSSS..r",
+-"r........<<<.......r.xSSSS..S.S..SSS..r",
+-"r........<<<.......rx.SSSS.SS.SS.SSS.xr",
+-"r........<V<.......rx.SSSS..S.S..SSS..r",
+-"r........<<<.......r..SSSSS.....SSSSxxr",
+-"r........<V<.......r..SSSSSSS.SSSSSS..r",
+-"r........<<<.......r..SSSSSSS.SSSSSS..r",
+-"r........<V<.......r..SSSSSWS.SSSSSSS.r",
+-"r........<<<.......r..SSSSS...SSSSSSS.r",
+-"r........<V<.......r..SSSSSSSSSSSSSSS.r",
+-"r....>...<<<.......r..................r",
+-"r...>>...<<<.......r......aaaa9a......r",
+-"r..>>>...V<V...>...r....+.a567a8......r",
+-"r..>>>>..<<<..>>>..r......12aa34......r",
+-"r...>>>>><<<>>>->>.r......aaaaaa......r",
+-"r...>>>>-------->>.r..................r",
+-"r....>>>------->>..r...rrrrrrr.rrrr...r",
+-"r....>>>-0P0--->...r......!..r...0r...r",
+-"r....>>>-Z-Z--->...r...rErrrFrrr......r",
+-"r...>>>--0P0--->>..r...r.&.r...rrrr...r",
+-"r...>>>--Z-Z--->>..r...r.r.r.0...Wr...r",
+-"r..>>>>--0P0---->>.r...rAr.....rrBr...r",
+-"r..>>>>>--------->.r...r.rrrrrrrr.r...r",
+-"r..>>>>>>TTT>>>>->.r...rDr...H..rIr...r",
+-"r...>>>>>>>>>>>>>>.r...r.rGrrrr.r.r...r",
+-"r....>>>>>>>>>>>...r...r0r.r0.r0r0r...r",
+-"r......>>>>>>>...SSw...rrrCrr.rrrrr..xr",
+-"r................SS...................r",
+-"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+-}
+-oxyd_default_flavor = "c"
+-set_default_parent(abyss)
+-create_world_by_map(level)
+-oxyd_shuffle()
+-    ]]></el:luamain>
+-    <el:i18n>
+-      <el:string el:key="title">
+-        <el:english el:translate="false"/>
+-      </el:string>
+-      <el:string el:key="text1">
+-        <el:english el:translate="false">C D Em G</el:english>
+-      </el:string> 
+-    </el:i18n>
+-  </el:protected>
+-</el:level>
+
+Copied: trunk/data/levels/enigma_ii/guy01_2.xml (from rev 2199, trunk/data/levels/enigma_ii/guy01_1.xml)
+===================================================================
+--- trunk/data/levels/enigma_ii/guy01_2.xml	                        (rev 0)
++++ trunk/data/levels/enigma_ii/guy01_2.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -0,0 +1,85 @@
++<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
++<el:level xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://enigma-game.org/schema/level/1 level.xsd" xmlns:el="http://enigma-game.org/schema/level/1">
++  <el:protected>
++    <el:info el:type="level">
++      <el:identity el:title="Guitar" el:subtitle="" el:id="guy01"/>
++      <el:version el:score="1" el:release="2" el:revision="1" el:status="released"/>
++      <el:author el:name="Guy Busser" el:email="" el:homepage=""/>
++      <el:copyright>Copyright ? 2005 Guy Busser</el:copyright>
++      <el:license el:type="GPL v2.0 or above" el:open="true"/>
++      <el:compatibility el:enigma="1.10"/>
++      <el:modes el:easy="false" el:single="true" el:network="false"/>
++      <el:score el:easy="-" el:difficult="-"/>
++    </el:info>
++    <el:luamain><![CDATA[
++ti[" "] = {"fl_lawn_a"}
++ti["~"] = {"fl_water"}
++ti[":"] = {"fl_wood"}
++ti["-"] = {"fl_ivory"}
++ti["="] = {"fl_woven"}
++ti[";"] = {"fl_dark"}
++ti["#"] = {"st_brownmarble"}
++ti["x"] = {"st_grate_cross"}
++ti["X"] = ti["-"] .. ti["x"]
++ti["<"] = {"st_oneway_w"}
++ti[">"] = {"st_oneway_e"}
++ti["+"] = {"st_box"}
++ti["*"] = ti["="] .. ti["+"]
++ti["."] = {"it_seed_wood"}
++ti["d"] = {"it_document", text="text1"}
++ti["o"] = ti[":"] .. {"it_meditation_dent"}
++ti["t"] = {"it_trigger"}
++ti["door"] = {"st_door_c", name="door%%"}
++ti["trigger"] = {"it_trigger", target="door%%"}
++ti["0"] = {"st_oxyd", flavor="c"}
++ti["@"] = ti[":"] .. {"#ac_marble"}
++
++wo(res.autotile(ti, {"1","9","trigger"}, {"A","I","door"}), " ", {
++    "#######################################",
++    "#                  # +~~~~~~~~~~~~~~  #",
++    "#          ::      #  ~~~~~~~   ~~~~+ #",
++    "#         :::      #+.~~~~~~~ ~  ~~~  #",
++    "#        ::::      #+ ~~~~~~~ ~~ ~~~+ #",
++    "#        ::::      # +~~~~~~~ ~~ ~~~ +#",
++    "#       :::::      #+ ~~~~~~~ ~  ~~~  #",
++    "#       ::@:       #+ ~~~~~~~   ~~~~++#",
++    "#        ===       #  ~~~~~   ~~~~~~  #",
++    "#        :::       # +~~~~  ~ ~  ~~~  #",
++    "#        :::       #+ ~~~~ ~~ ~~ ~~~ +#",
++    "#        :o:       #+ ~~~~  ~ ~  ~~~  #",
++    "#        :::       #  ~~~~~     ~~~~++#",
++    "#        :o:       #  ~~~~~~~ ~~~~~~  #",
++    "#        :::       #  ~~~~~~~ ~~~~~~  #",
++    "#        :o:       #  ~~~~~.~ ~~~~~~~ #",
++    "#        :::       #  ~~~~~   ~~~~~~~ #",
++    "#        :o:       #  ~~~~~~~~~~~~~~~ #",
++    "#    ;   :::       #                  #",
++    "#   ;;   :::       #      tttt9t      #",
++    "#  ;;;   o:o   ;   #    d t567t8      #",
++    "#  ;;;;  :::  ;;;  #      12tt34      #",
++    "#   ;;;;;:::;;;-;; #      tttttt      #",
++    "#   ;;;;--------;; #                  #",
++    "#    ;;;-------;;  #   ####### ####   #",
++    "#    ;;;-0*0---;   #      >  #   0#   #",
++    "#    ;;;-X-X---;   #   #E###F###      #",
++    "#   ;;;--0*0---;;  #   # < #   ####   #",
++    "#   ;;;--X-X---;;  #   # # # 0   .#   #",
++    "#  ;;;;--0*0----;; #   #A#     ##B#   #",
++    "#  ;;;;;---------; #   # ######## #   #",
++    "#  ;;;;;;===;;;;-; #   #D#   H  #I#   #",
++    "#   ;;;;;;;;;;;;;; #   # #G#### # #   #",
++    "#    ;;;;;;;;;;;   #   #0# #0 #0#0#   #",
++    "#      ;;;;;;;   ~~x   ###C## #####  +#",
++    "#                ~~                   #",
++    "#######################################"})
++ ]]></el:luamain>
++    <el:i18n>
++      <el:string el:key="title">
++        <el:english el:translate="false"/>
++      </el:string>
++      <el:string el:key="text1">
++        <el:english el:translate="false">C D Em G</el:english>
++      </el:string> 
++    </el:i18n>
++  </el:protected>
++</el:level>
+
+Modified: trunk/data/levels/enigma_ii/index.xml
+===================================================================
+--- trunk/data/levels/enigma_ii/index.xml	2011-02-05 19:09:44 UTC (rev 2200)
++++ trunk/data/levels/enigma_ii/index.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -1,7 +1,7 @@
+ <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+ <index xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="index.xsd">
+ 
+-  <info enigma="1.10" group="Enigma" location="10300" network="false" owner="Enigma Team" release="1" revision="43" title="Enigma II"/>
++  <info enigma="1.10" group="Enigma" location="10300" network="false" owner="Enigma Team" release="1" revision="44" title="Enigma II"/>
+ 
+   <attributes/>
+ 
+@@ -33,7 +33,7 @@
+     <level _seq="25" _title="Look Closely" _xpath="./martin102_2" author="Martin Hawlisch" ctrl="force" easy="false" id="martin102" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="26" _title="Arcoculture" _xpath="./ant17_1" author="Petr Machata" ctrl="force" easy="false" id="ant17" rel="1" rev="0" score="1" target="time" unit="duration"/>
+     <level _seq="27" _title="Twelve Doors" _xpath="./nat06_2" author="Nat Pryce" ctrl="force" easy="false" id="nat6" rel="2" rev="1" score="1" target="time" unit="duration"/>
+-    <level _seq="28" _title="Guitar" _xpath="./guy01_1" author="Guy Busser" ctrl="force" easy="false" id="guy01" rel="1" rev="0" score="1" target="time" unit="duration"/>
++    <level _seq="28" _title="Guitar" _xpath="./guy01_2" author="Guy Busser" ctrl="force" easy="false" id="guy01" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="29" _title="Corridors" _xpath="./siegfried29_1" author="Siegfried Fennig" ctrl="force" easy="false" id="level9f" rel="1" rev="0" score="1" target="time" unit="duration"/>
+     <level _seq="30" _title="- Meditation -" _xpath="./siegfried34_1" author="anonymous" ctrl="force" easy="false" id="meditation13" rel="1" rev="0" score="1" target="time" unit="duration"/>
+     <level _seq="31" _title="Path in the Stars" _xpath="./duffy80_2" author="Jacob Scott" ctrl="force" easy="true" id="duffy80" rel="2" rev="3" score="2" target="time" unit="duration"/>
+@@ -102,7 +102,7 @@
+     <level _seq="94" _title="Snowing" _xpath="./duffy120_3" author="Jacob Scott" ctrl="force" easy="true" id="duffy120" rel="3" rev="5" score="2" target="time" unit="duration"/>
+     <level _seq="95" _title="Eraser Please!" _xpath="./martin39_2" author="Martin Hawlisch" ctrl="force" easy="false" id="martin39" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="96" _title="Friend or Foe?" _xpath="./andreas05_2" author="Andreas Lochmann" ctrl="force" easy="true" id="andreas05" rel="2" rev="3" score="1" target="time" unit="duration"/>
+-    <level _seq="97" _title="Tool Time" _xpath="./barry03_1" author="Barry &amp; Lori Mead" ctrl="force" easy="false" id="barry03" rel="1" rev="2" score="1" target="time" unit="duration"/>
++    <level _seq="97" _title="Tool Time" _xpath="./barry03_2" author="Barry &amp; Lori Mead" ctrl="force" easy="false" id="barry03" rel="2" rev="3" score="1" target="time" unit="duration"/>
+     <level _seq="98" _title="Light Barriers" _xpath="./qq01_1" author="Andrzej Szombierski" ctrl="force" easy="false" id="qq1" rel="1" rev="0" score="1" target="time" unit="duration"/>
+     <level _seq="99" _title="Domain of Mysteries" _xpath="./siegfried31_2" author="Siegfried Fennig" ctrl="force" easy="false" id="level11a" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="100" _title="Patterns" _xpath="./duffy128_1" author="Jacob Scott" ctrl="force" easy="false" id="duffy128" rel="1" rev="2" score="1" target="time" unit="duration"/>
+
+Modified: trunk/data/levels/enigma_iii/duffy99_2.xml
+===================================================================
+--- trunk/data/levels/enigma_iii/duffy99_2.xml	2011-02-05 19:09:44 UTC (rev 2200)
++++ trunk/data/levels/enigma_iii/duffy99_2.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -3,8 +3,8 @@
+   <el:protected>
+     <el:info el:type="level">
+       <el:identity el:title="Blocks and Water" el:subtitle="" el:id="duffy99"/>
+-      <el:version el:score="2" el:release="2" el:revision="2" el:status="released"/>
+-      <el:author  el:name="Jacob Scott" el:email="" el:homepage=""/>
++      <el:version el:score="2" el:release="2" el:revision="3" el:status="released"/>
++      <el:author el:name="Jacob Scott" el:email="" el:homepage=""/>
+       <el:copyright>Copyright ? 2004 Jacob Scott</el:copyright>
+       <el:license el:type="GPL v2.0 or above" el:open="true"/>
+       <el:compatibility el:enigma="1.10"/>
+@@ -22,7 +22,7 @@
+ ti["#"] = {"st_granite"}
+ ti["%"] = ti["~"] .. {"st_greenbrown"}
+ ti["X"] = {"st_grate", flavor="cross"}
+-ti["x"] = ti["~"] .. ti["x"]
++ti["x"] = ti["~"] .. ti["X"]
+ ti["o"] = {"st_oxyd", name="land#"}
+ ti["O"] = ti["~"] .. {"st_oxyd", name="water#"}
+ ti["@"] = {"ac_marble_black", 0.0, 0.5}
+
+Modified: trunk/data/levels/enigma_iii/index.xml
+===================================================================
+--- trunk/data/levels/enigma_iii/index.xml	2011-02-05 19:09:44 UTC (rev 2200)
++++ trunk/data/levels/enigma_iii/index.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -1,7 +1,7 @@
+ <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+ <index xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="index.xsd">
+ 
+-  <info enigma="1.10" group="Enigma" location="10400" network="false" owner="Enigma Team" release="1" revision="43" title="Enigma III"/>
++  <info enigma="1.10" group="Enigma" location="10400" network="false" owner="Enigma Team" release="1" revision="44" title="Enigma III"/>
+ 
+   <attributes/>
+ 
+@@ -16,7 +16,7 @@
+     <level _seq="8" _title="Coloured Doors" _xpath="./luc03_2" author="Lukas Sch?ller" ctrl="force" easy="false" id="luc03" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="9" _title="Family Business" _xpath="./duffy20_2" author="Jacob Scott" ctrl="force" easy="false" id="duffy20" rel="2" rev="1" score="2" target="time" unit="duration"/>
+     <level _seq="10" _title="Seven Friends" _xpath="./ss16_2" author="Sven Siggelkow" ctrl="force" easy="false" id="ss16" rel="2" rev="0" score="2" target="time" unit="duration"/>
+-    <level _seq="11" _title="Blocks and Water" _xpath="./duffy99_2" author="Jacob Scott" ctrl="force" easy="false" id="duffy99" rel="2" rev="2" score="2" target="time" unit="duration"/>
++    <level _seq="11" _title="Blocks and Water" _xpath="./duffy99_2" author="Jacob Scott" ctrl="force" easy="false" id="duffy99" rel="2" rev="3" score="2" target="time" unit="duration"/>
+     <level _seq="12" _title="deja-vu" _xpath="./illmind09_1" author="illmind" ctrl="force" easy="false" id="illmind09" rel="1" rev="0" score="1" target="time" unit="duration"/>
+     <level _seq="13" _title="Dependants" _xpath="./ant25_2" author="Petr Machata" ctrl="force" easy="true" id="ant25" rel="2" rev="3" score="2" target="time" unit="duration"/>
+     <level _seq="14" _title="Use The PIN" _xpath="./martin99_1" author="Martin Hawlisch" ctrl="force" easy="true" id="martin99" rel="1" rev="0" score="1" target="time" unit="duration"/>
+
+Deleted: trunk/data/levels/enigma_iv/alain08_1.xml
+===================================================================
+--- trunk/data/levels/enigma_iv/alain08_1.xml	2011-02-05 19:09:44 UTC (rev 2200)
++++ trunk/data/levels/enigma_iv/alain08_1.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -1,116 +0,0 @@
+-<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+-<el:level xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://enigma-game.org/schema/level/1 level.xsd" xmlns:el="http://enigma-game.org/schema/level/1">
+-  <el:protected>
+-    <el:info el:type="level">
+-      <el:identity el:title="Wood robbing" el:subtitle="" el:id="alain08"/>
+-      <el:version el:score="1" el:release="1" el:revision="0" el:status="released"/>
+-      <el:author  el:name="Alain Busser" el:email="" el:homepage=""/>
+-      <el:copyright>Copyright ? 2006 Alain Busser</el:copyright>
+-      <el:license el:type="GPL v2.0 or above" el:open="true"/>
+-      <el:compatibility el:enigma="0.92">
+-      </el:compatibility>
+-      <el:modes el:easy="false" el:single="true" el:network="false"/>
+-      <el:comments>
+-        <el:code>Lua 5.1 and XML converted by Leveladministrators</el:code>
+-      </el:comments>
+-      <el:score el:easy="-" el:difficult="1:57"/>
+-    </el:info>
+-    <el:luamain><![CDATA[
+-levelw = 20
+-levelh = 13
+-
+-create_world(levelw, levelh)
+-oxyd_default_flavor = "a"
+-draw_border("st-bumps")
+-fill_floor("fl-brick", 0,0, level_width,level_height)
+-
+-function renderLine( line, pattern)
+-    for i=1, strlen(pattern) do
+-        local c = strsub( pattern, i, i)
+-        if c =="#" then
+-            set_stone("st-bombs", i-1, line)
+-        elseif c == "o" then
+-            oxyd( i-1, line)
+-            elseif c=="c" then
+-                set_stone("st-key_a", i-1,line, {action="callback", target="abrir"})
+-            elseif c =="k" then
+-            set_item("it-key_a",i-1,line)
+-          elseif c=="z" then
+-            set_actor("ac-blackball", i-.5,line+.5, {player=0})
+-        elseif c=="a" then
+-            set_item("it-trigger",i-1,line,{action="openclose", target="door2"})
+-        elseif c=="b" then
+-            set_item("it-whitebomb", i-1, line)
+-        elseif c=="e" then
+-            set_item("it-dynamite", i-1,line)
+-        elseif c=="d" then
+-            set_item("it-trigger",i-1,line,{action="openclose", target="door1"})
+-        elseif c=="*" then
+-            set_stone ( "st-brick", i-1,line)
+-        elseif c=="+" then
+-            set_stone("st-grate1", i-1,line)
+-        elseif c=="w" then
+-            set_stone("st-wood", i-1,line)
+-        elseif c=="g" then
+-            doorh(i-1,line, {name="door1"})
+-        elseif c=="h" then
+-            doorh(i-1,line, {name="door2"})
+-        elseif c=="i" then
+-            doorv(i-1,line,{name="door3"})
+-        elseif c=="j" then
+-            doorv(i-1,line,{name="door4"})
+-        elseif c=="m" then
+-            doorv(i-1,line,{name="door5"})
+-        elseif c=="l" then
+-            doorv(i-1,line,{name="door6"})
+-        elseif c=="p" then
+-            set_item("it-trigger",i-1,line,{action="openclose", target="door3"})
+-        elseif c=="q" then
+-            set_item("it-trigger",i-1,line,{action="openclose", target="door4"})
+-        elseif c=="r" then
+-            set_item("it-trigger",i-1,line,{action="openclose", target="door5"})
+-        elseif c=="s" then
+-            set_item("it-trigger",i-1,line,{action="openclose", target="door6"})
+-        elseif c=="u" then
+-            set_item("it-blackbomb",i-1,line)
+-            set_stone("st-wood",i-1,line)
+-        elseif c=="B" then
+-            set_item("it-blackbomb",i-1,line)
+-        end
+-    end    
+-end
+-
+-function abrir()
+-    document (10,3,"text1")
+-end
+-
+---               01234567890123456789
+-renderLine(00 , "                    ")
+-renderLine(01 , "        dap  +   ek ")
+-renderLine(02 , "  www   qrs  ****** ")
+-renderLine(03 , "  w+uw       +w w  #")
+-renderLine(04 , "  www        +w w   ")
+-renderLine(05 , "        z B  +w w c ")  
+-renderLine(06 , "             +w w   ")
+-renderLine(07 , "             +w w   ")
+-renderLine(08 , " **h*************** ")
+-renderLine(09 , "     i j m l        ")
+-renderLine(10 , " **************g*** ")
+-renderLine(11 , " o                o ")
+-renderLine(12 , "                    ") 
+---               01234567890123456789
+-
+-oxyd_shuffle()
+-    ]]></el:luamain>
+-    <el:i18n>
+-      <el:string el:key="title">
+-        <el:english el:translate="true"/>
+-        <el:translation el:lang="fr">Cambriolage de stocks de bois</el:translation>
+-      </el:string>
+-      <el:string el:key="text1">
+-        <el:english el:translate="false">Gotcha!</el:english>
+-        <el:translation el:lang="fr">Je vous ai bien eu!</el:translation>
+-      </el:string> 
+-    </el:i18n>
+-  </el:protected>
+-</el:level>
+
+Copied: trunk/data/levels/enigma_iv/alain08_2.xml (from rev 2197, trunk/data/levels/enigma_iv/alain08_1.xml)
+===================================================================
+--- trunk/data/levels/enigma_iv/alain08_2.xml	                        (rev 0)
++++ trunk/data/levels/enigma_iv/alain08_2.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -0,0 +1,62 @@
++<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
++<el:level xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://enigma-game.org/schema/level/1 level.xsd" xmlns:el="http://enigma-game.org/schema/level/1">
++  <el:protected>
++    <el:info el:type="level">
++      <el:identity el:title="Wood robbing" el:subtitle="" el:id="alain08"/>
++      <el:version el:score="1" el:release="2" el:revision="1" el:status="released"/>
++      <el:author el:name="Alain Busser" el:email="" el:homepage=""/>
++      <el:copyright>Copyright ? 2006 Alain Busser</el:copyright>
++      <el:license el:type="GPL v2.0 or above" el:open="true"/>
++      <el:compatibility el:enigma="1.10"/>
++      <el:modes el:easy="false" el:single="true" el:network="false"/>
++      <el:score el:easy="-" el:difficult="1:57"/>
++    </el:info>
++    <el:luamain><![CDATA[
++ti[" "] = {"fl_brick"}
++ti["="] = {"st_pinkbumps"}
++ti["#"] = {"st_brick"}
++ti["X"] = {"st_grate_cross"}
++ti["B"] = {"st_dispenser_bombblack"}
++ti["+"] = {"st_box_wood"}
++ti["-"] = {"st_door_d", faces="ns", name="door%%"}
++ti["|"] = {"st_door_d", faces="ew", name="door%%"}
++ti["trigger"] = {"it_trigger", name="trigger%%", target="door%%"}
++ti["K"] = {"st_key", target="info"}
++ti["k"] = {"it_key"}
++ti["d"] = {"it_dynamite"}
++ti["b"] = {"it_bomb_black"}
++ti["*"] = ti["+"] .. ti["b"]
++ti["O"] = {"st_oxyd"}
++ti["@"] = {"#ac_marble_black"}
++
++wo(res.autotile(ti, {"e","j","trigger"}, {"E","F","-"}, {"G","J","|",3}), " ", {
++    "====================",
++    "=       efg  X   dk=",
++    "= +++   hij  ######=",
++    "= +X*+       X+ +  B",
++    "= +++        X+ +  =",
++    "=       @ b  X+ + K=",
++    "=            X+ +  =",
++    "=            X+ +  =",
++    "=##E###############=",
++    "=     G H I J      =",
++    "=##############F###=",
++    "=O                O=",
++    "===================="})
++
++function info()
++    wo[no["trigger%6"] + S] = {"it_document", text="text1"}
++end
++ ]]></el:luamain>
++    <el:i18n>
++      <el:string el:key="title">
++        <el:english el:translate="true"/>
++        <el:translation el:lang="fr">Cambriolage de stocks de bois</el:translation>
++      </el:string>
++      <el:string el:key="text1">
++        <el:english el:translate="false">Gotcha!</el:english>
++        <el:translation el:lang="fr">Je vous ai bien eu!</el:translation>
++      </el:string> 
++    </el:i18n>
++  </el:protected>
++</el:level>
+
+Modified: trunk/data/levels/enigma_iv/index.xml
+===================================================================
+--- trunk/data/levels/enigma_iv/index.xml	2011-02-05 19:09:44 UTC (rev 2200)
++++ trunk/data/levels/enigma_iv/index.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -1,14 +1,14 @@
+ <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+ <index xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="index.xsd">
+ 
+-  <info enigma="1.10" group="Enigma" location="10500" network="false" owner="Enigma Team" release="1" revision="59" title="Enigma IV"/>
++  <info enigma="1.10" group="Enigma" location="10500" network="false" owner="Enigma Team" release="1" revision="60" title="Enigma IV"/>
+ 
+   <attributes/>
+ 
+   <levels>
+     <level _seq="1" _title="Welcome" _xpath="./welcometopack4_2" author="Raoul Bourquin" ctrl="force" easy="true" id="welcometopack4" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="2" _title="Happy New Year" _xpath="./duffy76_2" author="Jacob Scott" ctrl="force" easy="false" id="duffy76" rel="2" rev="2" score="1" target="time" unit="duration"/>
+-    <level _seq="3" _title="Wood robbing" _xpath="./alain08_1" author="Alain Busser" ctrl="force" easy="false" id="alain08" rel="1" rev="0" score="1" target="time" unit="duration"/>
++    <level _seq="3" _title="Wood robbing" _xpath="./alain08_2" author="Alain Busser" ctrl="force" easy="false" id="alain08" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="4" _title="Termites" _xpath="./duffy104_3" author="Jacob Scott" ctrl="force" easy="true" id="duffy104" rel="3" rev="3" score="2" target="time" unit="duration"/>
+     <level _seq="5" _title="Hurry!" _xpath="./wb01_4" author="Jon 'WB' Sneyers" ctrl="force" easy="true" id="wb1" rel="4" rev="3" score="3" target="time" unit="duration"/>
+     <level _seq="6" _title="TNT Shortage?" _xpath="./siegfried74_1" author="Siegfried Fennig" ctrl="force" easy="false" id="siegfried74" rel="1" rev="0" score="1" target="time" unit="duration"/>
+
+Deleted: trunk/data/levels/enigma_v/alain07_1.xml
+===================================================================
+--- trunk/data/levels/enigma_v/alain07_1.xml	2011-02-05 19:09:44 UTC (rev 2200)
++++ trunk/data/levels/enigma_v/alain07_1.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -1,150 +0,0 @@
+-<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+-<el:level xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://enigma-game.org/schema/level/1 level.xsd" xmlns:el="http://enigma-game.org/schema/level/1">
+-  <el:protected>
+-    <el:info el:type="level">
+-      <el:identity el:title="Pirates Island" el:subtitle="" el:id="alain07"/>
+-      <el:version el:score="1" el:release="1" el:revision="0" el:status="released"/>
+-      <el:author  el:name="Alain Busser" el:email="" el:homepage=""/>
+-      <el:copyright>Copyright ? 2006 Alain Busser</el:copyright>
+-      <el:license el:type="GPL v2.0 or above" el:open="true"/>
+-      <el:compatibility el:enigma="0.92">
+-      </el:compatibility>
+-      <el:modes el:easy="false" el:single="true" el:network="false"/>
+-      <el:comments>
+-        <el:code>Lua 5.1 and XML converted by Leveladministrators</el:code>
+-      </el:comments>
+-      <el:score el:easy="-" el:difficult="3:38"/>
+-    </el:info>
+-    <el:luamain><![CDATA[
+-levelw = 40
+-levelh = 23
+-
+-create_world(levelw, levelh)
+-oxyd_default_flavor = "a"
+-fill_floor("fl-leaves")
+-
+-function renderLine( line, pattern)
+-    for i=1, strlen(pattern) do
+-        local c = strsub( pattern, i, i)
+-        if c =="." then
+-            set_floor( "fl-sand", i-1, line)
+-        elseif c == "o" then
+-            oxyd( i-1, line)
+-            elseif c=="z" then
+-            set_actor("ac-blackball", i-.5,line+.5, {player=0})
+-        elseif c=="w" then
+-            set_floor("fl-water",i-1,line)
+-        elseif c=="b" then
+-            set_floor("fl-himalaya",i-1,line)
+-        elseif c=="c" then
+-            set_stone("st-coinslot",i-1,line,{action="callback", target="sand1"}) 
+-        elseif c=="d" then
+-            set_stone("st-coinslot", i-1,line,{action="callback", target="sand2"})
+-        elseif c=="e" then
+-            document(i-1,line,"text1")
+-        elseif c=="g" then
+-            set_item("it-seed",i-1,line)
+-        elseif c=="h" then
+-            set_item("it-coin4",i-1,line)
+-        elseif c=="f" then
+-            set_stone("st-wood",i-1,line)
+-        elseif c=="1" then
+-            set_item("it-booze",i-1,line)
+-             elseif c == "2" then
+-                 set_item("it-banana",i-1,line)
+-        end
+-    end    
+-end
+-
+-function sand1()
+-    set_floor("fl-sand",8,20)
+-    set_floor("fl-sand",8,19)
+-    set_floor("fl-sand",9,20)
+-    set_floor("fl-sand",9,21)
+-    set_floor("fl-sand",10,21)
+-    set_floor("fl-sand",7,19)
+-    set_floor("fl-sand",7,20)
+-    set_floor("fl-sand",6,20)
+-    set_floor("fl-sand",5,20)
+-    set_floor("fl-sand",4,20)
+-end
+-
+-function sand2()
+-    set_floor("fl-sand",31,8)
+-    set_floor("fl-sand",32,8)
+-    set_floor("fl-sand",33,8)
+-    set_floor("fl-sand",31,7)
+-    set_floor("fl-sand",32,7)
+-    set_floor("fl-sand",31,6)
+-end
+-
+-for i=1,4 do
+-    for j=1,4 do
+-        set_stone("st-chameleon",5+i,10+j)
+-    end
+-end
+-
+-for i=1,4 do
+-    for j=1,2 do
+-        set_stone("st-chameleon",11+i,7+j)
+-    end
+-end
+-
+-for i=1,6 do
+-    for j=1,2 do
+-        set_stone("st-chameleon",29+i,13+j)
+-    end
+-end
+-
+-for j=1,2 do
+-    set_stone("st-chameleon",2,17+j)
+-end
+-
+-for i=1,8 do
+-    for j=1,5 do
+-        set_stone("st-chameleon",18+i,14+j)
+-    end
+-end
+-
+---               0123456789012345678901234567890123456789
+-renderLine(00 , "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww")
+-renderLine(01 , "wwwwww...wwwwwwwwwwww..wwwwwwwwowwwwwwww")
+-renderLine(02 , "wwwww..o..wwwwwwwww.. ..wwwwwwwwwwwwwwww")
+-renderLine(03 , "wwwwww...wwwwwwwww.. 1 ..wwwww...wwwwwww")
+-renderLine(04 , "wwwwwwwwwwwwwwwwwww.. ..wwwwwwfo..wwwwww")
+-renderLine(05 , "wwwwwwwwwwwww.wwwwww...wwwwwww...wwwwwww")  
+-renderLine(06 , "wwwwwwwwwwww...wwwwwwwwwwwwwwwwwwwwwwwww")
+-renderLine(07 , "www.......... ....wwwwwwwwwwwwwwwwwwwwww")
+-renderLine(08 , "ww...           ...wwwwwwwwwwwwwwwwwwwww")
+-renderLine(09 , "w..            h..wwwwwwwwwwww.....wwwww")
+-renderLine(10 , "w..      z      ..wwwwwwwwwww..   ..wwww")
+-renderLine(11 , "ww..          ......wwwwwwwww..  ..wwwww")
+-renderLine(12 , "www..         ..f  ...wwwww...   1..wwww")
+-renderLine(13 , "www..   g    ..     ........       ..www")
+-renderLine(14 , "wwww..                             h.www")
+-renderLine(15 , "wwwww..      bb                2    .www")
+-renderLine(16 , "ww.www..    bbbbe      g      22   ..www")
+-renderLine(17 , "w...www..    bcbbb          222   ..wwww")
+-renderLine(18 , "w.g.wwww..    bbdb          22   ..wwwww")
+-renderLine(19 , "w. ..wwww..    bb    ...    2   ..wwwwww")
+-renderLine(20 , "w.o.wwwwww....    .......      ..wwwwwww")
+-renderLine(21 , "w...wwwwwww.........wwww........wwwwwwww")
+-renderLine(22 , "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww") 
+---               0123456789012345678901234567890123456789
+-
+-oxyd_shuffle()
+-
+-display.SetFollowMode(display.FOLLOW_SCROLLING)
+-    ]]></el:luamain>
+-    <el:i18n>
+-      <el:string el:key="title">
+-        <el:english el:translate="true" el:comment="There are coins and wood boxes (pirate's troves) and alimentary junks like seeds, empty bottles and bananas."/>
+-        <el:translation el:lang="fr">Ile aux pirates</el:translation>
+-      </el:string>
+-      <el:string el:key="text1">
+-        <el:english el:translate="true">The pirates have lost several hidden things on this island ...</el:english>
+-        <el:translation el:lang="fr">Les pirates ont perdu beaucoup d'objets dans le sous-sol ...</el:translation>
+-      </el:string> 
+-    </el:i18n>
+-  </el:protected>
+-</el:level>
+
+Copied: trunk/data/levels/enigma_v/alain07_2.xml (from rev 2197, trunk/data/levels/enigma_v/alain07_1.xml)
+===================================================================
+--- trunk/data/levels/enigma_v/alain07_2.xml	                        (rev 0)
++++ trunk/data/levels/enigma_v/alain07_2.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -0,0 +1,75 @@
++<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
++<el:level xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://enigma-game.org/schema/level/1 level.xsd" xmlns:el="http://enigma-game.org/schema/level/1">
++  <el:protected>
++    <el:info el:type="level">
++      <el:identity el:title="Pirates Island" el:subtitle="" el:id="alain07"/>
++      <el:version el:score="1" el:release="2" el:revision="1" el:status="released"/>
++      <el:author el:name="Alain Busser" el:email="" el:homepage=""/>
++      <el:copyright>Copyright ? 2006 Alain Busser</el:copyright>
++      <el:license el:type="GPL v2.0 or above" el:open="true"/>
++      <el:compatibility el:enigma="1.10"/>
++      <el:modes el:easy="false" el:single="true" el:network="false"/>
++      <el:score el:easy="-" el:difficult="3:38"/>
++    </el:info>
++    <el:luamain><![CDATA[
++ti[" "] = {"fl_lawn_a"}
++ti["^"] = ti[" "] .. {"st_chameleon"}
++ti["~"] = {"fl_water"}
++ti["1"] = {"fl_water", name="sand1#"}
++ti["2"] = {"fl_water", name="sand2#"}
++ti["."] = {"fl_sand"}
++ti["-"] = {"fl_himalaya"}
++ti["+"] = {"st_box_wood"}
++ti["C"] = {"st_coinslot", target="sand", _region=1}
++ti["D"] = {"st_coinslot", target="sand", _region=2}
++ti["e"] = {"it_document", text="text1"}
++ti["s"] = ti["^"] .. {"it_seed"}
++ti["c"] = ti["^"] .. {"it_coin_l"}
++ti["b"] = {"it_bottle"}
++ti["("] = {"it_banana"}
++ti["O"] = {"st_oxyd",flavor="a"}
++ti["@"] = {"#ac_marble_black"}
++
++wo(ti," ",{
++    "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
++    "~~~~~~...~~~~~~~~~~~~..~~~~~~~~O~~~~~~~~",
++    "~~~~~..O..~~~~~~~~~.. ..~~~~~~~~~~~~~~~~",
++    "~~~~~~...~~~~~~~~~.. b ..~~~~~...~~~~~~~",
++    "~~~~~~~~~~~~~~~~~~~.. ..~~~~~~+O..~~~~~~",
++    "~~~~~~~~~~~~~.~~~~~~...~~~~~~~...~~~~~~~",  
++    "~~~~~~~~~~~~...~~~~~~~~~~~~~~~~2~~~~~~~~",
++    "~~~.......... ....~~~~~~~~~~~~~22~~~~~~~",
++    "~~...       ^^^^...~~~~~~~~~~~~222~~~~~~",
++    "~..^^^     ^^^c..~~~~~~~~~~~~.....~~~~~~",
++    "~..^^^   @   ^^^..~~~~~~~~~~~..   ..~~~~",
++    "~~..^^        ......~~~~~~~~~..  ..~~~~~",
++    "~~~..^^^^^^   ..+  ...~~~~~...   b..~~~~",
++    "~~~.. ^^s^^  ..     ........   ^^^^..~~~",
++    "~~~~..^^^^^            ^^^^^^^^^^^^c.~~~",
++    "~~~~~.. ^^^  --       ^^^^^^^^ (^^^^.~~~",
++    "~~.~~~.. ^^ ----e   ^^^s^^^^^ ((   ..~~~",
++    "~...~~~..    -C--- ^^^^^^^^ (((   ..~~~~",
++    "~.s.~~~~..    --D-  ^^^^^^  ((   ..~~~~~",
++    "~. ..~~11..    --    ...    (   ..~~~~~~",
++    "~.O.111111....    .......      ..~~~~~~~",
++    "~...~~~~~11.........~~~~........~~~~~~~~",
++    "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"}) 
++
++wo:shuffleOxyd()
++
++function sand(value, sender)
++    wo[no["sand"..sender["_region"].."#*"]] = ti["."]
++end
++ ]]></el:luamain>
++    <el:i18n>
++      <el:string el:key="title">
++        <el:english el:translate="true" el:comment="There are coins and wood boxes (pirate's troves) and alimentary junks like seeds, empty bottles and bananas."/>
++        <el:translation el:lang="fr">Ile aux pirates</el:translation>
++      </el:string>
++      <el:string el:key="text1">
++        <el:english el:translate="true">The pirates have lost several hidden things on this island ...</el:english>
++        <el:translation el:lang="fr">Les pirates ont perdu beaucoup d'objets dans le sous-sol ...</el:translation>
++      </el:string> 
++    </el:i18n>
++  </el:protected>
++</el:level>
+
+Deleted: trunk/data/levels/enigma_v/alain09_1.xml
+===================================================================
+--- trunk/data/levels/enigma_v/alain09_1.xml	2011-02-05 19:09:44 UTC (rev 2200)
++++ trunk/data/levels/enigma_v/alain09_1.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -1,119 +0,0 @@
+-<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+-<el:level xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://enigma-game.org/schema/level/1 level.xsd" xmlns:el="http://enigma-game.org/schema/level/1">
+-  <el:protected>
+-    <el:info el:type="level">
+-      <el:identity el:title="Send me the keys !" el:subtitle="" el:id="alain09"/>
+-      <el:version el:score="1" el:release="1" el:revision="0" el:status="released"/>
+-      <el:author  el:name="Alain Busser" el:email="" el:homepage=""/>
+-      <el:copyright>Copyright ? 2006 Alain Busser</el:copyright>
+-      <el:license el:type="GPL v2.0 or above" el:open="true"/>
+-      <el:compatibility el:enigma="0.92">
+-      </el:compatibility>
+-      <el:modes el:easy="false" el:single="true" el:network="false"/>
+-      <el:comments>
+-        <el:code>Lua 5.1 and XML converted by Leveladministrators</el:code>
+-      </el:comments>
+-      <el:score el:easy="-" el:difficult="2:30"/>
+-    </el:info>
+-    <el:luamain><![CDATA[
+-levelw = 20
+-levelh = 13
+-
+-create_world(levelw, levelh)
+-oxyd_default_flavor = "a"
+-draw_border("st-blackballs")
+-fill_floor("fl-black", 0,0, level_width,level_height)
+-
+-function renderLine( line, pattern)
+-    for i=1, strlen(pattern) do
+-        local c = strsub( pattern, i, i)
+-        if c =="#" then
+-            set_stone("st-blackballs", i-1, line)
+-        elseif c=="G" then
+-            set_floor("fl-space",i-1,line)
+-            set_stone("st-glass",i-1,line)
+-        elseif c=="s" then
+-            set_floor("fl-mortar",i-1,line)
+-        elseif c=="D" then
+-            document(i-1,line,"text1")
+-        elseif c == "o" then
+-            oxyd( i-1, line)
+-          elseif c=="z" then
+-            set_actor("ac-blackball", i-.5,line+.5, {name="ac0"})
+-            set_item("it-yinyang", i-1, line)
+-        elseif c=="y" then
+-            set_actor("ac-whiteball", i-.5,line+.5, {name="ac1"})
+-            set_item("it-yinyang", i-1, line)
+-        elseif c=="a" then
+-                set_stone("st-key_a", i-1,line, {action="openclose", target="door1"})
+-        elseif c=="b" then
+-            set_stone("st-key_a",i-1,line,{action="openclose", target="door2"})
+-        elseif c=="c" then
+-            set_stone("st-key_a",i-1,line,{action="openclose", target="door3"})
+-        elseif c=="d" then
+-            set_stone("st-key_a",i-1,line,{action="openclose", target="door4"})
+-        elseif c=="+" then
+-            set_stone("st-grate1", i-1,line)
+-        elseif c=="w" then
+-            set_stone("st-wood", i-1,line)
+-        elseif c=="f" then
+-            doorh(i-1,line, {name="door1"})
+-        elseif c=="g" then
+-            doorh(i-1,line, {name="door2"})
+-        elseif c=="h" then
+-            doorh(i-1,line, {name="door3"})
+-        elseif c=="i" then
+-            doorh(i-1,line, {name="door4"})
+-            elseif c =="U" then
+-            set_item("it-key_a",i-1,line)
+-            set_stone("st-wood",i-1,line)
+-            elseif c =="V" then
+-            set_item("it-key_a",i-1,line)
+-                elseif c =="L" then
+-                    set_stone("st-mail-w", i-1, line)
+-                elseif c =="R" then
+-                    set_stone("st-mail-e", i-1, line)
+-          elseif c =="H" then
+-                set_item("it-pipe-h",i-1,line)
+-            elseif c =="I" then
+-                set_item("it-pipe-v",i-1,line)
+-            elseif c =="1" then
+-                set_item("it-pipe-ne",i-1,line)
+-            elseif c =="3" then
+-                set_item("it-pipe-sw",i-1,line)
+-        elseif c=="B" then
+-            set_item("it-bag",i-1,line)
+-        end
+-    end    
+-end
+-
+---               01234567890123456789
+-renderLine(00 , "                    ")
+-renderLine(01 , " ssssssRGGG  HIH1H3 ")
+-renderLine(02 , " ++++++  #G   HHH   ")
+-renderLine(03 , " + w w+  #GG        ")
+-renderLine(04 , " +w U +  #     ab   ")
+-renderLine(05 , " + UVw+  GGGL  cd   ")  
+-renderLine(06 , " +w U +  #          ")
+-renderLine(07 , " + w w+  #sss#f#sss ")
+-renderLine(08 , " +w w +  #s s#g#sys ")
+-renderLine(09 , " ++++++  #sss#h#sss ")
+-renderLine(10 , "    z    #####i#### ")
+-renderLine(11 , "    D    #o       o ")
+-renderLine(12 , "                    ") 
+---               01234567890123456789
+-
+-oxyd_shuffle()
+-    ]]></el:luamain>
+-    <el:i18n>
+-      <el:string el:key="title">
+-        <el:english el:translate="true"/>
+-        <el:translation el:lang="fr">Envoie-moi les clefs!</el:translation>
+-      </el:string>
+-      <el:string el:key="text1">
+-        <el:english el:translate="true">ALL the keys!!!</el:english>
+-        <el:translation el:lang="fr">TOUTES les clefs!!!</el:translation>
+-      </el:string> 
+-    </el:i18n>
+-  </el:protected>
+-</el:level>
+
+Copied: trunk/data/levels/enigma_v/alain09_2.xml (from rev 2197, trunk/data/levels/enigma_v/alain09_1.xml)
+===================================================================
+--- trunk/data/levels/enigma_v/alain09_2.xml	                        (rev 0)
++++ trunk/data/levels/enigma_v/alain09_2.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -0,0 +1,62 @@
++<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
++<el:level xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://enigma-game.org/schema/level/1 level.xsd" xmlns:el="http://enigma-game.org/schema/level/1">
++  <el:protected>
++    <el:info el:type="level">
++      <el:identity el:title="Send me the keys !" el:subtitle="" el:id="alain09"/>
++      <el:version el:score="1" el:release="2" el:revision="1" el:status="released"/>
++      <el:author el:name="Alain Busser" el:email="" el:homepage=""/>
++      <el:copyright>Copyright ? 2006 Alain Busser</el:copyright>
++      <el:license el:type="GPL v2.0 or above" el:open="true"/>
++      <el:compatibility el:enigma="1.10"/>
++      <el:modes el:easy="false" el:single="true" el:network="true"/>
++      <el:score el:easy="-" el:difficult="2:30"/>
++    </el:info>
++    <el:luamain><![CDATA[
++ti[" "] = {"fl_dark"}
++ti["."] = {"fl_mortar"}
++ti["#"] = {"st_jamb_black"}
++ti["R"] = ti({"fl_space"}) .. {"st_rawglass"}
++ti["X"] = {"st_grate_cross"}
++ti["+"] = {"st_box_wood"}
++ti["<"] = {"st_mail_w"}
++ti[">"] = {"st_mail_e"}
++ti["door"] = {"st_door_d", faces="ns", name="door%%"}
++ti["keyhole"] = {"st_key", target="door%%"}
++ti["k"] = {"it_key"}
++ti["l"] = ti["+"] .. ti["k"]
++ti["-"] = {"it_pipe_ew"}
++ti["|"] = {"it_pipe_ns"}
++ti["1"] = {"it_pipe_ne"}
++ti["3"] = {"it_pipe_sw"}
++ti["d"] = {"it_document", text="text1"}
++ti["O"] = {"st_oxyd", flavor="a"}
++ti["A"] = {"#ac_marble_white"}
++ti["@"] = {"#ac_marble_black"}
++
++wo(res.autotile(ti, {"K","N","keyhole"}, {"D","G","door"}), " ", {
++    "####################",
++    "#......>RRR  -|-1-3#",
++    "#XXXXXX  #R   ---  #",
++    "#X + +X  #RR       #",
++    "#X+ l X  #     KL  #",
++    "#X lk+X  RRR<  MN  #",  
++    "#X+ l X  #         #",
++    "#X + +X  #...#D#...#",
++    "#X+ + X  #. .#E#.A.#",
++    "#XXXXXX  #...#F#...#",
++    "#   @    #####G#####",
++    "#   d    #O       O#",
++    "####################"}) 
++ ]]></el:luamain>
++    <el:i18n>
++      <el:string el:key="title">
++        <el:english el:translate="true"/>
++        <el:translation el:lang="fr">Envoie-moi les clefs!</el:translation>
++      </el:string>
++      <el:string el:key="text1">
++        <el:english el:translate="true">ALL the keys!!!</el:english>
++        <el:translation el:lang="fr">TOUTES les clefs!!!</el:translation>
++      </el:string> 
++    </el:i18n>
++  </el:protected>
++</el:level>
+
+Deleted: trunk/data/levels/enigma_v/alain26_2.xml
+===================================================================
+--- trunk/data/levels/enigma_v/alain26_2.xml	2011-02-05 19:09:44 UTC (rev 2200)
++++ trunk/data/levels/enigma_v/alain26_2.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -1,147 +0,0 @@
+-<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+-<el:level xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://enigma-game.org/schema/level/1 level.xsd" xmlns:el="http://enigma-game.org/schema/level/1">
+-  <el:protected>
+-    <el:info el:type="level">
+-      <el:identity el:title="Banana Republic" el:subtitle="" el:id="alain26"/>
+-      <el:version el:score="2" el:release="2" el:revision="2" el:status="released"/>
+-      <el:author  el:name="Alain Busser" el:email="" el:homepage=""/>
+-      <el:copyright>Copyright ? 2006 Alain Busser</el:copyright>
+-      <el:license el:type="GPL v2.0 or above" el:open="true"/>
+-      <el:compatibility el:enigma="0.92">
+-      </el:compatibility>
+-      <el:modes el:easy="true" el:single="true" el:network="false"/>
+-      <el:comments>
+-        <el:code>Lua 5.1 and XML converted by Leveladministrators</el:code>
+-      </el:comments>
+-      <el:score el:easy="-" el:difficult="1:52"/>
+-    </el:info>
+-    <el:luamain><![CDATA[
+-levelw = 39
+-levelh = 25
+-wealth=0
+-
+-if difficult then
+-    gcforce=20
+-else
+-    gcforce=8
+-end
+-
+-create_world(levelw, levelh)
+-oxyd_default_flavor = "a"
+-display.SetFollowMode(display.FOLLOW_SCROLLING)
+-fill_floor("fl-leaves", 0,0, level_width,level_height)
+-
+-function renderLine( line, pattern)
+-    for i=1, strlen(pattern) do
+-        local c = strsub( pattern, i, i)
+-        if c =="#" then
+-            set_stone( "st-glass1", i-1, line)
+-        elseif c=="z" then
+-            set_actor("ac-blackball",i-0.5,line+0.5,{player=0})
+-        elseif c=="-" then
+-            set_floor("fl-swamp",i-1,line)
+-        elseif c=="." then
+-            set_floor("fl-sand",i-1,line)
+-        elseif c=="t" then
+-            set_actor("ac-top",i-0.5,line+0.5,{range=10,force=gcforce,name="guard1",gohome=TRUE})
+-        elseif c=="b" then
+-            set_item("it-banana", i-1,line)
+-        elseif c=="c" then
+-            if random(2)==1 then
+-                set_item("it-trigger",i-1,line,{invisible=1,action="callback",target="plusdejus"})
+-            else
+-                set_item("it-coin1",i-1,line)
+-                wealth=wealth+1
+-            end
+-        elseif c=="C" then
+-            set_stone("st-coinslot",i-1,line,{action="callback", target="func1"}) 
+-        elseif c=="e" then
+-            set_item("it-dynamite", i-1,line)
+-        elseif c=="B" then
+-            set_item("it-blackbomb",i-1,line)
+-        elseif c=="k" then
+-            set_item("it-key_a",i-1,line)
+-        elseif c=="w" then
+-            set_stone("st-wood",i-1,line)
+-        elseif c=="h" then
+-            doorh(i-1,line, {name="door1"})
+-        elseif c=="a" then
+-            set_stone("st-key_a", i-1,line, {action="callback", target="riendutout"})
+-        elseif c=="x" then
+-            set_stone("st-knight", i-1,line)
+-        elseif c=="1" then
+-            set_attrib(laser(i-1,line,FALSE, SOUTH), "name", "lasero")
+-        elseif c=="d" then
+-            document(i-1,line,"text1")
+-            document(i-1,line+1,"text3")
+-        elseif c=="o" then
+-            oxyd(i-1,line)
+-        end
+-    end    
+-end
+-
+-function func1()
+-    set_item("it-sword", 10,20)
+-end
+-
+-function riendutout()
+-    document(20,12,"text2")
+-end
+-
+-function plusdejus()
+-    SendMessage("lasero","off") 
+-end
+-
+---               012345678901234567890123456789012345678
+-renderLine(00 , "---------------------------------------")
+-renderLine(01 , "---------------------------------------")
+-renderLine(02 , "----......-----------------------------")
+-renderLine(03 , "---........-------------------.....----")
+-renderLine(04 , "--..t####t..-----------------..ttt..---")  
+-renderLine(05 , "--.. #cc# ..-----------------..tkt..---")
+-renderLine(06 , "--..B#cc# ..-----------------..ttt..---")
+-renderLine(07 , "--.. #ah# ..------------------.....----")
+-renderLine(08 , "---...tt...----------------------------")
+-renderLine(09 , "----......-----------------------------")
+-renderLine(10 , "----------------......-----------------")
+-renderLine(11 , "---------------..z..d..----------------")
+-renderLine(12 , "--------------..      ..---------------")
+-renderLine(13 , "--------------..  1bwb..---------------")
+-renderLine(14 , "--------------..   bbb..---------------")  
+-renderLine(15 , "--------------..      ..---------------")
+-renderLine(16 , "--------------..   B  ..---------------")
+-renderLine(17 , "---------------........----------------")
+-renderLine(18 , "------......----......------.......----")
+-renderLine(19 , "-----..   e..--------------..xxxxx..---")
+-renderLine(20 , "-----..B C ..--------------..xoxox..---")
+-renderLine(21 , "-----...  ...--------------..xxxxx..---")
+-renderLine(22 , "------......----------------.......----")
+-renderLine(23 , "---------------------------------------")
+-renderLine(24 , "---------------------------------------")
+---               012345678901234567890123456789012345678
+-
+-oxyd_shuffle()
+-if wealth==0 then
+-    set_item("it-coin1",6,5)
+-end
+-    
+-SendMessage("lasero","on") 
+-    ]]></el:luamain>
+-    <el:i18n>
+-      <el:string el:key="title">
+-        <el:english el:translate="false"/>
+-      </el:string>
+-      <el:string el:key="text1">
+-        <el:english el:translate="true" el:comment="This is not real spanish, only an ambience">Caramba!! El Dictator has muchos pesos in his cristal safe but muchos costa guardia too; Hay!! Poor Bola Negra has only frutos and a lasero!!!</el:english>
+-        <el:translation el:lang="fr">El Dictator a muchos pesetas dans son coffre de cristal mais muchos guardians; Caramba! Bola Negra n'a que des frutos et un lasero!!!</el:translation>
+-      </el:string> 
+-      <el:string el:key="text2">
+-        <el:english el:translate="false">You have been seen using a forbidden key; costa guardia are chasing you now; El Dictator too.</el:english>
+-        <el:translation el:lang="fr">On vous a vu utiliser une clef interdite; les costa guardia vous pourchassent!</el:translation>
+-      </el:string> 
+-      <el:string el:key="text3">
+-        <el:english el:translate="false">Hasta la Enigma !!!</el:english>
+-      </el:string> 
+-    </el:i18n>
+-  </el:protected>
+-</el:level>
+
+Copied: trunk/data/levels/enigma_v/alain26_3.xml (from rev 2197, trunk/data/levels/enigma_v/alain26_2.xml)
+===================================================================
+--- trunk/data/levels/enigma_v/alain26_3.xml	                        (rev 0)
++++ trunk/data/levels/enigma_v/alain26_3.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -0,0 +1,104 @@
++<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
++<el:level xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://enigma-game.org/schema/level/1 level.xsd" xmlns:el="http://enigma-game.org/schema/level/1">
++  <el:protected>
++    <el:info el:type="level">
++      <el:identity el:title="Banana Republic" el:subtitle="" el:id="alain26"/>
++      <el:version el:score="2" el:release="3" el:revision="4" el:status="released"/>
++      <el:author el:name="Alain Busser" el:email="" el:homepage=""/>
++      <el:copyright>Copyright ? 2006 Alain Busser</el:copyright>
++      <el:license el:type="GPL v2.0 or above" el:open="true"/>
++      <el:compatibility el:enigma="1.10">
++        <el:dependency el:path="lib/liblua" el:id="lib/liblua" el:release="1" el:preload="true"/>
++      </el:compatibility>
++      <el:modes el:easy="true" el:single="true" el:network="false"/>
++      <el:score el:easy="0:46" el:difficult="1:52"/>
++    </el:info>
++    <el:luamain><![CDATA[
++wo["FollowGrid"] = true
++wo["FollowMethod"] = FOLLOW_SCROLL
++
++ti[" "] = {"fl_lawn_a"}
++ti["-"] = {"fl_swamp"}
++ti["."] = {"fl_sand"}
++ti["#"] = {"st_lightglass"}
++ti["+"] = {"st_box_wood"}
++ti["K"] = {"st_knight"}
++ti["V"] = {"st_laser_s", name="laser", state=ON}
++ti["C"] = {"st_coinslot", name="slot", target="add_sword"}
++ti["a"] = {"st_key", target="info"}
++ti["="] = {"st_door_d", faces="ns", name="door1"}
++ti["k"] = {"it_key"}
++ti["("] = {"it_banana"}
++ti["d"] = {"it_dynamite"}
++ti["b"] = {"it_bomb_black"}
++ti["i"] = {"it_document", text="text1"}
++ti["j"] = {"it_document", text="text3"}
++ti["c"] = {"it_coin_s"}
++ti["t"] = {"it_trigger", invisible=true, target="laser", action="off"}
++ti["O"] = {"st_oxyd", flavor="a"}
++ti["*"] = {"#ac_top", range=10.0, strength=cond(wo["IsDifficult"],20.0,8.0), gohome=true}
++ti["@"] = {"#ac_marble_black"}
++
++local choices = lib.lua.shuffle({"c", "c", "c", "t", "t", "t"})
++
++function resolver_coins(key, x, y)
++    if key == "!" then
++        return ti[table.remove(choices)]
++    else
++        return ti[key]
++    end
++end
++
++wo(resolver_coins," ",{
++    "---------------------------------------",
++    "---------------------------------------",
++    "----......-----------------------------",
++    "---........-------------------.....----",
++    "--..*####*..-----------------..***..---",  
++    "--.. #!!# ..-----------------..*k*..---",
++    "--..b#!!# ..-----------------..***..---",
++    "--.. #a=# ..------------------.....----",
++    "---...**...----------------------------",
++    "----......-----------------------------",
++    "----------------......-----------------",
++    "---------------.. at ..i..----------------",
++    "--------------..    j ..---------------",
++    "--------------..  V(+(..---------------",
++    "--------------..   (((..---------------",  
++    "--------------..      ..---------------",
++    "--------------..   b  ..---------------",
++    "---------------........----------------",
++    "------......----......------.......----",
++    "-----..   d..--------------..KKKKK..---",
++    "-----..b C ..--------------..KOKOK..---",
++    "-----...  ...--------------..KKKKK..---",
++    "------......----------------.......----",
++    "---------------------------------------",
++    "---------------------------------------"})
++
++function add_sword()
++    wo[no["slot"] + E] = {"it_sword"}
++end
++
++function info()
++    wo[no["laser"] + ENE] = {"it_document", text="text2"}
++end
++ ]]></el:luamain>
++    <el:i18n>
++      <el:string el:key="title">
++        <el:english el:translate="false"/>
++      </el:string>
++      <el:string el:key="text1">
++        <el:english el:translate="true" el:comment="This is not real spanish, only an ambience">Caramba!! El Dictator has muchos pesos in his cristal safe but muchos costa guardia too; Hay!! Poor Bola Negra has only frutos and a lasero!!!</el:english>
++        <el:translation el:lang="fr">El Dictator a muchos pesetas dans son coffre de cristal mais muchos guardians; Caramba! Bola Negra n'a que des frutos et un lasero!!!</el:translation>
++      </el:string> 
++      <el:string el:key="text2">
++        <el:english el:translate="false">You have been seen using a forbidden key; costa guardia are chasing you now; El Dictator too.</el:english>
++        <el:translation el:lang="fr">On vous a vu utiliser une clef interdite; les costa guardia vous pourchassent!</el:translation>
++      </el:string> 
++      <el:string el:key="text3">
++        <el:english el:translate="false">Hasta la Enigma !!!</el:english>
++      </el:string> 
++    </el:i18n>
++  </el:protected>
++</el:level>
+
+Modified: trunk/data/levels/enigma_v/index.xml
+===================================================================
+--- trunk/data/levels/enigma_v/index.xml	2011-02-05 19:09:44 UTC (rev 2200)
++++ trunk/data/levels/enigma_v/index.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -1,14 +1,14 @@
+ <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+ <index xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="index.xsd">
+ 
+-  <info enigma="1.10" group="Enigma" location="10600" network="false" owner="Enigma Team" release="1" revision="53" title="Enigma V"/>
++  <info enigma="1.10" group="Enigma" location="10600" network="false" owner="Enigma Team" release="1" revision="54" title="Enigma V"/>
+ 
+   <attributes/>
+ 
+   <levels>
+     <level _seq="1" _title="Welcome" _xpath="./welcometopack5_2" author="Raoul Bourquin" ctrl="force" easy="true" id="welcometopack5" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="2" _title="April 1st" _xpath="./alain11_1" author="Alain Busser" ctrl="force" easy="false" id="alain11" rel="1" rev="0" score="1" target="time" unit="duration"/>
+-    <level _seq="3" _title="Send me the keys !" _xpath="./alain09_1" author="Alain Busser" ctrl="force" easy="false" id="alain09" rel="1" rev="0" score="1" target="time" unit="duration"/>
++    <level _seq="3" _title="Send me the keys !" _xpath="./alain09_2" author="Alain Busser" ctrl="force" easy="false" id="alain09" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="4" _title="Laser Path" _xpath="./andreas06_2" author="Andreas Lochmann" ctrl="force" easy="true" id="andreas06" rel="2" rev="15" score="2" target="time" unit="duration"/>
+     <level _seq="5" _title="Hobbyte" _xpath="./alain15_2" author="Alain Busser" ctrl="force" easy="false" id="alain15" rel="2" rev="4" score="1" target="time" unit="duration"/>
+     <level _seq="6" _title="Water Castle" _xpath="./luc21_2" author="Lukas Sch?ller" ctrl="force" easy="false" id="luc21" rel="2" rev="2" score="1" target="time" unit="duration"/>
+@@ -38,7 +38,7 @@
+     <level _seq="30" _title="Two Billiard Tables" _xpath="./duffy32_2" author="Jacob Scott" ctrl="force" easy="false" id="duffy32" rel="2" rev="1" score="2" target="time" unit="duration"/>
+     <level _seq="31" _title="Ocean Cruising" _xpath="./duffy131_2" author="Jacob Scott" ctrl="force" easy="false" id="duffy131" rel="2" rev="2" score="1" target="time" unit="duration"/>
+     <level _seq="32" _title="Walk The Plank" _xpath="./nat04_1" author="Nat Pryce" ctrl="force" easy="false" id="nat4" rel="1" rev="1" score="1" target="time" unit="duration"/>
+-    <level _seq="33" _title="Pirates Island" _xpath="./alain07_1" author="Alain Busser" ctrl="force" easy="false" id="alain07" rel="1" rev="0" score="1" target="time" unit="duration"/>
++    <level _seq="33" _title="Pirates Island" _xpath="./alain07_2" author="Alain Busser" ctrl="force" easy="false" id="alain07" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="34" _title="Island of Safety" _xpath="./duffy27_2" author="Jacob Scott" ctrl="force" easy="false" id="duffy27" rel="2" rev="2" score="1" target="time" unit="duration"/>
+     <level _seq="35" _title="Tropical Island" _xpath="./andreas08_2" author="Andreas Lochmann" ctrl="force" easy="true" id="andreas08" rel="2" rev="4" score="1" target="time" unit="duration"/>
+     <level _seq="36" _title="Shipwreck" _xpath="./nat33_2" author="Nat Pryce" ctrl="force" easy="false" id="natmaze2" rel="2" rev="1" score="1" target="time" unit="duration"/>
+@@ -61,7 +61,7 @@
+     <level _seq="53" _title="A bayou by you" _xpath="./alain21_2" author="Alain Busser" ctrl="force" easy="false" id="alain21" rel="2" rev="3" score="1" target="time" unit="duration"/>
+     <level _seq="54" _title="Mirror Shop" _xpath="./siegfried25_2" author="Siegfried Fennig" ctrl="force" easy="false" id="level9a" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="55" _title="Blet" _xpath="./alain24_2" author="Alain Busser" ctrl="force" easy="true" id="alain24" rel="2" rev="2" score="1" target="time" unit="duration"/>
+-    <level _seq="56" _title="Banana Republic" _xpath="./alain26_2" author="Alain Busser" ctrl="force" easy="true" id="alain26" rel="2" rev="2" score="2" target="time" unit="duration"/>
++    <level _seq="56" _title="Banana Republic" _xpath="./alain26_3" author="Alain Busser" ctrl="force" easy="true" id="alain26" rel="3" rev="4" score="2" target="time" unit="duration"/>
+     <level _seq="57" _title="Too Heavy?" _xpath="./martin101_2" author="Martin Hawlisch" ctrl="force" easy="true" id="martin101" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="58" _title="Now What?" _xpath="./duffy127_2" author="Jacob Scott" ctrl="force" easy="false" id="duffy127" rel="2" rev="2" score="1" target="time" unit="duration"/>
+     <level _seq="59" _title="Pneumatic Delivery" _xpath="./malla01_3" author="Manuel K?nig" ctrl="force" easy="true" id="malla01" rel="3" rev="6" score="2" target="time" unit="duration"/>
+
+Modified: trunk/data/levels/enigma_vii/mecke12_2.xml
+===================================================================
+--- trunk/data/levels/enigma_vii/mecke12_2.xml	2011-02-05 19:09:44 UTC (rev 2200)
++++ trunk/data/levels/enigma_vii/mecke12_2.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -152,49 +152,47 @@
+     ti["a6"] = ti[" !"] .. {"fl_metal_7", friction=4.0}
+ end
+ 
+-local resolver = res.composer(ti)
++wo(res.composer(ti), "  ", {
++    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!$!-!-!-!-!-!-0-!-0-!-0-!-!-!-!-!$!6!6!6!6!6!6!6!g36!6!6!6!6!6!8!8!#!8!8!8!8!8!8!",
++    "!! % # % # # # # # # #W#W#W#*#W#*#W#W#W#$!-!-! !-! !-! !-! !-! !-! !-!-!$! % % % %6$ 4 4m$ 4 46$ 2h% !;! ! ! ! ! ! ! !8!",
++    "!! #%%%!%!%!%!%!%&%!%&%!%&%!%!%!%!%!%!W#$!.! ! !t5 0t6 0 ! 0t7 0t8 ! !.!$!.2 2 % %+%63 3 3 363 2 26% %#! % 6 %#% % % (8!",
++    "!! %%! & & & & & & & & & & & & & & &%!W#$!-!-! !-!d5-!d6-!d7-!d8-! !-!-!$! % 2 % %+% %63 263 2 26% %6!8! ! ! ! & ! & !8!",
++    "!! #%! & & & & &>) i & i>) & & & & &%! #$!-! !-! 0q! 0q! 0q! 0q! 0-! !-!$! % 2 % %+% %#3:0#3 26$ % % %#! ( % (#& % % (8!",
++    "!! #%! & & & ) i i0i(i0i i i ) & & &%! ##!-!-! !-! !-! !-! !-! !-! !-!-!#! % 2 2 2+2 2:0:0:0 2 4h% 46!8! ! & ! & ! ! !8!",
++    "!! #%! &>! ' & iei i>!Wi iei & '>! &>! #$!-! ! 0 ! 0 ! 0 ! 0 ! 0 ! 0 !-!$! % 2 % 3+3 3#3:0#3 364 %+4 %#! % & %#% ( % 68!",
++    "!! #%! & & & ) i i0i)i0i i i ) & & &%! #$!/!;!;!;! !f! !z2 !f! !g! !5!/!$!/2 2 % 3l7 363 2 563z1h% 46!8! ! & ! ! ! & !8!",
++    "!! #%! & & & & &>) i & i>) & & & & &%! #$!-! 0 ! 0 ! 0 ! 0 ! 0 ! 0 ! 0-!$! % % % 3+3 3 363 ! 56$ % % %#! % % %#% ( & %8!",
++    "!! #%! & & & & & & & & & & & & & & &%! %$!-! ! !-! !q! !-! !q! !-! ! !-!#! % % % 3+3 3 3 363 * 56% %6!8! ! ! ! ! ! & !8!",
++    "!! #%!%!%!%!%!%!%&%!P!%!%&%!%!%!%!%!%% #$!-0 ! 0 ! 0 !=0 !=0 ! 0 ! 0 !-0$! % % % %+% % % % %6$ 5 56% %#! ( % &#% % ( %8!",
++    "!! # # # # # # # # # # # # # # # # % # %#!-!-! ! ! !-! !q! !-! ! ! !-!-!$! % % % %+% % % % % %6% * 56!8! ! ! ! ! ! ! !8!",
++    "!!!!!!!!!!!!!!P!P!P!P!!!!!!!!!!!!!!!!!!!$0-! 0 ! 0 ! 0 ! 0 ! 0 ! 0 ! 0-!$06!6!6!6!6!6!6!6!6!6!6!6! * 58! % % & % & ! %8!",
++    "#!#!#!#!#!#!#!P!P!P!P!#!#!#!#!#!#!#!#!*!-!*!-!*!-!*!-!*!-!*!-!*!-!*!-!*!-!!!!!!!!!!!!!!!!!!!!!!!!!!! *!!!!!!!!!!6!A!6!6!",
++    "#! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! !%! / / / / / / / / / / / / / / / / / /%! ! !9! ! ! ! ! ! ! ! ! ! ! ! ! ! !9! $ $ $6!",
++    "#! ! ! ! !a6 ! ! ! ! ! !a6 ! ! ! ! !%! / ( ( ( ( ( ( (e(e( ( ( ( ( ( ( ( /%! ! ! ! ! ! ! !9! ! ! ! ! ! ! ! ! ! ! $z5 $6!",
++    "#! ! ! ! ! ! * + % % + - ! ! ! ! ! !%! / ( ! & & & & & & & & & & & & ! ( /%! ! ! ! ! ! ! ! ! ! ! ! ! !9! ! ! ! ! $ $ $6!",
++    "#! ! ! ! ! ! + % % % % +a6 ! ! ! ! !%! / (c!#!#!#!#! &g5g5 &c!%!%!%!6! ( /%!8!8!8!8!8!8!8!8!8!8!8!8!8!8!<!8!!!8! $z6 $6!",
++    "#! ! ! ! ! ! % %x' ' % %a4 ! ! ! ! !%! / ( !#!#! !l1 & ! ! & !%!t1 ! 1 ( / ! 1 ! 1 ! 1 ! 1 ! 1 ! 1 !2! !t3 -?!8! $ $r$6!",
++    "#! ! ! ! ! ! % % 's' % %a3 ! ! ! ! !%! / ( !#!#! !l2 & ! ! & !%!t2 ! 1 ( / ! 1 ! 1 ! 1 ! 1 ! 1 ! 1 !2! !t4 7?!8! $z6 $6!",
++    "#! ! ! ! ! ! + % % % % +a6 ! ! !a6 !%! / (c!#!#!#!#! &g5g5 &c!%!%!%!6! ( /%!8!8!8!8!8!8!8!8!8!8!8!8!8!8!=!8!!!8! $ $ $6!",
++    "#! ! ! ! ! ! , + % % + . ! ! ! ! ! !%! / ( ! & & & & & & & & & & & & ! ( /%! ! ! ! ! ! ! ! ! ! ! ! ! !9! ! ! ! ! $z6 $6!",
++    "#! ! !a6 ! ! !a6 ! ! ! !a6 ! ! ! ! !%! / ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( /%! ! ! ! ! ! ! !9! ! ! ! ! ! ! ! ! ! ! $ $ $6!",
++    "#! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! !%! / / / / / / / / / / / / / / / / / /%! ! ! !9! ! ! ! ! ! ! ! ! ! ! ! ! !9! $ $ $6!",
++    "#!#!#!#!#!#!#!#!#!#!#!#!#!#!#!#!#!#!#!0!0!z3z3z3z3z3z30!z30!z3z3z3z3z3z3z3!!!!!!!!!!!!!!!!!!!!!!!!!!v1!!!!!!!!!!6!d16!6!",
++    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!6! ! ! ! ! ! !#!B!#! ! ! ! ! ! ! !6!v6 2 2 % % % % % % %v5 2-!v4%!%!%!6!@!@!@!8!",
++    "!!$i$i$i$i$i$i$i$i$i$i$i$i$i$i$i$i$i$i!!6! ! ! ! ! !q!$!Bi$! ! ! ! ! ! ! !6! 2 % 2 2 % %#% % % 2 2 % %#!%!%!%!#!6!@!@!8!",
++    "!! i i i i i i i i i i i i i i i i i i!!6!1! ! ! ! ! !#!Bi#! ! ! ! ! ! !1!6! % % % 2 2 %#% % 2 2 % %6!8!>!%!>!6!@!@!@!8!",
++    "!!d3!i%i%i%i%i%i%i%i%i%i%i%i%i%i%i!id4!!6!2! ! ! ! !q!$!z4$! ! ! ! ! ! !7!6! % % % % 2 2#% 2 2 % % % %#! !>! !#!6!@!@!8!",
++    "!! i i%&Z&Z& &Z& &Z&Z& &Z& &Z&Z&%& i i!!6!2! ! ! ! ! !#!B!#! ! ! ! ! ! !7!6! % % % %v% 2 2 2v% % % %6!8! ! ! !6!@!@!@!8!",
++    "!! i i%& & & & & & & & & & & & &%& i i!!6!2! ! ! & !q!$!z4$! ! !l9l9 ! !7&6! % % % % / %#% % / % % % %#! !>! !#!6!>!>!8!",
++    "!! i i%& & & & & & & & & & & & &%& i i!!6!2! ! & ! & !#!Bi#! ! & ! ! & !7!6! % % %#%g1#%#%#%g2#% % %6!8!>! !>!6! ! ! !8!",
++    "V! $ i%&&&&& &&& &&&&& &&& &&&&&%& iB$d2$!2! & ! 0 !q&$!z4$! & ! 0 0 ! &7&6! % % /h% / %#% % /h% / % %#! ! ! !#!6! ! !8!",
++    "!! $ $%& & & & & & & & & & & & &%& $ $!!6!2! ! & ! & !#!B!#! ! & ! ! & !7!6! % %v% % % %#% % % %v% %6!8!>!>!>!6!>!>!>!8!",
++    "!!W$ $%& & & & & & & & & & & & &%& $ $!!6!2! ! ! & !q!$!z4$! ! !l9l9 ! !7&6!y/h% / % %6( $6( % % /h%w/#! ! ! !#!6! ! !8!",
++    "!!*$W$%&Y&Y& &Y& &Y&Y& &Y& &Y&Y&%& $ $!!6!2! ! ! ! ! !#!Bi#! ! ! ! ! ! !7!6! % % % %6( %v2 %6( % % %6!8!>!v3>!6!@! ! !8!",
++    "!!A$!$%i%$%$%i%$%i%$%$%i%$%i%$%$%i!$A$!!6!2! ! ! ! !q!$!z4$! ! ! ! ! ! !7&6! % % %6( 3 3 3 3 36( % % %#! ! ! !#!6!@! !8!",
++    "!!W$W$W$W$W$*$W$W$ iWiW$W$*$ $ $ $ $ $!!6!2! ! ! ! ! !#!B!#! ! ! ! ! ! !.! !v7 % % %6% 2m4 26% % % %6!8! !#! !.! !a5@!8!",
++    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!6!6!6!6!6!6!6!g46!6!6!6!6!6!8!8!8!8!8!8!8!8!8!"})
+ 
+-w, h = wo(resolver, "  ", {
+-       "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!$!-!-!-!-!-!-0-!-0-!-0-!-!-!-!-!$!6!6!6!6!6!6!6!g36!6!6!6!6!6!8!8!#!8!8!8!8!8!8!",
+-       "!! % # % # # # # # # #W#W#W#*#W#*#W#W#W#$!-!-! !-! !-! !-! !-! !-! !-!-!$! % % % %6$ 4 4m$ 4 46$ 2h% !;! ! ! ! ! ! ! !8!",
+-       "!! #%%%!%!%!%!%!%&%!%&%!%&%!%!%!%!%!%!W#$!.! ! !t5 0t6 0 ! 0t7 0t8 ! !.!$!.2 2 % %+%63 3 3 363 2 26% %#! % 6 %#% % % (8!",
+-       "!! %%! & & & & & & & & & & & & & & &%!W#$!-!-! !-!d5-!d6-!d7-!d8-! !-!-!$! % 2 % %+% %63 263 2 26% %6!8! ! ! ! & ! & !8!",
+-       "!! #%! & & & & &>) i & i>) & & & & &%! #$!-! !-! 0q! 0q! 0q! 0q! 0-! !-!$! % 2 % %+% %#3:0#3 26$ % % %#! ( % (#& % % (8!",
+-       "!! #%! & & & ) i i0i(i0i i i ) & & &%! ##!-!-! !-! !-! !-! !-! !-! !-!-!#! % 2 2 2+2 2:0:0:0 2 4h% 46!8! ! & ! & ! ! !8!",
+-       "!! #%! &>! ' & iei i>!Wi iei & '>! &>! #$!-! ! 0 ! 0 ! 0 ! 0 ! 0 ! 0 !-!$! % 2 % 3+3 3#3:0#3 364 %+4 %#! % & %#% ( % 68!",
+-       "!! #%! & & & ) i i0i)i0i i i ) & & &%! #$!/!;!;!;! !f! !z2 !f! !g! !5!/!$!/2 2 % 3l7 363 2 563z1h% 46!8! ! & ! ! ! & !8!",
+-       "!! #%! & & & & &>) i & i>) & & & & &%! #$!-! 0 ! 0 ! 0 ! 0 ! 0 ! 0 ! 0-!$! % % % 3+3 3 363 ! 56$ % % %#! % % %#% ( & %8!",
+-       "!! #%! & & & & & & & & & & & & & & &%! %$!-! ! !-! !q! !-! !q! !-! ! !-!#! % % % 3+3 3 3 363 * 56% %6!8! ! ! ! ! ! & !8!",
+-       "!! #%!%!%!%!%!%!%&%!P!%!%&%!%!%!%!%!%% #$!-0 ! 0 ! 0 !=0 !=0 ! 0 ! 0 !-0$! % % % %+% % % % %6$ 5 56% %#! ( % &#% % ( %8!",
+-       "!! # # # # # # # # # # # # # # # # % # %#!-!-! ! ! !-! !q! !-! ! ! !-!-!$! % % % %+% % % % % %6% * 56!8! ! ! ! ! ! ! !8!",
+-       "!!!!!!!!!!!!!!P!P!P!P!!!!!!!!!!!!!!!!!!!$0-! 0 ! 0 ! 0 ! 0 ! 0 ! 0 ! 0-!$06!6!6!6!6!6!6!6!6!6!6!6! * 58! % % & % & ! %8!",
+-       "#!#!#!#!#!#!#!P!P!P!P!#!#!#!#!#!#!#!#!*!-!*!-!*!-!*!-!*!-!*!-!*!-!*!-!*!-!!!!!!!!!!!!!!!!!!!!!!!!!!! *!!!!!!!!!!6!A!6!6!",
+-       "#! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! !%! / / / / / / / / / / / / / / / / / /%! ! !9! ! ! ! ! ! ! ! ! ! ! ! ! ! !9! $ $ $6!",
+-       "#! ! ! ! !a6 ! ! ! ! ! !a6 ! ! ! ! !%! / ( ( ( ( ( ( (e(e( ( ( ( ( ( ( ( /%! ! ! ! ! ! ! !9! ! ! ! ! ! ! ! ! ! ! $z5 $6!",
+-       "#! ! ! ! ! ! * + % % + - ! ! ! ! ! !%! / ( ! & & & & & & & & & & & & ! ( /%! ! ! ! ! ! ! ! ! ! ! ! ! !9! ! ! ! ! $ $ $6!",
+-       "#! ! ! ! ! ! + % % % % +a6 ! ! ! ! !%! / (c!#!#!#!#! &g5g5 &c!%!%!%!6! ( /%!8!8!8!8!8!8!8!8!8!8!8!8!8!8!<!8!!!8! $z6 $6!",
+-       "#! ! ! ! ! ! % %x' ' % %a4 ! ! ! ! !%! / ( !#!#! !l1 & ! ! & !%!t1 ! 1 ( / ! 1 ! 1 ! 1 ! 1 ! 1 ! 1 !2! !t3 -?!8! $ $r$6!",
+-       "#! ! ! ! ! ! % % 's' % %a3 ! ! ! ! !%! / ( !#!#! !l2 & ! ! & !%!t2 ! 1 ( / ! 1 ! 1 ! 1 ! 1 ! 1 ! 1 !2! !t4 7?!8! $z6 $6!",
+-       "#! ! ! ! ! ! + % % % % +a6 ! ! !a6 !%! / (c!#!#!#!#! &g5g5 &c!%!%!%!6! ( /%!8!8!8!8!8!8!8!8!8!8!8!8!8!8!=!8!!!8! $ $ $6!",
+-       "#! ! ! ! ! ! , + % % + . ! ! ! ! ! !%! / ( ! & & & & & & & & & & & & ! ( /%! ! ! ! ! ! ! ! ! ! ! ! ! !9! ! ! ! ! $z6 $6!",
+-       "#! ! !a6 ! ! !a6 ! ! ! !a6 ! ! ! ! !%! / ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( /%! ! ! ! ! ! ! !9! ! ! ! ! ! ! ! ! ! ! $ $ $6!",
+-       "#! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! !%! / / / / / / / / / / / / / / / / / /%! ! ! !9! ! ! ! ! ! ! ! ! ! ! ! ! !9! $ $ $6!",
+-       "#!#!#!#!#!#!#!#!#!#!#!#!#!#!#!#!#!#!#!0!0!z3z3z3z3z3z30!z30!z3z3z3z3z3z3z3!!!!!!!!!!!!!!!!!!!!!!!!!!v1!!!!!!!!!!6!d16!6!",
+-       "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!6! ! ! ! ! ! !#!B!#! ! ! ! ! ! ! !6!v6 2 2 % % % % % % %v5 2-!v4%!%!%!6!@!@!@!8!",
+-       "!!$i$i$i$i$i$i$i$i$i$i$i$i$i$i$i$i$i$i!!6! ! ! ! ! !q!$!Bi$! ! ! ! ! ! ! !6! 2 % 2 2 % %#% % % 2 2 % %#!%!%!%!#!6!@!@!8!",
+-       "!! i i i i i i i i i i i i i i i i i i!!6!1! ! ! ! ! !#!Bi#! ! ! ! ! ! !1!6! % % % 2 2 %#% % 2 2 % %6!8!>!%!>!6!@!@!@!8!",
+-       "!!d3!i%i%i%i%i%i%i%i%i%i%i%i%i%i%i!id4!!6!2! ! ! ! !q!$!z4$! ! ! ! ! ! !7!6! % % % % 2 2#% 2 2 % % % %#! !>! !#!6!@!@!8!",
+-       "!! i i%&Z&Z& &Z& &Z&Z& &Z& &Z&Z&%& i i!!6!2! ! ! ! ! !#!B!#! ! ! ! ! ! !7!6! % % % %v% 2 2 2v% % % %6!8! ! ! !6!@!@!@!8!",
+-       "!! i i%& & & & & & & & & & & & &%& i i!!6!2! ! ! & !q!$!z4$! ! !l9l9 ! !7&6! % % % % / %#% % / % % % %#! !>! !#!6!>!>!8!",
+-       "!! i i%& & & & & & & & & & & & &%& i i!!6!2! ! & ! & !#!Bi#! ! & ! ! & !7!6! % % %#%g1#%#%#%g2#% % %6!8!>! !>!6! ! ! !8!",
+-       "V! $ i%&&&&& &&& &&&&& &&& &&&&&%& iB$d2$!2! & ! 0 !q&$!z4$! & ! 0 0 ! &7&6! % % /h% / %#% % /h% / % %#! ! ! !#!6! ! !8!",
+-       "!! $ $%& & & & & & & & & & & & &%& $ $!!6!2! ! & ! & !#!B!#! ! & ! ! & !7!6! % %v% % % %#% % % %v% %6!8!>!>!>!6!>!>!>!8!",
+-       "!!W$ $%& & & & & & & & & & & & &%& $ $!!6!2! ! ! & !q!$!z4$! ! !l9l9 ! !7&6!y/h% / % %6( $6( % % /h%w/#! ! ! !#!6! ! !8!",
+-       "!!*$W$%&Y&Y& &Y& &Y&Y& &Y& &Y&Y&%& $ $!!6!2! ! ! ! ! !#!Bi#! ! ! ! ! ! !7!6! % % % %6( %v2 %6( % % %6!8!>!v3>!6!@! ! !8!",
+-       "!!A$!$%i%$%$%i%$%i%$%$%i%$%i%$%$%i!$A$!!6!2! ! ! ! !q!$!z4$! ! ! ! ! ! !7&6! % % %6( 3 3 3 3 36( % % %#! ! ! !#!6!@! !8!",
+-       "!!W$W$W$W$W$*$W$W$ iWiW$W$*$ $ $ $ $ $!!6!2! ! ! ! ! !#!B!#! ! ! ! ! ! !.! !v7 % % %6% 2m4 26% % % %6!8! !#! !.! !a5@!8!",
+-       "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!-!6!6!6!6!6!6!6!g46!6!6!6!6!6!8!8!8!8!8!8!8!8!8!"})
+-
+ wo:shuffleOxyd()
+  ]]></el:luamain>
+     <el:i18n>
+
+Modified: trunk/data/levels/enigma_viii/devnull45_1.xml
+===================================================================
+--- trunk/data/levels/enigma_viii/devnull45_1.xml	2011-02-05 19:09:44 UTC (rev 2200)
++++ trunk/data/levels/enigma_viii/devnull45_1.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -3,7 +3,7 @@
+   <el:protected>
+     <el:info el:type="level">
+       <el:identity el:title="Crabwise IV" el:subtitle="" el:id="devnull45"/>
+-      <el:version el:score="1" el:release="1" el:revision="4" el:status="released"/>
++      <el:version el:score="1" el:release="1" el:revision="5" el:status="released"/>
+       <el:author  el:name="/dev/null" el:email="" el:homepage=""/>
+       <el:copyright>Copyright ? 2009 dev0</el:copyright>
+       <el:license el:type="GPL v2.0 or above" el:open="true"/>
+@@ -19,6 +19,7 @@
+     <el:luamain><![CDATA[
+ wo["AllowSuicide"] = false
+ wo["ProvideExtralifes"] = not wo["IsDifficult"]
++wo["FallenPuzzle"] = "= "
+ 
+ ti[" "] = {"fl_rock"}
+ ti["."] = {"fl_abyss"}
+
+Modified: trunk/data/levels/enigma_viii/index.xml
+===================================================================
+--- trunk/data/levels/enigma_viii/index.xml	2011-02-05 19:09:44 UTC (rev 2200)
++++ trunk/data/levels/enigma_viii/index.xml	2011-02-06 01:37:19 UTC (rev 2201)
+@@ -1,7 +1,7 @@
+ <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+ <index xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="index.xsd">
+ 
+-  <info enigma="1.10" group="Enigma" location="10900" network="false" owner="Enigma Team" release="1" revision="72" title="Enigma VIII"/>
++  <info enigma="1.10" group="Enigma" location="10900" network="false" owner="Enigma Team" release="1" revision="73" title="Enigma VIII"/>
+ 
+   <attributes/>
+ 
+@@ -84,7 +84,7 @@
+     <level _seq="76" _title="New York Jungle" _xpath="./mecke32_1" author="mecke" ctrl="force" easy="false" id="mecke32" rel="1" rev="26" score="1" target="time" unit="duration"/>
+     <level _seq="77" _title="Crabwise III" _xpath="./devnull38_1" author="/dev/null" ctrl="force" easy="true" id="devnull38" rel="1" rev="6" score="1" target="time" unit="duration"/>
+     <level _seq="78" _title="Plutos Confusion" _xpath="./mecke13_1" author="mecke" ctrl="force" easy="false" id="mecke30" rel="1" rev="21" score="1" target="time" unit="duration"/>
+-    <level _seq="79" _title="Crabwise IV" _xpath="./devnull45_1" author="/dev/null" ctrl="force" easy="true" id="devnull45" rel="1" rev="4" score="1" target="time" unit="duration"/>
++    <level _seq="79" _title="Crabwise IV" _xpath="./devnull45_1" author="/dev/null" ctrl="force" easy="true" id="devnull45" rel="1" rev="5" score="1" target="time" unit="duration"/>
+     <level _seq="80" _title="The Fortress" _xpath="./joe09_2" author="Joseph Dunne" ctrl="force" easy="false" id="joe9" rel="2" rev="1" score="1" target="time" unit="duration"/>
+     <level _seq="81" _title="Mountain Climbing" _xpath="./joe10_1" author="Joseph Dunne" ctrl="force" easy="true" id="joe10" rel="1" rev="0" score="1" target="time" unit="duration"/>
+     <level _seq="82" _title="Slopes, Jumps &amp; Falls" _xpath="./duffy167_1" author="Jacob Scott" ctrl="force" easy="false" id="duffy167" rel="1" rev="2" score="1" target="time" unit="duration"/>
+
+
+
+From ral at mail.berlios.de  Sun Feb  6 14:30:22 2011
+From: ral at mail.berlios.de (ral at mail.berlios.de)
+Date: Sun,  6 Feb 2011 14:30:22 +0100
+Subject: [Enigma-game-svn] r2202 - trunk/data/levels/lib
+Message-ID: <20110206133023.2A1E8481364@sheep.berlios.de>
+
+Author: ral
+Date: 2011-02-06 14:30:22 +0100 (Sun, 06 Feb 2011)
+New Revision: 2202
+
+Modified:
+   trunk/data/levels/lib/libpuzzle_3.xml
+Log:
+fix resolver puzzle for r2200 feature changes
+
+- substitute critical ti read accesses by evaluator calls
+
+Modified: trunk/data/levels/lib/libpuzzle_3.xml
+===================================================================
+--- trunk/data/levels/lib/libpuzzle_3.xml	2011-02-06 01:37:19 UTC (rev 2201)
++++ trunk/data/levels/lib/libpuzzle_3.xml	2011-02-06 13:30:22 UTC (rev 2202)
+@@ -180,7 +180,7 @@
+     for i, prefix in ipairs (context[4]) do
+         if key:find(prefix, 1, true) == 1 then
+             -- prefix based substitution
+-            if ti[key] == nil then
++            if evaluator(context[3], key, x, y) == nil then
+                 local template = ti[prefix]
+                 local suffix = key:sub(#(prefix) + 1)
+                 assert_bool(template, "Resolver puzzle missing template rule '" ..prefix.."'.", 2)
+
+
+
+From ral at mail.berlios.de  Sun Feb  6 19:00:56 2011
+From: ral at mail.berlios.de (ral at mail.berlios.de)
+Date: Sun,  6 Feb 2011 19:00:56 +0100
+Subject: [Enigma-game-svn] r2203 - trunk/src
+Message-ID: <20110206180056.47B9F481364@sheep.berlios.de>
+
+Author: ral
+Date: 2011-02-06 19:00:56 +0100 (Sun, 06 Feb 2011)
+New Revision: 2203
+
+Modified:
+   trunk/src/lua.cc
+Log:
+fix custom resolver for r2200 feature changes
+
+- do allow direct ti read access within custom resolver
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2011-02-06 13:30:22 UTC (rev 2202)
++++ trunk/src/lua.cc	2011-02-06 18:00:56 UTC (rev 2203)
+@@ -88,6 +88,7 @@
+     lua_State *global_state = 0; // global Lua state
+ 
+     static int tilesReadAccess(lua_State *L, bool direct);
++    static bool customResolution = false;
+ 
+     lua::Error _lua_err_code (int i)
+     {
+@@ -2397,7 +2398,7 @@
+     
+     if (is_tiles(L, -4)) {
+         lua_pop(L, 2);                // remove x,y
+-        tilesReadAccess(L, false);   // directly read tiles without error corrections
++        tilesReadAccess(L, false);    // directly read tiles without error corrections
+         return 1;
+     } else if (lua_isfunction(L, -4)) {
+         lua_pushvalue(L, -4);       // duplicate function
+@@ -2423,7 +2424,9 @@
+         lua_pushvalue(L, -6);       // duplicate key
+         lua_pushvalue(L, -6);       // duplicate x
+         lua_pushvalue(L, -6);       // duplicate y
++        customResolution = true;    // let custom resolver directly read tiles without error corrections
+         int retval=lua_pcall(L, 5, 1, 0);     // resolver(context,evaluator,key,x,y) ->  tile
++        customResolution = false;
+         if (retval!=0) { 
+             throwLuaError(L, ecl::strf("Error within tile key resolver: \n  %s", lua_tostring(L, -1)).c_str());
+             return 0;
+@@ -3079,7 +3082,7 @@
+ }
+ 
+ static int dispatchTilesReadAccess(lua_State *L) {
+-    return tilesReadAccess(L, true);
++    return tilesReadAccess(L, !customResolution);
+ }
+ 
+ static int pushNewTiles(lua_State *L) {
+
+
+
+From ral at mail.berlios.de  Mon Feb  7 20:30:05 2011
+From: ral at mail.berlios.de (ral at mail.berlios.de)
+Date: Mon,  7 Feb 2011 20:30:05 +0100
+Subject: [Enigma-game-svn] r2204 - trunk/src
+Message-ID: <20110207193005.50519480D17@sheep.berlios.de>
+
+Author: ral
+Date: 2011-02-07 20:30:04 +0100 (Mon, 07 Feb 2011)
+New Revision: 2204
+
+Modified:
+   trunk/src/lua.cc
+Log:
+fix r2200 crash on usage of %% wildcard
+
+- another lua stack relative addressing problem
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2011-02-06 18:00:56 UTC (rev 2203)
++++ trunk/src/lua.cc	2011-02-07 19:30:04 UTC (rev 2204)
+@@ -3066,7 +3066,7 @@
+             lua_newtable(L);          // dummy declaration as value for key
+             dispatchTilesWriteAccess(L); // insert dummy entry
+             // get entry as return value
+-            lua_getmetatable(L, -2);
++            lua_getmetatable(L, -3);
+             lua_rawgeti(L, -1, 1);    // content table
+             lua_pushvalue(L, -4);     // copy key
+             lua_rawget(L, -2);        // get entry in table
+
+
+
+From raoul at mail.berlios.de  Fri Feb 18 19:15:48 2011
+From: raoul at mail.berlios.de (raoul at mail.berlios.de)
+Date: Fri, 18 Feb 2011 19:15:48 +0100
+Subject: [Enigma-game-svn] r2205 - trunk/doc/reference
+Message-ID: <20110218181549.762884813EC@sheep.berlios.de>
+
+Author: raoul
+Date: 2011-02-18 19:15:48 +0100 (Fri, 18 Feb 2011)
+New Revision: 2205
+
+Modified:
+   trunk/doc/reference/enigma-ref.texi
+Log:
+-> Tilekey guidelines (originally written by Andreas) added to the reference manual
+
+
+
+Modified: trunk/doc/reference/enigma-ref.texi
+===================================================================
+--- trunk/doc/reference/enigma-ref.texi	2011-02-07 19:30:04 UTC (rev 2204)
++++ trunk/doc/reference/enigma-ref.texi	2011-02-18 18:15:48 UTC (rev 2205)
+@@ -25125,8 +25125,71 @@
+ 
+ @node Tile Key Recommendation
+ @section Tile Key Recommendation
+-space for default
+ 
++The following guidelines are not compulsory, but we nevertheless encourage
++them, as they ease the development of new and the maintenance of old levels.
++
++ at itemize @bullet
++ at item Stones use capital letters, items small letters, floors use punctuation marks.
++ at item The default floor is @code{" "}. The second most important floor typically is  
++ at code{"_"} or @code{"."}. It's a good idea to use tile keys for floors, which are
++small and don't obstruct the view on the more important objects, like
++stones and items. Important floors (like bridges) may have letters or
++numbers to emphasize their importance (a bridge could be @code{"b"}, or a
++number to use autotiling).
++ at item Water typically is @code{"~"}, as the tilde is a small character which resembles
++a wave. Similarly, an abyss can be well described by @code{"_"}, as the underscore
++resembles a hole.
++ at item On a German keyboard, the four characters @code{"."}, @code{","}, @code{":"} and @code{";"} are
++arranged in a square, so you can easily use them to arrange quadruples
++of floors, like lawn pieces of different brightness.
++On a US keyboard, you can use @code{","}, @code{"."}, @code{"<"} and @code{">"} to the same purpose.
++Another quadruple of characters are the arithmetic operators @code{"+"}, @code{"-"}, at code{"*"}, and @code{"/"}.
++ at item Slopes can be described using @code{"<"}, @code{">"}, @code{"v"} and @code{"^"}. As you see, we
++encourage you to use the letter @code{"v"} for a floor at this point, as it
++resembles an arrow pointing down. For slant slopes, it's a good idea to
++use either numbers (following the number keypad on your keyboard), or
++quadruple characters like @code{"."}, @code{","}, @code{":"}, @code{";"} or arithmetic operators.
++ at item Although it fits nicely to @code{"/"}, it's not a good idea to use the backslash
++as a tile key, as it has to be masked to work correctly. Similarly, we
++disencourage the use of brackets as tile keys.
++ at item The most important simple stone should be @code{"#"}, all other stones should
++use their first letter, like ``laser'' -> @code{"L"}, ``switch'' -> @code{"S"}, ``box'' -> @code{"B"}.
++If two stones have the same first letter, the more important one should
++be given priority (@code{"L"} for laser instead of @code{"L"} for @code{"st_lightglass"},
++ at code{"G"} for @code{"st_lightglass"} instead of @code{"G"} for @code{"st_greenbrown"}).
++ at item Orientable stones like boulders or lasers should use @code{"N"}, @code{"E"}, @code{"S"}, @code{"W"}
++if they appear in more than one orientation.
++ at item Stones of the same kind, which appear several times in different ways
++(like switches with different actions) should use consecutive letter
++(@code{"S"}, @code{"T"}, @code{"U"}, ...) or numbers.
++ at item Oxyd stones should use @code{"O"} or @code{"0"}. If you put several different oxyd
++stones, e.g. of different colors, make use of consecutive letters (@code{"P"},
++ at code{"Q"}, @code{"R"} ...) or numbers.
++ at item If you want to put mirrors, it's a good idea to use characters resembling
++the orientation of the mirror, i.e. @code{"|"}, @code{"-"}, and @code{"/"}. As the backslash
++is no good tile key, you may use @code{"&"} or @code{"Q"} instead, as these characters
++include a prominent slant line similar to the backslash. Triangular
++mirrors are best written with @code{"<"}, @code{">"}, @code{"v"} and @code{"^"}.
++ at item For rotator stones, it's a good idea to use @code{"R"} and @code{"L"} for clockwise
++(right) and counter-clockwise (left) rotating stones. As an alternative,
++you might want to use characters which are written in either clockwise
++or counter-clockwise manner, like @code{"p"} and @code{"q"}. Note that this might
++depend on your handwriting.
++ at item Documents can use either @code{"d"}, or @code{"i"} (for @code{"information"}), as @code{"d"} is
++used more often (e.g. for autotiling purposes). If several documents
++appear in the level, you can use consecutive letters (@code{"i"}, @code{"j"}, @code{"k"} ...).
++Remember that you can take advantage of autotiling if you have lots of
++different documents in your level.
++ at item Coins can be written with @code{"c"}, with @code{"$"} or with numbers resembling their worth.
++ at item Marbles should be @code{"@@"}, all other actors should use small letters
++(@code{"t"} for ac_top, @code{"p"} for ac_pearl, ...), or large punctuation marks.
++ at item For autotiling, it's a good idea to use @code{"X"}, @code{"Y"}, @code{"x"}, @code{"y"}, @code{"*"}, @code{"?"} and
++similar characters which associate themselves with variables as template
++keys. Another possibility is to use a full word like @code{"door"} or @code{"switch"}
++as template tile key, which has the advantage of being easier 
++ at end itemize
++
+ @node Easy Mode Hints
+ @section Easy Mode Hints
+ write easy first, floor friction,...
+
+
+

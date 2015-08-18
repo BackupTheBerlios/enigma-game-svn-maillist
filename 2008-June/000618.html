@@ -1,0 +1,711 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1184 - in trunk/src: . stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1184%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200806182250.m5IMoB3Q010923%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000617.html">
+   <LINK REL="Next"  HREF="000619.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1184 - in trunk/src: . stones</H1>
+    <B>ral at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1184%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200806182250.m5IMoB3Q010923%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1184 - in trunk/src: . stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Jun 19 00:50:11 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000617.html">[Enigma-game-svn] r1183 - in trunk: data data/gfx32 data/gfx40	data/gfx48 data/schemas src
+</A></li>
+        <LI>Next message: <A HREF="000619.html">[Enigma-game-svn] r1185 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#618">[ date ]</a>
+              <a href="thread.html#618">[ thread ]</a>
+              <a href="subject.html#618">[ subject ]</a>
+              <a href="author.html#618">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-06-19 00:49:49 +0200 (Thu, 19 Jun 2008)
+New Revision: 1184
+
+Added:
+   trunk/src/stones/MirrorStone.cc
+   trunk/src/stones/MirrorStone.hh
+Modified:
+   trunk/src/laser.cc
+   trunk/src/laser.hh
+   trunk/src/stones_complex.cc
+Log:
+Trunk 1.1: new API reengineering Mirror 
+- now the missing MirrorStone sources
+- switched PuzzleStone from PhotoCell to new GridStone methods
+- removed PhotoCell
+
+
+Modified: trunk/src/laser.cc
+===================================================================
+--- trunk/src/laser.cc	2008-06-18 21:41:18 UTC (rev 1183)
++++ trunk/src/laser.cc	2008-06-18 22:49:49 UTC (rev 1184)
+@@ -40,62 +40,6 @@
+ 
+ 
+ 
+-/* -------------------- PhotoCell -------------------- */
+-
+-vector&lt;void*&gt; PhotoCell::instances;
+-
+-PhotoCell::~PhotoCell() 
+-{
+-    photo_deactivate();
+-}
+-
+-
+-/**
+- * This function notifies all instances of PhotoCell that a
+- * recalculation of the laser beams is about to begin by calling
+- * on_recalc_start() for each instance.
+- */
+-void PhotoCell::notify_start()
+-{
+-    for(unsigned i=0; i&lt;instances.size(); ++i)
+-    {
+-        PhotoCell *pc = (PhotoCell*) instances[i];
+-        pc-&gt;on_recalc_start();
+-    }
+-}
+-
+-/**
+- * This function notifies all instances of PhotoCell that the engine
+- * has finished recalculating the laser beams by calling
+- * on_recalc_finish() for each instance.
+- */
+-void PhotoCell::notify_finish()
+-{
+-    for(unsigned i=0; i&lt;instances.size(); ++i)
+-    {
+-        PhotoCell *pc = (PhotoCell*) instances[i];
+-        pc-&gt;on_recalc_finish();
+-    }
+-}
+-
+-void PhotoCell::photo_activate()
+-{
+-    vector&lt;void*&gt;::iterator i = std::find(instances.begin(), instances.end(), this);
+-    if (i != instances.end())
+-        assert (0 || &quot;Photocell activated twice\n&quot;);
+-    else
+-        instances.push_back (this);
+-}
+-
+-void PhotoCell::photo_deactivate()
+-{
+-    vector&lt;void*&gt;::iterator i;
+-    i = std::find (instances.begin(), instances.end(), this);
+-    if (i != instances.end())
+-        instances.erase(i);
+-}
+-
+-
+ /* -------------------- LaserBeam -------------------- */
+ 
+ // The implementation of laser beams is a little tricky because, in
+@@ -302,7 +246,6 @@
+ void PerformRecalcLight(bool isInit) {
+     if (light_recalc_scheduled) {
+         light_recalc_scheduled = false;    // this is the right place - but we have first to fix some object like hammer,...
+-        PhotoCell::notify_start();
+         GridObject::preLaserRecalc();
+         LaserBeam::kill_all();
+         LaserStone::reemit_all();
+@@ -310,7 +253,6 @@
+         if (!isInit)
+             // do not cause actions on initial laser beam generation
+             GridObject::postLaserRecalc();
+-        PhotoCell::notify_finish();
+ //        light_recalc_scheduled = false;
+     }
+ }
+
+Modified: trunk/src/laser.hh
+===================================================================
+--- trunk/src/laser.hh	2008-06-18 21:41:18 UTC (rev 1183)
++++ trunk/src/laser.hh	2008-06-18 22:49:49 UTC (rev 1184)
+@@ -29,41 +29,6 @@
+ 
+ namespace enigma {
+ 
+-/* -------------------- PhotoCell -------------------- */
+-
+-    /**
+-     * PhotoCells are objects (not necessarily stones) that are
+-     * sensitive to laser light.  Whenever the game engine
+-     * recalculates the laser beams, instances of this class are
+-     * notified about the beginning and the end of a recalculation.
+-     */
+-    class PhotoCell {
+-    public:
+-        virtual ~PhotoCell();
+-
+-        // ---------- Static functions ----------
+-        static void notify_start();
+-        static void notify_finish();
+-
+-        // ---------- PhotoCell interface ----------
+-        virtual void on_recalc_start() = 0;
+-        virtual void on_recalc_finish() = 0;
+-    protected:
+-
+-        /*! Derived classes must call this method to register
+-          themselves for the on_recalc_start() and on_recalc_finish()
+-          events. */
+-        void photo_activate();
+-
+-        /*! Derived classes must call this method to unregister
+-          themselves.  It is automatically called by ~PhotoCell(), but
+-          objects may have to call it explicitly if they are not
+-          interested in PhotoCell events. */
+-        void photo_deactivate();
+-    private:
+-        static std::vector&lt;void*&gt; instances;
+-    };
+-
+ /* -------------------- LaserBeam -------------------- */
+ 
+     class LaserBeam : public Item {
+
+Added: trunk/src/stones/MirrorStone.cc
+===================================================================
+--- trunk/src/stones/MirrorStone.cc	2008-06-18 21:41:18 UTC (rev 1183)
++++ trunk/src/stones/MirrorStone.cc	2008-06-18 22:49:49 UTC (rev 1184)
+@@ -0,0 +1,298 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/MirrorStone.hh&quot;
++
++//#include &quot;main.hh&quot;
++#include &quot;laser.hh&quot;
++#include &quot;player.hh&quot;
++
++namespace enigma {
++
++    MirrorStone::MirrorStone(bool isTriangle, bool isMovable, bool paneTransparent, bool sideTransparent, 
++            Direction dir, bool counterclock) : Stone() {
++        state = dir;
++        if (isTriangle)
++            objFlags |= OBJBIT_TRIANGLE;
++        if (isMovable)
++            objFlags |= OBJBIT_MOVABLE;
++        if (paneTransparent)
++            objFlags |= OBJBIT_PANE;
++        if (sideTransparent)
++            objFlags |= OBJBIT_SIDE;
++        if (counterclock)
++            setAttr(&quot;counterclock&quot;, true);
++    }
++    
++    std::string MirrorStone::getClass() const {
++        return &quot;st_mirror&quot;;
++    }
++    
++    void MirrorStone::setAttr(const string&amp; key, const Value &amp;val) {
++        bool newModel = false;
++        bool lightChange = false;
++        bool handled = false;
++        if (key == &quot;movable&quot;) {
++            if (val.to_bool() != ((objFlags &amp; OBJBIT_MOVABLE) != 0)) {
++                objFlags ^=  OBJBIT_MOVABLE;
++                newModel = true;
++                handled = true;
++            }
++        } else if (key == &quot;flavor&quot;) {
++            if (val.to_string() == &quot;triangle&quot; &amp;&amp; !(objFlags &amp; OBJBIT_TRIANGLE)) {
++                objFlags |= OBJBIT_TRIANGLE;
++                objFlags &amp;= ~OBJBIT_SIDE;
++                newModel = true;
++                lightChange = true;
++                handled = true;
++            } else if (val.to_string() == &quot;slab&quot; &amp;&amp; ((objFlags &amp; OBJBIT_TRIANGLE) || (objFlags &amp; OBJBIT_SIDE))) {
++                objFlags &amp;= ~OBJBIT_TRIANGLE;
++                objFlags &amp;= ~OBJBIT_SIDE;
++                newModel = true;
++                lightChange = true;
++                handled = true;
++            } else if (val.to_string() == &quot;sheets&quot; &amp;&amp; ((objFlags &amp; OBJBIT_TRIANGLE) || !(objFlags &amp; OBJBIT_SIDE))) {
++                objFlags &amp;= ~OBJBIT_TRIANGLE;
++                objFlags |= OBJBIT_SIDE;
++                objFlags |= OBJBIT_PANE;  // sheets are always semi transparent
++                newModel = true;
++                lightChange = true;
++                handled = true;
++            }
++        } else if (key == &quot;orientation&quot;) {
++            if (val &gt;= minState() &amp;&amp; val &lt;= maxState()) {
++                setState(val);
++                handled = true;
++            }
++        } else if (key == &quot;transparent&quot;) {
++            if ((val.to_bool() != ((objFlags &amp; OBJBIT_PANE) != 0)) &amp;&amp; !(objFlags &amp; OBJBIT_SIDE)) {
++                objFlags ^=  OBJBIT_PANE;
++                newModel = true;
++                lightChange = true;
++                handled = true;
++            }
++        }
++        
++        if (isDisplayable()) {
++            if (newModel)
++                init_model();
++            if (lightChange)
++                RecalcLight();
++        }
++        
++        if (!handled)
++            Stone::setAttr(key, val);
++    }
++    
++    Value MirrorStone::getAttr(const std::string &amp;key) const {
++        if (key == &quot;movable&quot;) {
++            return (bool)(objFlags &amp; OBJBIT_MOVABLE);
++        } else if (key == &quot;flavor&quot;) {
++            return (objFlags &amp; OBJBIT_TRIANGLE) ? &quot;triangle&quot; : ((objFlags &amp; OBJBIT_SIDE) ? &quot;sheets&quot; : &quot;slab&quot;);
++        } else if (key == &quot;orientation&quot;) {
++            return state;
++        } else if (key == &quot;transparent&quot;) {
++            return (bool)(objFlags &amp; OBJBIT_PANE);
++        }
++        return Stone::getAttr(key);
++    }
++    
++    Value MirrorStone::message(const Message &amp;m) {
++        if (m.message == &quot;orientate&quot;) {
++            setAttr(&quot;orientation&quot;, m.value);
++            return Value();
++        } else if ((m.message == &quot;turn&quot; || m.message == &quot;turnback&quot;)) {
++            setAttr(&quot;orientation&quot;, (m.message == &quot;turn&quot; &amp;&amp; !getAttr(&quot;counterclock&quot;).to_bool() || 
++                    m.message == &quot;turnback&quot; &amp;&amp; getAttr(&quot;counterclock&quot;).to_bool())
++                    ? rotate_cw((Direction)state) : rotate_ccw((Direction)state));
++            return Value();
++        } else if (m.message == &quot;signal&quot;) {
++            if (m.value == 1)
++                toggleState();
++            return Value();
++        } else if (m.message == &quot;_trigger&quot;) {
++            if (m.value == 1)
++                toggleState();                
++            return Value();
++        }
++        return Stone::message(m);
++    }
++    
++
++    int MirrorStone::maxState() const {
++        return 3;  // dir representing state
++    }
++
++    void MirrorStone::setState(int extState) {
++        bool changed = (extState != state);
++        
++        state = extState;
++        
++        if (isDisplayable()) {
++            init_model();
++            RecalcLight();
++        }
++     }
++    
++    void MirrorStone::toggleState() {
++        setState(!getAttr(&quot;counterclock&quot;).to_bool() ? rotate_cw((Direction)state) : rotate_ccw((Direction)state));
++    }
++
++    void MirrorStone::init_model()  {
++        // the models are still encoded in the old API notation
++        set_model(ecl::strf(&quot;st-%cmirror-%c%c%d&quot;, 
++                (objFlags &amp; OBJBIT_TRIANGLE) ? '3' : 'p',
++                (objFlags &amp; OBJBIT_MOVABLE)  ? 'm' : 's',
++                (objFlags &amp; OBJBIT_PANE) ? ((objFlags &amp; OBJBIT_SIDE) ? 'f' : 't') : 'o',
++                ((5 - state) % 4) + 1));
++    }
++    
++    void MirrorStone::on_creation(GridPos p) {
++        activatePhoto();
++        Stone::on_creation(p);
++    }
++        
++    void MirrorStone::processLight(Direction d) {
++        DirectionBits oldOutDirs = emissionDirections();
++        Stone::processLight(d);
++        DirectionBits newOutDirs = emissionDirections();
++        if (oldOutDirs != newOutDirs) {
++            // emit light to new dirs
++            for (Direction newDir = WEST; newDir != NODIR; newDir = next(newDir)) {
++                 DirectionBits newDirBit = to_bits(newDir);
++                 if (!(oldOutDirs &amp; newDirBit) &amp;&amp; (newOutDirs &amp; newDirBit))
++                    LaserBeam::emit_from(get_pos(), newDir);
++            }
++        }
++    }
++    
++    DirectionBits MirrorStone::emissionDirections() const {
++        static uint16_t outDirs[] = {
++            ((WESTBIT)&lt;&lt;12) + ((SOUTHBIT)&lt;&lt;8) + ((EASTBIT)&lt;&lt;4) + (NORTHBIT),   // no side, no pane, planar, '\'
++            ((SOUTHBIT)&lt;&lt;12) + ((NODIRBIT)&lt;&lt;8) + ((NORTHBIT)&lt;&lt;4) + (NODIRBIT), // no side, no pane, planar, '-'
++            ((EASTBIT)&lt;&lt;12) + ((NORTHBIT)&lt;&lt;8) + ((WESTBIT)&lt;&lt;4) + (SOUTHBIT),   // no side, no pane, planar, '/'
++            ((NODIRBIT)&lt;&lt;12) + ((WESTBIT)&lt;&lt;8) + ((NODIRBIT)&lt;&lt;4) + (EASTBIT),   // no side, no pane, planar, '|'
++            ((WESTBIT)&lt;&lt;12) + ((NORTHBIT+SOUTHBIT)&lt;&lt;8) + ((WESTBIT)&lt;&lt;4) + (EASTBIT),    // no side, no pane, triangle,'&lt;'
++            ((WESTBIT+EASTBIT)&lt;&lt;12) + ((SOUTHBIT)&lt;&lt;8) + ((NORTHBIT)&lt;&lt;4) + (SOUTHBIT),   // no side, no pane, triangle,'v'
++            ((EASTBIT)&lt;&lt;12) + ((WESTBIT)&lt;&lt;8) + ((EASTBIT)&lt;&lt;4) + (NORTHBIT+SOUTHBIT),    // no side, no pane, triangle,'&gt;'
++            ((SOUTHBIT)&lt;&lt;12) + ((NORTHBIT)&lt;&lt;8) + ((WESTBIT+EASTBIT)&lt;&lt;4) + (NORTHBIT),   // no side, no pane, triangle,'^'
++            ((WESTBIT+NORTHBIT)&lt;&lt;12) + ((SOUTHBIT+EASTBIT)&lt;&lt;8) + ((EASTBIT+SOUTHBIT)&lt;&lt;4) + (NORTHBIT+WESTBIT),   // no side, pane, planar, '\'
++            ((SOUTHBIT+NORTHBIT)&lt;&lt;12) + ((NODIRBIT)&lt;&lt;8) + ((NORTHBIT+SOUTHBIT)&lt;&lt;4) + (NODIRBIT), // no side, pane, planar, '-'
++            ((EASTBIT+NORTHBIT)&lt;&lt;12) + ((NORTHBIT+EASTBIT)&lt;&lt;8) + ((WESTBIT+SOUTHBIT)&lt;&lt;4) + (SOUTHBIT+WESTBIT),   // no side, pane, planar, '/'
++            ((NODIRBIT)&lt;&lt;12) + ((WESTBIT+EASTBIT)&lt;&lt;8) + ((NODIRBIT)&lt;&lt;4) + (EASTBIT+WESTBIT),   // no side, pane, planar, '|'
++            ((WESTBIT+NORTHBIT)&lt;&lt;12) + ((NORTHBIT+SOUTHBIT+EASTBIT)&lt;&lt;8) + ((WESTBIT+SOUTHBIT)&lt;&lt;4) + (EASTBIT+WESTBIT),     // no side, pane, triangle,'&lt;'
++            ((WESTBIT+EASTBIT+NORTHBIT)&lt;&lt;12) + ((SOUTHBIT+EASTBIT)&lt;&lt;8) + ((NORTHBIT+SOUTHBIT)&lt;&lt;4) + (SOUTHBIT+WESTBIT),   // no side, pane, triangle,'v'
++            ((EASTBIT+NORTHBIT)&lt;&lt;12) + ((WESTBIT+EASTBIT)&lt;&lt;8) + ((EASTBIT+SOUTHBIT)&lt;&lt;4) + (NORTHBIT+SOUTHBIT+WESTBIT),    // no side, pane, triangle,'&gt;'
++            ((SOUTHBIT+NORTHBIT)&lt;&lt;12) + ((NORTHBIT+EASTBIT)&lt;&lt;8) + ((WESTBIT+EASTBIT+SOUTHBIT)&lt;&lt;4) + (NORTHBIT+WESTBIT),   // no side, pane, triangle,'^'
++            0,0,0,0,  // side, no pane, planar
++            0,0,0,0,  // side, no pane, triangle
++            ((WESTBIT+NORTHBIT)&lt;&lt;12) + ((SOUTHBIT+EASTBIT)&lt;&lt;8) + ((EASTBIT+SOUTHBIT)&lt;&lt;4) + (NORTHBIT+WESTBIT),   // side, pane, planar, '\'
++            ((SOUTHBIT+NORTHBIT)&lt;&lt;12) + ((EASTBIT)&lt;&lt;8) + ((NORTHBIT+SOUTHBIT)&lt;&lt;4) + (WESTBIT), // side, pane, planar, '-'
++            ((EASTBIT+NORTHBIT)&lt;&lt;12) + ((NORTHBIT+EASTBIT)&lt;&lt;8) + ((WESTBIT+SOUTHBIT)&lt;&lt;4) + (SOUTHBIT+WESTBIT),   // side, pane, planar, '/'
++            ((NORTHBIT)&lt;&lt;12) + ((WESTBIT+EASTBIT)&lt;&lt;8) + ((SOUTHBIT)&lt;&lt;4) + (EASTBIT+WESTBIT),   // side, pane, planar, '|'
++            0,0,0,0  // side, pane, triangle
++        };
++        int index = ((objFlags&gt;&gt;22) &amp; 0x1C) | state; // 5 bit index: OBJBIT_SIDE - OBJBIT_PANE - OBJBIT_TRIANGLE - 2bit orientation
++        uint16_t outCandidates = outDirs[index];
++        DirectionBits result = NODIRBIT;
++        if (objFlags &amp; NORTHBIT)
++            result = (DirectionBits)(result | (outCandidates&gt;&gt;12) &amp; ALL_DIRECTIONS);
++        if (objFlags &amp; EASTBIT)
++            result = (DirectionBits)(result | (outCandidates&gt;&gt;8) &amp; ALL_DIRECTIONS);
++        if (objFlags &amp; SOUTHBIT)
++            result = (DirectionBits)(result | (outCandidates&gt;&gt;4) &amp; ALL_DIRECTIONS);
++        if (objFlags &amp; WESTBIT)
++            result = (DirectionBits)(result | (outCandidates) &amp; ALL_DIRECTIONS);
++        
++        return result;
++    }
++
++    void MirrorStone::actor_hit(const StoneContact &amp;sc) {
++        if (objFlags &amp; OBJBIT_MOVABLE)
++            maybe_push_stone(sc);
++        if (player::WieldedItemIs (sc.actor, &quot;it_wrench&quot;)) 
++            setState(!getAttr(&quot;counterclock&quot;).to_bool() ? rotate_ccw((Direction)state) : rotate_cw((Direction)state));
++        else
++            toggleState();
++    }
++
++    int MirrorStone::traitsIdx() const {
++        return (objFlags &amp; OBJBIT_MOVABLE) ? 1 : 0;
++    }
++
++    StoneTraits MirrorStone::traits[2] = {
++        {&quot;st_mirror&quot;, st_mirror, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++        {&quot;st_mirror&quot;, st_mirror, stf_none, material_stone, 1.0, MOVABLE_STANDARD},
++    };
++    BOOT_REGISTER_START
++        BootRegister(new MirrorStone(false, false, false, false, NORTH), &quot;st_mirror&quot;);
++        BootRegister(new MirrorStone(false, false, false, false, NORTH), &quot;st_mirror_slab&quot;);
++        BootRegister(new MirrorStone(true, false, false, false,  NORTH), &quot;st_mirror_triangle&quot;);
++        BootRegister(new MirrorStone(false, false, true, true, NORTH), &quot;st_mirror_sheets&quot;);
++        BootRegister(new MirrorStone(false, false, false, false, NORTH), &quot;st_mirror_slab_n&quot;);
++        BootRegister(new MirrorStone(false, false, false, false, EAST), &quot;st_mirror_slab_e&quot;);
++        BootRegister(new MirrorStone(false, false, false, false, SOUTH), &quot;st_mirror_slab_s&quot;);
++        BootRegister(new MirrorStone(false, false, false, false, WEST), &quot;st_mirror_slab_w&quot;);
++        BootRegister(new MirrorStone(false, false, true, false, NORTH), &quot;st_mirror_slab_nt&quot;);
++        BootRegister(new MirrorStone(false, false, true, false, EAST), &quot;st_mirror_slab_et&quot;);
++        BootRegister(new MirrorStone(false, false, true, false, SOUTH), &quot;st_mirror_slab_st&quot;);
++        BootRegister(new MirrorStone(false, false, true, false, WEST), &quot;st_mirror_slab_wt&quot;);
++        BootRegister(new MirrorStone(false, true, false, false, NORTH), &quot;st_mirror_slab_nm&quot;);
++        BootRegister(new MirrorStone(false, true, false, false, EAST), &quot;st_mirror_slab_em&quot;);
++        BootRegister(new MirrorStone(false, true, false, false, SOUTH), &quot;st_mirror_slab_sm&quot;);
++        BootRegister(new MirrorStone(false, true, false, false, WEST), &quot;st_mirror_slab_wm&quot;);
++        BootRegister(new MirrorStone(false, true, true, false, NORTH), &quot;st_mirror_slab_ntm&quot;);
++        BootRegister(new MirrorStone(false, true, true, false, EAST), &quot;st_mirror_slab_etm&quot;);
++        BootRegister(new MirrorStone(false, true, true, false, SOUTH), &quot;st_mirror_slab_stm&quot;);
++        BootRegister(new MirrorStone(false, true, true, false, WEST), &quot;st_mirror_slab_wtm&quot;);
++        BootRegister(new MirrorStone(true, false, false, false, NORTH), &quot;st_mirror_triangle_n&quot;);
++        BootRegister(new MirrorStone(true, false, false, false, EAST), &quot;st_mirror_triangle_e&quot;);
++        BootRegister(new MirrorStone(true, false, false, false, SOUTH), &quot;st_mirror_triangle_s&quot;);
++        BootRegister(new MirrorStone(true, false, false, false, WEST), &quot;st_mirror_triangle_w&quot;);
++        BootRegister(new MirrorStone(true, false, true, false, NORTH), &quot;st_mirror_triangle_nt&quot;);
++        BootRegister(new MirrorStone(true, false, true, false, EAST), &quot;st_mirror_triangle_et&quot;);
++        BootRegister(new MirrorStone(true, false, true, false, SOUTH), &quot;st_mirror_triangle_st&quot;);
++        BootRegister(new MirrorStone(true, false, true, false, WEST), &quot;st_mirror_triangle_wt&quot;);
++        BootRegister(new MirrorStone(true, true, false, false, NORTH), &quot;st_mirror_triangle_nm&quot;);
++        BootRegister(new MirrorStone(true, true, false, false, EAST), &quot;st_mirror_triangle_em&quot;);
++        BootRegister(new MirrorStone(true, true, false, false, SOUTH), &quot;st_mirror_triangle_sm&quot;);
++        BootRegister(new MirrorStone(true, true, false, false, WEST), &quot;st_mirror_triangle_wm&quot;);
++        BootRegister(new MirrorStone(true, true, true, false, NORTH), &quot;st_mirror_triangle_ntm&quot;);
++        BootRegister(new MirrorStone(true, true, true, false, EAST), &quot;st_mirror_triangle_etm&quot;);
++        BootRegister(new MirrorStone(true, true, true, false, SOUTH), &quot;st_mirror_triangle_stm&quot;);
++        BootRegister(new MirrorStone(true, true, true, false, WEST), &quot;st_mirror_triangle_wtm&quot;);
++        BootRegister(new MirrorStone(true, false, false, false, NORTH, true), &quot;st_mirror_triangle_nc&quot;);
++        BootRegister(new MirrorStone(true, false, false, false, EAST, true), &quot;st_mirror_triangle_ec&quot;);
++        BootRegister(new MirrorStone(true, false, false, false, SOUTH, true), &quot;st_mirror_triangle_sc&quot;);
++        BootRegister(new MirrorStone(true, false, false, false, WEST, true), &quot;st_mirror_triangle_wc&quot;);
++        BootRegister(new MirrorStone(true, false, true, false, NORTH, true), &quot;st_mirror_triangle_ntc&quot;);
++        BootRegister(new MirrorStone(true, false, true, false, EAST, true), &quot;st_mirror_triangle_etc&quot;);
++        BootRegister(new MirrorStone(true, false, true, false, SOUTH, true), &quot;st_mirror_triangle_stc&quot;);
++        BootRegister(new MirrorStone(true, false, true, false, WEST, true), &quot;st_mirror_triangle_wtc&quot;);
++        BootRegister(new MirrorStone(true, true, false, false, NORTH, true), &quot;st_mirror_triangle_nmc&quot;);
++        BootRegister(new MirrorStone(true, true, false, false, EAST, true), &quot;st_mirror_triangle_emc&quot;);
++        BootRegister(new MirrorStone(true, true, false, false, SOUTH, true), &quot;st_mirror_triangle_smc&quot;);
++        BootRegister(new MirrorStone(true, true, false, false, WEST, true), &quot;st_mirror_triangle_wmc&quot;);
++        BootRegister(new MirrorStone(true, true, true, false, NORTH, true), &quot;st_mirror_triangle_ntmc&quot;);
++        BootRegister(new MirrorStone(true, true, true, false, EAST, true), &quot;st_mirror_triangle_etmc&quot;);
++        BootRegister(new MirrorStone(true, true, true, false, SOUTH, true), &quot;st_mirror_triangle_stmc&quot;);
++        BootRegister(new MirrorStone(true, true, true, false, WEST, true), &quot;st_mirror_triangle_wtmc&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/MirrorStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/MirrorStone.hh
+===================================================================
+--- trunk/src/stones/MirrorStone.hh	2008-06-18 21:41:18 UTC (rev 1183)
++++ trunk/src/stones/MirrorStone.hh	2008-06-18 22:49:49 UTC (rev 1184)
+@@ -0,0 +1,75 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef MIRRORSTONE_HH
++#define MIRRORSTONE_HH
++
++#include &quot;stones.hh&quot;
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     * 
++     */
++    class MirrorStone : public Stone {
++         CLONEOBJ(MirrorStone);
++         DECL_TRAITS_ARRAY(2, traitsIdx());
++    private:
++        enum iState {
++        };
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_TRIANGLE =   1&lt;&lt;24,    ///&lt; 
++            OBJBIT_PANE     =   1&lt;&lt;25,    ///&lt; transparency of mirror panes 
++            OBJBIT_SIDE     =   1&lt;&lt;26,    ///&lt; transparency of mirror sides (just planar mirror)
++            OBJBIT_MOVABLE  =   1&lt;&lt;27     ///&lt;  
++        };
++
++    public:
++        MirrorStone(bool isTriangle, bool isMovable, bool paneTransparent, bool sideTransparent, 
++                Direction dir=EAST, bool counterclock=false);
++
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++        virtual Value getAttr(const std::string &amp;key) const;
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual int maxState() const;
++        virtual void setState(int extState);
++        virtual void toggleState();
++
++        // GridObject interface
++        virtual void init_model();
++        virtual void on_creation(GridPos p);
++        virtual void processLight(Direction d);   // direction of laserbeam
++        virtual DirectionBits emissionDirections() const;
++        
++        // Stone interface
++        virtual void actor_hit(const StoneContact &amp;sc);
++               
++    private:
++        // Private methods.
++        int traitsIdx() const;
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/MirrorStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-06-18 21:41:18 UTC (rev 1183)
++++ trunk/src/stones_complex.cc	2008-06-18 22:49:49 UTC (rev 1184)
+@@ -509,11 +509,14 @@
+ */
+ namespace
+ {
+-    class PuzzleStone : public ConnectiveStone, public TimeHandler, public PhotoCell {
++    class PuzzleStone : public ConnectiveStone, public TimeHandler {
+         INSTANCELISTOBJ(PuzzleStone);
+         DECL_TRAITS;
+     public:
+         PuzzleStone(int connections, bool oxyd1_compatible_);  
++        
++        virtual void lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs);
++        
+     protected:
+         virtual ~PuzzleStone() {
+             GameTimer.remove_alarm (this);
+@@ -553,19 +556,12 @@
+ 
+         void alarm();
+ 
+-        /* ---------- PhotoCell interface ---------- */
+-
+-        void on_recalc_start();
+-        void on_recalc_finish();
+-
+         /* ---------- Stone interface ---------- */
+ 
+         virtual Value message(const Message &amp;m);
+ 
+         void on_creation (GridPos p);
+-        void on_removal (GridPos p);
+         void on_impulse (const Impulse&amp; impulse);
+-        void processLight(Direction dir);
+ 
+         bool is_floating() const;
+ 
+@@ -576,17 +572,15 @@
+         /* ---------- Variables ---------- */
+         bool visited;           // flag for DFS
+         enum { IDLE, EXPLODING } state;
+-        DirectionBits illumination; // last state of surrounding laser beams
+     };
+     DEF_TRAITSM(PuzzleStone, &quot;st-puzzle&quot;, st_puzzle, MOVABLE_IRREGULAR);
+ }
+ 
+ PuzzleStone::InstanceList PuzzleStone::instances;
+ 
+-PuzzleStone::PuzzleStone(int connections, bool oxyd1_compatible_)
+-: ConnectiveStone(connections), 
+-  state (IDLE), 
+-  illumination (NODIRBIT)
++PuzzleStone::PuzzleStone(int connections, bool oxyd1_compatible_) : ConnectiveStone(connections), 
++  state (IDLE)
++//  illumination (NODIRBIT)
+ {
+     setAttr(&quot;oxyd&quot;, int(oxyd1_compatible_));
+ }
+@@ -1012,34 +1006,18 @@
+ }
+ 
+ void PuzzleStone::on_creation (GridPos p) {
+-    photo_activate();
++    activatePhoto();
+     ConnectiveStone::on_creation (p);
+-    illumination = NODIRBIT;
+ }
+ 
+-void PuzzleStone::on_removal(GridPos p) {
+-    photo_deactivate();
+-    ConnectiveStone::on_removal(p);
+-}
+ 
+-void PuzzleStone::processLight(Direction dir) {
+-    ecl::set_flags (illumination, to_bits(reverse(dir)));
+-}
+-
+-void PuzzleStone::on_recalc_start() {
+-    illumination = NODIRBIT;
+-}
+-
+-void PuzzleStone::on_recalc_finish() {
+-    if (illumination != (ALL_DIRECTIONS+1) &amp;&amp; 
+-        illumination != NODIRBIT &amp;&amp; 
+-        state == IDLE) 
+-    {
++void PuzzleStone::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
++    if (state == IDLE &amp;&amp; newDirs != NODIRBIT) {
+         if (!explode_complete_cluster() &amp;&amp; oxyd1_compatible()) {
+-            if (illumination &amp; NORTHBIT) maybe_rotate_cluster(SOUTH);
+-            if (illumination &amp; SOUTHBIT) maybe_rotate_cluster(NORTH);
+-            if (illumination &amp; EASTBIT)  maybe_rotate_cluster(WEST);
+-            if (illumination &amp; WESTBIT)  maybe_rotate_cluster(EAST);
++            if (newDirs &amp; SOUTHBIT) maybe_rotate_cluster(SOUTH);
++            if (newDirs &amp; NORTHBIT) maybe_rotate_cluster(NORTH);
++            if (newDirs &amp; WESTBIT)  maybe_rotate_cluster(WEST);
++            if (newDirs &amp; EASTBIT)  maybe_rotate_cluster(EAST);
+         }
+     }
+ }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000617.html">[Enigma-game-svn] r1183 - in trunk: data data/gfx32 data/gfx40	data/gfx48 data/schemas src
+</A></li>
+	<LI>Next message: <A HREF="000619.html">[Enigma-game-svn] r1185 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#618">[ date ]</a>
+              <a href="thread.html#618">[ thread ]</a>
+              <a href="subject.html#618">[ subject ]</a>
+              <a href="author.html#618">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

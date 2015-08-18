@@ -1,0 +1,226 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1993 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2010-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1993%20-%20trunk/src&In-Reply-To=%3C201001171352.o0HDqAHW004770%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001417.html">
+   <LINK REL="Next"  HREF="001419.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1993 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1993%20-%20trunk/src&In-Reply-To=%3C201001171352.o0HDqAHW004770%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1993 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Jan 17 14:52:10 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001417.html">[Enigma-game-svn] r1992 - trunk/po
+</A></li>
+        <LI>Next message: <A HREF="001419.html">[Enigma-game-svn] r1995 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1418">[ date ]</a>
+              <a href="thread.html#1418">[ thread ]</a>
+              <a href="subject.html#1418">[ subject ]</a>
+              <a href="author.html#1418">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2010-01-17 14:52:07 +0100 (Sun, 17 Jan 2010)
+New Revision: 1993
+
+Modified:
+   trunk/src/display.cc
+   trunk/src/video.cc
+   trunk/src/video.hh
+Log:
+Trunk 1.1:
+- status bar with player indicator:
+  - add offset and refine calculations
+Note:
+- this commit is incomplete, player indicator anim and new border images missing
+
+Modified: trunk/src/display.cc
+===================================================================
+--- trunk/src/display.cc	2010-01-16 22:46:42 UTC (rev 1992)
++++ trunk/src/display.cc	2010-01-17 13:52:07 UTC (rev 1993)
+@@ -95,7 +95,8 @@
+   m_counter (0),
+   m_showcounter_p(false),
+   m_interruptible(true),
+-  m_text_active(false)
++  m_text_active(false),
++  playerImage(0)
+ {
+     const video::VMInfo *vminfo = video::GetInfo();
+     m_itemarea = vminfo-&gt;sb_itemarea;
+@@ -162,8 +163,11 @@
+     blit(gc, a.x, a.y, enigma::GetImage(player == enigma::YIN ? &quot;inventory&quot; : &quot;inventory&quot;, &quot;.png&quot;));
+     
+     // draw player indicator
+-    blit(gc, a.x + 150, a.y + 22, enigma::GetImage(&quot;st_yinyang&quot;, &quot;.png&quot;), 
+-            Rect (0, playerImage * vminfo-&gt;tile_size, vminfo-&gt;tile_size, vminfo-&gt;tile_size));
++    int ts = vminfo-&gt;tile_size;
++    int xoff = 35*ts/8;
++    int yoff =  4*ts/8 + vminfo-&gt;sb_coffsety;
++//    blit(gc, a.x + xoff, a.y + yoff, enigma::GetImage(&quot;player_switch_anim&quot;, &quot;.png&quot;), 
++//            Rect (0, playerImage * ts, ts, ts));
+ 
+ 
+ //     set_color (gc, 255, 0, 0);
+@@ -285,8 +289,8 @@
+ void StatusBarImpl::tick(double dtime) {
+     // Animation of player indicator
+     playerImageDuration += dtime;
+-    if ((player * 3 != playerImage) &amp;&amp; (playerImageDuration &gt; 0.2)) {
+-        playerImage = (++playerImage) % 6;
++    if ((player * 12 != playerImage) &amp;&amp; (playerImageDuration &gt; 0.1)) {
++        playerImage = (++playerImage) % 24;
+         playerImageDuration = 0;
+         m_changedp = true;
+     }
+
+Modified: trunk/src/video.cc
+===================================================================
+--- trunk/src/video.cc	2010-01-16 22:46:42 UTC (rev 1992)
++++ trunk/src/video.cc	2010-01-17 13:52:07 UTC (rev 1993)
+@@ -345,6 +345,7 @@
+             Rect (100, 425, 30, 43),         // moves area
+             Rect (200, 433, 490, 52),        // inventory area
+             Rect (150, 434, 475, 35),        // text area
++            0,                               // statusbar coffsety
+             true, true,                      // available window, fullscreen
+             &quot;-0-&quot;,&quot;-0-&quot;                      // fallback modes window, fullscreen
+         },
+@@ -363,6 +364,7 @@
+             Rect (100, 420, 30, 40),         // moves area
+             Rect (200, 433, 490, 52),        // inventory area
+             Rect (150, 434, 475, 35),        // text area
++            0,                               // statusbar coffsety
+             false, false,                    // 640x512 is deprecated!
+             &quot;-0-&quot;,&quot;-0-&quot;                      // fallback modes window, fullscreen
+         },
+@@ -381,6 +383,7 @@
+             Rect (125, 540, 30, 40),         // moves area
+             Rect (252, 539, 610, 46),        // inventory area
+             Rect (185, 545, 600, 39),        // text area
++            0,                               // statusbar coffsety
+             true, true,                      // available window, fullscreen
+             &quot;-2-0-&quot;,&quot;-2-0-&quot;                  // fallback modes window, fullscreen
+         },
+@@ -399,6 +402,7 @@
+             Rect (185, 640, 30, 60),         // moves area
+             Rect (332, 650, 710, 46),        // inventory area
+             Rect (260, 655, 710, 40),        // text area
++            0,                               // statusbar coffsety
+             true, true,                      // available window, fullscreen
+             &quot;-3-2-0-&quot;,&quot;-3-2-0-&quot;              // fallback modes window, fullscreen
+         },
+@@ -417,6 +421,7 @@
+             Rect (153, 640, 30, 60),         // moves area
+             Rect (300, 650, 710, 46),        // inventory area
+             Rect (228, 655, 710, 40),        // text area
++            0,                               // statusbar coffsety
+             true, true,                      // available window, fullscreen
+             &quot;-4-2-0-&quot;,&quot;-4-2-0-&quot;              // fallback modes window, fullscreen
+         },
+@@ -435,6 +440,7 @@
+             Rect (313, 640, 30, 60),         // moves area
+             Rect (460, 650, 710, 46),        // inventory area
+             Rect (388, 655, 710, 40),        // text area
++            0,                               // statusbar coffsety
+             false, true,                     // available window, fullscreen
+             &quot;-0-&quot;,&quot;-5-0-&quot;                    // fallback modes window, fullscreen
+         },
+@@ -451,8 +457,9 @@
+             Rect (24, 853, 227, 80),         // time area //TODO
+             Rect (204, 853, 40, 80),         // modes area //TODO
+             Rect (204, 853, 40, 80),         // moves area //TODO
+-            Rect (400, 867, 947, 61),        // inventory area //TODO
+-            Rect (304, 873, 947, 53),        // text area //TODO
++            Rect (376, 867, 947, 61),        // inventory area //TODO
++            Rect (360, 873, 947, 53),        // text area //TODO
++            1,                               // statusbar coffsety
+             true, true,                      // available window, fullscreen
+             &quot;-6-4-2-0-&quot;,&quot;-6-4-2-0-&quot;          // fallback modes window, fullscreen
+         },
+@@ -471,6 +478,7 @@
+             Rect (284, 853, 40, 80),         // moves area //TODO
+             Rect (480, 867, 947, 61),        // inventory area //TODO
+             Rect (384, 873, 947, 53),        // text area //TODO
++            0,                               // statusbar coffsety
+             false, true,                     // available window, fullscreen
+             &quot;-0-&quot;,&quot;-7-0-&quot;                    // fallback modes window, fullscreen
+         },
+@@ -489,6 +497,7 @@
+             Rect (153, 640, 30, 60),         // moves area //TODO
+             Rect (324, 650, 710, 46),        // inventory area //TODO
+             Rect (228, 655, 710, 40),        // text area //TODO
++            0,                               // statusbar coffsety
+             false, true,                     // available window, fullscreen
+             &quot;-0-&quot;,&quot;-8-0-&quot;                    // fallback modes window, fullscreen
+         },
+@@ -507,6 +516,7 @@
+             Rect (404, 853, 40, 80),         // moves area //TODO
+             Rect (600, 867, 947, 61),        // inventory area //TODO
+             Rect (504, 873, 947, 53),        // text area //TODO
++            0,                               // statusbar coffsety
+             false, true,                     // available window, fullscreen
+             &quot;-0-&quot;,&quot;-9-0-&quot;                    // fallback modes window, fullscreen
+         },
+@@ -525,6 +535,7 @@
+             Rect (50, 220, 15, 21),          // moves area
+             Rect (100, 216, 245, 26),         // inventory area
+             Rect (75, 217, 237, 17),         // text area
++            0,                               // statusbar coffsety
+             true, true,                      // available window, fullscreen
+             &quot;-10-0-&quot;,&quot;-10-0-&quot;                // fallback modes window, fullscreen
+         }
+
+Modified: trunk/src/video.hh
+===================================================================
+--- trunk/src/video.hh	2010-01-16 22:46:42 UTC (rev 1992)
++++ trunk/src/video.hh	2010-01-17 13:52:07 UTC (rev 1993)
+@@ -75,6 +75,7 @@
+         ecl::Rect      sb_movesarea;
+         ecl::Rect      sb_itemarea;
+         ecl::Rect      sb_textarea;
++        int            sb_coffsety;      // center offset of statusbar due to top black lines 
+         bool           w_available;        // Is this video mode available?
+         bool           f_available;        // Is this video mode available?
+         std::string    fallback_window;    // hyphen seperated list of modes e.g. &quot;-7-4-2-0-&quot;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001417.html">[Enigma-game-svn] r1992 - trunk/po
+</A></li>
+	<LI>Next message: <A HREF="001419.html">[Enigma-game-svn] r1995 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1418">[ date ]</a>
+              <a href="thread.html#1418">[ thread ]</a>
+              <a href="subject.html#1418">[ subject ]</a>
+              <a href="author.html#1418">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

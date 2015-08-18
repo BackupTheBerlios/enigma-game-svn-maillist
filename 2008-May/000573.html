@@ -1,0 +1,447 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1140 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1140%20-%20trunk/src&In-Reply-To=%3C200805121011.m4CABJEG028969%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000572.html">
+   <LINK REL="Next"  HREF="000574.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1140 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1140%20-%20trunk/src&In-Reply-To=%3C200805121011.m4CABJEG028969%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1140 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon May 12 12:11:19 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000572.html">[Enigma-game-svn] r1139 - in trunk: data/schemas doc/reference src	src/stones
+</A></li>
+        <LI>Next message: <A HREF="000574.html">[Enigma-game-svn] r1141 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#573">[ date ]</a>
+              <a href="thread.html#573">[ thread ]</a>
+              <a href="subject.html#573">[ subject ]</a>
+              <a href="author.html#573">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-05-12 12:11:18 +0200 (Mon, 12 May 2008)
+New Revision: 1140
+
+Modified:
+   trunk/src/GridObject.cc
+   trunk/src/GridObject.hh
+   trunk/src/Object.cc
+   trunk/src/Object.hh
+   trunk/src/Value.cc
+   trunk/src/Value.hh
+   trunk/src/actors.cc
+   trunk/src/actors.hh
+   trunk/src/world.cc
+   trunk/src/world.hh
+   trunk/src/world_internal.hh
+Log:
+Trunk 1.1: new API extention
+- &quot;@&quot; as prefix of object name in a target or destination group
+  selects the nearest candidate to the object itself
+  (see test level for usage patterns)
+
+
+Modified: trunk/src/GridObject.cc
+===================================================================
+--- trunk/src/GridObject.cc	2008-05-11 11:00:15 UTC (rev 1139)
++++ trunk/src/GridObject.cc	2008-05-12 10:11:18 UTC (rev 1140)
+@@ -84,7 +84,7 @@
+             return pos;
+     }
+     
+-    bool GridObject::isDisplayable() {
++    bool GridObject::isDisplayable() const {
+         return pos.x &gt;= 0;
+     }
+     
+@@ -186,7 +186,38 @@
+             deactivatePhoto();
+     }
+     
++    double GridObject::squareDistance(const Object *other) const {
++        if (isDisplayable()) {
++            const Actor *a = dynamic_cast&lt;const Actor *&gt;(other);
++            if (a != NULL) {
++                ecl::V2 apos = a-&gt;get_pos();
++                return (apos[0] - pos.x)*(apos[0] - pos.x) + (apos[1] - pos.y)*(apos[1] - pos.y);
++            }
++            const GridObject *g = dynamic_cast&lt;const GridObject *&gt;(other);
++            if  (g != NULL &amp;&amp; g-&gt;isDisplayable()) {
++                return (g-&gt;pos.x - pos.x)*(g-&gt;pos.x -  pos.x) + (g-&gt;pos.y -  pos.y)*(g-&gt;pos.y -  pos.y);
++            }
++        }
++        return Object::squareDistance(other);  // infinity
++    }
+     
++    bool GridObject::isSouthOrEastOf(const Object *other) const {
++        if (isDisplayable()) {
++            const Actor *a = dynamic_cast&lt;const Actor *&gt;(other);
++            if (a != NULL) {
++                ecl::V2 apos = a-&gt;get_pos();
++                return (apos[1] &lt; pos.y) || ((apos[1] == pos.y) &amp;&amp; (apos[0] &lt; pos.x));
++            }
++            const GridObject *g = dynamic_cast&lt;const GridObject *&gt;(other);
++            if  (g != NULL &amp;&amp; g-&gt;isDisplayable()) {
++                return (g-&gt;pos.y &lt; pos.y) || ((g-&gt;pos.y ==  pos.y) &amp;&amp; (g-&gt;pos.x &lt;  pos.x));
++            } else 
++                return true;  // other GridObject is not on Grid
++        }
++        return false;        
++    }
++    
++    
+     // GridObject laser light support
+     
+     std::list&lt;GridObject *&gt; GridObject::photoSensorList;
+
+Modified: trunk/src/GridObject.hh
+===================================================================
+--- trunk/src/GridObject.hh	2008-05-11 11:00:15 UTC (rev 1139)
++++ trunk/src/GridObject.hh	2008-05-12 10:11:18 UTC (rev 1140)
+@@ -91,7 +91,7 @@
+          * updated, too.
+          * @return   true if display access is possible, false otherwise
+          */
+-        bool isDisplayable();
++        bool isDisplayable() const;
+ 
+         // GridObject interface
+         
+@@ -108,6 +108,8 @@
+         DirectionBits getConnections() const;
+         virtual DirectionBits getFaces(bool actorInvisible = false) const;
+         
++        virtual double squareDistance(const Object *other) const;
++        virtual bool isSouthOrEastOf(const Object *other) const;
+ 
+     protected:
+         // GridObject interface
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2008-05-11 11:00:15 UTC (rev 1139)
++++ trunk/src/Object.cc	2008-05-12 10:11:18 UTC (rev 1140)
+@@ -269,7 +269,7 @@
+         for (TokenList::iterator tit = targets.begin(); tit != targets.end(); ++tit) {
+             action = (ait != actions.end()) ? ait-&gt;to_string() : &quot;&quot;;
+             
+-            ObjectList ol = *tit;  // get all objects described by target token
++            ObjectList ol = (*tit).getObjectList(this);  // get all or nearest objects described by target token
+             if (ol.size() == 0 || (ol.size() == 1 &amp;&amp; ol.front() == NULL)) {  // no target object
+                 if ((action == &quot;callback&quot; || action == &quot;&quot;) &amp;&amp; (tit-&gt;getType() == Value::STRING) 
+                         &amp;&amp; lua::IsFunc(lua::LevelState(), tit-&gt;get_string())) {
+@@ -335,7 +335,7 @@
+             // evaluate destination objects in sequence up to &quot;idx&quot;
+             TokenList tl = dest;  // convert any object type value to a tokenlist 
+             for (TokenList::iterator tit = tl.begin(); tit != tl.end(); ++tit) {
+-                ObjectList ol = *tit;  // convert next token to an objectlist
++                ObjectList ol = (*tit).getObjectList(this);  // convert next token to an objectlist
+                 for (ObjectList::iterator oit = ol.begin(); oit != ol.end(); ++oit) {
+                     GridObject *go = dynamic_cast&lt;GridObject *&gt;(*oit);  // get the object
+                     if (go != NULL) {   // no actors as destination!
+@@ -370,4 +370,12 @@
+         return OTHER;
+     }
+     
++    double Object::squareDistance(const Object *other) const {
++        return 1e15;   // inifinity in enigma world
++    }
++    
++    bool Object::isSouthOrEastOf(const Object *other) const {
++        return true;
++    }
++    
+ } // namespace enigma
+
+Modified: trunk/src/Object.hh
+===================================================================
+--- trunk/src/Object.hh	2008-05-11 11:00:15 UTC (rev 1139)
++++ trunk/src/Object.hh	2008-05-12 10:11:18 UTC (rev 1140)
+@@ -197,6 +197,8 @@
+         virtual ObjectType getObjectType() const;
+         void transferName(Object *target);
+         virtual void transferIdentity(Object *target);
++        virtual double squareDistance(const Object *other) const;
++        virtual bool isSouthOrEastOf(const Object *other) const;
+ 
+     protected:
+         /** This function is used by all triggers, switches etc. that
+
+Modified: trunk/src/Value.cc
+===================================================================
+--- trunk/src/Value.cc	2008-05-11 11:00:15 UTC (rev 1139)
++++ trunk/src/Value.cc	2008-05-12 10:11:18 UTC (rev 1140)
+@@ -283,34 +283,7 @@
+     }
+     
+     Value::operator ObjectList() const {
+-        ObjectList result;
+-        switch (type) {
+-            case STRING:
+-                if (std::string(val.str).find_first_of(&quot;*?&quot;) != std::string::npos) {
+-                    // wildcards in object name - we need to add all objects
+-                    result = GetNamedGroup(val.str);
+-                    break;
+-                }
+-                // else it is a single object name - fall through
+-            case NAMEDOBJECT:
+-            case OBJECT:
+-                result.push_back(*this);
+-                break;
+-            case GROUP:
+-                std::vector&lt;std::string&gt; vs;
+-                ecl::split_copy(std::string(val.str), ',', back_inserter(vs));
+-                for (std::vector&lt;std::string&gt;::iterator it = vs.begin(); it != vs.end(); ++it) {
+-                    if (it-&gt;size() &gt; 0) {
+-                        if ((*it)[0] == '#') {
+-                            result.push_back(Object::getObject(atoi((*it).c_str() + 1)));
+-                        } else {
+-                            result.push_back(GetNamedObject(*it));
+-                        }
+-                    }
+-                }
+-                break;
+-        }
+-        return result;
++        return getObjectList(NULL);
+     }
+     
+     Value::operator TokenList() const {
+@@ -448,7 +421,38 @@
+         }
+     }
+     
++    ObjectList Value::getObjectList(const Object *reference) const {
++        ObjectList result;
++        switch (type) {
++            case STRING:
++                if (std::string(val.str).find_first_of(&quot;*?&quot;) != std::string::npos) {
++                    // wildcards in object name - we need to add all objects
++                    result = GetNamedGroup(val.str, reference);
++                    break;
++                }
++                // else it is a single object name - fall through
++            case NAMEDOBJECT:
++            case OBJECT:
++                result.push_back(*this);
++                break;
++            case GROUP:
++                std::vector&lt;std::string&gt; vs;
++                ecl::split_copy(std::string(val.str), ',', back_inserter(vs));
++                for (std::vector&lt;std::string&gt;::iterator it = vs.begin(); it != vs.end(); ++it) {
++                    if (it-&gt;size() &gt; 0) {
++                        if ((*it)[0] == '#') {
++                            result.push_back(Object::getObject(atoi((*it).c_str() + 1)));
++                        } else {
++                            result.push_back(GetNamedObject(*it));
++                        }
++                    }
++                }
++                break;
++        }
++        return result;
++    }
+     
++    
+     int to_int(const Value &amp;v) {
+         return v;
+     }
+
+Modified: trunk/src/Value.hh
+===================================================================
+--- trunk/src/Value.hh	2008-05-11 11:00:15 UTC (rev 1139)
++++ trunk/src/Value.hh	2008-05-12 10:11:18 UTC (rev 1140)
+@@ -233,6 +233,11 @@
+          * for any other value.
+          */
+         bool to_bool() const;
++        
++        /**
++         * 
++         */
++        ObjectList getObjectList(const Object *reference = NULL) const;
+     private:
+         void clear();      ///&lt; Release resources and assign type NIL
+ 
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2008-05-11 11:00:15 UTC (rev 1139)
++++ trunk/src/actors.cc	2008-05-12 10:11:18 UTC (rev 1140)
+@@ -285,7 +285,22 @@
+     Object::setAttr(key, val);
+ }
+ 
++    double Actor::squareDistance(const Object *other) const {
++        const Actor *a = dynamic_cast&lt;const Actor *&gt;(other);
++        if (a != NULL)
++            return ecl::square(get_pos() - a-&gt;get_pos());
++        else
++            return other-&gt;squareDistance(this);
++    }
+ 
++    bool Actor::isSouthOrEastOf(const Object *other) const {
++        const Actor *a = dynamic_cast&lt;const Actor *&gt;(other);
++        if (a != NULL)
++            return (get_pos()[1] &gt; - a-&gt;get_pos()[1]) || ((get_pos()[1] ==  a-&gt;get_pos()[1]) &amp;&amp; (get_pos()[0] &gt; - a-&gt;get_pos()[0]));
++        else
++            return !(other-&gt;isSouthOrEastOf(this));
++    }
++
+ /* -------------------- RotorBase -------------------- */
+ 
+ namespace
+
+Modified: trunk/src/actors.hh
+===================================================================
+--- trunk/src/actors.hh	2008-05-11 11:00:15 UTC (rev 1139)
++++ trunk/src/actors.hh	2008-05-12 10:11:18 UTC (rev 1140)
+@@ -182,6 +182,8 @@
+         }
+ 
+         const GridPos &amp;get_gridpos() const { return m_actorinfo.gridpos; }
++        virtual double squareDistance(const Object *other) const;
++        virtual bool isSouthOrEastOf(const Object *other) const;
+ 
+     protected:
+         virtual Object::ObjectType getObjectType() const {return Object::ACTOR;}
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-05-11 11:00:15 UTC (rev 1139)
++++ trunk/src/world.cc	2008-05-12 10:11:18 UTC (rev 1140)
+@@ -325,21 +325,47 @@
+         forces.erase(i);
+ }
+ 
+-Object * World::get_named(const string &amp;name)
+-{
+-    ecl::Dict&lt;Object*&gt;::iterator found = m_objnames.find(name);
++Object * World::get_named(const std::string &amp;name) {
++    std::string wanted = name;
++    if (wanted.size() &gt; 0 &amp;&amp; wanted[0] == '@')
++        wanted.erase(0, 1); // erase the leading @ 
++    ecl::Dict&lt;Object*&gt;::iterator found = m_objnames.find(wanted);
+     if (found != m_objnames.end()) 
+         return found-&gt;second;
+ //    Log &lt;&lt; &quot;Did not find named object: &quot; &lt;&lt; name &lt;&lt; '\n';
+     return NULL;
+ }
+ 
+-std::list&lt;Object *&gt; World::get_group(const std::string &amp;tmpl) {
++std::list&lt;Object *&gt; World::get_group(const std::string &amp;tmpl, const Object *reference) {
+     std::list&lt;Object *&gt; result;
+     ecl::Dict&lt;Object *&gt;::iterator it = m_objnames.begin();
++    std::string pattern = tmpl;
++    bool nearest = false;         // limit result to nearest object
++    double mindist = -1;
++    if (pattern.size() &gt; 0 &amp;&amp; pattern[0] == '@') {
++        pattern.erase(0, 1); // erase the leading @
++        if (reference != NULL)
++            nearest = true;
++    } 
++
+     for (; it != m_objnames.end(); ++it) {
+-        if (string_match(it-&gt;first, tmpl))
+-            result.push_back(it-&gt;second);
++        if (string_match(it-&gt;first, pattern)) {
++            if (!nearest || mindist &lt; 0) {
++                result.push_back(it-&gt;second);
++                if (nearest) {
++                    mindist = reference-&gt;squareDistance(it-&gt;second);
++                }
++            } else {
++                double newdist = reference-&gt;squareDistance(it-&gt;second);
++                
++                // replace last candidate by new closer object, choose a unique candidate
++                if (mindist &gt; newdist || ((mindist == newdist) &amp;&amp; it-&gt;second-&gt;isSouthOrEastOf(result.back()))) {
++                    result.pop_back();
++                    result.push_back(it-&gt;second);
++                    mindist = newdist;
++                }
++            }
++        }
+     }
+     return result;
+ }
+@@ -1623,8 +1649,8 @@
+     return level-&gt;get_named (name);
+ }
+ 
+-std::list&lt;Object *&gt; GetNamedGroup(const std::string &amp;name) {
+-    return level-&gt;get_group(name);
++std::list&lt;Object *&gt; GetNamedGroup(const std::string &amp;name, const Object *reference) {
++    return level-&gt;get_group(name, reference);
+ }
+ 
+ bool IsLevelBorder(const GridPos &amp;p) {
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2008-05-11 11:00:15 UTC (rev 1139)
++++ trunk/src/world.hh	2008-05-12 10:11:18 UTC (rev 1140)
+@@ -167,7 +167,7 @@
+     void    NameObject (Object *obj, const string &amp;name);
+     void    UnnameObject (Object *obj);
+     Object *GetNamedObject (const string &amp;name);
+-    std::list&lt;Object *&gt; GetNamedGroup(const std::string &amp;templ);
++    std::list&lt;Object *&gt; GetNamedGroup(const std::string &amp;templ, const Object *reference = NULL);
+ 
+ /* -------------------- Force Fields -------------------- */
+ 
+
+Modified: trunk/src/world_internal.hh
+===================================================================
+--- trunk/src/world_internal.hh	2008-05-11 11:00:15 UTC (rev 1139)
++++ trunk/src/world_internal.hh	2008-05-12 10:11:18 UTC (rev 1140)
+@@ -278,7 +278,7 @@
+         void    name_object (Object *obj, const string &amp;name);
+         void    unname (Object *);
+         Object *get_named (const string &amp;);
+-        std::list&lt;Object *&gt; get_group(const std::string &amp;tmpl);
++        std::list&lt;Object *&gt; get_group(const std::string &amp;tmpl, const Object *reference = NULL);
+ 
+         void tick (double dtime);
+         void remove (ForceField *ff);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000572.html">[Enigma-game-svn] r1139 - in trunk: data/schemas doc/reference src	src/stones
+</A></li>
+	<LI>Next message: <A HREF="000574.html">[Enigma-game-svn] r1141 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#573">[ date ]</a>
+              <a href="thread.html#573">[ thread ]</a>
+              <a href="subject.html#573">[ subject ]</a>
+              <a href="author.html#573">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

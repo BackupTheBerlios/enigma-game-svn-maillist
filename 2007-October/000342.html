@@ -1,0 +1,626 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r910 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r910%20-%20trunk/src&In-Reply-To=%3C200710222054.l9MKsrnV004237%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000341.html">
+   <LINK REL="Next"  HREF="000343.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r910 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r910%20-%20trunk/src&In-Reply-To=%3C200710222054.l9MKsrnV004237%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r910 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon Oct 22 22:54:53 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000341.html">[Enigma-game-svn] r909 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="000343.html">[Enigma-game-svn] r911 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#342">[ date ]</a>
+              <a href="thread.html#342">[ thread ]</a>
+              <a href="subject.html#342">[ subject ]</a>
+              <a href="author.html#342">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-10-22 22:54:52 +0200 (Mon, 22 Oct 2007)
+New Revision: 910
+
+Modified:
+   trunk/src/Inventory.cc
+   trunk/src/Inventory.hh
+   trunk/src/floors.cc
+   trunk/src/items.cc
+   trunk/src/lua.cc
+   trunk/src/objects.cc
+   trunk/src/objects_decl.hh
+   trunk/src/player.cc
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+   trunk/src/world.hh
+   trunk/src/world_internal.hh
+Log:
+Trunk 1.1:
+- GridObject pos reengineering:
+  - pos represents position in world boundaries only if object is on a layer
+  - items owned by bags store mirrored bag position as pos
+  - items owned by player inventories store player id as pos
+  - other items mark the pos as invalid -1,-1
+- IsInsideLevel, IsLevelBorder speed optimized
+
+
+Modified: trunk/src/Inventory.cc
+===================================================================
+--- trunk/src/Inventory.cc	2007-10-22 16:53:16 UTC (rev 909)
++++ trunk/src/Inventory.cc	2007-10-22 20:54:52 UTC (rev 910)
+@@ -39,6 +39,9 @@
+     ecl::delete_sequence (m_items.begin(), m_items.end());
+ }
+ 
++void Inventory::assignOwner(int playerId) {
++    ownerId = playerId;
++}
+ 
+ size_t Inventory::size() const
+ { 
+@@ -64,6 +67,7 @@
+     if (idx &lt; size()) {
+         Item *it = m_items[idx];
+         m_items.erase(m_items.begin()+ idx);
++        it-&gt;setOwner(-1);
+         return it;
+     }
+     return 0;
+@@ -82,6 +86,7 @@
+     for (ItemList::iterator i = m_items.begin(); i != e; ++i) {
+         if (*i == wanted) {
+             m_items.erase(i);
++            wanted-&gt;setOwner(-1);
+             return wanted;
+         }
+     }
+@@ -112,6 +117,7 @@
+     }
+     else {
+         m_items.insert (m_items.begin(), i);
++        i-&gt;setOwner(ownerId);
+     }
+ }
+ 
+@@ -126,6 +132,7 @@
+         while (m_items.size() &lt; max_items &amp;&amp; !ih-&gt;is_empty()) {
+             Item * it = ih-&gt;yield_first();
+             m_items.insert (m_items.begin(), it);
++            it-&gt;setOwner(ownerId);
+         }
+         return;
+     }
+@@ -147,12 +154,12 @@
+ bool Inventory::willAddItem(Item *it) {
+     ItemHolder *holder = dynamic_cast&lt;ItemHolder*&gt;(it);
+     if (is_full()) {
+-	return false;
++        return false;
+     } else if (holder != NULL &amp;&amp; holder-&gt;is_empty() &amp;&amp;
+-	    (m_items.size() &gt;= max_items || dynamic_cast&lt;ItemHolder*&gt;(get_item(0)) != NULL)) {
+-	// should add a bag that is empty, but first item in Inventory is itself
+-	// a bag or Inventory is full -- avoid recursive bags
+-	return false;
++            (m_items.size() &gt;= max_items || dynamic_cast&lt;ItemHolder*&gt;(get_item(0)) != NULL)) {
++        // should add a bag that is empty, but first item in Inventory is itself
++        // a bag or Inventory is full -- avoid recursive bags
++        return false;
+     }
+     return true;  // we have space and item is not critical
+ }
+
+Modified: trunk/src/Inventory.hh
+===================================================================
+--- trunk/src/Inventory.hh	2007-10-22 16:53:16 UTC (rev 909)
++++ trunk/src/Inventory.hh	2007-10-22 20:54:52 UTC (rev 910)
+@@ -42,6 +42,8 @@
+ 
+         // ---------- Methods ----------
+ 
++        void assignOwner(int playerId);
++        
+         //! The number of items currently in the inventory
+         size_t size() const;
+         void clear();
+@@ -50,7 +52,7 @@
+         void rotate_right();
+         Item *get_item (size_t idx) const;
+         Item *yield_item (size_t idx);
+-	bool willAddItem(Item *it);
++        bool willAddItem(Item *it);
+ 
+         int find(const std::string&amp; kind, size_t start_idx = 0) const;
+ 
+@@ -61,6 +63,7 @@
+         // Private variables.
+         static const unsigned max_items;
+         std::vector&lt;Item*&gt; m_items;
++        int ownerId;
+     };
+ }
+ 
+
+Modified: trunk/src/floors.cc
+===================================================================
+--- trunk/src/floors.cc	2007-10-22 16:53:16 UTC (rev 909)
++++ trunk/src/floors.cc	2007-10-22 20:54:52 UTC (rev 910)
+@@ -850,6 +850,7 @@
+         CLONEOBJ(Thief);
+     public:
+         Thief();
++        ~Thief();
+     private:
+         string modelname;
+         enum State { IDLE, EMERGING, RETREATING, CAPTURED } state;
+@@ -865,10 +866,15 @@
+     };
+ }
+ 
+-Thief::Thief() 
+-: Floor(&quot;fl-thief&quot;, 2.0, 1),
+-  state(IDLE), m_affected_actor (0), affected_player (-1), modelname(&quot;&quot;), bag(NULL) { }
++Thief::Thief() : Floor(&quot;fl-thief&quot;, 2.0, 1), state(IDLE), m_affected_actor (0),
++        affected_player (-1), modelname(&quot;&quot;), bag(NULL) {
++}
+ 
++Thief::~Thief() {
++    if (bag != NULL)
++        delete bag;
++}
++
+ string Thief::get_modelname() {
+     if(modelname == &quot;&quot;) {
+         // initialize on first call
+@@ -923,18 +929,23 @@
+             !m_affected_actor-&gt;has_shield()) {
+         enigma::Inventory *inv = player::GetInventory(m_affected_actor);
+         if (inv &amp;&amp; inv-&gt;size() &gt; 0) {
+-            if (bag == NULL)
++            if (bag == NULL) {
+                 bag = world::MakeItem(it_bag);
++                bag-&gt;setOwnerPos(get_pos());
++            }
+             int i = IntegerRand (0, int (inv-&gt;size()-1));
+             dynamic_cast&lt;ItemHolder *&gt;(bag)-&gt;add_item(inv-&gt;yield_item(i));
+             player::RedrawInventory (inv);
++            didSteal = true;
+         }
+     }
+     // steal from grid
+     if(Item *it = GetItem(get_pos())) {
+         if (!(it-&gt;get_traits().flags &amp; itf_static)) {
+-            if (bag == NULL)
++            if (bag == NULL) {
+                 bag = world::MakeItem(it_bag);
++                bag-&gt;setOwnerPos(get_pos());                
++            }
+             dynamic_cast&lt;ItemHolder *&gt;(bag)-&gt;add_item(world::YieldItem(get_pos())); 
+             didSteal = true;
+         }
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2007-10-22 16:53:16 UTC (rev 909)
++++ trunk/src/items.cc	2007-10-22 20:54:52 UTC (rev 910)
+@@ -3226,26 +3226,51 @@
+ 
+     public:
+         virtual Bag * clone() {
+-	    ASSERT(is_empty(), XLevelRuntime, &quot;Bag:: Clone of a full bag!&quot;);
+-	    return new Bag(*this);
+-	}
+-	
+-	virtual void dispose() {
+-	    Item * it = yield_first();
+-	    while (it != NULL) {
+-            DisposeObject(it);
+-            it = yield_first();
+-	    }
+-	    delete this;
+-	}
+-	
+-	// ItemHolder interface
++            ASSERT(is_empty(), XLevelRuntime, &quot;Bag:: Clone of a full bag!&quot;);
++            return new Bag(*this);
++        }
++
++        virtual void dispose() {
++            Item * it = yield_first();
++            while (it != NULL) {
++                DisposeObject(it);
++                it = yield_first();
++            }
++            delete this;
++        }
++
++        virtual void on_creation (GridPos p) {
++            GridObject::on_creation(p);
++            for (vector&lt;Item *&gt;::iterator itr = m_contents.begin(); itr != m_contents.end(); ++itr)
++                (*itr)-&gt;setOwnerPos(p);
++        }
++    
++        virtual void on_removal (GridPos p) {
++            GridObject::on_removal(p);
++            for (vector&lt;Item *&gt;::iterator itr = m_contents.begin(); itr != m_contents.end(); ++itr)
++                (*itr)-&gt;setOwner(-1);            
++        }
++        
++        virtual void setOwner(int player) {
++            GridObject::setOwner(player);
++            for (vector&lt;Item *&gt;::iterator itr = m_contents.begin(); itr != m_contents.end(); ++itr)
++                (*itr)-&gt;setOwner(player);            
++        }
++    
++        virtual void setOwnerPos(GridPos p) {
++            GridObject::setOwnerPos(p);
++            for (vector&lt;Item *&gt;::iterator itr = m_contents.begin(); itr != m_contents.end(); ++itr)
++                (*itr)-&gt;setOwnerPos(p);
++        }
++    	
++        // ItemHolder interface
+         virtual bool is_full() const {
+             return m_contents.size() &gt;= BAGSIZE;
+         }
+         virtual void add_item (Item *it) {
+             // thieves may add items beyond pick up limit BAGSIZE
+             m_contents.insert (m_contents.begin(), it);
++            it-&gt;setOwnerPos(get_pos());  // item is at same position as bag
+         }
+ 
+         virtual bool is_empty() const {
+@@ -3256,6 +3281,7 @@
+             if (m_contents.size() &gt; 0) {
+                 Item *it = m_contents[0];
+                 m_contents.erase (m_contents.begin());
++                it-&gt;setOwner(-1);  // no owner
+                 return it;
+             }
+             return NULL;
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2007-10-22 16:53:16 UTC (rev 909)
++++ trunk/src/lua.cc	2007-10-22 20:54:52 UTC (rev 910)
+@@ -1066,7 +1066,7 @@
+     return 1;
+ }
+ 
+-static int killObjectBase(lua_State *L) {
++static int killObjectBase(lua_State *L) {  // TODO Itemholder owner objects
+     Object *obj = to_object(L, -1);
+     if (obj) {   // ignore not existing object
+         GridObject *gobj;
+@@ -1115,7 +1115,7 @@
+     Object *obj = to_object(L,1);
+     GridPos  p;
+     if (GridObject *gobj = dynamic_cast&lt;GridObject*&gt;(obj)) {
+-        p = gobj-&gt;get_pos();
++        p = gobj-&gt;getOwnerPos();
+     } else if (Actor *a = dynamic_cast&lt;Actor*&gt;(obj)) {
+         p = GridPos(a-&gt;get_pos());
+     } else {
+@@ -1356,7 +1356,7 @@
+ //            ((keyType == LUA_TNUMBER) &amp;&amp; ((keyNum == 1) || (keyNum == 2))))) {
+         GridPos  p;
+         if (GridObject *gobj = dynamic_cast&lt;GridObject*&gt;(obj)) {
+-            p = gobj-&gt;get_pos();
++            p = gobj-&gt;getOwnerPos();
+         } else if (Actor *a = dynamic_cast&lt;Actor*&gt;(obj)) {
+             p = GridPos(a-&gt;get_pos());
+         } else {
+@@ -1797,7 +1797,7 @@
+             Object *obj = to_object(L, 2);
+             GridPos  p;
+             if (GridObject *gobj = dynamic_cast&lt;GridObject*&gt;(obj)) {
+-                p = gobj-&gt;get_pos();
++                p = gobj-&gt;getOwnerPos();
+             } else if (Actor *a = dynamic_cast&lt;Actor*&gt;(obj)) {
+                 p = GridPos(a-&gt;get_pos());
+             } else {  // NULL object
+@@ -1815,7 +1815,7 @@
+                 if (obj) {              // ignore not existing objects
+                     GridPos  p;
+                     if (GridObject *gobj = dynamic_cast&lt;GridObject*&gt;(obj)) {
+-                        p = gobj-&gt;get_pos();
++                        p = gobj-&gt;getOwnerPos();
+                     } else if (Actor *a = dynamic_cast&lt;Actor*&gt;(obj)) {
+                         p = GridPos(a-&gt;get_pos());
+                     }
+
+Modified: trunk/src/objects.cc
+===================================================================
+--- trunk/src/objects.cc	2007-10-22 16:53:16 UTC (rev 909)
++++ trunk/src/objects.cc	2007-10-22 20:54:52 UTC (rev 910)
+@@ -194,6 +194,39 @@
+ }
+ /* -------------------- GridObject implementation -------------------- */
+ 
++void GridObject::setOwner(int player) {
++    ASSERT(pos.x &lt; 0, XLevelRuntime,
++        &quot;GridObject: attempt to add object to owner inventory that is still on grid&quot;);
++    pos.x = -1;
++    pos.y = player;
++}
++
++Value GridObject::getOwner() {
++    if (pos.x == -1 &amp;&amp; pos.y != -1)
++        return Value(pos.y);
++    else
++        return Value();
++}
++
++void GridObject::setOwnerPos(GridPos po) {
++    ASSERT(pos.x &lt; 0, XLevelRuntime,
++        &quot;GridObject: attempt to add object to owner inventory that is still on grid&quot;);
++    if (po.x &gt;= 0) {
++        pos.x = -2 - po.x;
++        pos.y = -2 - po.y;
++    } else {
++        pos.x = po.x;
++        pos.y = po.y;
++    }
++}
++
++GridPos GridObject::getOwnerPos() {
++    if (pos.x &lt;= -2)
++        return GridPos(-2 - pos.x, -2 - pos.y);
++    else 
++        return pos;
++}
++
+ display::Model *GridObject::set_anim (const std::string &amp;mname) 
+ {
+     set_model (mname);
+
+Modified: trunk/src/objects_decl.hh
+===================================================================
+--- trunk/src/objects_decl.hh	2007-10-22 16:53:16 UTC (rev 909)
++++ trunk/src/objects_decl.hh	2007-10-22 20:54:52 UTC (rev 910)
+@@ -144,21 +144,47 @@
+ 
+ /* -------------------- GridObject -------------------- */
+ 
+-    /*! GridObject is the base class for everything that can only be
+-      placed on &quot;The Grid&quot;, i.e., for floor tiles, items, and
+-      stones. */
++    /** 
++     * GridObject is the base class for everything that can only be
++     * placed on &quot;The Grid&quot;, i.e., for floor tiles, items, and
++     * stones. 
++     */
+ 
+     class GridObject : public Object, public display::ModelCallback {
+     public:
+-        GridObject() {}
+-        GridObject(const char * kind) : Object(kind) {}
++        GridObject() : pos (GridPos(-1, -1)) {}
++        GridObject(const char * kind) : Object(kind), pos (GridPos(-1, -1)) {}
+ 
+         void creation(GridPos p) {
+             pos = p;
+             on_creation (p);
+         }
+-        void removal(GridPos p) { on_removal(p); }
++        void removal(GridPos p) { 
++            on_removal(p);
++            pos.x = -1;
++            pos.y = -1;
++        }
+         GridPos get_pos() const {return pos;}
++        
++        virtual void setOwner(int player);
++        
++        /**
++         * Get the player number who is owning the object.
++         * @return  integer value of player number or nil if not owned by a player
++         */
++        Value getOwner();
++        
++        /**
++         * Set the location of the GridObject to a given world or mirrored owner
++         * position.
++         */
++        virtual void setOwnerPos(GridPos po);
++         
++        /**
++         * Get the position of object within the world. Only objects owned by
++         * players will return positions outside of the world. 
++         */
++        GridPos getOwnerPos();
+ 
+         // GridObject interface
+         virtual void on_laserhit (Direction) {}
+@@ -178,21 +204,33 @@
+         virtual display::Model *get_model () = 0;
+         virtual void kill_model (GridPos p) = 0;
+ 
+-        virtual void init_model() 
+-        { set_model(get_kind()); }
++        virtual void init_model() {
++            set_model(get_kind());
++        }
+ 
+-        virtual void on_creation (GridPos) 
+-        { init_model(); }
++        virtual void on_creation (GridPos) {
++            init_model();
++        }
+ 
+-        virtual void on_removal (GridPos p) 
+-        { kill_model (p); }
++        virtual void on_removal (GridPos p) {
++            kill_model (p);
++        }
+ 
+     private:
+         // ModelCallback interface.
+         void animcb() {}
+ 
+ 
+-        // Variables
++        /**
++         * The location of the GridObject. An object that is set on one of the world's
++         * layers will store the x and y coordinates with values greater equal 0. An
++         * object that is not a direct part of the world has a pos.x &lt; 0. Objects that
++         * are owned by other objects that are part of a world layer will store the
++         * position of the owner mirrored at point -1, -1. This results in pos.x &lt;= -2.
++         * All other GridObjects will have pos.x = -1. In this case pos.y &gt;= 0 identifies
++         * the player that owns the object in his inventory. Objects that are neiter set
++         * in the world nor owned by anyone have pos.x = pos.y = -1. 
++         */
+         GridPos pos;
+     };
+ }
+
+Modified: trunk/src/player.cc
+===================================================================
+--- trunk/src/player.cc	2007-10-22 16:53:16 UTC (rev 909)
++++ trunk/src/player.cc	2007-10-22 20:54:52 UTC (rev 910)
+@@ -180,7 +180,7 @@
+ 
+     for (int i=0; i&lt;nplayers; ++i) {
+         Inventory *inv = GetInventory(i);
+-
++        inv-&gt;assignOwner(i);
+         for (int j = 0 ; j &lt; extralives[i]; j++)
+             inv-&gt;add_item (MakeItem (world::it_extralife));
+     }
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2007-10-22 16:53:16 UTC (rev 909)
++++ trunk/src/stones_simple.cc	2007-10-22 20:54:52 UTC (rev 910)
+@@ -1482,8 +1482,10 @@
+             !m_affected_actor-&gt;has_shield()) {
+         enigma::Inventory *inv = player::GetInventory(m_affected_actor);
+         if (inv &amp;&amp; inv-&gt;size() &gt; 0) {
+-            if (bag == NULL)
++            if (bag == NULL) {
+                 bag = world::MakeItem(it_bag);
++                bag-&gt;setOwnerPos(get_pos());
++            }
+             int i = IntegerRand (0, int (inv-&gt;size()-1));
+             dynamic_cast&lt;ItemHolder *&gt;(bag)-&gt;add_item(inv-&gt;yield_item(i));
+             player::RedrawInventory (inv);
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2007-10-22 16:53:16 UTC (rev 909)
++++ trunk/src/world.cc	2007-10-22 20:54:52 UTC (rev 910)
+@@ -406,7 +406,7 @@
+     delete_sequence (m_rubberbands.begin(), m_rubberbands.end());
+ }
+ 
+-bool World::is_border (GridPos p) {
++bool World::is_border(const GridPos &amp;p) {
+     return(p.x==0 || p.y==0 || p.x==w-1 || p.y==h-1);
+ }
+ 
+@@ -1743,17 +1743,14 @@
+     return level-&gt;get_group(name);
+ }
+ 
+-bool world::IsLevelBorder(GridPos p)
+-{
++bool world::IsLevelBorder(const GridPos &amp;p) {
+     return level-&gt;is_border(p);
+ }
+ 
+-bool world::IsInsideLevel(GridPos p)
+-{
++bool world::IsInsideLevel(const GridPos &amp;p) {
+     return level-&gt;contains(p);
+ }
+ 
+-
+ /* -------------------- Force fields -------------------- */
+ 
+ void world::AddForceField(ForceField *ff)
+@@ -1770,7 +1767,6 @@
+ }
+ 
+ 
+-
+ /* -------------------- Rubber bands -------------------- */
+ 
+ void world::AddRubberBand (Actor *a, Stone *st, const RubberBandData &amp;d)
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2007-10-22 16:53:16 UTC (rev 909)
++++ trunk/src/world.hh	2007-10-22 20:54:52 UTC (rev 910)
+@@ -164,9 +164,9 @@
+     void Shutdown();
+ 
+ 
+-    bool IsLevelBorder(GridPos p);
+-    bool IsInsideLevel(GridPos p);
+-    Object *GetObject (const GridLoc &amp;l);
++    bool IsLevelBorder(const GridPos &amp;p);
++    bool IsInsideLevel(const GridPos &amp;p);
++    Object *GetObject(const GridLoc &amp;l);
+ 
+ /* -------------------- Named Objects -------------------- */
+ 
+
+Modified: trunk/src/world_internal.hh
+===================================================================
+--- trunk/src/world_internal.hh	2007-10-22 16:53:16 UTC (rev 909)
++++ trunk/src/world_internal.hh	2007-10-22 20:54:52 UTC (rev 910)
+@@ -276,11 +276,11 @@
+         World (int ww, int hh);
+         ~World();
+ 
+-        bool contains (GridPos p) {
++        bool contains(const GridPos &amp;p) {
+             return (p.x&gt;=0 &amp;&amp; p.y&gt;=0 &amp;&amp; p.x&lt;w &amp;&amp; p.y&lt;h);
+         }
+ 
+-        bool is_border (GridPos p);
++        bool is_border(const GridPos &amp;p);
+ 
+         Field *get_field (GridPos p) {
+             if (this-&gt;contains(p))
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000341.html">[Enigma-game-svn] r909 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="000343.html">[Enigma-game-svn] r911 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#342">[ date ]</a>
+              <a href="thread.html#342">[ thread ]</a>
+              <a href="subject.html#342">[ subject ]</a>
+              <a href="author.html#342">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,134 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1220 - in trunk/src: . others
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1220%20-%20in%20trunk/src%3A%20.%20others&In-Reply-To=%3C200807072159.m67LxnIx002207%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000653.html">
+   <LINK REL="Next"  HREF="000655.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1220 - in trunk/src: . others</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1220%20-%20in%20trunk/src%3A%20.%20others&In-Reply-To=%3C200807072159.m67LxnIx002207%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1220 - in trunk/src: . others">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon Jul  7 23:59:49 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000653.html">[Enigma-game-svn] r1219 - in trunk: data/schemas src
+</A></li>
+        <LI>Next message: <A HREF="000655.html">[Enigma-game-svn] r1221 - in trunk: data src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#654">[ date ]</a>
+              <a href="thread.html#654">[ thread ]</a>
+              <a href="subject.html#654">[ subject ]</a>
+              <a href="author.html#654">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-07-07 23:59:49 +0200 (Mon, 07 Jul 2008)
+New Revision: 1220
+
+Modified:
+   trunk/src/items.cc
+   trunk/src/others/Rubberband.cc
+Log:
+Trunk 1.1: new API reengineering
+- Rubberband: min/max support
+  improve damping on mutliple connected rubberbands
+- it_strip: fix covered area
+
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-07-07 21:24:10 UTC (rev 1219)
++++ trunk/src/items.cc	2008-07-07 21:59:49 UTC (rev 1220)
+@@ -3957,9 +3957,9 @@
+         DirectionBits cbits = getConnections();
+         
+         return (((fabs(pos[1] - ycenter) &lt;= MAXDIST) 
+-                &amp;&amp; (((pos[0] &lt;= xcenter) &amp;&amp; (cbits &amp; WESTBIT)) || ((pos[0] &gt;= xcenter) &amp;&amp; (cbits &amp; EASTBIT))))
++                &amp;&amp; (((pos[0] &lt;= xcenter + MAXDIST) &amp;&amp; (cbits &amp; WESTBIT)) || ((pos[0] &gt;= xcenter - MAXDIST) &amp;&amp; (cbits &amp; EASTBIT))))
+                 || ((fabs(pos[0] - xcenter) &lt;= MAXDIST) 
+-                &amp;&amp; (((pos[1] &lt;= ycenter) &amp;&amp; (cbits &amp; NORTHBIT)) || ((pos[1] &gt;= ycenter) &amp;&amp; (cbits &amp; SOUTHBIT)))))
++                &amp;&amp; (((pos[1] &lt;= ycenter + MAXDIST) &amp;&amp; (cbits &amp; NORTHBIT)) || ((pos[1] &gt;= ycenter - MAXDIST) &amp;&amp; (cbits &amp; SOUTHBIT)))))
+                 ? true : false;
+     }
+         
+
+Modified: trunk/src/others/Rubberband.cc
+===================================================================
+--- trunk/src/others/Rubberband.cc	2008-07-07 21:24:10 UTC (rev 1219)
++++ trunk/src/others/Rubberband.cc	2008-07-07 21:59:49 UTC (rev 1220)
+@@ -131,6 +131,8 @@
+             ecl::V2 vn = normalize(v);
+             bool isMax = (len &gt; maxLength - eps);
+             bool isMin = (len &lt; minLength + eps);
++            ObjectList rl = anchor1-&gt;getAttr(&quot;rubbers&quot;);
++            int numRubbers =rl.size();
+ 
+             // neutralize other force componentes in rubber direction
+             double force1 = vn * ai-&gt;force;
+@@ -141,7 +143,7 @@
+             double relspeed = ai-&gt;vel * vn;   // positive for shrinking dist
+             if (!isMin &amp;&amp; (relspeed &gt; 0) || !isMax &amp;&amp; (relspeed &lt; 0))
+                 relspeed = 0;
+-            force = - 1.8 * relspeed * vn / dt * ai-&gt;mass;  // 0.9 factor as damping
++            force = - (1 + 0.8 / numRubbers) * relspeed * vn / dt * ai-&gt;mass;  // damping for inverse friction and multiconnections
+             ai-&gt;collforce += force;
+ //            Log &lt;&lt; &quot;Rubber stone force &quot;&lt;&lt; force1 &lt;&lt; &quot;  &quot; &lt;&lt;relspeed&lt;&lt; &quot;\n&quot;;
+         } else {
+@@ -157,6 +159,9 @@
+                 isMax = (len &gt; (maxLength - minLength)/2);
+                 isMin = !isMax; 
+             }
++            ObjectList rl1 = anchor1-&gt;getAttr(&quot;rubbers&quot;);
++            ObjectList rl2 = anchor2.ac-&gt;getAttr(&quot;rubbers&quot;);
++            int numRubbers = rl1.size() + rl2.size() - 1;
+             
+             // redistribute other force components in rubber direction according 
+             // to the mass of actors to move the complex but to avoid length change
+@@ -180,7 +185,7 @@
+             if (isMax &amp;&amp; (relspeed &lt; 0) || isMin &amp;&amp; (relspeed &gt;0))
+                 relspeed = 0;
+             force = (dmu * relspeed / dt) * vn;
+-            force = force * 0.9;   // damping for wrong friction calculation
++            force = force * (0.5 + 0.4 / numRubbers);   // damping for inverse friction and multicollision
+ //            Log &lt;&lt; &quot;Rubber force &quot; &lt;&lt; force1 &lt;&lt;  &quot;  &quot; &lt;&lt; force2 &lt;&lt; &quot;  relspeed  &quot; &lt;&lt; relspeed  &lt;&lt; &quot; both &quot; &lt;&lt; isBoth &lt;&lt; &quot;\n&quot;;
+             ai1-&gt;collforce += force;
+             ai2-&gt;collforce -= force;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000653.html">[Enigma-game-svn] r1219 - in trunk: data/schemas src
+</A></li>
+	<LI>Next message: <A HREF="000655.html">[Enigma-game-svn] r1221 - in trunk: data src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#654">[ date ]</a>
+              <a href="thread.html#654">[ thread ]</a>
+              <a href="subject.html#654">[ subject ]</a>
+              <a href="author.html#654">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

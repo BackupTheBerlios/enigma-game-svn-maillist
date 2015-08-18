@@ -1,0 +1,259 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1771 - in trunk/src: . gui lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1771%20-%20in%20trunk/src%3A%20.%20gui%20lev&In-Reply-To=%3C200907251843.n6PIhBIK008305%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001199.html">
+   <LINK REL="Next"  HREF="001201.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1771 - in trunk/src: . gui lev</H1>
+    <B>a_abraham at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1771%20-%20in%20trunk/src%3A%20.%20gui%20lev&In-Reply-To=%3C200907251843.n6PIhBIK008305%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1771 - in trunk/src: . gui lev">a_abraham at mail.berlios.de
+       </A><BR>
+    <I>Sat Jul 25 20:43:11 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001199.html">[Enigma-game-svn] r1770 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="001201.html">[Enigma-game-svn] r1772 - in trunk/src: . gui lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1200">[ date ]</a>
+              <a href="thread.html#1200">[ thread ]</a>
+              <a href="subject.html#1200">[ subject ]</a>
+              <a href="author.html#1200">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: a_abraham
+Date: 2009-07-25 20:43:08 +0200 (Sat, 25 Jul 2009)
+New Revision: 1771
+
+Modified:
+   trunk/src/gui/OptionsMenu.cc
+   trunk/src/lev/ScoreManager.cc
+   trunk/src/lev/ScoreManager.hh
+   trunk/src/main.cc
+Log:
+Upload functionality added
+- libcurl is used to post data
+- option added to enable/disable upload
+- setting for web-address
+
+
+
+Modified: trunk/src/gui/OptionsMenu.cc
+===================================================================
+--- trunk/src/gui/OptionsMenu.cc	2009-07-22 22:56:34 UTC (rev 1770)
++++ trunk/src/gui/OptionsMenu.cc	2009-07-25 18:43:08 UTC (rev 1771)
+@@ -139,6 +139,9 @@
+         RatingsUpdateButton() : BoolOptionButton(&quot;RatingsAutoUpdate&quot;, N_(&quot;Auto&quot;), N_(&quot;Never&quot;), this) {}
+     };
+ 
++    struct ScoreUploadButton : public BoolOptionButton {
++        ScoreUploadButton() : BoolOptionButton(&quot;ScoreAutoUpload&quot;, N_(&quot;Always&quot;), N_(&quot;Never&quot;), this) {}
++    };
+ 
+ 
+     /* -------------------- VideoModeButton -------------------- */
+@@ -492,6 +495,7 @@
+                 OPTIONS_NEW_LB(N_(&quot;Sound volume: &quot;), new SoundVolumeButton())
+                 OPTIONS_NEW_LB(N_(&quot;Music volume: &quot;), new MusicVolumeButton())
+                 OPTIONS_NEW_LB(N_(&quot;Ratings update: &quot;), new RatingsUpdateButton())
++                OPTIONS_NEW_LB(N_(&quot;Score upload: &quot;), new ScoreUploadButton())
+                 userNameTF = new TextField(app.state-&gt;getString(&quot;UserName&quot;));
+                 userNameTF-&gt;setMaxChars(20);
+                 userNameTF-&gt;setInvalidChars(&quot;+&quot;);
+
+Modified: trunk/src/lev/ScoreManager.cc
+===================================================================
+--- trunk/src/lev/ScoreManager.cc	2009-07-22 22:56:34 UTC (rev 1770)
++++ trunk/src/lev/ScoreManager.cc	2009-07-25 18:43:08 UTC (rev 1771)
+@@ -35,6 +35,9 @@
+ #include &quot;main.hh&quot;
+ #include &quot;options.hh&quot;
+ 
++#include &lt;curl/curl.h&gt;
++#include &lt;curl/easy.h&gt;
++
+ #include &lt;cmath&gt;
+ #include &lt;ctime&gt;
+ #include &lt;iostream&gt;
+@@ -138,7 +141,7 @@
+                 hasValidStateUserId = true;
+                 Log &lt;&lt; &quot;User id '&quot; &lt;&lt; stateUserId &lt;&lt; &quot;'\n&quot;;
+             } else 
+-                Log &lt;&lt; &quot;Bad user id '&quot; &lt;&lt; ecl::strf(&quot;%.4lX %.4lX %.4lX %.4lX&quot;,i1, i2,i3, i4) &lt;&lt; &quot;'\n&quot;;
++                Log &lt;&lt; &quot;Bad user id '&quot; &lt;&lt; ecl::strf(&quot;%.4lX %.4lX %.4lX %.4lX&quot;,i1, i2, i3, i4) &lt;&lt; &quot;'\n&quot;;
+                 
+         }
+         
+@@ -168,7 +171,7 @@
+                 std::ostringstream content;
+                 readFromZipStream(zipStream, content);
+                 std::string score = content.str();
+- #if _XERCES_VERSION &gt;= 30000
++#if _XERCES_VERSION &gt;= 30000
+                 std::auto_ptr&lt;DOMLSInput&gt; domInputScoreSource ( new Wrapper4InputSource(
+                         new MemBufInputSource(reinterpret_cast&lt;const XMLByte *&gt;(score.c_str()),
+                         score.size(), &quot;&quot;, false)));
+@@ -332,7 +335,7 @@
+         int len = target.size();
+         unsigned r = 0;
+         const char *p = target.c_str();
+-        
++
+         while (len--)
+             r = (r&lt;&lt;8 &amp; 0xFFFF) ^ ctab[(r &gt;&gt; 8) ^ *p++];
+         return ecl::strf(&quot;%.4lX&quot;, r); 
+@@ -509,12 +512,13 @@
+             m.manage();          
+         } else
+             Log &lt;&lt; &quot;Score save o.k.\n&quot;;
+-        
++
+         return result;
+     }
+ 
+     void ScoreManager::shutdown() {
+         save();
++        upload();
+         if (doc != NULL)
+             doc-&gt;release();
+         doc = NULL;
+@@ -1139,4 +1143,66 @@
+         }
+         return result;
+     }
++
++    /*
++     * Post the score file to an internet upload server
++     */
++    int ScoreManager::upload() {
++      CURL *curl;
++      CURLcode res;
++
++      struct curl_httppost *formpost=NULL;
++      struct curl_httppost *lastptr=NULL;
++      std::string scoreBasePath = app.userPath + &quot;/enigma.score&quot;;
++      std::string uploadURL;
++      app.prefs-&gt;getProperty(&quot;ScoreUploadURL&quot;, uploadURL);
++
++      if (app.prefs-&gt;getBool(&quot;ScoreAutoUpload&quot;) == true &amp;&amp;
++	  !app.state-&gt;getString(&quot;UserName&quot;).empty() &amp;&amp;
++	  doc != NULL &amp;&amp; isModified)
++      {
++	Log &lt;&lt; &quot;Sending score to &quot; &lt;&lt; uploadURL &lt;&lt; &quot;\n&quot;;
++
++	curl_global_init(CURL_GLOBAL_ALL);
++
++	/* Fill in the file upload field and the submit field */
++	curl_formadd(&amp;formpost, &amp;lastptr,
++		     CURLFORM_COPYNAME, &quot;uploaded_file&quot;,
++		     CURLFORM_FILE, scoreBasePath.c_str(), CURLFORM_END);
++	curl_formadd(&amp;formpost, &amp;lastptr,
++		     CURLFORM_COPYNAME, &quot;submit&quot;,
++		     CURLFORM_COPYCONTENTS, &quot;Upload&quot;, CURLFORM_END);
++	
++	curl = curl_easy_init();
++	if(curl) {
++	  std::string agent = &quot;Enigma &quot;; 
++	  std::ostringstream ostr;
++	  ostr &lt;&lt; app.getEnigmaVersion(); // setprecision?
++	  std::string strValue = ostr.str();
++	  agent.append(ostr.str());
++#if MACOSX
++	  agent.append(&quot;, MacOSX, User &quot;);
++#elif __MINGW32__
++	  agent.append(&quot;, Windows, User &quot;);
++#else
++	  agent.append(&quot;, Linux, User &quot;);
++#endif
++	  agent.append(app.state-&gt;getString(&quot;UserName&quot;));
++
++	  curl_easy_setopt(curl, CURLOPT_URL, uploadURL.c_str());
++	  curl_easy_setopt(curl, CURLOPT_USERAGENT, agent.c_str());
++	  curl_easy_setopt(curl, CURLOPT_HTTPPOST, formpost);
++
++	  res = curl_easy_perform(curl);
++	  if (res != 0)
++	    Log &lt;&lt; &quot;Libcurl error &quot; &lt;&lt; res &lt;&lt; &quot; on upload.\n&quot;;
++	  
++	  curl_easy_cleanup(curl);
++	  curl_formfree(formpost);
++	} else
++	  Log &lt;&lt; &quot;Could not init libcurl.\n&quot;;
++      }
++      return 0;
++    }
++
+ }} // namespace enigma::lev
+
+Modified: trunk/src/lev/ScoreManager.hh
+===================================================================
+--- trunk/src/lev/ScoreManager.hh	2009-07-22 22:56:34 UTC (rev 1770)
++++ trunk/src/lev/ScoreManager.hh	2009-07-25 18:43:08 UTC (rev 1771)
+@@ -121,7 +121,12 @@
+         bool hasValidUserId;
+         bool didUpgrade;
+         bool isModified;
+-        
++
++        /**
++         * Uploads the score file to a server.
++         */
++        int upload();
++      
+         void finishUserId(unsigned id3);
+         std::string sec(std::string target);
+         XERCES_CPP_NAMESPACE_QUALIFIER DOMElement * getLevel(lev::Proxy *levelProxy);
+
+Modified: trunk/src/main.cc
+===================================================================
+--- trunk/src/main.cc	2009-07-22 22:56:34 UTC (rev 1770)
++++ trunk/src/main.cc	2009-07-25 18:43:08 UTC (rev 1771)
+@@ -656,6 +656,9 @@
+ }	
+ 
+ void Application::initUserDatapaths() {
++
++    app.prefs-&gt;setProperty(&quot;ScoreUploadURL&quot;, &quot;<A HREF="http://enigma.bplaced.net/enigma.php">http://enigma.bplaced.net/enigma.php</A>&quot;);
++
+     // userPath
+     userPath = prefs-&gt;getString(&quot;UserPath&quot;);
+     if (userPath.empty()) {
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001199.html">[Enigma-game-svn] r1770 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="001201.html">[Enigma-game-svn] r1772 - in trunk/src: . gui lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1200">[ date ]</a>
+              <a href="thread.html#1200">[ thread ]</a>
+              <a href="subject.html#1200">[ subject ]</a>
+              <a href="author.html#1200">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

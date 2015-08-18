@@ -1,0 +1,188 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1169 - in trunk: data src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1169%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200806112212.m5BMCp0P019421%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000602.html">
+   <LINK REL="Next"  HREF="000604.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1169 - in trunk: data src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1169%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200806112212.m5BMCp0P019421%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1169 - in trunk: data src">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Jun 12 00:12:51 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000602.html">[Enigma-game-svn] r1168 - in feature_branches/hp_lotm: images/lotm	input/lotm
+</A></li>
+        <LI>Next message: <A HREF="000604.html">[Enigma-game-svn] r1170 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#603">[ date ]</a>
+              <a href="thread.html#603">[ thread ]</a>
+              <a href="subject.html#603">[ subject ]</a>
+              <a href="author.html#603">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-06-12 00:12:50 +0200 (Thu, 12 Jun 2008)
+New Revision: 1169
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/src/WorldProxy.cc
+Log:
+Trunk 1.1: new API reengineering
+- unify ActorImpulseStone: rename world attribute from &quot;BumperStrength&quot; to
+  &quot;ActorimpulseStrength&quot;
+- rename world method: from &quot;drawmap()&quot; to &quot;drawMap()&quot;
+- add world methods:
+  - drawBorder()
+  - drawRect()
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2008-06-11 00:47:29 UTC (rev 1168)
++++ trunk/data/api2init.lua	2008-06-11 22:12:50 UTC (rev 1169)
+@@ -118,25 +118,67 @@
+ -- Utility Methods --
+ ---------------------
+ 
+-function drawmap(world, resolver, origin, ignore, map)
+-    local len = string.len(ignore)
+-    for y=1, #map do
+-        local linelen = string.len(map[y])
+-        if math.fmod(linelen, len) ~= 0 then
+-            error(&quot;drawmap map line &quot;.. y .. &quot; with odd length&quot;, 2)
++wo:_register(&quot;drawMap&quot;, 
++    function (world, resolver, origin, ignore, map)
++        -- TODO check validity of arguements
++        local len = string.len(ignore)
++        for y=1, #map do
++            local linelen = string.len(map[y])
++            if math.fmod(linelen, len) ~= 0 then
++                error(&quot;drawmap map line &quot;.. y .. &quot; with odd length&quot;, 2)
++            end
++            for x = 1, linelen/len do
++                local key = string.sub(map[y], len*(x-1)+1, len*x)
++                if key ~= ignore then
++                    world[origin + {x-1, y-1}] =  
++                            world:_evaluate(resolver, key, origin.x + x - 1, 
++                                    origin.y + y-1)
++                end
++            end
+         end
+-        for x = 1, linelen/len do
+-            local key = string.sub(map[y], len*(x-1)+1, len*x)
+-            if key ~= ignore then
+-                world[origin + {x-1, y-1}] =  
+-                        world:_evaluate(resolver, key, origin.x + x - 1, 
+-                                origin.y + y-1)
++    end
++)
++
++wo:_register(&quot;drawBorder&quot;, 
++    function (world, origin, arg2, arg3, arg4)
++        local dest = arg2
++        local tile = arg3
++        if type(arg2) == &quot;number&quot; and type(arg3) == &quot;number&quot; then
++            dest = po(origin.x + arg2 - 1, origin.y + arg3 - 1)
++            tile = arg4
++        end
++        -- TODO check validity of arguements
++        for x = origin.x, dest.x do
++            wo[{x, origin.y}] = tile
++            if origin.y ~= dest.y then
++                wo[{x, dest.y}] = tile
+             end
+         end
++        for y = origin.y + 1, dest.y -1 do
++            wo[{origin.x, y}] = tile
++            if origin.x ~= dest.x then
++                wo[{dest.x, y}] = tile
++            end
++        end
+     end
+-end
++)
+ 
+-wo:_register(&quot;drawmap&quot;, drawmap)
++wo:_register(&quot;drawRect&quot;, 
++    function (world, origin, arg2, arg3, arg4)
++        local dest = arg2
++        local tile = arg3
++        if type(arg2) == &quot;number&quot; and type(arg3) == &quot;number&quot; then
++            dest = po(origin.x + arg2 - 1, origin.y + arg3 - 1)
++            tile = arg4
++        end
++        -- TODO check validity of arguements
++        for x = origin.x, dest.x do
++            for y = origin.y, dest.y do
++                wo[{x, y}] = tile
++            end
++        end
++    end
++)
+ 
+ ---------------
+ -- Resolvers --
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2008-06-11 00:47:29 UTC (rev 1168)
++++ trunk/src/WorldProxy.cc	2008-06-11 22:12:50 UTC (rev 1169)
+@@ -63,7 +63,7 @@
+             return Width();
+         } else if (key == &quot;Brittleness&quot;) {
+             return server::Brittleness;
+-        } else if (key == &quot;BumperStrength&quot;) {
++        } else if (key == &quot;ActorimpulseStrength&quot;) {
+             return server::BumperForce;
+         } else if (key == &quot;ElectricForce&quot;) {
+             return server::ElectricForce;
+@@ -111,7 +111,7 @@
+             STATUSBAR-&gt;show_move_counter (server::ShowMoves);
+         } else if (key == &quot;Brittleness&quot;) {
+             server::Brittleness = val;
+-        } else if (key == &quot;BumperStrength&quot;) {
++        } else if (key == &quot;ActorimpulseStrength&quot;) {
+             server::BumperForce = val;
+         } else if (key == &quot;ElectricForce&quot;) {
+             server::ElectricForce = val;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000602.html">[Enigma-game-svn] r1168 - in feature_branches/hp_lotm: images/lotm	input/lotm
+</A></li>
+	<LI>Next message: <A HREF="000604.html">[Enigma-game-svn] r1170 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#603">[ date ]</a>
+              <a href="thread.html#603">[ thread ]</a>
+              <a href="subject.html#603">[ subject ]</a>
+              <a href="author.html#603">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

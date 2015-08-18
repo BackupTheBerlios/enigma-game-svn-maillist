@@ -1,0 +1,2101 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r884 - in trunk: data/levels/lib doc/reference src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r884%20-%20in%20trunk%3A%20data/levels/lib%20doc/reference%20src&In-Reply-To=%3C200709172337.l8HNb0F8028003%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000315.html">
+   <LINK REL="Next"  HREF="000317.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r884 - in trunk: data/levels/lib doc/reference src</H1>
+    <B>andreasl at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r884%20-%20in%20trunk%3A%20data/levels/lib%20doc/reference%20src&In-Reply-To=%3C200709172337.l8HNb0F8028003%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r884 - in trunk: data/levels/lib doc/reference src">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Tue Sep 18 01:37:00 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000315.html">[Enigma-game-svn] r883 - in trunk/data: gfx32 gfx40
+</A></li>
+        <LI>Next message: <A HREF="000317.html">[Enigma-game-svn] r885 - homepage/input/lotm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#316">[ date ]</a>
+              <a href="thread.html#316">[ thread ]</a>
+              <a href="subject.html#316">[ subject ]</a>
+              <a href="author.html#316">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2007-09-18 01:36:58 +0200 (Tue, 18 Sep 2007)
+New Revision: 884
+
+Modified:
+   trunk/data/levels/lib/libsoko.xml
+   trunk/doc/reference/enigma-ref.texi
+   trunk/src/floors.cc
+   trunk/src/floors.hh
+   trunk/src/laser.cc
+   trunk/src/laser.hh
+   trunk/src/stones.cc
+   trunk/src/stones.hh
+   trunk/src/stones_complex.cc
+   trunk/src/stones_internal.hh
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+   trunk/src/world.hh
+Log:
+Stone-Traits / Freeze Check:
+ - added stone traits for many stones
+ - to do this, added name-free constructors for ConnectiveStone
+   and PhotoStone
+ - replaced is_movable()-definitions by special traits for movable
+   and irregular stones, is_movable() now evaluates these traits
+ - C++ freeze check routines for stones
+ - description in reference manual
+ - typos in refman and libsoko
+Note:
+ - is_movable() does not check for conditions like &quot;state == IDLE&quot;
+   anymore. These checks are to happen in actor_hit and on_impulse.
+   This concerns stones with move-animations, like st-swap, st-pull
+   and st-chess. However, most of them already checked their state
+   twice, so is_movable() could be standardized without adaptions.
+Todo:
+ - more tests with irregular stones
+ - replace libsoko's freeze check routines
+ - maybe rename MOVABLE_* and FREEZEBIT_* constants, as
+   MOVABLE_BREAKABLE and FREEZEBIT_STANDARD don't fit their
+   meaning.
+
+
+Modified: trunk/data/levels/lib/libsoko.xml
+===================================================================
+--- trunk/data/levels/lib/libsoko.xml	2007-09-16 21:58:42 UTC (rev 883)
++++ trunk/data/levels/lib/libsoko.xml	2007-09-17 23:36:58 UTC (rev 884)
+@@ -44,7 +44,7 @@
+ -- place spaces between stones/items.
+ --
+ -- The table might hold additional flags. Currently, only &quot;white&quot;
+--- is implemented, which turns the marble and st-chess_knight white.
++-- is implemented, which turns the marble and chess-knights white.
+ -- If an entry is missing, the corresponding entry from default_design
+ -- will be used.
+ --
+@@ -637,14 +637,25 @@
+   oxyd_shuffle()
+ end
+ 
++-- The 75 first designs use the following boxes:
++--  st-block  -&gt;  st-black, st-blocker, st-brake, st-laser, fl-swamp
++--  st-brownie  -&gt;  st-coinslot, st-pull
++--  st-glass_move  -&gt;  cherry
++--  st-greenbrown_move  -&gt;  hole
++--  st-marble_move  -&gt;  hole
++--  st-rock3_move  -&gt;  *
++--  st-shogun  -&gt;  st-shogun-m (not completely!)
++--  st-wood[-growing]  -&gt;  fl-swamp
++
++
+ ------------------------------------------------------------------------
+ -- Main function
+ ------------------------------------------------------------------------
+ 
+--- create_sokoball creates a sokoball-level from the strinfg LEVEL.
++-- create_sokoball creates a sokoball-level from the string LEVEL.
+ -- The design can be chosen by the DESIGN variable. This is either
+ -- a number (see section &quot;Designs&quot;) or a table with the correspondinfg
+--- design entries. A missinfg entry will be interpreted as the entry
++-- design entries. A missing entry will be interpreted as the entry
+ -- from default_design. If the DESIGN variable is omitted, a check-
+ -- number is created from LEVEL which uniquely* determines a design
+ -- from the design list. *Uniquely means: The design might change
+@@ -715,6 +726,7 @@
+         obj = set_element(x+dx, y+dy, chosen_design.box, default_design.box)
+         if obj.st then
+           enigma.SetAttrib(obj.st, &quot;soko_kind&quot;, &quot;box&quot;)
++--          enigma.SetAttrib(obj.st, &quot;freeze_check&quot;, true)
+         end
+       end
+       if (ch == &quot;n&quot;) or (ch == &quot;N&quot;) then
+
+Modified: trunk/doc/reference/enigma-ref.texi
+===================================================================
+--- trunk/doc/reference/enigma-ref.texi	2007-09-16 21:58:42 UTC (rev 883)
++++ trunk/doc/reference/enigma-ref.texi	2007-09-17 23:36:58 UTC (rev 884)
+@@ -2635,6 +2635,7 @@
+ * Actors::                      
+ * General object attributes::
+ * The 1.0-Fire System::
++* Freeze Checking::
+ * Differences between Compatibility Modes::
+ @end menu
+ 
+@@ -2675,6 +2676,8 @@
+ Define horizontal and vertical flat forces on the floor. On
+ @ref{fl-gradient}, @code{force_x} and @code{force_y} are additive to
+ the gradient's standard force.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> freeze_check
++See @ref{Freeze Checking}.
+ @end table
+ 
+ Attributes connected to @ref{The 1.0-Fire System} (all boolean):
+@@ -4431,6 +4434,8 @@
+ * st-yinyang::                  Yin-Yang Stones
+ @end menu
+ 
++For the common stone attribute @code{freeze_check}, see @ref{Freeze Checking}.
++
+ @node Stone List, Breakable Stones, Stones, Stones
+ @subsection Stone List
+ 
+@@ -4697,7 +4702,7 @@
+ @item st-laserbreak
+ laser, pyro
+ @item st-rock3_movebreak
+-hammer, pyro; this stone is movable
++hammer, pyro; this stone is movable by impulses (not actors)
+ @item st-plain_break
+ hammer, laser, pyro; falls into @ref{fl-abyss}
+ @item st-plain_cracked
+@@ -5996,6 +6001,11 @@
+ 
+ Shogun stones don't ignite bombs when pushed over them.
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{st-shogun-s} is handled differently in a @ref{Freeze Checking} than
++the other shogun stones. This allows to use @code{st-shogun-s} to use in a
++Sokoban and avoids false freeze checks when used together with other shogun
++stones (which are handled as non-existent during a freeze check).
++
+ @strong{Attributes}
+ 
+ @table @code
+@@ -6607,7 +6617,7 @@
+ 
+ 
+ @c ----------------------------------------------------------------------
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at node</A> General object attributes,  , Actors, Objects
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at node</A> General object attributes, The 1.0-Fire System, Actors, Objects
+ @section General object attributes
+ 
+ @table @code
+@@ -6617,7 +6627,7 @@
+ @end table
+ 
+ @c ----------------------------------------------------------------------
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at node</A> The 1.0-Fire System,  , Actors, Objects
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at node</A> The 1.0-Fire System, Freeze Checking, General object attributes, Objects
+ @section The 1.0-Fire System
+ 
+ The 1.0-version of Enigma introduces a new fire system, making use of
+@@ -6806,7 +6816,91 @@
+ 
+ 
+ @c ----------------------------------------------------------------------
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at node</A> Differences between Compatibility Modes,  , Actors, Objects
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at node</A> Freeze Checking, Differences between Compatibility Modes, The 1.0-Fire System, Objects
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at section</A> Freeze Checking
++
++With Enigma 1.1 and above, you can use a special feature to support Sokoban
++levels and Sokoban parts of levels: Whenever a movable stone is pushed into
++some unmovable position, this feature automatically transforms the stone into
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at ref</A>{st-death}, to demonstrate that the game is lost and provide a simple way
++for the player to restart.
++
++The feature is called ``Freeze Checking''. It applies to each stone with
++attribute @code{freeze_check = true} which is pushed onto a floor with
++attribute @code{freeze_check = true}. This way you can restrict the freeze
++check to a bounded area. For a true Sokoban the goal tiles should not be marked
++with @code{freeze_check = true}, as a frozen box on a goal is not considered
++harmful. On the other hand, you can specify which boxes are freeze-checked. This
++gives further freedom to use other stones inside your Sokoban area: Floor and
++stone both need the @code{freeze_check}-attribute activated.
++
++The freeze check recognizes three basic constellations of stones that lead to a
++freeze of a standard movable stone. With @code{B} as box (movable or
++persistent) and @code{#} as wall (persistent):
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++BB   #B   #B
++BB    #    B#
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++There are more freeze constellations which are not recognized, the simplest
++would be:
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++#B
++ BB
++  #
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++Don't rely on this fact, it might be changed in future versions.
++
++Please bear in mind: The freeze check is not intelligent. It can't foresee that
++one of your functions might remove a stone, it can't foresee that some door
++will never open up again (doors are considered as not existent), it doesn't
++recognize when you put an @ref{it-puller}, @ref{it-cherry}, or @ref{st-swap} in
++your level. It handles special stones in a way to minimize false-positive freeze
++checks.
++
++Floating stones (like @ref{st-grate}) create completely new frozen
++constellations. From the following two examples, only the right example is
++frozen (@code{G} is @code{st-grate1}):
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++G    G
++BB   BB
++GB   GBG
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++At present, none of these are recognized as frozen by Enigma, floating stones
++are considered as not existing during a freeze check. To demonstrate the
++difficulty, you may analyze yourself which of the following constellations is
++frozen:
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++G      G      GBG   GB#    G G#G
++B#    BBB     BB    GB G   BBBBB
++G    #B B#   #B      G     G#G G
++      G G     G
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++
++In some cases, stones are even handled differently although they have similar
++properties: @ref{st-wood} and @code{st-firebreak_move} (see
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at ref</A>{st-firebreak[_move]}) are both movable and both destroyed by fire (see
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at ref</A>{The 1.0-Fire System}). There would never be frozen stones, as they can
++easily be burned away. Yet, @code{st-wood} uses the default freeze checking,
++whereas @code{st-firebreak_move} is considered as not existing. This is because
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{st-wood} is often used without fire, whereas @code{st-firebreak_move} is
++primarily used in combination with fire.
++
++Another example is @code{st-shogun-s}, which is considered as a default
++movable stone, in contrast to the remaining shogun stones (see
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at ref</A>{st-shogun-&lt;sml&gt;}). This way you can use @code{st-shogun-s} with goal
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{it-shogun-s}, but don't have to fear false-positive freeze checks from
++the non-standard way in which shogun stones move.
++
++As a concluding remark, the freeze checking is to be used as a support for the
++gamer only. It's not meant to be exploited as special feature to make movable
++stones unmovable or to provide a way to jump back to the starting position. It
++is subject to changes in future versions. And versions before 1.1 won't make a
++freeze check at all - so you can't rely on it to happen. It should really be
++used in Sokoban-kind parts of a level only, for which it is designed.
++
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at c</A> ----------------------------------------------------------------------
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at node</A> Differences between Compatibility Modes,  , Freeze Checking, Objects
+ @section Differences between Compatibility Modes
+ 
+ Although Enigma was inspired by the original Oxyd-series, there are
+
+Modified: trunk/src/floors.cc
+===================================================================
+--- trunk/src/floors.cc	2007-09-16 21:58:42 UTC (rev 883)
++++ trunk/src/floors.cc	2007-09-17 23:36:58 UTC (rev 884)
+@@ -117,6 +117,11 @@
+     return true;
+ }
+ 
++bool Floor::is_freeze_check() const 
++{
++    return to_bool(this-&gt;getAttr(&quot;freeze_check&quot;));
++}
++
+ void Floor::set_model (const std::string &amp;mname) 
+ {
+     display::SetModel (GridLoc(GRID_FLOOR, get_pos()), mname);
+
+Modified: trunk/src/floors.hh
+===================================================================
+--- trunk/src/floors.hh	2007-09-16 21:58:42 UTC (rev 883)
++++ trunk/src/floors.hh	2007-09-17 23:36:58 UTC (rev 884)
+@@ -107,6 +107,7 @@
+ 
+         virtual void get_sink_speed (double &amp;sinkspeed, double &amp;raisespeed) const;
+         virtual bool is_destructible() const;
++        virtual bool is_freeze_check() const;
+ 
+         virtual void animcb();
+         void on_burnable_animcb(bool justIgnited);  // Called by burnable-items on it.
+
+Modified: trunk/src/laser.cc
+===================================================================
+--- trunk/src/laser.cc	2007-09-16 21:58:42 UTC (rev 883)
++++ trunk/src/laser.cc	2007-09-17 23:36:58 UTC (rev 884)
+@@ -206,6 +206,11 @@
+     illuminated = false;
+ }
+ 
++PhotoStone::PhotoStone()
++{
++    illuminated = false;
++}
++
+ void PhotoStone::on_recalc_start() 
+ {}
+ 
+@@ -449,7 +454,6 @@
+         MirrorStone(const char *name, bool movable=false, bool transparent=false);
+ 
+         bool is_transparent() const { return getAttr(&quot;transparent&quot;) != 0; }
+-        bool is_movable() const { return getAttr(&quot;movable&quot;) != 0; }
+ 
+         void set_orientation(int o) { set_attrib(&quot;orientation&quot;, o); }
+         int get_orientation() { return getAttr(&quot;orientation&quot;); }
+@@ -464,6 +468,9 @@
+ 
+         void init_model();
+     private:
++
++        StoneTraits traits;
++
+ 	// Object interface.
+         virtual Value message(const string &amp;m, const Value &amp;);
+ 
+@@ -484,9 +491,11 @@
+ 
+         // Private methods
+         void rotate_right();
+-
++        
++        const StoneTraits &amp;get_traits() const { return traits; }
++        
+         // Variables
+-        DirectionBits outdirs;
++        DirectionBits outdirs;    
+     };
+ }
+ 
+@@ -496,6 +505,12 @@
+     set_attrib(&quot;transparent&quot;, transparent);
+     set_attrib(&quot;movable&quot;, movable);
+     set_attrib(&quot;orientation&quot;, Value(1));
++    traits.name = &quot;INVALID&quot;;
++    traits.id = st_INVALID;
++    traits.flags = stf_none;
++    traits.material = material_stone;
++    traits.restitution = 1.0;
++    traits.movable = movable ? MOVABLE_STANDARD : MOVABLE_PERSISTENT;
+ }
+ 
+ void MirrorStone::init_model() {
+@@ -565,7 +580,6 @@
+     sound_event (&quot;mirrorturn&quot;);
+ }
+ 
+-
+ 
+ /* -------------------- Plane Mirror -------------------- */
+ namespace
+
+Modified: trunk/src/laser.hh
+===================================================================
+--- trunk/src/laser.hh	2007-09-16 21:58:42 UTC (rev 883)
++++ trunk/src/laser.hh	2007-09-17 23:36:58 UTC (rev 884)
+@@ -87,7 +87,8 @@
+ 
+     class PhotoStone : public Stone, public PhotoCell {
+     protected:
+-        PhotoStone (const char *kind);
++        PhotoStone();
++        PhotoStone(const char *kind);
+ 
+     private:
+         bool illuminated;
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2007-09-16 21:58:42 UTC (rev 883)
++++ trunk/src/stones.cc	2007-09-17 23:36:58 UTC (rev 884)
+@@ -109,10 +109,11 @@
+ */
+ 
+ Stone::Stone()
++: freeze_check_running (false)
+ {}
+ 
+ Stone::Stone(const char * kind)
+-: GridObject (kind)
++: GridObject (kind), freeze_check_running (false)
+ {}
+ 
+ Stone::~Stone() { revokeDelayedImpulses(this); }
+@@ -120,7 +121,7 @@
+ const StoneTraits &amp;Stone::get_traits() const
+ {
+     static StoneTraits default_traits = {
+-        &quot;INVALID&quot;, st_INVALID, stf_none, material_stone, 1.0
++        &quot;INVALID&quot;, st_INVALID, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT
+     };
+     return default_traits;
+ }
+@@ -202,6 +203,91 @@
+     return newvel * factor;
+ }
+ 
++/* -------------------- Freeze check routines -------------------- */
++
++FreezeStatusBits Stone::get_freeze_bits() {
++    if(is_floating())
++        return FREEZEBIT_HOLLOW;
++    switch(get_traits().movable) {
++        case MOVABLE_PERSISTENT:  return FREEZEBIT_PERSISTENT;
++        case MOVABLE_BREAKABLE:   return FREEZEBIT_NO_STONE;
++        case MOVABLE_STANDARD:    return FREEZEBIT_STANDARD;
++        default:                  return FREEZEBIT_IRREGULAR;
++    }
++}
++
++FreezeStatusBits Stone::get_freeze_bits(GridPos p) {
++    Stone *st = GetStone(p);
++    if(st == NULL) 
++        return FREEZEBIT_NO_STONE;
++    return st-&gt;get_freeze_bits();
++}
++
++bool Stone::freeze_check() {
++    // Check if stone and floor ask for freeze_check
++    if (!to_bool(this-&gt;getAttr(&quot;freeze_check&quot;)))
++        return false;
++    if (freeze_check_running)
++        return true;
++    GridPos this_pos = this-&gt;get_pos();
++    Floor *fl = GetFloor(this_pos);
++    if ((fl == NULL) || (!fl-&gt;is_freeze_check()))
++        return false;
++
++    // Query movable status of neighboring stones
++
++    FreezeStatusBits ms_n  = get_freeze_bits(move(this_pos, NORTH));
++    FreezeStatusBits ms_nw = get_freeze_bits(move(move(this_pos, NORTH), WEST));
++    FreezeStatusBits ms_ne = get_freeze_bits(move(move(this_pos, NORTH), EAST));
++    FreezeStatusBits ms_w  = get_freeze_bits(move(this_pos, WEST));
++    FreezeStatusBits ms_e  = get_freeze_bits(move(this_pos, EAST));
++    FreezeStatusBits ms_s  = get_freeze_bits(move(this_pos, SOUTH));
++    FreezeStatusBits ms_sw = get_freeze_bits(move(move(this_pos, SOUTH), WEST));
++    FreezeStatusBits ms_se = get_freeze_bits(move(move(this_pos, SOUTH), EAST));
++
++    // First check: Diagonals with persistent stones
++    // Second check: Squares of arbitrary stones
++    // Third check: Two movables, encased by two persistent
++    int p = FREEZEBIT_PERSISTENT;
++    int pm = FREEZEBIT_PERSISTENT | FREEZEBIT_STANDARD;
++    if(   ((ms_n &amp; p) &amp;&amp; (ms_e &amp; p))
++       || ((ms_n &amp; p) &amp;&amp; (ms_w &amp; p))
++       || ((ms_s &amp; p) &amp;&amp; (ms_e &amp; p))
++       || ((ms_s &amp; p) &amp;&amp; (ms_w &amp; p))
++       
++       || ((ms_n &amp; pm) &amp;&amp; (ms_nw &amp; pm) &amp;&amp; (ms_w &amp; pm))
++       || ((ms_n &amp; pm) &amp;&amp; (ms_ne &amp; pm) &amp;&amp; (ms_e &amp; pm))
++       || ((ms_s &amp; pm) &amp;&amp; (ms_sw &amp; pm) &amp;&amp; (ms_w &amp; pm))
++       || ((ms_s &amp; pm) &amp;&amp; (ms_se &amp; pm) &amp;&amp; (ms_e &amp; pm))
++       
++       || ((ms_n &amp; pm) &amp;&amp; (ms_e &amp; p) &amp;&amp; (ms_nw &amp; p))
++       || ((ms_n &amp; pm) &amp;&amp; (ms_w &amp; p) &amp;&amp; (ms_ne &amp; p))
++       || ((ms_s &amp; pm) &amp;&amp; (ms_e &amp; p) &amp;&amp; (ms_sw &amp; p))
++       || ((ms_s &amp; pm) &amp;&amp; (ms_w &amp; p) &amp;&amp; (ms_se &amp; p))
++       || ((ms_w &amp; pm) &amp;&amp; (ms_n &amp; p) &amp;&amp; (ms_sw &amp; p))
++       || ((ms_w &amp; pm) &amp;&amp; (ms_s &amp; p) &amp;&amp; (ms_nw &amp; p))
++       || ((ms_e &amp; pm) &amp;&amp; (ms_n &amp; p) &amp;&amp; (ms_se &amp; p))
++       || ((ms_e &amp; pm) &amp;&amp; (ms_s &amp; p) &amp;&amp; (ms_ne &amp; p)))
++    {
++        ReplaceStone(this_pos, MakeStone(&quot;st-death&quot;));
++        // recheck neighboring stones
++        // avoid endless loop with bool freeze_check_running
++        if (Stone *st = GetStone(this_pos))
++            st-&gt;freeze_check_running = true;
++        if (Stone *st = GetStone(move(this_pos, NORTH)))
++            st-&gt;freeze_check();
++        if (Stone *st = GetStone(move(this_pos, SOUTH)))
++            st-&gt;freeze_check();
++        if (Stone *st = GetStone(move(this_pos, EAST)))
++            st-&gt;freeze_check();
++        if (Stone *st = GetStone(move(this_pos, WEST)))
++            st-&gt;freeze_check();
++        if (Stone *st = GetStone(this_pos))
++            st-&gt;freeze_check_running = false;
++    }
++}
++
++
+ 
+ 
+ // *******************************************************************************
+@@ -214,6 +300,7 @@
+ {
+     class ExplosionStone : public Stone {
+         CLONEOBJ(ExplosionStone);
++        DECL_TRAITS;
+ 
+         StoneResponse collision_response(const StoneContact &amp;) {
+             return STONE_PASS;
+@@ -229,10 +316,12 @@
+         void animcb() {
+             KillStone(get_pos());
+         }
++
+     public:
+-        ExplosionStone(): Stone(&quot;st-explosion&quot;)
++        ExplosionStone()
+         {}
+     };
++    DEF_TRAITSM(ExplosionStone, &quot;st-explosion&quot;, st_explosion, MOVABLE_BREAKABLE);
+ }
+ 
+ 
+@@ -375,8 +464,9 @@
+        knows... */
+     class Peroxyd_0xb8 : public Stone {
+         CLONEOBJ(Peroxyd_0xb8);
++        DECL_TRAITS;
+     public:
+-        Peroxyd_0xb8() : Stone(&quot;st-peroxyd-0xb8&quot;)
++        Peroxyd_0xb8()
+         {}
+ 
+         void on_creation (GridPos p) {
+@@ -384,11 +474,13 @@
+             KillStone(p);
+         }
+     };
+-
++    DEF_TRAITSM(Peroxyd_0xb8, &quot;st-peroxyd-0xb8&quot;, st_peroxyd_0xb8, MOVABLE_BREAKABLE);
++    
+     class Peroxyd_0xb9 : public Stone {
+         CLONEOBJ(Peroxyd_0xb9);
++        DECL_TRAITS;
+     public:
+-        Peroxyd_0xb9() : Stone(&quot;st-peroxyd-0xb9&quot;)
++        Peroxyd_0xb9()
+         {}
+ 
+         void on_creation (GridPos p) {
+@@ -396,16 +488,20 @@
+             KillStone(p);
+         }
+     };
+-
++    DEF_TRAITSM(Peroxyd_0xb9, &quot;st-peroxyd-0xb9&quot;, st_peroxyd_0xb9, MOVABLE_BREAKABLE);
++    
+     class Oxyd_0x18 : public Stone {
+         CLONEOBJ(Oxyd_0x18);
++        DECL_TRAITS;
+     public:
+-        Oxyd_0x18() : Stone(&quot;st-oxyd-0x18&quot;) {
+-        }
++        Oxyd_0x18()
++        {}
++        
+         void on_creation (GridPos p) {
+             KillStone (p);
+         }
+     };
++    DEF_TRAITSM(Oxyd_0x18, &quot;st-oxyd-0x18&quot;, st_oxyd_0x18, MOVABLE_BREAKABLE);
+ }
+ 
+ 
+@@ -433,8 +529,9 @@
+ {
+     class SurpriseStone : public Stone {
+         CLONEOBJ (SurpriseStone);
++        DECL_TRAITS;
+     public:
+-        SurpriseStone() : Stone(&quot;st-surprise&quot;)
++        SurpriseStone()
+         {}
+ 
+         void actor_hit (const StoneContact &amp;) {
+@@ -453,7 +550,10 @@
+             sound_event (&quot;stonetransform&quot;);
+             ReplaceStone (get_pos(), MakeStone (stonename[idx]));
+         }
++    private:
++        FreezeStatusBits get_freeze_bits() { return FREEZEBIT_IRREGULAR; }
+     };
++    DEF_TRAITS(SurpriseStone, &quot;st-surprise&quot;, st_surprise);
+ }
+ 
+ 
+@@ -462,15 +562,19 @@
+ {
+     class CoffeeStone : public Stone {
+         CLONEOBJ(CoffeeStone);
++        DECL_TRAITS;
+     public:
+-        CoffeeStone() : Stone (&quot;st-coffee&quot;) {
+-        }
++        CoffeeStone()
++        {}
+ 
+         void actor_hit (const StoneContact &amp;) {
+             sound_event (&quot;stonetransform&quot;);
+             ReplaceStone(get_pos(), MakeStone(&quot;st-glass_move&quot;));
+         }
++    private:
++        FreezeStatusBits get_freeze_bits() { return FREEZEBIT_STANDARD; }
+     };
++    DEF_TRAITS(CoffeeStone, &quot;st-coffee&quot;, st_coffee);
+ }
+ 
+ 
+@@ -479,6 +583,7 @@
+ {
+     class BreakingStone : public Stone {
+         CLONEOBJ(BreakingStone);
++        DECL_TRAITS;
+ 
+         void init_model() {
+             sound_event(&quot;stonedestroy&quot;);
+@@ -489,9 +594,10 @@
+             KillStone(get_pos());
+         }
+     public:
+-        BreakingStone() : Stone(&quot;st-breaking&quot;) {
+-        }
++        BreakingStone()
++        {}
+     };
++    DEF_TRAITSM(BreakingStone, &quot;st-breaking&quot;, st_breaking, MOVABLE_BREAKABLE);
+ }
+ 
+ 
+@@ -500,9 +606,10 @@
+ {
+     class BugStone : public Stone {
+         CLONEOBJ(BugStone);
++        DECL_TRAITS;
+     public:
+-        BugStone() : Stone(&quot;st-bug&quot;) {
+-        }
++        BugStone()
++        {}
+ 
+         void actor_hit (const StoneContact &amp;sc) {
+             if (get_id(sc.actor) == ac_bug) {
+@@ -510,6 +617,7 @@
+             }
+         }
+     };
++    DEF_TRAITSM(BugStone, &quot;st-bug&quot;, st_bug, MOVABLE_BREAKABLE);
+ }
+ 
+ 
+@@ -521,8 +629,8 @@
+ {
+     class PlainStone : public Stone {
+         CLONEOBJ(PlainStone);
++        DECL_TRAITS;
+ 
+-
+         void on_laserhit (Direction) {
+             ReplaceStone (get_pos(), MakeStone(&quot;st-plain_cracked&quot;));
+         }
+@@ -548,11 +656,16 @@
+                 Stone::actor_hit(sc);
+         }
+     public:
+-        PlainStone() : Stone(&quot;st-plain&quot;) {}
++        PlainStone()
++        {}
++    private:
++        FreezeStatusBits get_freeze_bits() { return FREEZEBIT_PERSISTENT; }
+     };
+-
++    DEF_TRAITSM(PlainStone, &quot;st-plain&quot;, st_plain, MOVABLE_BREAKABLE);
++    
+     class PlainStone_Hollow : public Stone {
+         CLONEOBJ(PlainStone_Hollow);
++        DECL_TRAITS;
+ 
+         virtual Value message (const string &amp;msg, const Value &amp;) {
+             if (msg == &quot;trigger&quot; || msg == &quot;signal&quot;) {
+@@ -566,12 +679,14 @@
+ 
+         bool is_floating() const { return true; }
+     public:
+-        PlainStone_Hollow() : Stone(&quot;st-plain_hole&quot;) {
+-        }
++        PlainStone_Hollow()
++        {}
+     };
++    DEF_TRAITSM(PlainStone_Hollow, &quot;st-plain_hole&quot;, st_plain_hole, MOVABLE_PERSISTENT);
+ 
+     class PlainStone_Breaking : public Stone {
+         CLONEOBJ(PlainStone_Breaking);
++        DECL_TRAITS;
+ 
+         void init_model() {
+             set_anim(&quot;st-plain_breaking&quot;);
+@@ -581,12 +696,15 @@
+         }
+         const char *collision_sound() {return &quot;metal&quot;;}
+     public:
+-        PlainStone_Breaking() : Stone (&quot;st-plain_breaking&quot;) {
+-        }
++        PlainStone_Breaking()
++        {}
+     };
+-
++    DEF_TRAITSM(PlainStone_Breaking, &quot;st-plain_breaking&quot;, st_plain_breaking,
++                MOVABLE_BREAKABLE);
++    
+     class PlainStone_Breakable : public Stone {
+         CLONEOBJ(PlainStone_Breakable);
++        DECL_TRAITS;
+ 
+         const char *collision_sound() {return &quot;metal&quot;;}
+ 
+@@ -615,12 +733,15 @@
+         }
+ 
+     public:
+-        PlainStone_Breakable() : Stone(&quot;st-plain_break&quot;) {
+-        }
++        PlainStone_Breakable()
++        {}
+     };
+-
++    DEF_TRAITSM(PlainStone_Breakable, &quot;st-plain_break&quot;, st_plain_break,
++                MOVABLE_BREAKABLE);
++    
+     class PlainStone_Cracked : public Stone {
+         CLONEOBJ(PlainStone_Cracked);
++        DECL_TRAITS;
+ 
+         void break_me() {
+             sound_event (&quot;stonedestroy&quot;);
+@@ -640,12 +761,15 @@
+         }
+         const char *collision_sound() {return &quot;metal&quot;;}
+     public:
+-        PlainStone_Cracked() : Stone(&quot;st-plain_cracked&quot;) {
+-        }
++        PlainStone_Cracked()
++        {}
+     };
+-
++    DEF_TRAITSM(PlainStone_Cracked, &quot;st-plain_cracked&quot;, st_plain_cracked,
++                MOVABLE_BREAKABLE);
++    
+     class PlainStone_Falling : public Stone {
+         CLONEOBJ(PlainStone_Falling);
++        DECL_TRAITS;
+ 
+         void init_model() {
+             set_anim(&quot;st-plain_falling&quot;);
+@@ -656,12 +780,15 @@
+             KillStone(get_pos());
+         }
+     public:
+-        PlainStone_Falling() : Stone(&quot;st-plain_falling&quot;) {
+-        }
++        PlainStone_Falling()
++        {}
+     };
++    DEF_TRAITSM(PlainStone_Falling, &quot;st-plain_falling&quot;, st_plain_falling,
++                MOVABLE_BREAKABLE);
+ 
+     class PlainStone_Movable : public Stone {
+         CLONEOBJ(PlainStone_Movable);
++        DECL_TRAITS;
+ 
+         void break_me() {
+             sound_event (&quot;stonedestroy&quot;);
+@@ -687,8 +814,6 @@
+             }
+         }
+ 
+-        bool is_movable () const { return true; }
+-
+         void actor_hit (const StoneContact &amp;sc) {
+             if (player::WieldedItemIs (sc.actor, &quot;it-pencil&quot;)) {
+                 enigma::Inventory *inv = player::GetInventory(sc.actor);
+@@ -703,9 +828,11 @@
+         }
+ 
+     public:
+-        PlainStone_Movable() : Stone(&quot;st-plain_move&quot;) {
+-        }
++        PlainStone_Movable()
++        {}
+     };
++    DEF_TRAITSM(PlainStone_Movable, &quot;st-plain_move&quot;, st_plain_move,
++                MOVABLE_STANDARD);
+ }
+ 
+ 
+@@ -778,16 +905,19 @@
+ {
+     class FakeOxydA : public Stone {
+         CLONEOBJ(FakeOxydA);
++        DECL_TRAITS;
+     public:
++        FakeOxydA()
++        {}
+ 
+-        FakeOxydA() : Stone(&quot;st-fakeoxyda&quot;) {
+-        }
+-
+         void actor_hit (const StoneContact &amp;) {
+             sound_event (&quot;stonetransform&quot;);
+             ReplaceStone(get_pos(), MakeStone(&quot;st-glass1_move&quot;));
+         }
++    private:
++        FreezeStatusBits get_freeze_bits() { return FREEZEBIT_STANDARD; }
+     };
++    DEF_TRAITS(FakeOxydA, &quot;st-fakeoxyda&quot;, st_fakeoxyda);
+ }
+ 
+ 
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2007-09-16 21:58:42 UTC (rev 883)
++++ trunk/src/stones.hh	2007-09-17 23:36:58 UTC (rev 884)
+@@ -35,24 +35,73 @@
+         st_black2,
+         st_black3,
+         st_black4,
++        st_block,
++        st_bolder,
++        st_brake,
++        st_break_acblack,
++        st_break_acwhite,
++        st_break_bolder,
++        st_break_invisible,
++        st_breaking,
++        st_bug,
+         st_chameleon,
++        st_chess,
++        st_coffee,
+         st_death,
+         st_death_invisible,
+         st_easymode,
++        st_explosion,
++        st_fakeoxyda,
+         st_fart,
++        st_firebreak,
++        st_firebreak_move,
++        st_greenbrown_growing,
+         st_knight,
++        st_laserbreak,
+         st_magic,
++        st_movebreak,
++        st_oneway,
++        st_oneway_black,
++        st_oneway_white,
++        st_oxyd_0x18,
++        st_peroxyd_0xb8,
++        st_peroxyd_0xb9,
++        st_plain,
++        st_plain_break,
++        st_plain_breaking,
++        st_plain_cracked,
++        st_plain_falling,
++        st_plain_hole,
++        st_plain_move,
++        st_pull,
++        st_puzzle,
++        st_rotator,
+         st_rubberband,
+         st_scissors,
++        st_shogun,
++        st_stoneimpulse,
++        st_stoneimpulse_hollow,
++        st_stoneimpulse_movable,
++        st_surprise,
++        st_swap,
+         st_thief,
++        st_turnstile,
++        st_turnstile_e,
++        st_turnstile_green,
++        st_turnstile_n,
++        st_turnstile_s,
++        st_turnstile_w,
++        st_volcano,
+         st_white1,
+         st_white2,
+         st_white3,
+         st_white4,
+         st_window,
++        st_wood_growing,
+         st_lightpassenger,
+         st_camouflage,
+         st_polarswitch,
++        st_volcano_growing,
+ 
+         st_LAST,
+         st_COUNT = st_LAST
+@@ -73,12 +122,20 @@
+         material_LAST
+     };
+ 
++    enum StoneMovableStatus {
++        MOVABLE_PERSISTENT, // Stone is unmovable
++        MOVABLE_BREAKABLE,  // Stone is breakable
++        MOVABLE_STANDARD,   // Stone is movable in st-wood-way
++        MOVABLE_IRREGULAR   // Stone moves in non-standard way
++    };        
++
+     struct StoneTraits {
+-        const char *name;
+-        StoneID     id;
+-        int         flags;
+-        Material    material;
+-        double      restitution;
++        const char         *name;
++        StoneID             id;
++        int                 flags;
++        Material            material;
++        double              restitution;
++        StoneMovableStatus  movable;
+         // Note that many properties of stones are implemented as functions.
+     };
+ 
+@@ -88,6 +145,15 @@
+         STONE_REBOUND           // Actor bounces off the stone
+     };
+ 
++    /*! Combined status bits, used in the freeze check routines. */
++    enum FreezeStatusBits {
++        FREEZEBIT_NO_STONE   =  1, // Stone is NULL or easily breakable
++        FREEZEBIT_HOLLOW     =  2, // Stone is hollow (no cherry)
++        FREEZEBIT_PERSISTENT =  4, // Stone is unmovable
++        FREEZEBIT_STANDARD   =  8, // Stone is movable in st-wood-way
++        FREEZEBIT_IRREGULAR  = 16  // Stone moves in non-standard way
++    };
++        
+     class Stone : public GridObject {
+     public:
+         Stone();
+@@ -110,7 +176,9 @@
+         virtual StoneResponse collision_response(const StoneContact &amp;sc);
+ 
+         /*! Is this stone movable? Affects impulse-stones, fire, ordinary pushes... */
+-        virtual bool   is_movable() const { return false;}
++        virtual bool   is_movable() const {
++            return get_traits().movable &gt;= MOVABLE_STANDARD;
++        }
+ 
+         /*! Can a swap-stone or pull-stone swap this stone? */
+         virtual bool   is_removable() const { return true; }
+@@ -135,6 +203,8 @@
+         virtual void   actor_inside (Actor * /*a*/) {}
+         virtual void   actor_contact (Actor * /*a*/) {}
+ 
++        virtual bool   freeze_check();
++        
+         virtual void   on_move();
+         virtual void   on_floor_change() {}
+         virtual void   on_impulse(const Impulse&amp; impulse);
+@@ -157,6 +227,12 @@
+         virtual void kill_model (GridPos p) {
+             display::KillModel (GridLoc (GRID_STONES, p));
+         }
++
++    private:
++        // Help structure and routine for freeze_check()
++        bool freeze_check_running;
++        virtual FreezeStatusBits get_freeze_bits();  // own freeze bits
++        virtual FreezeStatusBits get_freeze_bits(GridPos p);  // foreign freeze bits
+     };
+ 
+     inline StoneID get_id(Stone *st) {
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2007-09-16 21:58:42 UTC (rev 883)
++++ trunk/src/stones_complex.cc	2007-09-17 23:36:58 UTC (rev 884)
+@@ -43,8 +43,15 @@
+     class RotatorStone : public PhotoStone {
+     public:
+         RotatorStone(bool clockwise_, bool movable_)
+-        : PhotoStone(&quot;st-rotator&quot;), clockwise(clockwise_), movable(movable_)
+-        {}
++        : clockwise(clockwise_), movable(movable_)
++        {
++            traits.name = &quot;st-rotator&quot;;
++            traits.id = st_rotator;
++            traits.flags = stf_none;
++            traits.material = material_stone;
++            traits.restitution = 1.0;
++            traits.movable = movable_ ? MOVABLE_STANDARD : MOVABLE_PERSISTENT;
++        }
+ 
+     private:
+         static const double RATE;
+@@ -52,6 +59,7 @@
+ 
+         bool clockwise;
+         bool movable;
++        StoneTraits traits;
+ 
+         Stone *clone() { return new RotatorStone(clockwise, movable); }
+         void dispose() { delete this; }
+@@ -91,8 +99,6 @@
+             send_impulses();
+         }
+ 
+-        bool is_movable () const { return movable; }
+-
+         void actor_hit (const StoneContact &amp;sc) {
+             if (player::WieldedItemIs (sc.actor, &quot;it-wrench&quot;)) {
+                 clockwise = !clockwise;
+@@ -114,8 +120,16 @@
+             init_model();
+         }
+         void notify_laseroff() {}
++
++        const StoneTraits &amp;get_traits() const
++        {
++            return traits;
++        }
++
++    private:
++        FreezeStatusBits get_freeze_bits() { return FREEZEBIT_IRREGULAR; }    
+     };
+-
++    
+     const double RotatorStone::RATE          = 1.0;
+     const double RotatorStone::IMPULSE_DELAY = 0.1;
+ }
+@@ -163,6 +177,7 @@
+ 
+ 
+     class PullStone : public Stone, public TimeHandler {
++        DECL_TRAITS;
+         // Variables.
+         enum State { IDLE, MOVING, VANISHED } state;
+         Direction  m_movedir;
+@@ -178,9 +193,6 @@
+         void       dispose();
+         
+         // Stone interface.
+-        bool is_movable () const {
+-            return state == IDLE;
+-        }
+         void actor_hit(const StoneContact &amp;sc) {
+             if (state == IDLE)
+                 maybe_push_stone(sc);
+@@ -198,10 +210,11 @@
+         void set_move_state(bool appearing, Direction move_dir);
+ 
+     };
++    DEF_TRAITSM(PullStone, &quot;st-pull&quot;, st_pull, MOVABLE_IRREGULAR);    
+ }
+ 
+ PullStone::PullStone()
+-: Stone(&quot;st-pull&quot;), state(IDLE), m_movedir(NODIR) , pull_info(0)
++: state(IDLE), m_movedir(NODIR) , pull_info(0)
+ {}
+ 
+ PullStone::~PullStone() {
+@@ -334,7 +347,7 @@
+ {
+     class OneWayBase : public Stone {
+     protected:
+-        OneWayBase(const char *kind, Direction dir);
++        OneWayBase(Direction dir);
+ 
+         void init_model();
+         virtual Value message(const string&amp; msg, const Value &amp;val);
+@@ -355,19 +368,21 @@
+ 
+     class OneWayStone : public OneWayBase {
+     public:
+-        OneWayStone(Direction dir=SOUTH) : OneWayBase(&quot;st-oneway&quot;, dir) {}
++        OneWayStone(Direction dir=SOUTH) : OneWayBase(dir) {}
+     private:
+         CLONEOBJ(OneWayStone);
++        DECL_TRAITS;
+         virtual bool actor_may_pass (Actor * /*a*/) { return true; }
+     };
++    DEF_TRAITS(OneWayStone, &quot;st-oneway&quot;, st_oneway);
+ 
+-
+     class OneWayStone_black : public OneWayBase {
+     public:
+         OneWayStone_black(Direction dir=SOUTH)
+-            : OneWayBase(&quot;st-oneway_black&quot;,dir) {}
++            : OneWayBase(dir) {}
+     private:
+         CLONEOBJ(OneWayStone_black);
++        DECL_TRAITS;
+         virtual bool actor_may_pass (Actor *a) {
+             return a-&gt;getAttr(&quot;blackball&quot;) != 0;
+         }
+@@ -375,13 +390,15 @@
+             // do nothing if hit by actor
+         }
+     };
++    DEF_TRAITS(OneWayStone_black, &quot;st-oneway_black&quot;, st_oneway_black);
+ 
+     class OneWayStone_white : public OneWayBase {
+     public:
+         OneWayStone_white(Direction dir=SOUTH)
+-            : OneWayBase(&quot;st-oneway_white&quot;, dir) {}
++            : OneWayBase(dir) {}
+     private:
+         CLONEOBJ(OneWayStone_white);
++        DECL_TRAITS;
+         virtual bool actor_may_pass (Actor *a) {
+             return a-&gt;getAttr(&quot;whiteball&quot;) != 0;
+         }
+@@ -389,10 +406,10 @@
+             // do nothing if hit by actor
+         }
+     };
++    DEF_TRAITS(OneWayStone_white, &quot;st-oneway_white&quot;, st_oneway_white);
+ }
+ 
+-OneWayBase::OneWayBase(const char *kind, Direction dir) 
+-: Stone(kind)
++OneWayBase::OneWayBase(Direction dir)
+ {
+     set_orientation(dir);
+ }
+@@ -457,9 +474,10 @@
+ {
+     class BolderStone : public Stone {
+         CLONEOBJ(BolderStone);
++        DECL_TRAITS;
+     public:
+         BolderStone(Direction dir=NORTH)
+-        : Stone(&quot;st-bolder&quot;), state(IDLE)
++        : state(IDLE)
+         {
+             set_attrib(&quot;direction&quot;, dir);
+             // do not use set_dir, because this will set the state to ACTIVE
+@@ -545,9 +563,10 @@
+             }
+         }
+ 
+-        bool is_movable() const { return state != FALLING; }
++        void actor_hit(const StoneContact &amp;sc) {
++            if (state == FALLING)
++                return;
+ 
+-        void actor_hit(const StoneContact &amp;sc) {
+             if (player::WieldedItemIs (sc.actor, &quot;it-magicwand&quot;)) {
+                 set_dir(reverse(get_dir()));
+                 init_model();
+@@ -581,6 +600,7 @@
+             return Value();
+         }
+     };
++    DEF_TRAITSM(BolderStone, &quot;st-bolder&quot;, st_bolder, MOVABLE_IRREGULAR);
+ }
+ 
+ 
+@@ -597,6 +617,7 @@
+ {
+     class BlockerStone : public Stone {
+         CLONEOBJ(BlockerStone);
++        DECL_TRAITS;
+     public:
+         BlockerStone(bool solid)
+         : Stone(solid ? &quot;st-blocker&quot; : &quot;st-blocker-growing&quot;), 
+@@ -704,6 +725,7 @@
+             }
+         }
+     };
++    DEF_TRAITSM(BlockerStone, &quot;INVALID&quot;, st_INVALID, MOVABLE_BREAKABLE);
+ }
+ 
+ 
+@@ -712,9 +734,10 @@
+ {
+     class VolcanoStone : public Stone {
+         CLONEOBJ(VolcanoStone);
++        DECL_TRAITS;
+     public:
+         enum State {INACTIVE, ACTIVE, FINISHED, BREAKING};
+-        VolcanoStone( State initstate=INACTIVE) : Stone(&quot;st-volcano&quot;), state( initstate) {}
++        VolcanoStone( State initstate=INACTIVE) : state( initstate) {}
+     private:
+         enum State state;
+ 
+@@ -773,6 +796,7 @@
+             }
+         }
+     };
++    DEF_TRAITSM(VolcanoStone, &quot;st-volcano&quot;, st_volcano, MOVABLE_BREAKABLE);    
+ }
+ 
+ 
+@@ -886,7 +910,7 @@
+         }
+ 
+     public:
+-        Window(int connections) : ConnectiveStone(&quot;st-window&quot;, connections),
++        Window(int connections) : ConnectiveStone(connections),
+                 state(IDLE), breakingFaces(NODIRBIT) {
+         }
+         virtual bool is_sticky(const Actor *a) const;
+@@ -896,7 +920,7 @@
+         DirectionBits breakingFaces;
+         bool tryInnerPull(Direction dir);
+     };
+-    DEF_TRAITS(Window, &quot;st-window&quot;, st_window);
++    DEF_TRAITSM(Window, &quot;st-window&quot;, st_window, MOVABLE_BREAKABLE);
+ 
+     bool Window::is_sticky(const Actor *a) const  {
+         return false;
+@@ -1010,6 +1034,7 @@
+ {
+     class PuzzleStone : public ConnectiveStone, public TimeHandler, public world::PhotoCell {
+         INSTANCELISTOBJ(PuzzleStone);
++        DECL_TRAITS;
+     public:
+         PuzzleStone(int connections, bool oxyd1_compatible_);  
+     protected:
+@@ -1076,12 +1101,13 @@
+         enum { IDLE, EXPLODING } state;
+         DirectionBits illumination; // last state of surrounding laser beams
+     };
++    DEF_TRAITSM(PuzzleStone, &quot;st-puzzle&quot;, st_puzzle, MOVABLE_IRREGULAR);
+ }
+ 
+ PuzzleStone::InstanceList PuzzleStone::instances;
+ 
+ PuzzleStone::PuzzleStone(int connections, bool oxyd1_compatible_)
+-: ConnectiveStone(&quot;st-puzzle&quot;, connections), 
++: ConnectiveStone(connections), 
+   state (IDLE), 
+   illumination (NODIRBIT)
+ {
+@@ -1644,6 +1670,9 @@
+ 
+         virtual bool is_sticky (const Actor *) const
+         { return false; }
++
++    private:
++        FreezeStatusBits get_freeze_bits() { return FREEZEBIT_NO_STONE; }   
+     };
+ }
+ 
+@@ -1816,13 +1845,14 @@
+ {
+     class ShogunStone : public Stone {
+         CLONEOBJ(ShogunStone);
++        DECL_TRAITS;
+ 
+         enum Holes { SMALL = 1, MEDIUM = 2, LARGE = 4};
+         static Holes smallest_hole(Holes s);
+         void set_holes(Holes h) { set_attrib(&quot;holes&quot;, h); }
+ 
+     public:
+-        ShogunStone(int holes=SMALL) : Stone(&quot;st-shogun&quot;) {
++        ShogunStone(int holes=SMALL) {
+             set_holes(static_cast&lt;Holes&gt;(holes));
+         }
+     private:
+@@ -1853,12 +1883,15 @@
+             set_model(ecl::strf(&quot;st-shogun%d&quot;, int(get_holes())));
+         }
+ 
+-        bool is_movable() const { return false; }
+-
+         void actor_hit (const StoneContact &amp;sc) {
+             maybe_push_stone (sc);
+         }
++
++        FreezeStatusBits get_freeze_bits() {
++            return (get_holes() == SMALL) ? FREEZEBIT_STANDARD : FREEZEBIT_NO_STONE;
++        }
+     };
++    DEF_TRAITSM(ShogunStone, &quot;st-shogun&quot;, st_shogun, MOVABLE_IRREGULAR);
+ }
+ 
+ ShogunStone::Holes ShogunStone::get_holes() const {
+@@ -1955,7 +1988,7 @@
+ {
+     class StoneImpulse_Base : public Stone {
+     protected:
+-        StoneImpulse_Base(const char *kind) : Stone(kind), state(IDLE), incoming(NODIR)
++        StoneImpulse_Base() : state(IDLE), incoming(NODIR)
+         {}
+ 
+         enum State { IDLE, PULSING, CLOSING };
+@@ -1999,8 +2032,9 @@
+             incoming = dir;
+             change_state(PULSING);
+         }
++
++        FreezeStatusBits get_freeze_bits() { return FREEZEBIT_NO_STONE; }
+     };
+-
+ }
+ 
+ void StoneImpulse_Base::change_state(State new_state) {
+@@ -2054,8 +2088,9 @@
+ {
+     class StoneImpulseStone : public StoneImpulse_Base {
+         CLONEOBJ(StoneImpulseStone);
++        DECL_TRAITS;
+     public:
+-        StoneImpulseStone() : StoneImpulse_Base(&quot;st-stoneimpulse&quot;)
++        StoneImpulseStone()
+         {}
+ 
+     private:
+@@ -2076,15 +2111,15 @@
+         void actor_hit(const StoneContact &amp;/*sc*/) {
+             change_state(PULSING);
+         }
+-
+     };
++    DEF_TRAITS(StoneImpulseStone, &quot;st-stoneimpulse&quot;, st_stoneimpulse);
+ 
+-
+     class HollowStoneImpulseStone : public StoneImpulse_Base {
+         CLONEOBJ(HollowStoneImpulseStone);
++        DECL_TRAITS;
+     public:
+         HollowStoneImpulseStone()
+-        : StoneImpulse_Base(&quot;st-stoneimpulse-hollow&quot;) {}
++        {}
+     private:
+         void notify_state(State st) {
+             switch (st) {
+@@ -2118,16 +2153,16 @@
+             // hollow StoneImpulseStones cannot be activated using lasers
+         }
+     };
++    DEF_TRAITS(HollowStoneImpulseStone, &quot;st-stoneimpulse-hollow&quot;,
++               st_stoneimpulse_hollow);
+ 
+-
+     class MovableImpulseStone : public StoneImpulse_Base {
+         CLONEOBJ(MovableImpulseStone);
++        DECL_TRAITS;
+     public:
+         MovableImpulseStone()
+-        : StoneImpulse_Base(&quot;st-stoneimpulse_movable&quot;), 
+-          repulse(false)
+-        {
+-        }
++        : repulse(false)
++        {}
+ 
+     private:
+ 
+@@ -2194,6 +2229,8 @@
+         // Variables.
+         bool repulse;
+     };
++    DEF_TRAITSM(MovableImpulseStone, &quot;st-stoneimpulse_movable&quot;,
++                st_stoneimpulse_movable, MOVABLE_STANDARD);
+ }
+ 
+ 
+@@ -2477,7 +2514,7 @@
+     */
+     class Turnstile_Pivot_Base : public Stone {
+     public:
+-        Turnstile_Pivot_Base(const char *kind);
++        Turnstile_Pivot_Base();
+ 
+     protected:
+         bool rotate(bool clockwise, Object *impulse_sender);
+@@ -2508,23 +2545,27 @@
+ 
+     class Turnstile_Pivot : public Turnstile_Pivot_Base {
+         CLONEOBJ(Turnstile_Pivot);
++        DECL_TRAITS;
+     public:
+-        Turnstile_Pivot() : Turnstile_Pivot_Base(model()) {}
++        Turnstile_Pivot() {}
+ 
+         const char *model() const { return &quot;st-turnstile&quot;; }
+         const char *anim() const  { return &quot;st-turnstile-anim&quot;; }
+         bool oxyd_compatible() const { return true; }
+     };
++    DEF_TRAITS(Turnstile_Pivot, &quot;st-turnstile&quot;, st_turnstile);
+ 
+     class Turnstile_Pivot_Green : public Turnstile_Pivot_Base {
+         CLONEOBJ(Turnstile_Pivot_Green);
++        DECL_TRAITS;
+     public:
+-        Turnstile_Pivot_Green() : Turnstile_Pivot_Base(model()) {}
++        Turnstile_Pivot_Green() {}
+ 
+         const char *model() const { return &quot;st-turnstile-green&quot;; }
+         const char *anim() const  { return &quot;st-turnstile-green-anim&quot;; }
+         bool oxyd_compatible() const { return false; }
+     };
++    DEF_TRAITS(Turnstile_Pivot_Green, &quot;st-turnstile-green&quot;, st_turnstile_green);    
+ 
+     /*
+     ** The base class for any of the four arms of the turnstile
+@@ -2540,39 +2581,45 @@
+             return dynamic_cast&lt;Turnstile_Pivot_Base*&gt;(st);
+         }
+ 
+-        bool is_movable () const { return true; }
+     protected:
+-        Turnstile_Arm (const char *kind) : Stone(kind)
+-        {}
++        Turnstile_Arm() {}
+     };
+ 
+     class Turnstile_N : public Turnstile_Arm {
+         CLONEOBJ(Turnstile_N);
++        DECL_TRAITS;
+     public:
+-        Turnstile_N(): Turnstile_Arm(&quot;st-turnstile-n&quot;) {}
++        Turnstile_N() {}
+         Direction get_dir () const { return NORTH; }
+     };
+-
++    DEF_TRAITSM(Turnstile_N, &quot;st-turnstile-n&quot;, st_turnstile_n, MOVABLE_IRREGULAR);
++    
+     class Turnstile_S : public Turnstile_Arm {
+         CLONEOBJ(Turnstile_S);
++        DECL_TRAITS;
+         Direction get_dir () const { return SOUTH; }
+     public:
+-        Turnstile_S(): Turnstile_Arm(&quot;st-turnstile-s&quot;) {}
++        Turnstile_S() {}
+     };
++    DEF_TRAITSM(Turnstile_S, &quot;st-turnstile-s&quot;, st_turnstile_s, MOVABLE_IRREGULAR);
+ 
+     class Turnstile_E : public Turnstile_Arm {
+         CLONEOBJ(Turnstile_E);
++        DECL_TRAITS;
+         Direction get_dir () const { return EAST; }
+     public:
+-        Turnstile_E(): Turnstile_Arm(&quot;st-turnstile-e&quot;) {}
++        Turnstile_E() {}
+     };
++    DEF_TRAITSM(Turnstile_E, &quot;st-turnstile-e&quot;, st_turnstile_e, MOVABLE_IRREGULAR);
+ 
+     class Turnstile_W : public Turnstile_Arm {
+         CLONEOBJ(Turnstile_W);
++        DECL_TRAITS;
+         Direction get_dir () const { return WEST; }
+     public:
+-        Turnstile_W(): Turnstile_Arm(&quot;st-turnstile-w&quot;) {}
++        Turnstile_W() {}
+     };
++    DEF_TRAITSM(Turnstile_W, &quot;st-turnstile-w&quot;, st_turnstile_w, MOVABLE_IRREGULAR);
+ }
+ 
+ 
+@@ -2610,9 +2657,8 @@
+ //      Turnstile_Pivot_Base implementation
+ // --------------------------------------------
+ 
+-Turnstile_Pivot_Base::Turnstile_Pivot_Base(const char *kind) 
+-: Stone (kind),
+-  active (false)
++Turnstile_Pivot_Base::Turnstile_Pivot_Base()
++: active (false)
+ {}
+ 
+ void Turnstile_Pivot_Base::animcb() 
+@@ -3024,8 +3070,9 @@
+ {
+     class ChessStone : public Stone, public TimeHandler {
+         CLONEOBJ(ChessStone);
++        DECL_TRAITS;
+     public:
+-        ChessStone (int color) : Stone(&quot;st-chess&quot;) {
++        ChessStone (int color) {
+             newcolor = color;
+             Stone::set_attrib(&quot;color&quot;, color);
+             destination = GridPos(0,0);
+@@ -3042,6 +3089,7 @@
+         void set_attrib(const string&amp; key, const Value &amp;val);
+         virtual Value message(const string &amp;msg, const Value &amp;v);
+         void actor_hit(const StoneContact &amp;sc);
++        void on_impulse(const Impulse&amp; impulse) {}
+         void alarm();
+     private:
+         // Variables and Constants
+@@ -3067,6 +3115,8 @@
+         // Interface for st-swap and st-pull
+         bool is_removable() const { return state == IDLE; }
+     };
++    DEF_TRAITSM(ChessStone, &quot;st-chess&quot;, st_chess, MOVABLE_IRREGULAR);
++    
+     double ChessStone::capture_interval = 0.1;
+     double ChessStone::hit_threshold = 3.0;
+ 
+@@ -3473,10 +3523,9 @@
+                 init_model();
+             }
+         }
+-        bool is_movable () const { return false; }
+     };
+-    
+-    DEF_TRAITS(LightPassengerStone,&quot;st-lightpassenger&quot;, st_lightpassenger);
++    DEF_TRAITSM(LightPassengerStone,&quot;st-lightpassenger&quot;, st_lightpassenger,
++                MOVABLE_IRREGULAR);
+ }
+ 
+ // --------------------------------------------------------------------------------
+
+Modified: trunk/src/stones_internal.hh
+===================================================================
+--- trunk/src/stones_internal.hh	2007-09-16 21:58:42 UTC (rev 883)
++++ trunk/src/stones_internal.hh	2007-09-17 23:36:58 UTC (rev 884)
+@@ -30,10 +30,13 @@
+         const StoneTraits &amp;get_traits() const { return traits[subtype_expr]; }
+ 
+ #define DEF_TRAITS(classname, name, id)         \
+-    StoneTraits classname::traits = { name, id, stf_none, material_stone, 1.0 }
++    StoneTraits classname::traits = { name, id, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT }
+ 
++#define DEF_TRAITSM(classname, name, id, movable)         \
++    StoneTraits classname::traits = { name, id, stf_none, material_stone, 1.0, movable }
+ 
+ 
++
+ namespace stones
+ {
+     using namespace world;
+@@ -125,6 +128,9 @@
+         ConnectiveStone(const char *kind, int connections): Stone(kind) {
+             set_attrib(&quot;connections&quot;, connections);
+         }
++        ConnectiveStone(int connections) {
++            set_attrib(&quot;connections&quot;, connections);
++        }
+ 
+         DirectionBits get_connections() const {
+             int conn = (int)getAttr(&quot;connections&quot;) - 1;
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2007-09-16 21:58:42 UTC (rev 883)
++++ trunk/src/stones_simple.cc	2007-09-17 23:36:58 UTC (rev 884)
+@@ -202,9 +202,16 @@
+             return Stone::is_transparent(dir);
+         }
+ 
+-        bool is_movable() const { return true; }
++        const SimpleStoneTraits *traits; // owned by simple_stone_traits
+ 
+-        const SimpleStoneTraits *traits; // owned by simple_stone_traits
++        const StoneTraits &amp;get_traits() const
++        {
++            static StoneTraits simple_stone_movable_traits = {
++                &quot;INVALID&quot;, st_INVALID, stf_none, material_stone, 1.0,
++                MOVABLE_STANDARD
++            };
++            return simple_stone_movable_traits;
++        }    
+     };
+ }
+ 
+@@ -274,7 +281,7 @@
+         EasyModeStone() 
+         {}
+     };
+-    DEF_TRAITS(EasyModeStone, &quot;st-easymode&quot;, st_easymode);
++    DEF_TRAITSM(EasyModeStone, &quot;st-easymode&quot;, st_easymode, MOVABLE_BREAKABLE);
+ }
+ 
+ 
+@@ -362,6 +369,7 @@
+ namespace
+ {
+     class SwapStone : public Stone, public TimeHandler {
++        DECL_TRAITS;    
+     public:
+         SwapStone();
+         ~SwapStone();
+@@ -387,11 +395,11 @@
+         YieldedGridStone *in_exchange_with;
+         Direction         move_dir;
+     };
++    DEF_TRAITSM(SwapStone, &quot;st-swap&quot;, st_swap, MOVABLE_IRREGULAR);
+ }
+ 
+ SwapStone::SwapStone()
+-: Stone(&quot;st-swap&quot;),
+-  state(IDLE),
++: state(IDLE),
+   in_exchange_with(0),
+   move_dir(NODIR)
+ {}
+@@ -496,8 +504,10 @@
+ {
+     class BlockStone : public Stone {
+         CLONEOBJ(BlockStone);
++        DECL_TRAITS;
+     public:
+-        BlockStone() : Stone(&quot;st-block&quot;) {}
++        BlockStone()
++        {}
+     private:
+         V2 get_center() const {
+             return get_pos().center();
+@@ -512,9 +522,9 @@
+                 }
+             }
+         }
+-        bool is_movable () const { return true; }
+     };
+-
++    DEF_TRAITSM(BlockStone, &quot;st-block&quot;, st_block, MOVABLE_STANDARD);
++    
+ };
+ 
+ 
+@@ -532,6 +542,7 @@
+     class BreakableStone : public Stone {
+     public:
+         BreakableStone(const char *kind) : Stone(kind), state(IDLE) {}
++        BreakableStone() : state(IDLE) {}
+     protected:
+         void break_me() {
+             if (state == IDLE) {
+@@ -591,6 +602,7 @@
+ {
+     class Stone_break : public BreakableStone {
+         CLONEOBJ(Stone_break);
++        DECL_TRAITS;
+     public:
+         Stone_break(const char *kind) : BreakableStone(kind) { }
+     private:
+@@ -598,9 +610,11 @@
+             return player::WieldedItemIs (a, &quot;it-hammer&quot;);
+         }
+     };
+-
++    DEF_TRAITSM(Stone_break, &quot;INVALID&quot;, st_INVALID, MOVABLE_BREAKABLE);
++    
+     class LaserBreakable : public BreakableStone {
+         CLONEOBJ (LaserBreakable);
++        DECL_TRAITS;
+ 
+         void actor_hit(const StoneContact &amp;) {
+         }
+@@ -608,10 +622,10 @@
+             return false;
+         }
+     public:
+-
+-        LaserBreakable(): BreakableStone(&quot;st-laserbreak&quot;) {
+-        }
++        LaserBreakable()
++        {}
+     };
++    DEF_TRAITSM(LaserBreakable, &quot;st-laserbreak&quot;, st_laserbreak, MOVABLE_BREAKABLE);
+ }
+ 
+ 
+@@ -635,8 +649,10 @@
+ {
+     class Break_bolder : public BreakableStone {
+         CLONEOBJ(Break_bolder);
++        DECL_TRAITS;
+     public:
+-        Break_bolder() : BreakableStone(&quot;st-break_bolder&quot;) {}
++        Break_bolder()
++        {}
+     private:
+         bool may_be_broken_by(Actor *a) const {
+             return player::WieldedItemIs (a, &quot;it-hammer&quot;);
+@@ -647,6 +663,7 @@
+             return Value();
+         }
+     };
++    DEF_TRAITSM(Break_bolder, &quot;st-break_bolder&quot;, st_break_bolder, MOVABLE_BREAKABLE);
+ }
+ 
+ //----------------------------------------
+@@ -669,9 +686,10 @@
+ {
+     class Stone_movebreak : public BreakableStone {
+         CLONEOBJ(Stone_movebreak);
++        DECL_TRAITS;
+     public:
+-        Stone_movebreak() : BreakableStone(&quot;st-rock3_movebreak&quot;) {}
+-    private:
++        Stone_movebreak()
++        {}
+ 
+         void on_laserhit(Direction) {
+         }
+@@ -683,8 +701,6 @@
+             return player::WieldedItemIs (a, &quot;it-hammer&quot;);
+         }
+ 
+-        bool is_movable() const { return true; }
+-
+         void actor_hit(const StoneContact &amp;sc) {
+             if (may_be_broken_by(sc.actor))
+                 break_me();
+@@ -695,7 +711,10 @@
+             move_stone(impulse.dir);
+         }
+ 
++    private:
++        FreezeStatusBits get_freeze_bits() { return FREEZEBIT_NO_STONE; }
+     };
++    DEF_TRAITSM(Stone_movebreak, &quot;st-rock3_movebreak&quot;, st_movebreak, MOVABLE_STANDARD);
+ }
+ 
+ //----------------------------------------
+@@ -718,14 +737,17 @@
+ {
+     class Break_acwhite : public BreakableStone {
+         CLONEOBJ(Break_acwhite);
++        DECL_TRAITS;
+     public:
+-        Break_acwhite() : BreakableStone(&quot;st-break_acwhite&quot;) {}
++        Break_acwhite()
++        {}
+     private:
+         bool may_be_broken_by(Actor *a) const {
+             return (a-&gt;getAttr(&quot;whiteball&quot;) != 0) &amp;&amp;
+                 player::WieldedItemIs (a, &quot;it-hammer&quot;);
+         }
+     };
++    DEF_TRAITSM(Break_acwhite, &quot;st-break_acwhite&quot;, st_break_acwhite, MOVABLE_BREAKABLE);
+ }
+ 
+ //----------------------------------------
+@@ -748,14 +770,17 @@
+ {
+     class Break_acblack : public BreakableStone {
+         CLONEOBJ(Break_acblack);
++        DECL_TRAITS;
+     public:
+-        Break_acblack() : BreakableStone(&quot;st-break_acblack&quot;) {}
++        Break_acblack()
++        {}
+     private:
+         bool may_be_broken_by(Actor *a) const {
+             return (a-&gt;getAttr(&quot;blackball&quot;) != 0) &amp;&amp;
+                 player::WieldedItemIs (a, &quot;it-hammer&quot;);
+         }
+     };
++    DEF_TRAITSM(Break_acblack, &quot;st-break_acblack&quot;, st_break_acblack, MOVABLE_BREAKABLE);
+ }
+ 
+ 
+@@ -854,9 +879,10 @@
+ {
+     class Break_invisible : public Stone {
+         CLONEOBJ(Break_invisible);
++        DECL_TRAITS;
+         const char *collision_sound() {return &quot;stone&quot;;}
+     public:
+-        Break_invisible() : Stone(&quot;st-break_invisible&quot;), state(INVISIBLE) {}
++        Break_invisible() : state(INVISIBLE) {}
+     private:
+         enum State { INVISIBLE, BRUSH, DESTROY };
+         State state;
+@@ -881,6 +907,8 @@
+                 KillStone(get_pos());
+         }
+     };
++    DEF_TRAITSM(Break_invisible, &quot;st-break_invisible&quot;, st_break_invisible,
++                MOVABLE_BREAKABLE);
+ }
+ 
+ //----------------------------------------
+@@ -949,6 +977,7 @@
+ {
+     class WoodenStone : public Stone {
+         CLONEOBJ(WoodenStone);
++        DECL_TRAITS;
+     public:
+         WoodenStone(const char *kind, const char *floorkind_, bool blockfire_ = false) :
+             Stone(kind), floorkind(floorkind_), blockfire(blockfire_) {}
+@@ -995,8 +1024,8 @@
+             if (server::GameCompatibility != GAMET_OXYD1)
+                 maybe_fall_or_stopfire();
+         }
+-        bool is_movable () const { return true; }
+     };
++    DEF_TRAITSM(WoodenStone, &quot;INVALID&quot;, st_INVALID, MOVABLE_STANDARD);
+ 
+     /*! When st-wood is created it randomly becomes st-wood1 or
+       st-wood2. */
+@@ -1021,8 +1050,10 @@
+ {
+     class WoodenStone_Growing : public Stone {
+         CLONEOBJ(WoodenStone_Growing);
++        DECL_TRAITS;
+     public:
+-        WoodenStone_Growing() : Stone(&quot;st-wood-growing&quot;) {}
++        WoodenStone_Growing()
++        {}
+     private:
+         void init_model() { set_anim(&quot;st-wood-growing&quot;); }
+         void animcb() {
+@@ -1033,12 +1064,17 @@
+         void actor_contact(Actor *a) {SendMessage(a, &quot;shatter&quot;);}
+         void actor_inside(Actor *a) {SendMessage(a, &quot;shatter&quot;);}
+         void actor_hit(const StoneContact &amp;sc) {SendMessage(sc.actor, &quot;shatter&quot;);}
++
++        FreezeStatusBits get_freeze_bits() { return FREEZEBIT_STANDARD; }
+     };
+-
++    DEF_TRAITS(WoodenStone_Growing, &quot;st-wood-growing&quot;, st_wood_growing);
++    
+     class GreenbrownStone_Growing : public Stone {
+         CLONEOBJ(GreenbrownStone_Growing);
++        DECL_TRAITS;
+     public:
+-        GreenbrownStone_Growing() : Stone(&quot;st-greenbrown-growing&quot;) {}
++        GreenbrownStone_Growing()
++        {}
+     private:
+         void init_model() { set_anim(&quot;st-greenbrown-growing&quot;); }
+         void animcb() {
+@@ -1049,11 +1085,14 @@
+         void actor_inside(Actor *a) {SendMessage(a, &quot;shatter&quot;);}
+         void actor_hit(const StoneContact &amp;sc) {SendMessage(sc.actor, &quot;shatter&quot;);}
+     };
++    DEF_TRAITS(GreenbrownStone_Growing, &quot;st-greenbrown-growing&quot;, st_greenbrown_growing);
+ 
+     class VolcanoStone_Growing : public Stone {
+         CLONEOBJ(VolcanoStone_Growing);
++        DECL_TRAITS;
+     public:
+-        VolcanoStone_Growing() : Stone(&quot;st-volcano-growing&quot;) {}
++        VolcanoStone_Growing()
++        {}
+     private:
+         void init_model() { set_anim(&quot;st-volcano-growing&quot;); }
+         void animcb() {
+@@ -1063,7 +1102,10 @@
+         void actor_contact(Actor *a) {SendMessage(a, &quot;shatter&quot;);}
+         void actor_inside(Actor *a) {SendMessage(a, &quot;shatter&quot;);}
+         void actor_hit(const StoneContact &amp;sc) {SendMessage(sc.actor, &quot;shatter&quot;);}
++
++        FreezeStatusBits get_freeze_bits() { return FREEZEBIT_NO_STONE; }
+     };
++    DEF_TRAITS(VolcanoStone_Growing, &quot;st-volcano-growing&quot;, st_volcano_growing);
+ }
+ 
+ 
+@@ -1158,7 +1200,7 @@
+             set_attrib(&quot;strength&quot;, 10.0);
+         }
+     };
+-    DEF_TRAITS(RubberBandStone, &quot;st-rubberband&quot;, st_rubberband);
++    DEF_TRAITSM(RubberBandStone, &quot;st-rubberband&quot;, st_rubberband, MOVABLE_STANDARD);
+ }
+ 
+ 
+@@ -1303,7 +1345,7 @@
+         FartStone() : state(IDLE), rememberBreaking(false) 
+         {}
+     };
+-    DEF_TRAITS(FartStone, &quot;st-fart&quot;, st_fart);
++    DEF_TRAITSM(FartStone, &quot;st-fart&quot;, st_fart, MOVABLE_BREAKABLE);
+ }
+ 
+ void FartStone::change_state(State newstate) 
+@@ -1392,7 +1434,7 @@
+         const char *collision_sound() { return &quot;cloth&quot;; }
+         int affected_player;
+     };
+-    DEF_TRAITS(ThiefStone, &quot;st-thief&quot;, st_thief);
++    DEF_TRAITSM(ThiefStone, &quot;st-thief&quot;, st_thief, MOVABLE_BREAKABLE);
+ }
+ 
+ ThiefStone::ThiefStone() 
+@@ -1642,14 +1684,14 @@
+     };
+ 
+     StoneTraits BlackWhiteStone::traits[8] = {
+-        {&quot;st-black1&quot;, st_black1, stf_transparent},
+-        {&quot;st-black2&quot;, st_black2, stf_transparent},
+-        {&quot;st-black3&quot;, st_black3, stf_transparent},
+-        {&quot;st-black4&quot;, st_black4, stf_transparent},
+-        {&quot;st-white1&quot;, st_white1, stf_transparent},
+-        {&quot;st-white2&quot;, st_white2, stf_transparent},
+-        {&quot;st-white3&quot;, st_white3, stf_transparent},
+-        {&quot;st-white4&quot;, st_white4, stf_transparent},
++        {&quot;st-black1&quot;, st_black1, stf_transparent, material_stone, MOVABLE_PERSISTENT},
++        {&quot;st-black2&quot;, st_black2, stf_transparent, material_stone, MOVABLE_PERSISTENT},
++        {&quot;st-black3&quot;, st_black3, stf_transparent, material_stone, MOVABLE_PERSISTENT},
++        {&quot;st-black4&quot;, st_black4, stf_transparent, material_stone, MOVABLE_PERSISTENT},
++        {&quot;st-white1&quot;, st_white1, stf_transparent, material_stone, MOVABLE_PERSISTENT},
++        {&quot;st-white2&quot;, st_white2, stf_transparent, material_stone, MOVABLE_PERSISTENT},
++        {&quot;st-white3&quot;, st_white3, stf_transparent, material_stone, MOVABLE_PERSISTENT},
++        {&quot;st-white4&quot;, st_white4, stf_transparent, material_stone, MOVABLE_PERSISTENT},
+     };
+ 
+ }
+@@ -1672,6 +1714,8 @@
+             sound_event(&quot;yinyang&quot;);
+             ReplaceStone (get_pos(), MakeStone(stonename));
+         }
++        
++        FreezeStatusBits get_freeze_bits() { return FREEZEBIT_HOLLOW; }
+     };
+ 
+     class YinYangStone1 : public YinYangStone {
+@@ -1726,6 +1770,7 @@
+     /*! This stone add a bomb to the player's inventory when touched. */
+     class BombStone : public Stone {
+         CLONEOBJ(BombStone);
++        DECL_TRAITS;
+         const char *collision_sound() {return &quot;stone&quot;;}
+     public:
+         BombStone(const char* kind_, const char* itemkind_) :
+@@ -1740,7 +1785,8 @@
+         virtual Value message (const string &amp;msg, const Value &amp;);
+     };
+ }
+-
++DEF_TRAITSM(BombStone, &quot;INVALID&quot;, st_INVALID, MOVABLE_BREAKABLE);
++    
+ void BombStone::change_state (State newstate) 
+ {
+     if (state == IDLE &amp;&amp; newstate==BREAK) {
+@@ -1800,7 +1846,7 @@
+         MagicStone()
+         {}
+     };
+-    DEF_TRAITS(MagicStone, &quot;st-magic&quot;, st_magic);
++    DEF_TRAITSM(MagicStone, &quot;st-magic&quot;, st_magic, MOVABLE_BREAKABLE);
+ }
+ 
+ 
+@@ -1904,8 +1950,10 @@
+ {
+     class BrakeStone : public Stone {
+         CLONEOBJ(BrakeStone);
++        DECL_TRAITS;
+     public:
+-        BrakeStone() : Stone(&quot;st-brake&quot;) {}
++        BrakeStone()
++        {}
+ 
+         void on_creation (GridPos p) {
+             Stone::on_creation(p);
+@@ -1951,6 +1999,7 @@
+         bool is_sticky(const Actor *) const 
+         { return false; }
+     };
++    DEF_TRAITSM(BrakeStone, &quot;st-brake&quot;, st_brake, MOVABLE_BREAKABLE);
+ }
+ 
+ 
+@@ -2082,7 +2131,7 @@
+     public:
+         Knight() : subtype (MIN_SUBTYPE) {}
+     };
+-    DEF_TRAITS(Knight, &quot;st-knight&quot;, st_knight);
++    DEF_TRAITSM(Knight, &quot;st-knight&quot;, st_knight, MOVABLE_BREAKABLE);
+ }
+ 
+ 
+@@ -2120,6 +2169,7 @@
+ {
+     class Stone_firebreak : public Stone {
+         CLONEOBJ(Stone_firebreak);
++        DECL_TRAITS;
+ 
+         const char *collision_sound() {return &quot;stone&quot;;}
+ 
+@@ -2145,11 +2195,14 @@
+         }
+ 
+     public:
+-        Stone_firebreak() : Stone(&quot;st-firebreak&quot;) { }
++        Stone_firebreak()
++        {}
+     };
++    DEF_TRAITSM(Stone_firebreak, &quot;st-firebreak&quot;, st_firebreak, MOVABLE_BREAKABLE);
+ 
+     class Stone_movefirebreak : public Stone {
+         CLONEOBJ(Stone_movefirebreak);
++        DECL_TRAITS;
+ 
+         void break_me() {
+             sound_event(&quot;stonedestroy&quot;);
+@@ -2184,11 +2237,14 @@
+             }
+         }
+ 
+-        bool is_movable () const { return true; }
+-
+     public:
+-        Stone_movefirebreak() : Stone(&quot;st-firebreak_move&quot;) { }
++        Stone_movefirebreak() : Stone(&quot;st-firebreak&quot;) { }
++        
++    private:
++        FreezeStatusBits get_freeze_bits() { return FREEZEBIT_NO_STONE; }        
+     };
++    DEF_TRAITSM(Stone_movefirebreak, &quot;st-firebreak_move&quot;, st_firebreak_move,
++                MOVABLE_STANDARD);
+ }
+ 
+ 
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2007-09-16 21:58:42 UTC (rev 883)
++++ trunk/src/world.cc	2007-09-17 23:36:58 UTC (rev 884)
+@@ -1584,8 +1584,16 @@
+ {
+     if (const Field *f = GetField (p)) {
+         Stone *st = f-&gt;stone;
+-        if (st)
++        if (st) {
+             st-&gt;on_floor_change();
++            // Perhaps the stone was destroyed - get the new one.
++            st = f-&gt;stone;
++        }
++        
++        if (st) {
++            st-&gt;freeze_check();
++            st = f-&gt;stone;
++        }
+ 
+         if (Item *it = f-&gt;item)
+             it-&gt;stone_change(st);
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2007-09-16 21:58:42 UTC (rev 883)
++++ trunk/src/world.hh	2007-09-17 23:36:58 UTC (rev 884)
+@@ -331,9 +331,8 @@
+     Stone *GetStone(GridPos p);
+     Stone *YieldStone(GridPos p);
+     void   KillStone(GridPos p);
++    void   MoveStone(GridPos oldPos, GridPos newPos);
+ 
+-    void MoveStone(GridPos oldPos, GridPos newPos);
+-
+ /* -------------------- Items -------------------- */
+ 
+     void  SetItem (GridPos p, Item* it);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000315.html">[Enigma-game-svn] r883 - in trunk/data: gfx32 gfx40
+</A></li>
+	<LI>Next message: <A HREF="000317.html">[Enigma-game-svn] r885 - homepage/input/lotm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#316">[ date ]</a>
+              <a href="thread.html#316">[ thread ]</a>
+              <a href="subject.html#316">[ subject ]</a>
+              <a href="author.html#316">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

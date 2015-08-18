@@ -1,0 +1,476 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1013 - in trunk: data src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1013%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200801282315.m0SNFlHJ026324%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000444.html">
+   <LINK REL="Next"  HREF="000446.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1013 - in trunk: data src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1013%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200801282315.m0SNFlHJ026324%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1013 - in trunk: data src">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Jan 29 00:15:47 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000444.html">[Enigma-game-svn] r1012 - in feature_branches/hp_lotm: images/lotm	input/lotm
+</A></li>
+        <LI>Next message: <A HREF="000446.html">[Enigma-game-svn] r1014 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#445">[ date ]</a>
+              <a href="thread.html#445">[ thread ]</a>
+              <a href="subject.html#445">[ subject ]</a>
+              <a href="author.html#445">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-01-29 00:15:46 +0100 (Tue, 29 Jan 2008)
+New Revision: 1013
+
+Modified:
+   trunk/data/init.lua
+   trunk/src/actors.cc
+   trunk/src/items.cc
+   trunk/src/lua.cc
+   trunk/src/server.cc
+   trunk/src/server.hh
+   trunk/src/stones_complex.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1: Reengineering Trigger
+- renaming it-trigger to it_trigger
+- it_trigger as StateObject: 
+  - state O/1 as ON/OFF can be requested
+  - all other messages and writes are disabled
+- correct initialization of new triggers:
+  - image and internal state due to the number of actors and stone
+- jumping on and over triggers is allowed: flying marbles do not
+  press the trigger any more. (Bug #8154)
+- cannonballs do no longer press a trigger
+Note:
+- dead actors are still counted
+
+
+Modified: trunk/data/init.lua
+===================================================================
+--- trunk/data/init.lua	2008-01-27 23:59:29 UTC (rev 1012)
++++ trunk/data/init.lua	2008-01-28 23:15:46 UTC (rev 1013)
+@@ -47,6 +47,7 @@
+ RenamingObjectsNew2Old = {
+     it_blocker = &quot;it-blocker&quot;,
+     it_blocker_new = &quot;it-blocker-new&quot;,
++    it_trigger = &quot;it-trigger&quot;,
+     st_blocker = &quot;st-blocker&quot;,
+     st_blocker_new = &quot;st-blocker-growing&quot;,
+     st_boulder = &quot;st-bolder&quot;,
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2008-01-27 23:59:29 UTC (rev 1012)
++++ trunk/src/actors.cc	2008-01-28 23:15:46 UTC (rev 1013)
+@@ -442,7 +442,7 @@
+         DECL_TRAITS;
+     public:
+         Bug() : Actor(traits) {}
+-        bool is_flying() const { return true; }
++        bool is_flying() const { return false; }
+         bool is_dead() const { return false; }
+         int get_id() const { return ac_bug; }
+     };
+@@ -466,7 +466,7 @@
+         DECL_TRAITS;
+  
+         int get_id() const { return ac_horse; }
+-        bool is_flying() const { return true; }
++        bool is_flying() const { return false; }
+         bool is_dead() const { return false; }
+ 
+         void think (double dtime);
+@@ -619,7 +619,7 @@
+         };
+ 
+         void sink (double dtime);
+-	void disable_shield();
++        void disable_shield();
+         void change_state_noshield (State newstate);
+         void change_state(State newstate);
+ 
+@@ -642,7 +642,7 @@
+         }
+ 
+         bool is_dead() const;
+-	bool is_movable() const;
++        bool is_movable() const;
+         bool is_flying() const { return state == JUMPING; }
+         bool is_on_floor() const;
+         bool is_drunken() const { return m_drunk_rest_time&gt;0; }
+@@ -1015,6 +1015,13 @@
+ 
+     string kind     = get_kind();
+     State  oldstate = state;
++    
++    if (oldstate == JUMPING) {
++        // notify objects on grid about the landing - used by it_trigger
++        SendMessage(GetStone(get_gridpos()), &quot;_jumping&quot;, false);
++        SendMessage(GetItem(get_gridpos()), &quot;_jumping&quot;, false);
++        SendMessage(GetFloor(get_gridpos()), &quot;_jumping&quot;, false);
++    }
+ 
+     // Whatever happened to the ball, the sink depth
+     // should be returned to zero.
+@@ -1066,6 +1073,10 @@
+     case JUMPING:
+         sound_event (&quot;jump&quot;);
+         set_anim(kind+&quot;-jump&quot;);
++        // notify objects on grid about the jumping - used by it_trigger
++        SendMessage(GetFloor(get_gridpos()), &quot;_jumping&quot;, true);
++        SendMessage(GetItem(get_gridpos()), &quot;_jumping&quot;, true);
++        SendMessage(GetStone(get_gridpos()), &quot;_jumping&quot;, true);
+         break;
+     case APPEARING:
+     case RISING_VORTEX:
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-01-27 23:59:29 UTC (rev 1012)
++++ trunk/src/items.cc	2008-01-28 23:15:46 UTC (rev 1013)
+@@ -1316,80 +1316,149 @@
+ 
+ 
+ /* -------------------- Trigger -------------------- */
+-namespace
+-{
++    /**
++     * A switch that is triggered by actors crossing it on the floor and stones
++     * being pushed onto it. The external state is read only - value 1 (ON) is
++     * reported if the trigger is pressed either by an actor or a stone, a value
++     * 0 (OFF) otherwise.&lt;p&gt;
++     * Note that due to the Enigma 1.10 standards no actions will be performed
++     * on initialisation or setting of a trigger, even if actors or a stone are
++     * positioned on the grid. But state and model are set according to the other
++     * objects.&lt;p&gt;
++     * The internal state stores the current number of actors and the presence
++     * of a stone. The stone is flagged as the least significant bit, the actor
++     * count is stored in the bits above, what is simply an addition of 2 times
++     * the actor count to the state. This coding simplifies requests and avoids
++     * usage of additional ivars for the complete logical state.
++     */
+     class Trigger : public Item {
+         CLONEOBJ(Trigger);
+         DECL_TRAITS;
+     public:
+         Trigger();
++        
++        // Object interface
++        virtual Value message (const Message &amp;m);
++        
++        // StateObject interface
++        virtual int externalState() const;
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void on_creation(GridPos p);
++        virtual void init_model();
++        
++        // Item interface
++        virtual void actor_enter(Actor *a);
++        virtual void actor_leave(Actor *a);
++        virtual void stone_change(Stone *st);
+     private:
+-        // Variables
+-        bool m_pressedp;
+-        int m_actorcount;
+-
+         // Methods
+-        void update_state();
++        int countActors();
++        void updateIState(int diffActors = 0, bool refuseAction = false);
+ 
+-        // Item interface
+-        void init_model();
+-        void actor_enter(Actor *) { m_actorcount += 1; update_state(); }
+-        void actor_leave(Actor *) { m_actorcount -= 1; update_state(); }
+-        void stone_change(Stone *) { update_state(); }
++    };
+ 
+-        virtual Value message (const Message &amp;m) {
+-            if (m.message == &quot;signal&quot;) {
+-                performAction(m.value.to_bool());  // convert 1/0 values to true/false
+-                return Value();                
+-            } else if (m.message == &quot;_init&quot;) {
+-                update_state();                
+-                return Value();
+-            }
+-            return Item::message(m);
++    DEF_TRAITSF(Trigger, &quot;it_trigger&quot;, it_trigger, itf_static | itf_indestructible);
++    
++    Trigger::Trigger() {
++        set_attrib(&quot;invisible&quot;, false);
++    }
++    
++    Value Trigger::message (const Message &amp;m) {
++        if (m.message == &quot;signal&quot;) {
++            performAction(m.value.to_bool());  // convert 1/0 values to true/false
++            return Value();                
++        } else if (m.message == &quot;_init&quot;) {
++            // the state count at init is wrong as some actors on the grid may
++            // already have existed on_creation, but all are reported via
++            // actor_enter due to actors on_creation.
++            // Thus we need to reset and recount the actors:
++            state = 0;
++            
++            // old Enigma versions did issue performAction what is incompatible
++            updateIState(countActors(),
++                    server::EnigmaCompatibility &gt;= 1.10 &amp;&amp; server::GameCompatibility == GAMET_ENIGMA); 
++            return Value();
++        } else if (m.message == &quot;_jumping&quot; ) {
++            updateIState(m.value.to_bool() ? -1 : +1);
+         }
+-    };
+-
+-    DEF_TRAITSF(Trigger, &quot;it-trigger&quot;, it_trigger,
+-                itf_static | itf_indestructible);
+-}
+-
+-Trigger::Trigger()
+-{
+-    m_pressedp = false;
+-    m_actorcount = 0;
+-    set_attrib(&quot;invisible&quot;, false);
+-}
+-
+-void Trigger::init_model()
+-{
+-    if (getAttr(&quot;invisible&quot;).to_bool())
+-        set_model(&quot;invisible&quot;);
+-    else if (m_pressedp)
+-        set_model(&quot;it-trigger1&quot;);
+-    else
+-        set_model(&quot;it-trigger&quot;);
+-}
+-
+-void Trigger::update_state()
+-{
+-    Stone *st = GetStone(get_pos());
+-    // Hack to make tunnel puzzle stones press triggers
+-    bool stone_pressure = st &amp;&amp; (!st-&gt;is_floating() || st-&gt;is_kind (&quot;st-puzzle*&quot;));
+-    bool pressedp = stone_pressure || (m_actorcount &gt; 0);
+-
+-    if (m_pressedp != pressedp) {
+-        m_pressedp = pressedp;
+-
++        return Item::message(m);
++    }
++        
++    int Trigger::externalState() const {
++        return state != 0 ? 1 : 0;
++    }
++    
++    void Trigger::setState(int extState) {
++        return;   // ignore any write attempts
++    }
++    
++    void Trigger::on_creation(GridPos p) {
++        state = 0;
++        updateIState(countActors(), !server::WorldInitialized);
+         init_model();
+-        if (m_pressedp) {
+-            sound_event (&quot;triggerdown&quot;);
+-            performAction(true);
+-        } else {
+-            sound_event (&quot;triggerup&quot;);
+-            performAction(false);
++    }
++        
++    void Trigger::init_model() {
++        if (getAttr(&quot;invisible&quot;).to_bool())
++            set_model(&quot;invisible&quot;);
++        else if (state != 0)
++            set_model(&quot;it-trigger1&quot;);
++        else
++            set_model(&quot;it-trigger&quot;);
++    }
++    
++    void Trigger::actor_enter(Actor *a) {
++        if (!a-&gt;is_flying())
++            updateIState(+1, !server::WorldInitialized);
++    }
++    
++    void Trigger::actor_leave(Actor *a) {
++        if (!a-&gt;is_flying())
++            updateIState(-1, !server::WorldInitialized);
++    }
++    
++    void Trigger::stone_change(Stone *) {
++        updateIState(0);
++    }
++    
++    int Trigger::countActors() {
++        vector&lt;Actor*&gt; actors;
++        GetActorsInsideField (get_pos(), actors);
++        int count = 0;
++        for (vector&lt;Actor*&gt;::iterator it = actors.begin(); it != actors.end(); ++it)
++            if (!(*it)-&gt;is_flying()) count++;
++        return count;
++    }
++    
++    void Trigger::updateIState(int diffActors, bool refuseAction) {
++        int oldState = state;
++        
++        state += 2 * diffActors;
++        
++        Stone *st = GetStone(get_pos());
++        state &amp;= ~1;  // delete stone pressure bit
++        if (st != NULL &amp;&amp; (!st-&gt;is_floating() || st-&gt;is_kind(&quot;st-puzzle*&quot;))) {
++            // Hack to make hollow puzzle stones press triggers
++            state |= 1;   // add stone pressure bit
+         }
++                
++//        Log &lt;&lt; &quot;Trigger update old state &quot; &lt;&lt; oldState &lt;&lt; &quot; - new state &quot; &lt;&lt; state &lt;&lt; &quot;\n&quot;;
++    
++        if ((oldState == 0 &amp;&amp; state != 0) || (oldState != 0 &amp;&amp; state == 0)) {
++            init_model();
++            if (!refuseAction) {
++                if (state != 0) {
++                    sound_event (&quot;triggerdown&quot;);
++                    performAction(true);
++                } else {
++                    sound_event (&quot;triggerup&quot;);
++                    performAction(false);
++                }
++            }
++        }
+     }
+-}
+ 
+ 
+ /* -------------------- Seed -------------------- */
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-01-27 23:59:29 UTC (rev 1012)
++++ trunk/src/lua.cc	2008-01-28 23:15:46 UTC (rev 1013)
+@@ -1774,7 +1774,7 @@
+ 
+ static int initWorld(lua_State *L) {
+     // world, (ti|function), string, table
+-    if (server::WorldInitialized) {
++    if (server::WorldSized) {
+         throwLuaError(L, &quot;World reinitialization not allowed&quot;);
+         return 0;
+     }
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2008-01-27 23:59:29 UTC (rev 1012)
++++ trunk/src/server.cc	2008-01-28 23:15:46 UTC (rev 1013)
+@@ -87,6 +87,7 @@
+ bool     server::SingleComputerGame;        // no Lua access
+ bool     server::TwoPlayerGame;             // no Lua access
+ GameType server::GameCompatibility;         // no Lua access
++bool     server::WorldSized;                // no Lua access
+ bool     server::WorldInitialized;          // no Lua access
+ double   server::Brittleness;
+ double   server::BumperForce;
+@@ -256,7 +257,7 @@
+     move_counter = 0;
+ 
+     enigma::WorldPrepareLevel();
+-    server::WorldInitialized = false;
++    server::WorldSized = false;
+ 
+     player::PrepareLevel();
+ 
+
+Modified: trunk/src/server.hh
+===================================================================
+--- trunk/src/server.hh	2008-01-27 23:59:29 UTC (rev 1012)
++++ trunk/src/server.hh	2008-01-28 23:15:46 UTC (rev 1013)
+@@ -70,7 +70,10 @@
+     // Behave like Oxyd/Enigma version
+     extern GameType GameCompatibility;
+ 
+-    // Detect double initialization (resize) attempts
++    // Detect double world resize attempts
++    extern bool     WorldSized;
++    
++    // Guarantee a fully initialized world, init messages has been sent
+     extern bool     WorldInitialized;
+     
+     // Single oxyds make a level unsolvable, but sometimes they are just fake,... 
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-01-27 23:59:29 UTC (rev 1012)
++++ trunk/src/stones_complex.cc	2008-01-28 23:15:46 UTC (rev 1013)
+@@ -375,7 +375,10 @@
+     private:
+         CLONEOBJ(OneWayStone);
+         DECL_TRAITS;
+-        virtual bool actor_may_pass (Actor * /*a*/) { return true; }
++        virtual bool actor_may_pass (Actor *a) {
++            const ActorTraits &amp;at = a-&gt;get_traits();
++            return at.id != ac_bug &amp;&amp; at.id != ac_horse;
++        }
+     };
+     DEF_TRAITS(OneWayStone, &quot;st-oneway&quot;, st_oneway);
+ 
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-01-27 23:59:29 UTC (rev 1012)
++++ trunk/src/world.cc	2008-01-28 23:15:46 UTC (rev 1013)
+@@ -1557,7 +1557,7 @@
+ {
+     level.reset (new World(w,h));
+     display::NewWorld(w, h);
+-    server::WorldInitialized = true;
++    server::WorldSized = true;
+ }
+ 
+ void WorldPrepareLevel ()
+@@ -1605,6 +1605,7 @@
+     display::FocusReferencePoint();
+ 
+     level-&gt;preparing_level = false;
++    server::WorldInitialized = true;
+ 
+     return true;
+ }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000444.html">[Enigma-game-svn] r1012 - in feature_branches/hp_lotm: images/lotm	input/lotm
+</A></li>
+	<LI>Next message: <A HREF="000446.html">[Enigma-game-svn] r1014 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#445">[ date ]</a>
+              <a href="thread.html#445">[ thread ]</a>
+              <a href="subject.html#445">[ subject ]</a>
+              <a href="author.html#445">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,508 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1453 - in trunk: data/schemas src src/items
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1453%20-%20in%20trunk%3A%20data/schemas%20src%20src/items&In-Reply-To=%3C200901132158.n0DLwXLc019819%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000881.html">
+   <LINK REL="Next"  HREF="000883.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1453 - in trunk: data/schemas src src/items</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1453%20-%20in%20trunk%3A%20data/schemas%20src%20src/items&In-Reply-To=%3C200901132158.n0DLwXLc019819%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1453 - in trunk: data/schemas src src/items">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Jan 13 22:58:33 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000881.html">[Enigma-game-svn] r1452 - in trunk/data/levels: enigma_cross	enigma_ii enigma_iii enigma_iv enigma_v enigma_vi enigma_viii
+</A></li>
+        <LI>Next message: <A HREF="000883.html">[Enigma-game-svn] r1454 - in trunk: data src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#882">[ date ]</a>
+              <a href="thread.html#882">[ thread ]</a>
+              <a href="subject.html#882">[ subject ]</a>
+              <a href="author.html#882">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-01-13 22:58:32 +0100 (Tue, 13 Jan 2009)
+New Revision: 1453
+
+Modified:
+   trunk/data/schemas/objects.xml
+   trunk/src/Object.cc
+   trunk/src/WorldProxy.cc
+   trunk/src/actors.cc
+   trunk/src/items.cc
+   trunk/src/items.hh
+   trunk/src/items/Sensor.cc
+   trunk/src/items/Sensor.hh
+   trunk/src/lua.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/oxyd.cc
+   trunk/src/oxyd_internal.hh
+Log:
+Trunk 1.1: new API reengineering
+- fix actor nearest object attribute evaluation
+- group add method &quot;sub()&quot; for retrieving a subgroup:
+  - group:sub(+n) - positive number gives first n objects
+  - group:sub(-n) - negative number gives last n objects
+  - group:sub(s, e) - range of objects in given index range
+  - group:sub(s, -n) - n objects starting with at index s
+- Sensor:
+  - fix perform action value
+  - add attribute &quot;exit&quot;, default false, if true send action on actor leaving
+    the grid instead of actor entering the grid
+  - exit attribute is substitute for no longer existing it-changefloor
+    (set floor beneath as the target to toggle fl_yinyang, use nearest target)
+
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2009-01-13 01:26:53 UTC (rev 1452)
++++ trunk/data/schemas/objects.xml	2009-01-13 21:58:32 UTC (rev 1453)
+@@ -22,6 +22,7 @@
+     &lt;attr name=&quot;essential&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;2&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;essential_id&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;eternal&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;exit&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;faces&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;fastfire&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;fellows&quot; type=&quot;group&quot; default=&quot;nil&quot; rw=&quot;r&quot;/&gt;
+@@ -531,6 +532,7 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;it_sensor&quot;&gt;
+       &lt;attr name=&quot;invisible&quot;/&gt;
++      &lt;attr name=&quot;exit&quot;/&gt;
+       &lt;msg name=&quot;_glasses&quot;/&gt;
+       &lt;msg name=&quot;_hit&quot;/&gt;
+     &lt;/object&gt;
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2009-01-13 01:26:53 UTC (rev 1452)
++++ trunk/src/Object.cc	2009-01-13 21:58:32 UTC (rev 1453)
+@@ -397,8 +397,9 @@
+         for (TokenList::iterator tit = targets.begin(); tit != targets.end(); ++tit) {
+             modified |= (*tit).finalizeNearestObjectReference(this);
+         }
+-        if (modified)
++        if (modified) {
+             setAttr(attr, targets);
++        }
+     }
+     
+     void Object::finalizeNearestObjectReferences() {
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2009-01-13 01:26:53 UTC (rev 1452)
++++ trunk/src/WorldProxy.cc	2009-01-13 21:58:32 UTC (rev 1453)
+@@ -45,7 +45,7 @@
+     Value WorldProxy::getAttr(const string&amp; key) const {
+         if (key == &quot;AllowSingleOxyds&quot;) {
+             return server::AllowSingleOxyds;
+-        } else if (key == &quot;AllowTogglePlayer&quot;) {
++        } else if (key == &quot;TogglePlayerOnDeath&quot;) {
+             return server::AllowTogglePlayer;
+         } else if (key == &quot;ConserveLevel&quot;) {
+             return server::ConserveLevel;
+@@ -113,7 +113,7 @@
+     void WorldProxy::setAttr(const string&amp; key, const Value &amp;val) {
+         if (key == &quot;AllowSingleOxyds&quot;) {
+             server::AllowSingleOxyds = val;
+-        } else if (key == &quot;AllowTogglePlayer&quot;) {
++        } else if (key == &quot;TogglePlayerOnDeath&quot;) {
+             server::AllowTogglePlayer = val;
+         } else if (key == &quot;ConserveLevel&quot;) {
+             server::ConserveLevel = val.to_bool();
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2009-01-13 01:26:53 UTC (rev 1452)
++++ trunk/src/actors.cc	2009-01-13 21:58:32 UTC (rev 1453)
+@@ -126,7 +126,6 @@
+     Value Actor::message(const Message &amp;m) {
+         if (m.message == &quot;_init&quot;) {
+             startingpos = get_pos();
+-            return Value();
+         } else if (m.message == &quot;_freeze&quot;) {
+             m_actorinfo.frozen_vel = m_actorinfo.vel;
+             m_actorinfo.vel = ecl::V2();
+
+Modified: trunk/src/items/Sensor.cc
+===================================================================
+--- trunk/src/items/Sensor.cc	2009-01-13 01:26:53 UTC (rev 1452)
++++ trunk/src/items/Sensor.cc	2009-01-13 21:58:32 UTC (rev 1453)
+@@ -27,12 +27,14 @@
+ #include &quot;items/GlassesItem.hh&quot;
+ 
+ namespace enigma {
+-    Sensor::Sensor(bool inverse, bool isFilter) {
++    Sensor::Sensor(bool inverse, bool isFilter, bool exit) {
+         Object::setAttr(&quot;inverse&quot;, inverse);
+         if (isFilter) {
+-            objFlags |= OBJBIT_ISFILTER;
+-            Item::setAttr(&quot;invisible&quot;, true);
++            objFlags |= OBJBIT_ISFILTER | OBJBIT_INVISIBLE;
+         }
++        if (exit) {
++            objFlags |= OBJBIT_EXIT;
++        }
+     }
+     
+     Value Sensor::message(const Message &amp;m) {
+@@ -56,49 +58,76 @@
+     
+     void Sensor::setAttr(const string&amp; key, const Value &amp;val) {
+         if (key == &quot;invisible&quot;) {
+-            Item::setAttr(key, val);
++            objFlags = (objFlags &amp; ~OBJBIT_INVISIBLE) | (val.to_bool() ? OBJBIT_INVISIBLE : 0);
+             if (isDisplayable())
+                 init_model();
+             return;
++        } else if (key == &quot;exit&quot;) {
++            objFlags = (objFlags &amp; ~OBJBIT_EXIT) | (val.to_bool() ? OBJBIT_EXIT : 0);
++            return;
+         }
+         Item::setAttr(key, val);
+     }
+     
++    Value Sensor::getAttr(const std::string &amp;key) const {
++        if (key == &quot;invisible&quot;) {
++            return (objFlags &amp; OBJBIT_INVISIBLE) != 0;
++        } else if (key == &quot;exit&quot;) {
++            return (objFlags &amp; OBJBIT_EXIT) != 0;
++        }
++        return Item::getAttr(key);
++    }
++    
+     void Sensor::init_model() {
+-        if (getAttr(&quot;invisible&quot;).to_bool() &amp;&amp; ((server::GlassesVisibility &amp; Glasses::SENSOR) == 0))
++        if ((objFlags &amp; OBJBIT_INVISIBLE) &amp;&amp; ((server::GlassesVisibility &amp; Glasses::SENSOR) == 0))
+             set_model(&quot;invisible&quot;);
+         else
+             set_model(&quot;it_sensor&quot;);
+     }
++    
++    void Sensor::actor_enter(Actor *a) {
++        if (!(objFlags &amp; OBJBIT_EXIT)) {        
++            if (!(objFlags &amp; OBJBIT_INVISIBLE))
++                set_anim(&quot;it_sensor_hit&quot;);
++            performAction(true);
++        }
++    }
++    
++    void Sensor::actor_leave(Actor *a) {
++        if (objFlags &amp; OBJBIT_EXIT) {        
++            if (!(objFlags &amp; OBJBIT_INVISIBLE))
++                set_anim(&quot;it_sensor_hit&quot;);
++            performAction(true);
++        }
++    }
+ 
+     void Sensor::animcb() {
+         init_model();
+     }
+ 
+-    void Sensor::actor_enter(Actor *a) {
+-        if (!getAttr(&quot;invisible&quot;).to_bool())
+-            set_anim(&quot;it_sensor_hit&quot;);
+-        performAction(true);
+-    }
+-    
+     int Sensor::traitsIdx() const {
+         int idx = getAttr(&quot;inverse&quot;).to_bool() ? 1 : 0;
+         if (objFlags &amp; OBJBIT_ISFILTER)
+             idx +=2;
++        if (objFlags &amp; OBJBIT_EXIT)
++            idx = 4;
+         return idx;
+     }
+ 
+-    ItemTraits Sensor::traits[4] = {
++    ItemTraits Sensor::traits[5] = {
+         {&quot;it_sensor&quot;,  it_sensor,  itf_static}, 
+         {&quot;it_sensor_inverse&quot;,  it_inversesensor,  itf_static},
+         {&quot;it_sensor_filter1&quot;, it_signalfilter1, itf_static | itf_invisible, 0.0},  // DAT only
+-        {&quot;it_sensor_filter0&quot;, it_signalfilter0, itf_static | itf_invisible, 0.0}   // DAT only
++        {&quot;it_sensor_filter0&quot;, it_signalfilter0, itf_static | itf_invisible, 0.0},   // DAT only
++        {&quot;it_sensor_exit&quot;,  it_exitsensor,  itf_static}
+     };
++    
+     BOOT_REGISTER_START
+-        BootRegister(new Sensor(true), &quot;it_sensor&quot;);
+-        BootRegister(new Sensor(false), &quot;it_sensor_inverse&quot;);
+-        BootRegister(new Sensor(true, true), &quot;it_sensor_filter1&quot;);
+-        BootRegister(new Sensor(false, true), &quot;it_sensor_filter0&quot;);
++        BootRegister(new Sensor(false), &quot;it_sensor&quot;);
++        BootRegister(new Sensor(true), &quot;it_sensor_inverse&quot;);
++        BootRegister(new Sensor(false, true), &quot;it_sensor_filter1&quot;);
++        BootRegister(new Sensor(true, true), &quot;it_sensor_filter0&quot;);
++        BootRegister(new Sensor(false, false, true), &quot;it_sensor_exit&quot;);
+     BOOT_REGISTER_END
+ 
+ } // namespace enigma
+
+Modified: trunk/src/items/Sensor.hh
+===================================================================
+--- trunk/src/items/Sensor.hh	2009-01-13 01:26:53 UTC (rev 1452)
++++ trunk/src/items/Sensor.hh	2009-01-13 21:58:32 UTC (rev 1453)
+@@ -26,31 +26,33 @@
+ namespace enigma {
+     class Sensor : public Item {
+         CLONEOBJ(Sensor);
+-        DECL_ITEMTRAITS_ARRAY(4, traitsIdx());
++        DECL_ITEMTRAITS_ARRAY(5, traitsIdx());
+     private:
+         enum ObjectPrivatFlagsBits {
+-            OBJBIT_ISFILTER  =   1&lt;&lt;24    ///&lt; sensor that filters signals, too
++            OBJBIT_EXIT      =   1&lt;&lt;24,    ///&lt; sensor that reacts on actor leave
++            OBJBIT_ISFILTER  =   1&lt;&lt;25,    ///&lt; sensor that filters signals, too
++            OBJBIT_INVISIBLE =   1&lt;&lt;26     ///&lt; sensor that is invisible
+         };
+     public:
+         static void setup();
+             
+-        Sensor(bool inverse, bool isFilter = false);
++        Sensor(bool inverse, bool isFilter = false, bool exit = false);
+         
+         // Object interface
+         virtual Value message(const Message &amp;m);
+         
+         // StateObject interface
+         virtual void setAttr(const string&amp; key, const Value &amp;val);
++        virtual Value getAttr(const std::string &amp;key) const;
+         
+         // GridObject interface
+         virtual void init_model();
++        virtual void actor_enter(Actor *a);
++        virtual void actor_leave(Actor *a);
+ 
+         // ModelCallback interface
+         virtual void animcb();
+ 
+-        // Item interface
+-        virtual void actor_enter(Actor *a);
+-    
+     private:
+         int traitsIdx() const;
+     };
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2009-01-13 01:26:53 UTC (rev 1452)
++++ trunk/src/items.cc	2009-01-13 21:58:32 UTC (rev 1453)
+@@ -1478,25 +1478,6 @@
+     DEF_ITEMTRAITS(SurpriseItem, &quot;it-surprise&quot;, it_surprise);
+ }
+ 
+-/* -------------------- ChangeFloorItem -------------------- */
+-namespace
+-{
+-    class ChangeFloorItem : public Item {
+-        CLONEOBJ(ChangeFloorItem);
+-        DECL_ITEMTRAITS;
+-
+-        void actor_leave (Actor *) {
+-            SendMessage(GetFloor(get_pos()), &quot;toggle&quot;);
+-        }
+-
+-    public:
+-        ChangeFloorItem() {
+-        }
+-    };
+-    DEF_ITEMTRAITSF(ChangeFloorItem, &quot;it-changefloor&quot;, it_changefloor,
+-                itf_static | itf_invisible);
+-}
+-
+ /* -------------------- Drop -------------------- */
+ 
+ namespace
+@@ -1591,7 +1572,6 @@
+     RegisterItem (new Booze);
+     RegisterItem (new BrokenBooze);
+     Burnable::setup();
+-    RegisterItem (new ChangeFloorItem);
+     RegisterItem (new Cross);
+     RegisterItem (new Debris);
+     RegisterItem (new Document);
+
+Modified: trunk/src/items.hh
+===================================================================
+--- trunk/src/items.hh	2009-01-13 01:26:53 UTC (rev 1452)
++++ trunk/src/items.hh	2009-01-13 21:58:32 UTC (rev 1453)
+@@ -46,7 +46,6 @@
+         it_burnable_burning,
+         it_burnable_ash,
+         it_burnable_oil,
+-        it_changefloor,
+         it_cherry,
+         it_cherry_crushed,
+         it_coffee,
+@@ -69,6 +68,7 @@
+         it_explosion1,
+         it_explosion2,
+         it_explosion3,
++        it_exitsensor,
+         it_extinguisher,
+         it_extinguisher_medium,
+         it_extinguisher_empty,
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2009-01-13 01:26:53 UTC (rev 1452)
++++ trunk/src/lua.cc	2009-01-13 21:58:32 UTC (rev 1453)
+@@ -2961,6 +2961,39 @@
+     }
+ }
+ 
++static int subGroup(lua_State *L) {
++    // group
++    if (lua_gettop(L) &lt; 1 || !is_group(L, 1)) {
++        throwLuaError(L, &quot;Syntax error - usage of '.' instead of ':'&quot;);
++        return 0;        
++    }
++    ObjectList oldList = toObjectList(L, 1);
++    int length = oldList.size();
++    int start = 0;
++    int end = length;
++    if (lua_gettop(L) == 2 &amp;&amp; lua_isnumber(L, 2)) {
++        end = lua_tointeger(L, 2);
++        if (end &lt; 0) {
++            start = length - end;
++            end = length;
++        }
++    }
++    if (lua_gettop(L) == 3 &amp;&amp; lua_isnumber(L, 2) &amp;&amp; lua_isnumber(L, 3)) {
++        start = lua_tointeger(L, 2) - 1;
++        end = lua_tointeger(L, 2);
++        if (end &lt; 0) {
++            end = start - end;
++        }
++    }
++    ObjectList newList;
++    int i = 0;
++    for (ObjectList::iterator itr = oldList.begin(); itr != oldList.end(); ++itr, i++) {
++        if (i &gt;= start &amp;&amp; i &lt; end)
++            newList.push_back(*itr);
++    }
++    return pushNewGroup(L, newList);
++}
++
+ static int shuffleGroup(lua_State *L) {
+     // group
+     if (lua_gettop(L) &lt; 1 || !is_group(L, 1)) {
+@@ -3290,6 +3323,7 @@
+     {killObject,                    &quot;kill&quot;},
+     {shuffleGroup,                  &quot;shuffle&quot;},
+     {sortGroup,                     &quot;sort&quot;},
++    {subGroup,                      &quot;sub&quot;},
+     {0,0}
+ };
+ 
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2009-01-13 01:26:53 UTC (rev 1452)
++++ trunk/src/ox_peroxyd.cc	2009-01-13 21:58:32 UTC (rev 1453)
+@@ -442,7 +442,7 @@
+     &quot;it_cross&quot;,                   // 0x3c
+     &quot;it_spoon&quot;,                   // 0x3d
+     IT_MISSING,                   // 0x3e rubber band
+-    &quot;it-changefloor&quot;,             // 0x3f
++    &quot;it_sensor_exit&quot;,             // 0x3f
+     &quot;it_trigger&quot;,                 // 0x40
+     &quot;it_brush&quot;,                   // 0x41
+     &quot;it_banana&quot;,                  // 0x42
+
+Modified: trunk/src/oxyd.cc
+===================================================================
+--- trunk/src/oxyd.cc	2009-01-13 01:26:53 UTC (rev 1452)
++++ trunk/src/oxyd.cc	2009-01-13 21:58:32 UTC (rev 1453)
+@@ -361,7 +361,7 @@
+     return tt;
+ }
+ 
+-Item  *OxydLoader::make_item (int type)
++Item  *OxydLoader::make_item(int type, int x, int y)
+ {
+ 
+     Item *it = 0;
+@@ -407,10 +407,14 @@
+             } else if (key == &quot;it_sensor&quot;) {
+                 it = MakeItem(key.c_str());
+                 it-&gt;setAttr(&quot;invisible&quot;, true);
+-            } else if (key == &quot;it_inversesensor&quot;) {
++            } else if (key == &quot;it_sensor_inverse&quot;) {
+                 it = MakeItem(&quot;it_sensor&quot;);
+                 it-&gt;setAttr(&quot;invisible&quot;, true);
+                 it-&gt;setAttr(&quot;inverse&quot;, true);
++            } else if (key == &quot;it_sensor_exit&quot;) {
++                it = MakeItem(&quot;it_sensor_exit&quot;);
++                it-&gt;setAttr(&quot;invisible&quot;, true);
++                it-&gt;setAttr(&quot;target&quot;, GetFloor(GridPos(x, y)));
+             } else {
+                 it = MakeItem(key.c_str());                
+             }
+@@ -448,8 +452,8 @@
+     const Grid &amp;grid = level.getGrid (GridType_Objects);
+     for (unsigned y=0; y&lt;grid.getHeight(); ++y)
+         for (unsigned x=0; x&lt;grid.getWidth(); ++x)
+-            if (Item *it = make_item (grid.get(x,y)))
+-                SetItem (GridPos(x, y), it);
++            if (Item *it = make_item(grid.get(x,y), x, y))
++                SetItem(GridPos(x, y), it);
+ }
+ 
+ void OxydLoader::load_stones()
+
+Modified: trunk/src/oxyd_internal.hh
+===================================================================
+--- trunk/src/oxyd_internal.hh	2009-01-13 01:26:53 UTC (rev 1452)
++++ trunk/src/oxyd_internal.hh	2009-01-13 21:58:32 UTC (rev 1453)
+@@ -100,7 +100,7 @@
+         /* ---------- OxydLoader interface ---------- */
+ 
+         virtual Stone *make_stone (int type, int x, int y);
+-        virtual Item  *make_item (int type);
++        virtual Item  *make_item (int type, int x, int y);
+ 
+ 
+         /* ---------- Variables ---------- */
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000881.html">[Enigma-game-svn] r1452 - in trunk/data/levels: enigma_cross	enigma_ii enigma_iii enigma_iv enigma_v enigma_vi enigma_viii
+</A></li>
+	<LI>Next message: <A HREF="000883.html">[Enigma-game-svn] r1454 - in trunk: data src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#882">[ date ]</a>
+              <a href="thread.html#882">[ thread ]</a>
+              <a href="subject.html#882">[ subject ]</a>
+              <a href="author.html#882">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

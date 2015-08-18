@@ -1,0 +1,1374 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1239 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1239%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200807142301.m6EN1b4a007339%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000672.html">
+   <LINK REL="Next"  HREF="000674.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1239 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1239%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200807142301.m6EN1b4a007339%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1239 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Jul 15 01:01:37 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000672.html">[Enigma-game-svn] r1238 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000674.html">[Enigma-game-svn] r1240 - in trunk: data/schemas src src/lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#673">[ date ]</a>
+              <a href="thread.html#673">[ thread ]</a>
+              <a href="subject.html#673">[ subject ]</a>
+              <a href="author.html#673">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-07-15 01:01:33 +0200 (Tue, 15 Jul 2008)
+New Revision: 1239
+
+Added:
+   trunk/src/stones/Turnstile.cc
+   trunk/src/stones/Turnstile.hh
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/GridObject.cc
+   trunk/src/Makefile.am
+   trunk/src/ox_extra.cc
+   trunk/src/ox_magnum.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/stones.hh
+   trunk/src/stones_complex.cc
+Log:
+Trunk 1.1: new API reengineering Turnstile
+- rename st-turnstile to st_turnstile_red
+- rename st-turnstile-green to st_turnstile_green
+- rename st-turnstile-n,e,s,w to st_turnstilearm_n,e,s,w
+- keep identity of turnstilearm objects on rotation:
+  attached rubbbands and wires will remain
+- st_turnstilearm supports:
+  - attributes state/orientation, connections
+  - message orientate
+- st_turnstile supports:
+  - attributes counterclock, orientation, flavor (values &quot;green&quot;,&quot;red&quot;)
+  - messages signal, turn, turnback
+- wire feature: turnstile arms propagate wire impulses if they are
+  rotated attached to pivot even if they are not impulsed themselves
+- warping - actor position within grid if &quot;kept&quot; as good as possible:
+  - relative grid position of actor is rotated as well
+  - an actor once warped by turnstile keeps warping on further turns
+  - multiple actors warped at once will not sit on top of each other
+  - all actors will fall into tiny hollows after a warp
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-07-14 22:54:29 UTC (rev 1238)
++++ trunk/data/api1init.lua	2008-07-14 23:01:33 UTC (rev 1239)
+@@ -182,6 +182,12 @@
+     st_switch_black = &quot;st-switch_black&quot;,
+     st_switch_white = &quot;st-switch_white&quot;,
+     st_timer = &quot;st-timer&quot;,
++    st_turnstile_red = &quot;st-turnstile&quot;,
++    st_turnstile_green = &quot;st-turnstile-green&quot;,
++    st_turnstilearm_n = &quot;st-turnstile-n&quot;,
++    st_turnstilearm_e = &quot;st-turnstile-e&quot;,
++    st_turnstilearm_s = &quot;st-turnstile-s&quot;,
++    st_turnstilearm_w = &quot;st-turnstile-w&quot;,
+     st_window = &quot;st-window&quot;
+ }
+ 
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-07-14 22:54:29 UTC (rev 1238)
++++ trunk/data/schemas/objects.xml	2008-07-14 23:01:33 UTC (rev 1239)
+@@ -682,6 +682,39 @@
+       &lt;msg name=&quot;off&quot;/&gt;
+       &lt;msg name=&quot;signal&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_turnstile&quot;&gt;
++      &lt;attr name=&quot;counterclock&quot;/&gt;
++      &lt;attr name=&quot;flavor&quot;/&gt;
++      &lt;attr name=&quot;orientation&quot;/&gt;
++      &lt;attr name=&quot;state&quot; max=&quot;0&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++      &lt;msg name=&quot;turn&quot;/&gt;
++      &lt;msg name=&quot;turnback&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_turnstile_red&quot;&gt;
++      &lt;attr name=&quot;flavor&quot; value=&quot;red&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_turnstile_green&quot;&gt;
++      &lt;attr name=&quot;flavor&quot; value=&quot;green&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_turnstilearm&quot;&gt;
++      &lt;attr name=&quot;state&quot; max=&quot;3&quot;/&gt;
++      &lt;attr name=&quot;connections&quot;/&gt;
++      &lt;attr name=&quot;orientation&quot;/&gt;
++      &lt;msg name=&quot;orientate&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_turnstilearm_n&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;3&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_turnstilearm_e&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;2&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_turnstilearm_s&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;1&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_turnstilearm_w&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;0&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_window&quot;&gt;
+       &lt;attr name=&quot;faces&quot; default=&quot;s&quot;/&gt;
+       &lt;attr name=&quot;scratches&quot;/&gt;
+
+Modified: trunk/src/GridObject.cc
+===================================================================
+--- trunk/src/GridObject.cc	2008-07-14 22:54:29 UTC (rev 1238)
++++ trunk/src/GridObject.cc	2008-07-14 23:01:33 UTC (rev 1239)
+@@ -150,7 +150,8 @@
+     
+     void GridObject::setState(int extState) {
+         StateObject::setState(extState);
+-        init_model();
++        if (isDisplayable())
++            init_model();
+     }
+     
+     std::string GridObject::getModelName() const {
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-07-14 22:54:29 UTC (rev 1238)
++++ trunk/src/Makefile.am	2008-07-14 23:01:33 UTC (rev 1239)
+@@ -251,6 +251,8 @@
+ 	stones/Switch.hh	\
+ 	stones/TimerStone.cc	\
+ 	stones/TimerStone.hh	\
++	stones/Turnstile.cc	\
++	stones/Turnstile.hh	\
+ 	stones/WindowStone.cc	\
+ 	stones/WindowStone.hh
+ 
+
+Modified: trunk/src/ox_extra.cc
+===================================================================
+--- trunk/src/ox_extra.cc	2008-07-14 22:54:29 UTC (rev 1238)
++++ trunk/src/ox_extra.cc	2008-07-14 23:01:33 UTC (rev 1239)
+@@ -280,11 +280,11 @@
+     UNUSED,              // OxydExtra stone 0x9b
+     UNUSED,              // OxydExtra stone 0x9c
+     UNUSED,              // OxydExtra stone 0x9d
+-    &quot;st-turnstile&quot;,      // OxydExtra stone 0x9e
+-    &quot;st-turnstile-n&quot;,    // OxydExtra stone 0x9f
+-    &quot;st-turnstile-s&quot;,    // OxydExtra stone 0xa0
+-    &quot;st-turnstile-w&quot;,    // OxydExtra stone 0xa1
+-    &quot;st-turnstile-e&quot;,    // OxydExtra stone 0xa2
++    &quot;st_turnstile_red&quot;,  // OxydExtra stone 0x9e
++    &quot;st_turnstilearm_n&quot;, // OxydExtra stone 0x9f
++    &quot;st_turnstilearm_s&quot;, // OxydExtra stone 0xa0
++    &quot;st_turnstilearm_w&quot;, // OxydExtra stone 0xa1
++    &quot;st_turnstilearm_e&quot;, // OxydExtra stone 0xa2
+     UNUSED,              // OxydExtra stone 0xa3
+     &quot;st_laserflop_on&quot;,   // OxydExtra stone 0xa4
+     UNUSED,              // OxydExtra stone 0xa5
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2008-07-14 22:54:29 UTC (rev 1238)
++++ trunk/src/ox_magnum.cc	2008-07-14 23:01:33 UTC (rev 1239)
+@@ -276,11 +276,11 @@
+     &quot;st-chargeminus&quot;,           // OxydMagnum stone 0x97
+     &quot;st-chargezero&quot;,            // OxydMagnum stone 0x98
+     0,                          // OxydMagnum stone 0x99 (common was 'st-blocker')(Level 121 ?)(in normal Oxyd Magnum Levels unused!)
+-    &quot;st-turnstile&quot;,             // OxydMagnum stone 0x9a
+-    &quot;st-turnstile-n&quot;,           // OxydMagnum stone 0x9b
+-    &quot;st-turnstile-s&quot;,           // OxydMagnum stone 0x9c
+-    &quot;st-turnstile-w&quot;,           // OxydMagnum stone 0x9d
+-    &quot;st-turnstile-e&quot;,           // OxydMagnum stone 0x9e
++    &quot;st_turnstile_red&quot;,         // OxydMagnum stone 0x9a
++    &quot;st_turnstilearm_n&quot;,        // OxydMagnum stone 0x9b
++    &quot;st_turnstilearm_s&quot;,        // OxydMagnum stone 0x9c
++    &quot;st_turnstilearm_w&quot;,        // OxydMagnum stone 0x9d
++    &quot;st_turnstilearm_e&quot;,        // OxydMagnum stone 0x9e
+     UNUSED,                     // OxydMagnum stone 0x9f
+     UNUSED,                     // OxydMagnum stone 0xa0
+     UNUSED,                     // OxydMagnum stone 0xa1
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-07-14 22:54:29 UTC (rev 1238)
++++ trunk/src/ox_peroxyd.cc	2008-07-14 23:01:33 UTC (rev 1239)
+@@ -352,11 +352,11 @@
+     &quot;st-metal_hole&quot;,            // PerOxyd stone 0x9b
+     &quot;st-stone1&quot;,                // PerOxyd stone 0x9c
+     &quot;st-fart&quot;,                  // PerOxyd stone 0x9d
+-    &quot;st-turnstile&quot;,             // PerOxyd stone 0x9e
+-    &quot;st-turnstile-n&quot;,           // PerOxyd stone 0x9f
+-    &quot;st-turnstile-s&quot;,           // PerOxyd stone 0xa0
+-    &quot;st-turnstile-w&quot;,           // PerOxyd stone 0xa1
+-    &quot;st-turnstile-e&quot;,           // PerOxyd stone 0xa2
++    &quot;st_turnstile_red&quot;,         // PerOxyd stone 0x9e
++    &quot;st_turnstilearm_n&quot;,        // PerOxyd stone 0x9f
++    &quot;st_turnstilearm_s&quot;,        // PerOxyd stone 0xa0
++    &quot;st_turnstilearm_w&quot;,        // PerOxyd stone 0xa1
++    &quot;st_turnstilearm_e&quot;,        // PerOxyd stone 0xa2
+     UNUSED,                     // PerOxyd stone 0xa3
+     &quot;st_laserflop_on&quot;,        // PerOxyd stone 0xa4 laserswitch on
+     UNUSED,                     // PerOxyd stone 0xa5
+
+Added: trunk/src/stones/Turnstile.cc
+===================================================================
+--- trunk/src/stones/Turnstile.cc	2008-07-14 22:54:29 UTC (rev 1238)
++++ trunk/src/stones/Turnstile.cc	2008-07-14 23:01:33 UTC (rev 1239)
+@@ -0,0 +1,472 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ * Copyright (C) 2008 Andreas Lochmann
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/Turnstile.hh&quot;
++#include &quot;actors.hh&quot;
++#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;player.hh&quot;
++#include &quot;world.hh&quot;
++#include &lt;vector&gt;
++
++namespace enigma {
++
++    TurnstilePivot::TurnstilePivot(std::string flavor) : Stone () {
++        setAttr(&quot;flavor&quot;, flavor);
++        setAttr(&quot;orientation&quot;, NORTH);
++    }
++
++    std::string TurnstilePivot::getClass() const {
++        return &quot;st_turnstile&quot;;
++    }
++        
++    void TurnstilePivot::setAttr(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;flavor&quot;) {
++            ASSERT((val.to_string() == &quot;red&quot; || val.to_string() == &quot;green&quot;), XLevelRuntime, 
++                    (&quot;Turnstile unknown flavor: &quot; + val.to_string()).c_str());
++            Stone::setAttr(key, val);
++            if (isDisplayable())
++                init_model();
++        } else
++            Stone::setAttr(key, val);
++    }
++    
++    Value TurnstilePivot::message(const Message &amp;m) {
++        if (m.message == &quot;signal&quot;) {               // turn , turnback
++            if (isDisplayable())
++                rotate(m.value == 0, NULL, NULL);
++            return Value();
++        } else if ((m.message == &quot;turn&quot; || m.message == &quot;turnback&quot;)) {
++            rotate((m.message == &quot;turn&quot; &amp;&amp; !getAttr(&quot;counterclock&quot;).to_bool() || 
++                    m.message == &quot;turnback&quot; &amp;&amp; getAttr(&quot;counterclock&quot;).to_bool()), NULL, NULL);
++            return Value();
++        }
++        return Stone::message(m);
++    }
++    
++    int TurnstilePivot::maxState() const {
++        return 0;
++    }
++    
++    void TurnstilePivot::setState(int extState) {
++        // ignore all state settings
++    }
++
++    void TurnstilePivot::init_model() {
++        set_model(std::string(&quot;red&quot;) == getAttr(&quot;flavor&quot;).to_string() ? &quot;st-turnstile&quot; : &quot;st-turnstile-green&quot;);
++    }
++    
++
++    void TurnstilePivot::animcb() {
++        state = IDLE;
++        init_model();
++    }
++    
++    DirectionBits TurnstilePivot::arms_present() const {
++        int arms = NODIRBIT;
++        GridPos p = get_pos();
++        for (Direction dir = WEST; dir != NODIR; dir = next(dir)) {
++            if (TurnstileArm * ta = dynamic_cast&lt;TurnstileArm *&gt;(GetStone(move(p, dir)))) {
++                if (ta-&gt;getAttr(&quot;state&quot;) == dir)
++                    arms |= to_bits(dir);
++            }
++        }
++        return (DirectionBits)arms;
++    }
++    
++    bool TurnstilePivot::no_stone(int xoff, int yoff) const {
++        GridPos p = get_pos();
++        p.x += xoff;
++        p.y += yoff;
++        return (NULL == GetStone(p));
++    }
++
++    bool TurnstilePivot::rotate(bool clockwise, Object *impulse_sender, TurnstileArm *initiator) {
++        if (state == ROTATING || !isDisplayable())
++            return false;
++    
++        DirectionBits arms = arms_present();
++        bool can_rotate = true;
++    
++        if (clockwise)  {
++            if (arms &amp; NORTHBIT) {
++                can_rotate &amp;= no_stone(+1,-1);
++                if (! (arms &amp; EASTBIT)) can_rotate &amp;= no_stone(+1,0);
++            }
++            if (arms &amp; WESTBIT) {
++                can_rotate &amp;= no_stone(-1,-1);
++                if (! (arms &amp; NORTHBIT)) can_rotate &amp;= no_stone(0,-1);
++            }
++            if (arms &amp; SOUTHBIT) {
++                can_rotate &amp;= no_stone(-1,+1);
++                if (! (arms &amp; WESTBIT)) can_rotate &amp;= no_stone(-1,0);
++            }
++            if (arms &amp; EASTBIT) {
++                can_rotate &amp;= no_stone(+1,+1);
++                if (! (arms &amp; SOUTHBIT)) can_rotate &amp;= no_stone(0,+1);
++            }
++        }
++        else {
++            if (arms &amp; NORTHBIT) {
++                can_rotate &amp;= no_stone(-1,-1);
++                if (! (arms &amp; WESTBIT)) can_rotate &amp;= no_stone(-1,0);
++            }
++            if (arms &amp; WESTBIT) {
++                can_rotate &amp;= no_stone(-1,+1);
++                if (! (arms &amp; SOUTHBIT)) can_rotate &amp;= no_stone(0,+1);
++            }
++            if (arms &amp; SOUTHBIT) {
++                can_rotate &amp;= no_stone(+1,+1);
++                if (! (arms &amp; EASTBIT)) can_rotate &amp;= no_stone(+1,0);
++            }
++            if (arms &amp; EASTBIT) {
++                can_rotate &amp;= no_stone(+1,-1);
++                if (! (arms &amp; NORTHBIT)) can_rotate &amp;= no_stone(0,-1);
++            }
++        }
++    
++        if (can_rotate) {
++            sound_event (clockwise ? &quot;turnstileright&quot; : &quot;turnstileleft&quot;);
++            sound_event(&quot;movesmall&quot;);
++    
++            state = ROTATING;
++            set_anim(ecl::strf(&quot;st-turnstile%s-anim&quot;, (std::string(&quot;red&quot;) == getAttr(&quot;flavor&quot;).to_string()) ? &quot;&quot; : &quot;-green&quot;));
++            rotate_arms(arms, clockwise);
++            handleActorsAndItems(clockwise, impulse_sender);
++            
++            Direction dir = to_direction(getAttr(&quot;orientation&quot;));
++            dir = clockwise ? rotate_cw(dir) : rotate_ccw(dir);
++            Stone::setAttr(&quot;orientation&quot;, dir);
++            
++            for (Direction dir = WEST; dir != NODIR; dir = next(dir)) {
++                if (TurnstileArm * ta = dynamic_cast&lt;TurnstileArm *&gt;(GetStone(move(get_pos(), dir)))) {
++                    if (ta != initiator) {
++                        Impulse rotationImpulse(this, ta-&gt;get_pos(), dir, false);
++                        ta-&gt;propagateImpulse(rotationImpulse);
++                    }
++                }
++            }
++    
++            performAction(!clockwise);
++            server::IncMoveCounter();
++        }
++        return can_rotate;
++    }
++
++    void TurnstilePivot::rotate_arms(DirectionBits arms, bool clockwise) {
++        GridPos p = get_pos();
++    
++        Object * n = (arms &amp; NORTHBIT) ? YieldStone(move (p, NORTH)) : NULL;
++        Object * e = (arms &amp; EASTBIT)  ? YieldStone(move (p, EAST))  : NULL;
++        Object * s = (arms &amp; SOUTHBIT) ? YieldStone(move (p, SOUTH)) : NULL;
++        Object * w = (arms &amp; WESTBIT)  ? YieldStone(move (p, WEST))  : NULL;
++            
++        if (clockwise) {
++            if (arms &amp; NORTHBIT) setArm(n, EAST);
++            if (arms &amp; EASTBIT)  setArm(e, SOUTH);
++            if (arms &amp; SOUTHBIT) setArm(s, WEST);
++            if (arms &amp; WESTBIT)  setArm(w, NORTH);
++        }
++        else {
++            if (arms &amp; NORTHBIT) setArm(n, WEST);
++            if (arms &amp; EASTBIT)  setArm(e, NORTH);
++            if (arms &amp; SOUTHBIT) setArm(s, EAST);
++            if (arms &amp; WESTBIT)  setArm(w, SOUTH);
++        }
++    }
++    
++    void TurnstilePivot::setArm(Object * obj, Direction dir) {
++        GridPos newp = move(get_pos(), dir);
++        Stone * st = dynamic_cast&lt;Stone *&gt;(obj);
++        SetStone(newp, st);
++        obj-&gt;setAttr(&quot;state&quot;, dir);
++    
++        if (Item *it = GetItem(newp))
++            it-&gt;on_stonehit(st);
++    }
++   
++    bool TurnstilePivot::calc_arm_seen(bool cw, DirectionBits arms, int field) {
++        // for each field calculate whether an arm has passed by, first
++        // counterclockwise and then clockwise:
++        const DirectionBits neededArm[2][8] = {
++            {WESTBIT, NORTHBIT, NORTHBIT, EASTBIT, EASTBIT, SOUTHBIT, SOUTHBIT, WESTBIT},
++            {NORTHBIT, NORTHBIT, EASTBIT, EASTBIT, SOUTHBIT, SOUTHBIT, WESTBIT, WESTBIT}
++        };
++        return (arms &amp; neededArm[cw][field]) != 0;
++    }
++
++    void TurnstilePivot::handleActorsAndItems(bool clockwise, Object *impulse_sender) {
++        const int to_index[3][3] = { // (read this transposed)
++            { 0, 7, 6 }, // x == 0
++            { 1,-1, 5 }, // x == 1
++            { 2, 3, 4 }  // x == 2
++        };
++        const int to_x[8] = { -1, 0, 1, 1, 1, 0, -1, -1 };
++        const int to_y[8] = { -1, -1, -1, 0, 1, 1, 1, 0 };
++    
++        bool arm_seen[8];
++        DirectionBits arms = arms_present(); // Note: already the rotated state
++        for (int i = 0; i&lt;8; ++i)
++            arm_seen[i] = calc_arm_seen(clockwise, arms, i);
++    
++        // ---------- Handle items in range ----------
++        GridPos pv_pos = get_pos();
++        for (int i = 0; i&lt;8; ++i) 
++            if (arm_seen[i]) {
++                GridPos item_pos(pv_pos.x+to_x[i], pv_pos.y+to_y[i]);
++                if (Item *it = GetItem(item_pos)) { 
++                    if (it-&gt;get_traits().id == it_laserbeam)
++                        KillItem(item_pos); 
++                    else
++                        it-&gt;on_stonehit(this); // hit with pivot (shouldn't matter)
++                }
++            }
++    
++        // ---------- Handle actors in range ----------
++        std::vector&lt;Actor*&gt; actorsInRange;
++    
++        // tested range is sqrt(sqr(1.5)+sqr(1.5)) 
++        if (!GetActorsInRange(pv_pos.center(), 2.124, actorsInRange))
++            return;
++    
++        std::vector&lt;Actor*&gt;::iterator iter = actorsInRange.begin(), end = actorsInRange.end();
++        for (; iter != end; ++iter) {
++            Actor *ac = *iter;
++            const V2 &amp;ac_center = ac-&gt;get_pos();
++            GridPos   ac_pos(ac_center);
++            int dx  = ac_pos.x-pv_pos.x;
++            int dy  = ac_pos.y-pv_pos.y;
++    
++            // ignore if actor is not inside the turnstile square or is not
++            // in distance of the the rotating arms
++            if ((dx&lt;-1 || dx&gt;1 || dy&lt;-1 || dy&gt;1) || 
++                    (length(ac-&gt;get_pos() - pv_pos.center()) &gt; 1.58114 + ac-&gt;get_actorinfo()-&gt;radius))
++                continue;
++    
++            int idx_source = to_index[dx+1][dy+1];
++            if (idx_source == -1) 
++                continue;       // actor inside pivot -- should not happen
++    
++            const int rot_index[4][8] = {
++                // The warp-destinations for actors. Why different destinations
++                // for oxyd/non-oxyd-type turnstiles? Imagine the actor on position
++                // 1 (North of pivot), the turnstile rotates anticlockwise. Then
++                // a green turnstile-arm, if at all, would push the actor one field
++                // to the left (position 0). Now assume it's a red turnstile. If the
++                // actor is to be warped, it has to be the one that activated the
++                // turnstile. Yet it is on position 1, in principle not able to
++                // hit an arm. But it can, if it hits fast enough on the edge of
++                // pivot and left arm. In this case, the actor should be handled
++                // as if on position 1, thus warping to 6.
++                { 6,  0, 0,  2, 2,  4, 4,  6 }, // anticlockwise
++                { 2,  2, 4,  4, 6,  6, 0,  0 }, // clockwise
++                { 6,  6, 0,  0, 2,  2, 4,  4 }, // anticlockwise (oxyd-compatible)
++                { 2,  4, 4,  6, 6,  0, 0,  2 }, // clockwise (oxyd-compatible)
++            };
++    
++            bool compatible = std::string(&quot;red&quot;) == getAttr(&quot;flavor&quot;).to_string();   // oxyd compatibility
++            int  idx_target = rot_index[clockwise+2*compatible][idx_source]; // destination index
++            bool do_warp = false; // move the actor along with the turnstile?
++    
++            if (compatible) {
++                // Move only the actor that hit the turnstile in Oxyd mode
++                do_warp = (ac == dynamic_cast&lt;Actor*&gt;(impulse_sender));
++                if (!do_warp &amp;&amp; arm_seen[idx_source])
++                    SendMessage(ac, &quot;shatter&quot;); // hit by an arm
++            } else { // green turnstile
++                // move all actors only if pushed by an arm
++                do_warp = arm_seen[idx_source];
++            }
++    
++            if (!do_warp) 
++                continue;
++    
++            // Pushing an actor out of the level results in a shatter (no warp) instead
++            GridPos ac_target_pos(pv_pos.x+to_x[idx_target], pv_pos.y+to_y[idx_target]);
++    
++            if(!IsInsideLevel(ac_target_pos)) {
++                SendMessage(ac, &quot;shatter&quot;);
++                continue;
++            }
++
++            // Keep the actors rotated position within grid, but ensure that
++            // - actors once warped keep warping on further turnstile turns
++            // - small marbles end up in meditation hollows  
++            ecl::V2 offset = ac-&gt;get_pos() - ac-&gt;get_gridpos().center();
++            if (ecl::length(offset) &gt; 0.5 - ac-&gt;get_actorinfo()-&gt;radius)
++                offset =  (0.5 - ac-&gt;get_actorinfo()-&gt;radius) * ecl::normalize(offset);
++            WarpActor(ac, ac_target_pos.x + 0.5 + (clockwise ? -offset[1] : offset[1]),
++                     ac_target_pos.y + 0.5 + (clockwise ? offset[0] : -offset[0]), false);
++    
++            if (Stone *st = GetStone(ac_target_pos)) {
++    
++                // destination is blocked
++    
++                TurnstileArm *arm = dynamic_cast&lt;TurnstileArm*&gt;(st);
++                if (arm &amp;&amp; !compatible) { // if blocking stone is turnstile arm -&gt; hit it!
++                    const int impulse_dir[2][8] = {
++                        // anticlockwise
++                        { SOUTHBIT|WESTBIT, WESTBIT, NORTHBIT|WESTBIT, NORTHBIT,
++                          NORTHBIT|EASTBIT, EASTBIT, SOUTHBIT|EASTBIT, SOUTHBIT },
++                        // clockwise
++                        { NORTHBIT|EASTBIT, EASTBIT, SOUTHBIT|EASTBIT, SOUTHBIT,
++                          SOUTHBIT|WESTBIT, WESTBIT, NORTHBIT|WESTBIT, NORTHBIT }
++                    };
++    
++                    DirectionBits possible_impulses =
++                        static_cast&lt;DirectionBits&gt;(impulse_dir[clockwise][idx_target]);
++    
++                    for (int d = 0; d&lt;4; ++d) 
++                        if (has_dir(possible_impulses, Direction(d))) 
++                            ac-&gt;send_impulse(ac_target_pos, Direction(d));
++    
++    //                 if (GetStone(ac_target_pos) == 0)  // arm disappeared
++    //                     break;
++                }
++            }
++        }
++    }
++
++    int TurnstilePivot::traitsIdx() const {
++        return (std::string(&quot;red&quot;) == getAttr(&quot;flavor&quot;).to_string()) ? 0 : 1;
++    }
++    
++    StoneTraits TurnstilePivot::traits[2] = {
++        {&quot;st_turnstile_red&quot;, st_turnstile_red, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++        {&quot;st_turnstile_green&quot;, st_turnstile_green, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++    };
++    
++
++
++    TurnstileArm::TurnstileArm(Direction dir) : Stone () {
++        state = dir;
++    }
++
++    std::string TurnstileArm::getClass() const {
++        return &quot;st_turnstilearm&quot;;
++    }
++        
++    void TurnstileArm::setAttr(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;orientation&quot;) {                // TODO connections support
++            setState(val);
++        } else if (key == &quot;connections&quot;) {
++            GridObject::setAttr(key, val);
++            DirectionBits db = (DirectionBits)(int)getAttr(&quot;$connections&quot;);
++            switch (db) {
++                case WESTBIT :
++                    state = WEST; break;
++                case SOUTHBIT :
++                    state = SOUTH; break;
++                case EASTBIT :
++                    state = EAST; break;
++                case NORTHBIT :
++                    state = NORTH; break;
++                default :
++                    ASSERT(false, XLevelRuntime, (&quot;Turnstile set attribute 'connections' with illegal value '&quot; 
++                            + val.to_string() + &quot;'&quot;).c_str());
++            }
++        } else
++            Stone::setAttr(key, val);
++    }
++    
++    Value TurnstileArm::getAttr(const std::string &amp;key) const {
++        if (key == &quot;orientation&quot;) {
++            return state;
++        } else if (key == &quot;connections&quot;) {
++            static const char *sfx[] = { &quot;w&quot;, &quot;s&quot;, &quot;e&quot;, &quot;n&quot; };
++            return sfx[state];
++        } else
++            return Stone::getAttr(key);
++    }
++    
++    Value TurnstileArm::message(const Message &amp;m) {
++        if (m.message == &quot;orientate&quot;) {
++            setAttr(&quot;state&quot;, m.value);    // do check min, max limits
++        }
++        return Stone::message(m);
++    }
++    
++    int TurnstileArm::maxState() const {
++        return NORTH;
++    }
++    
++    void TurnstileArm::init_model() {
++        set_model(ecl::strf(&quot;st-turnstile%s&quot;, to_suffix((Direction)state).c_str()));
++    }
++    
++    void TurnstileArm::on_impulse(const Impulse&amp; impulse) {
++        enum Action { ROTL, ROTR, stay };
++        static Action actions[4][4] = {
++            { stay, ROTL, stay, ROTR }, // west arm
++            { ROTR, stay, ROTL, stay }, // south arm
++            { stay, ROTR, stay, ROTL }, // east arm
++            { ROTL, stay, ROTR, stay }  // north arm
++        };
++        
++        int id = getId();
++        TurnstilePivot *pivot = getPivot();
++    
++        if (pivot != NULL) {
++            Action a = actions[state][impulse.dir];
++            if (a != stay) {
++                bool clockwise = (a == ROTR);
++                Actor *actor = dynamic_cast&lt;Actor*&gt;(impulse.sender);
++                Log &lt;&lt; &quot;Turnstile impulse &quot; &lt;&lt; get_id(pivot) &lt;&lt; &quot; - &quot;&lt;&lt;st_turnstile_green &lt;&lt;&quot;\n&quot;;
++                if (get_id(pivot) == st_turnstile_green &amp;&amp; actor != NULL &amp;&amp;
++                        player::WieldedItemIs(actor, &quot;it_wrench&quot;)) {
++                    Log &lt;&lt; &quot;Turnstile Wand\n&quot;;
++                    clockwise = !clockwise;
++                }
++                pivot-&gt;rotate(clockwise, impulse.sender, this); // ROTR is clockwise
++            }
++        }
++        else {
++            // Move arms not attached to a pivot individually
++            move_stone(impulse.dir);
++        }
++        
++        if (Object::getObject(id) != NULL)   // not killed?
++            propagateImpulse(impulse);
++    }
++
++    TurnstilePivot *TurnstileArm::getPivot() {
++        return dynamic_cast&lt;TurnstilePivot *&gt;(GetStone(move(get_pos(), reverse((Direction)state))));
++    }
++    
++    StoneTraits TurnstileArm::traits[4] = {
++        {&quot;st_turnstilearm_w&quot;, st_turnstilearm_w, stf_none, material_stone, 1.0, MOVABLE_IRREGULAR},
++        {&quot;st_turnstilearm_s&quot;, st_turnstilearm_s, stf_none, material_stone, 1.0, MOVABLE_IRREGULAR},
++        {&quot;st_turnstilearm_e&quot;, st_turnstilearm_e, stf_none, material_stone, 1.0, MOVABLE_IRREGULAR},
++        {&quot;st_turnstilearm_n&quot;, st_turnstilearm_n, stf_none, material_stone, 1.0, MOVABLE_IRREGULAR},
++    };
++    
++    BOOT_REGISTER_START
++        BootRegister(new TurnstilePivot(&quot;red&quot;),  &quot;st_turnstile_red&quot;);
++        BootRegister(new TurnstilePivot(&quot;green&quot;),  &quot;st_turnstile_green&quot;);
++        BootRegister(new TurnstileArm(WEST),  &quot;st_turnstilearm_w&quot;);
++        BootRegister(new TurnstileArm(SOUTH), &quot;st_turnstilearm_s&quot;);
++        BootRegister(new TurnstileArm(EAST),  &quot;st_turnstilearm_e&quot;);
++        BootRegister(new TurnstileArm(NORTH), &quot;st_turnstilearm_n&quot;);
++    BOOT_REGISTER_END
++
++
++} // namespace enigma
++
+
+
+Property changes on: trunk/src/stones/Turnstile.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/Turnstile.hh
+===================================================================
+--- trunk/src/stones/Turnstile.hh	2008-07-14 22:54:29 UTC (rev 1238)
++++ trunk/src/stones/Turnstile.hh	2008-07-14 23:01:33 UTC (rev 1239)
+@@ -0,0 +1,107 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef TURNSTILE_HH
++#define TURNSTILE_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    class TurnstileArm;
++
++    /** 
++     * 
++     */
++    class TurnstilePivot : public Stone {
++        CLONEOBJ(TurnstilePivot);
++        DECL_TRAITS_ARRAY(2, traitsIdx());
++    private:
++        enum iState {
++            IDLE,     ///&lt; 
++            ROTATING  ///&lt; 
++        };
++        
++    public:
++        TurnstilePivot(std::string flavor);
++        
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual int maxState() const;
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        
++        // ModelCallback interface
++        virtual void animcb();
++        
++        // Stone interface
++//        virtual void actor_hit(const StoneContact &amp;sc);
++        
++        bool rotate(bool clockwise, Object *impulse_sender, TurnstileArm *initiator);
++        int traitsIdx() const;
++    private:
++        DirectionBits arms_present() const;
++        bool no_stone(int xoff, int yoff) const;
++        void rotate_arms(DirectionBits arms, bool clockwise);
++        void setArm(Object * obj, Direction dir);
++        bool calc_arm_seen(bool cw, DirectionBits arms, int field);
++        void handleActorsAndItems(bool clockwise, Object *impulse_sender);
++    };
++
++    
++    /** 
++     * 
++     */
++    class TurnstileArm : public Stone {
++        CLONEOBJ(TurnstileArm);
++        DECL_TRAITS_ARRAY(4, state);
++        
++    public:
++        TurnstileArm(Direction dir);
++        
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++        virtual Value getAttr(const std::string &amp;key) const;
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual int maxState() const;
++
++        // GridObject interface
++        virtual void init_model();
++        
++        // Stone interface
++        virtual void on_impulse(const Impulse&amp; impulse);
++        
++    private:
++        TurnstilePivot *getPivot();
++    };
++    
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/Turnstile.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2008-07-14 22:54:29 UTC (rev 1238)
++++ trunk/src/stones.hh	2008-07-14 23:01:33 UTC (rev 1239)
+@@ -94,12 +94,12 @@
+         st_swap,
+         st_switch,
+         st_thief,
+-        st_turnstile,
+-        st_turnstile_e,
++        st_turnstile_red,
+         st_turnstile_green,
+-        st_turnstile_n,
+-        st_turnstile_s,
+-        st_turnstile_w,
++        st_turnstilearm_w,
++        st_turnstilearm_s,
++        st_turnstilearm_e,
++        st_turnstilearm_n,
+         st_volcano,
+         st_white1,
+         st_white2,
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-07-14 22:54:29 UTC (rev 1238)
++++ trunk/src/stones_complex.cc	2008-07-14 23:01:33 UTC (rev 1239)
+@@ -1728,470 +1728,6 @@
+ }
+ 
+ 
+-/* -------------------- Turnstiles -------------------- */
+-namespace
+-{
+-    class Turnstile_Arm;
+-
+-    /*
+-    ** The stone at the center of a turnstile
+-    */
+-    class Turnstile_Pivot_Base : public Stone {
+-    public:
+-        Turnstile_Pivot_Base();
+-
+-    protected:
+-        bool rotate(bool clockwise, Object *impulse_sender);
+-
+-        friend class Turnstile_Arm; // uses rotate
+-
+-    private:
+-        // Object interface
+-        virtual Value message(const Message &amp;m);
+-        virtual void animcb();
+-
+-        // Private methods
+-        DirectionBits arms_present() const;
+-        bool          no_stone (int xoff, int yoff) const;
+-        void set_arm (Direction dir);
+-        void remove_arms (DirectionBits arms);
+-        void rotate_arms (DirectionBits arms, bool clockwise);
+-        void handleActorsAndItems(bool clockwise, Object *impulse_sender);
+-
+-        // Turnstile_Pivot_Base interface
+-        virtual const char *model() const    = 0;
+-        virtual const char *anim() const     = 0;
+-        virtual bool oxyd_compatible() const = 0;
+-
+-        // Variables
+-        bool active;
+-    };
+-
+-    class Turnstile_Pivot : public Turnstile_Pivot_Base {
+-        CLONEOBJ(Turnstile_Pivot);
+-        DECL_TRAITS;
+-    public:
+-        Turnstile_Pivot() {}
+-
+-        const char *model() const { return &quot;st-turnstile&quot;; }
+-        const char *anim() const  { return &quot;st-turnstile-anim&quot;; }
+-        bool oxyd_compatible() const { return true; }
+-    };
+-    DEF_TRAITS(Turnstile_Pivot, &quot;st-turnstile&quot;, st_turnstile);
+-
+-    class Turnstile_Pivot_Green : public Turnstile_Pivot_Base {
+-        CLONEOBJ(Turnstile_Pivot_Green);
+-        DECL_TRAITS;
+-    public:
+-        Turnstile_Pivot_Green() {}
+-
+-        const char *model() const { return &quot;st-turnstile-green&quot;; }
+-        const char *anim() const  { return &quot;st-turnstile-green-anim&quot;; }
+-        bool oxyd_compatible() const { return false; }
+-    };
+-    DEF_TRAITS(Turnstile_Pivot_Green, &quot;st-turnstile-green&quot;, st_turnstile_green);    
+-
+-    /*
+-    ** The base class for any of the four arms of the turnstile
+-    */
+-    class Turnstile_Arm : public Stone {
+-        virtual Direction get_dir() const = 0;
+-
+-        void actor_hit(const StoneContact &amp;sc);
+-        void on_impulse(const Impulse&amp; impulse);
+-
+-        Turnstile_Pivot_Base *get_pivot() {
+-            Stone *st = GetStone (move (get_pos(), reverse(get_dir())));
+-            return dynamic_cast&lt;Turnstile_Pivot_Base*&gt;(st);
+-        }
+-
+-    protected:
+-        Turnstile_Arm() {}
+-    };
+-
+-    class Turnstile_N : public Turnstile_Arm {
+-        CLONEOBJ(Turnstile_N);
+-        DECL_TRAITS;
+-    public:
+-        Turnstile_N() {}
+-        Direction get_dir () const { return NORTH; }
+-    };
+-    DEF_TRAITSM(Turnstile_N, &quot;st-turnstile-n&quot;, st_turnstile_n, MOVABLE_IRREGULAR);
+-    
+-    class Turnstile_S : public Turnstile_Arm {
+-        CLONEOBJ(Turnstile_S);
+-        DECL_TRAITS;
+-        Direction get_dir () const { return SOUTH; }
+-    public:
+-        Turnstile_S() {}
+-    };
+-    DEF_TRAITSM(Turnstile_S, &quot;st-turnstile-s&quot;, st_turnstile_s, MOVABLE_IRREGULAR);
+-
+-    class Turnstile_E : public Turnstile_Arm {
+-        CLONEOBJ(Turnstile_E);
+-        DECL_TRAITS;
+-        Direction get_dir () const { return EAST; }
+-    public:
+-        Turnstile_E() {}
+-    };
+-    DEF_TRAITSM(Turnstile_E, &quot;st-turnstile-e&quot;, st_turnstile_e, MOVABLE_IRREGULAR);
+-
+-    class Turnstile_W : public Turnstile_Arm {
+-        CLONEOBJ(Turnstile_W);
+-        DECL_TRAITS;
+-        Direction get_dir () const { return WEST; }
+-    public:
+-        Turnstile_W() {}
+-    };
+-    DEF_TRAITSM(Turnstile_W, &quot;st-turnstile-w&quot;, st_turnstile_w, MOVABLE_IRREGULAR);
+-}
+-
+-
+-/* -------------------- Turnstile_Arm -------------------- */
+-
+-void Turnstile_Arm::on_impulse(const Impulse&amp; impulse) {
+-    enum Action { ROTL, ROTR, stay };
+-    static Action actions[4][4] = {
+-        { stay, ROTL, stay, ROTR }, // west arm
+-        { ROTR, stay, ROTL, stay }, // south arm
+-        { stay, ROTR, stay, ROTL }, // east arm
+-        { ROTL, stay, ROTR, stay }  // north arm
+-    };
+-
+-    Turnstile_Pivot_Base *pivot = get_pivot();
+-
+-    if (pivot) {
+-        Action a = actions[get_dir()][impulse.dir];
+-        if (a != stay) {
+-            bool clockwise = (a == ROTR);
+-            Actor *a = dynamic_cast&lt;Actor*&gt;(impulse.sender);
+-            if ((pivot-&gt;get_traits().id == st_turnstile_green) &amp;&amp; a != NULL &amp;&amp;
+-                    player::WieldedItemIs(a, &quot;it_wrench&quot;))
+-                clockwise = !clockwise;
+-            pivot-&gt;rotate(clockwise, impulse.sender); // ROTR is clockwise
+-        }
+-    }
+-    else {
+-        // Move arms not attached to a pivot individually
+-        move_stone(impulse.dir);
+-    }
+-}
+-
+-void Turnstile_Arm::actor_hit(const StoneContact &amp;sc) 
+-{
+-    maybe_push_stone(sc);
+-}
+-
+-// --------------------------------------------
+-//      Turnstile_Pivot_Base implementation
+-// --------------------------------------------
+-
+-Turnstile_Pivot_Base::Turnstile_Pivot_Base()
+-: active (false)
+-{}
+-
+-void Turnstile_Pivot_Base::animcb() 
+-{ 
+-    set_model(model()); 
+-    active = false;
+-}
+-
+-Value Turnstile_Pivot_Base::message(const Message &amp;m)
+-{
+-    if (m.message == &quot;signal&quot;) {
+-        int val = m.value;
+-        if (val == 1)
+-            rotate(false, 0);
+-        else
+-            rotate(true, 0);
+-        return Value();
+-    }
+-    return Stone::message(m);
+-}
+-
+-
+-DirectionBits
+-Turnstile_Pivot_Base::arms_present() const
+-{
+-    DirectionBits arms = NODIRBIT;
+-    GridPos p = get_pos();
+-    if (dynamic_cast&lt;Turnstile_N*&gt;(GetStone(move(p, NORTH))))
+-        ecl::set_flags (arms, NORTHBIT);
+-    if (dynamic_cast&lt;Turnstile_S*&gt;(GetStone(move(p, SOUTH))))
+-        ecl::set_flags (arms, SOUTHBIT);
+-    if (dynamic_cast&lt;Turnstile_E*&gt;(GetStone(move(p, EAST))))
+-        ecl::set_flags (arms, EASTBIT);
+-    if (dynamic_cast&lt;Turnstile_W*&gt;(GetStone(move(p, WEST))))
+-        ecl::set_flags (arms, WESTBIT);
+-    return arms;
+-}
+-
+-bool Turnstile_Pivot_Base::no_stone (int xoff, int yoff) const {
+-    GridPos p = get_pos();
+-    p.x += xoff;
+-    p.y += yoff;
+-    return (0 == GetStone(p));
+-}
+-
+-void Turnstile_Pivot_Base::remove_arms (DirectionBits arms) {
+-    GridPos p = get_pos();
+-    if (arms &amp; NORTHBIT) KillStone (move (p, NORTH));
+-    if (arms &amp; EASTBIT) KillStone (move (p, EAST));
+-    if (arms &amp; SOUTHBIT) KillStone (move (p, SOUTH));
+-    if (arms &amp; WESTBIT) KillStone (move (p, WEST));
+-}
+-
+-void Turnstile_Pivot_Base::rotate_arms (DirectionBits arms, bool clockwise) {
+-    GridPos p = get_pos();
+-
+-//    RBI_vector Nrubs;
+-//    RBI_vector Erubs;
+-//    RBI_vector Srubs;
+-//    RBI_vector Wrubs;
+-
+-//    if (arms &amp; NORTHBIT) GiveRubberBands(GetStone(move (p, NORTH)), Nrubs);
+-//    if (arms &amp; EASTBIT) GiveRubberBands(GetStone(move (p, EAST)), Erubs);
+-//    if (arms &amp; SOUTHBIT) GiveRubberBands(GetStone(move (p, SOUTH)), Srubs);
+-//    if (arms &amp; WESTBIT) GiveRubberBands(GetStone(move (p, WEST)), Wrubs);
+-
+-    remove_arms(arms);
+-
+-    if (clockwise) {
+-	if (arms &amp; NORTHBIT) set_arm(EAST);
+-	if (arms &amp; EASTBIT)  set_arm(SOUTH);
+-	if (arms &amp; SOUTHBIT) set_arm(WEST);
+-	if (arms &amp; WESTBIT)  set_arm(NORTH);
+-    }
+-    else {
+-	if (arms &amp; NORTHBIT) set_arm(WEST);
+-	if (arms &amp; EASTBIT)  set_arm(NORTH);
+-	if (arms &amp; SOUTHBIT) set_arm(EAST);
+-	if (arms &amp; WESTBIT)  set_arm(SOUTH);
+-    }
+-}
+-
+-void Turnstile_Pivot_Base::set_arm (Direction dir) {
+-    const char *names[4] = { &quot;st-turnstile-w&quot;, &quot;st-turnstile-s&quot;,
+-                             &quot;st-turnstile-e&quot;, &quot;st-turnstile-n&quot; };
+-    Stone   *st   = MakeStone(names[dir]);
+-    GridPos  newp = move(get_pos(), dir);
+-    SetStone (newp, st);
+-
+-    if (Item *it = GetItem(newp))
+-        it-&gt;on_stonehit(st);
+-
+-//    if (!rubs.empty())
+-//	for (RBI_vector::iterator i = rubs.begin(); i != rubs.end(); ++i)
+-//	    AddRubberBand (i-&gt;act, st, i-&gt;data);
+-}
+-
+-bool Turnstile_Pivot_Base::rotate(bool clockwise, Object *impulse_sender) {
+-    if (active)
+-        return false;
+-
+-    DirectionBits arms       = arms_present();
+-    bool          can_rotate = true;
+-
+-    if (clockwise)  {
+-        if (arms &amp; NORTHBIT) {
+-            can_rotate &amp;= no_stone(+1,-1);
+-            if (! (arms &amp; EASTBIT)) can_rotate &amp;= no_stone(+1,0);
+-        }
+-        if (arms &amp; WESTBIT) {
+-            can_rotate &amp;= no_stone(-1,-1);
+-            if (! (arms &amp; NORTHBIT)) can_rotate &amp;= no_stone(0,-1);
+-        }
+-        if (arms &amp; SOUTHBIT) {
+-            can_rotate &amp;= no_stone(-1,+1);
+-            if (! (arms &amp; WESTBIT)) can_rotate &amp;= no_stone(-1,0);
+-        }
+-        if (arms &amp; EASTBIT) {
+-            can_rotate &amp;= no_stone(+1,+1);
+-            if (! (arms &amp; SOUTHBIT)) can_rotate &amp;= no_stone(0,+1);
+-        }
+-    }
+-    else {
+-        if (arms &amp; NORTHBIT) {
+-            can_rotate &amp;= no_stone(-1,-1);
+-            if (! (arms &amp; WESTBIT)) can_rotate &amp;= no_stone(-1,0);
+-        }
+-        if (arms &amp; WESTBIT) {
+-            can_rotate &amp;= no_stone(-1,+1);
+-            if (! (arms &amp; SOUTHBIT)) can_rotate &amp;= no_stone(0,+1);
+-        }
+-        if (arms &amp; SOUTHBIT) {
+-            can_rotate &amp;= no_stone(+1,+1);
+-            if (! (arms &amp; EASTBIT)) can_rotate &amp;= no_stone(+1,0);
+-        }
+-        if (arms &amp; EASTBIT) {
+-            can_rotate &amp;= no_stone(+1,-1);
+-            if (! (arms &amp; NORTHBIT)) can_rotate &amp;= no_stone(0,-1);
+-        }
+-    }
+-
+-    if (can_rotate) {
+-        sound_event (clockwise ? &quot;turnstileright&quot; : &quot;turnstileleft&quot;);
+-        sound_event(&quot;movesmall&quot;);
+-
+-        active = true;
+-        set_anim(anim());
+-	    rotate_arms(arms, clockwise);
+-        handleActorsAndItems(clockwise, impulse_sender);
+-
+-        performAction(clockwise == 0);
+-        server::IncMoveCounter();
+-    }
+-    return can_rotate;
+-}
+-
+-namespace {
+-    bool calc_arm_seen (bool cw, DirectionBits arms, int field) {
+-        // for each field calculate whether an arm has passed by, first
+-        // counterclockwise and then clockwise:
+-        const DirectionBits neededArm[2][8] = {
+-            {WESTBIT, NORTHBIT, NORTHBIT, EASTBIT, EASTBIT, SOUTHBIT, SOUTHBIT, WESTBIT},
+-            {NORTHBIT, NORTHBIT, EASTBIT, EASTBIT, SOUTHBIT, SOUTHBIT, WESTBIT, WESTBIT}
+-        };
+-        return (arms &amp; neededArm[cw][field]) != 0;
+-    }
+-}
+-
+-void Turnstile_Pivot_Base::handleActorsAndItems(bool clockwise, Object *impulse_sender) {
+-    const int to_index[3][3] = { // (read this transposed)
+-        { 0, 7, 6 }, // x == 0
+-        { 1,-1, 5 }, // x == 1
+-        { 2, 3, 4 }  // x == 2
+-    };
+-    const int to_x[8] = { -1, 0, 1, 1, 1, 0, -1, -1 };
+-    const int to_y[8] = { -1, -1, -1, 0, 1, 1, 1, 0 };
+-
+-    bool arm_seen[8];
+-    DirectionBits arms = arms_present(); // Note: already the rotated state
+-    for (int i = 0; i&lt;8; ++i)
+-        arm_seen[i] = calc_arm_seen (clockwise, arms, i);
+-
+-    // ---------- Handle items in range ----------
+-    GridPos pv_pos = get_pos();
+-    for (int i = 0; i&lt;8; ++i) 
+-        if (arm_seen[i]) {
+-            GridPos item_pos(pv_pos.x+to_x[i], pv_pos.y+to_y[i]);
+-            if (Item *it = GetItem(item_pos)) { 
+-                if (it-&gt;get_traits().id == it_laserbeam)
+-                    KillItem(item_pos); 
+-                else
+-                    it-&gt;on_stonehit(this); // hit with pivot (shouldn't matter)
+-            }
+-        }
+-
+-    // ---------- Handle actors in range ----------
+-    vector&lt;Actor*&gt; actorsInRange;
+-
+-    // tested range is sqrt(sqr(1.5)+sqr(1.5)) 
+-    if (!GetActorsInRange(pv_pos.center(), 2.124, actorsInRange))
+-        return;
+-
+-    vector&lt;Actor*&gt;::iterator iter = actorsInRange.begin(), end = actorsInRange.end();
+-    for (; iter != end; ++iter) {
+-        Actor *ac = *iter;
+-        const V2 &amp;ac_center = ac-&gt;get_pos();
+-        GridPos   ac_pos(ac_center);
+-        int dx  = ac_pos.x-pv_pos.x;
+-        int dy  = ac_pos.y-pv_pos.y;
+-
+-        // ignore if actor is not inside the turnstile square or is not
+-        // in distance of the the rotating arms
+-        if ((dx&lt;-1 || dx&gt;1 || dy&lt;-1 || dy&gt;1) || 
+-                (length(ac-&gt;get_pos() - pv_pos.center()) &gt; 1.58114 + ac-&gt;get_actorinfo()-&gt;radius))
+-            continue;
+-
+-        int idx_source = to_index[dx+1][dy+1];
+-        if (idx_source == -1) 
+-            continue;       // actor inside pivot -- should not happen
+-
+-        const int rot_index[4][8] = {
+-            // The warp-destinations for actors. Why different destinations
+-            // for oxyd/non-oxyd-type turnstiles? Imagine the actor on position
+-            // 1 (North of pivot), the turnstile rotates anticlockwise. Then
+-            // a green turnstile-arm, if at all, would push the actor one field
+-            // to the left (position 0). Now assume it's a red turnstile. If the
+-            // actor is to be warped, it has to be the one that activated the
+-            // turnstile. Yet it is on position 1, in principle not able to
+-            // hit an arm. But it can, if it hits fast enough on the edge of
+-            // pivot and left arm. In this case, the actor should be handled
+-            // as if on position 1, thus warping to 6.
+-            { 6,  0, 0,  2, 2,  4, 4,  6 }, // anticlockwise
+-            { 2,  2, 4,  4, 6,  6, 0,  0 }, // clockwise
+-            { 6,  6, 0,  0, 2,  2, 4,  4 }, // anticlockwise (oxyd-compatible)
+-            { 2,  4, 4,  6, 6,  0, 0,  2 }, // clockwise (oxyd-compatible)
+-        };
+-
+-        bool compatible = oxyd_compatible();
+-        int  idx_target = rot_index[clockwise+2*compatible][idx_source]; // destination index
+-        bool do_warp = false; // move the actor along with the turnstile?
+-
+-        if (compatible) {
+-            // Move only the actor that hit the turnstile in Oxyd mode
+-            do_warp = (ac == dynamic_cast&lt;Actor*&gt;(impulse_sender));
+-            if (!do_warp &amp;&amp; arm_seen[idx_source])
+-                SendMessage(ac, &quot;shatter&quot;); // hit by an arm
+-        } else { // green turnstile
+-            // move all actors only if pushed by an arm
+-            do_warp = arm_seen[idx_source];
+-        }
+-
+-        if (!do_warp) 
+-            continue;
+-
+-        // Pushing an actor out of the level results in a shatter (no warp) instead
+-        GridPos ac_target_pos(pv_pos.x+to_x[idx_target], pv_pos.y+to_y[idx_target]);
+-
+-        if(!IsInsideLevel(ac_target_pos)) {
+-            SendMessage(ac, &quot;shatter&quot;);
+-            continue;
+-        }
+-
+-        WarpActor(ac, ac_target_pos.x+.5, ac_target_pos.y+.5, false);
+-
+-        if (Stone *st = GetStone(ac_target_pos)) {
+-
+-            // destination is blocked
+-
+-            Turnstile_Arm *arm = dynamic_cast&lt;Turnstile_Arm*&gt;(st);
+-            if (arm &amp;&amp; !compatible) { // if blocking stone is turnstile arm -&gt; hit it!
+-                const int impulse_dir[2][8] = {
+-                    // anticlockwise
+-                    { SOUTHBIT|WESTBIT, WESTBIT, NORTHBIT|WESTBIT, NORTHBIT,
+-                      NORTHBIT|EASTBIT, EASTBIT, SOUTHBIT|EASTBIT, SOUTHBIT },
+-                    // clockwise
+-                    { NORTHBIT|EASTBIT, EASTBIT, SOUTHBIT|EASTBIT, SOUTHBIT,
+-                      SOUTHBIT|WESTBIT, WESTBIT, NORTHBIT|WESTBIT, NORTHBIT }
+-                };
+-
+-                DirectionBits possible_impulses =
+-                    static_cast&lt;DirectionBits&gt;(impulse_dir[clockwise][idx_target]);
+-
+-                for (int d = 0; d&lt;4; ++d) 
+-                    if (has_dir(possible_impulses, Direction(d))) 
+-                        ac-&gt;send_impulse(ac_target_pos, Direction(d));
+-
+-//                 if (GetStone(ac_target_pos) == 0)  // arm disappeared
+-//                     break;
+-            }
+-        }
+-    }
+-
+-// @@@ FIXME: it's possible that two actors are moved to the same
+-// destination field.  In that case the second actor is put on top of
+-// the first actor (happens only in non-oxyd-compat-mode with three
+-// balls or pullers/impulsestones)
+-//
+-// Note: With black and whiteball it's normally no problem, because
+-// when one of the actors was moving, it's looking natural.  Problems
+-// occur when small balls come into play.
+-
+-}
+-
+-
+ /* -------------------- Mail stone -------------------- */
+ 
+ namespace
+@@ -2389,13 +1925,6 @@
+ 
+     Register(new StoneImpulseStone);
+ 
+-    Register (new Turnstile_Pivot); // oxyd-comaptible
+-    Register (new Turnstile_Pivot_Green); // not oxyd-comaptible
+-    Register (new Turnstile_N);
+-    Register (new Turnstile_S);
+-    Register (new Turnstile_E);
+-    Register (new Turnstile_W);
+-
+ }
+ 
+ } // namespace enigma
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000672.html">[Enigma-game-svn] r1238 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000674.html">[Enigma-game-svn] r1240 - in trunk: data/schemas src src/lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#673">[ date ]</a>
+              <a href="thread.html#673">[ thread ]</a>
+              <a href="subject.html#673">[ subject ]</a>
+              <a href="author.html#673">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,2328 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r951 - in trunk/src: . stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-December/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r951%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200712232232.lBNMWxJ3003098%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000382.html">
+   <LINK REL="Next"  HREF="000384.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r951 - in trunk/src: . stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r951%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200712232232.lBNMWxJ3003098%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r951 - in trunk/src: . stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Dec 23 23:32:59 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000382.html">[Enigma-game-svn] r950 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="000384.html">[Enigma-game-svn] r952 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#383">[ date ]</a>
+              <a href="thread.html#383">[ thread ]</a>
+              <a href="subject.html#383">[ subject ]</a>
+              <a href="author.html#383">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-12-23 23:32:57 +0100 (Sun, 23 Dec 2007)
+New Revision: 951
+
+Modified:
+   trunk/src/floors.cc
+   trunk/src/floors.hh
+   trunk/src/items.cc
+   trunk/src/laser.cc
+   trunk/src/objects.cc
+   trunk/src/objects.hh
+   trunk/src/ox_oxyd1.cc
+   trunk/src/st_switches.cc
+   trunk/src/stones.cc
+   trunk/src/stones/OxydStone.cc
+   trunk/src/stones/OxydStone.hh
+   trunk/src/stones_complex.cc
+   trunk/src/stones_internal.hh
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+   trunk/src/world.hh
+Log:
+Trunk 1.1: message reengineering
+- unified message/on_message to message(const Message &amp;m)
+- all objects pass unhandled messages to superclasses
+- message gridpos replaced by sender object reference
+  (this allows sending backmessages)
+- eliminated global CurrentCollisionActor
+- thief as inverting message multiplier
+- oxyd Ox5f as it-sensor
+- charge stone fowards signals
+
+
+Modified: trunk/src/floors.cc
+===================================================================
+--- trunk/src/floors.cc	2007-12-22 13:49:37 UTC (rev 950)
++++ trunk/src/floors.cc	2007-12-23 22:32:57 UTC (rev 951)
+@@ -56,26 +56,26 @@
+     delete this;
+ }
+ 
+-Value Floor::message(const string &amp;msg, const Value &amp;val) {
++Value Floor::message(const Message &amp;m) {
+     // &quot;init&quot;     : Start burning, if &quot;initfire&quot; is set.
+     // &quot;heat&quot;     : Heat the item, heat-transform floor
+     //                 or maybe set fire to it (if burnable).
+     // &quot;setfire&quot;  : Just try to make fire (if burnable).
+     // &quot;forcefire&quot;: Force fire, even on unburnable floor.
+     // &quot;stopfire&quot; : Stop fire, put ash but don't transform floor.
+-    if(msg == &quot;init&quot; &amp;&amp; has_firetype(flft_initfire))
++    if (m.message == &quot;init&quot; &amp;&amp; has_firetype(flft_initfire))
+         return force_fire();
+-    if(msg == &quot;heat&quot;)
++    if (m.message == &quot;heat&quot;)
+         return try_heating(NODIR, flhf_message);
+-    if((msg == &quot;ignite&quot; || msg == &quot;expl&quot;) &amp;&amp; has_firetype(flft_ignitable))
++    if ((m.message == &quot;ignite&quot; || m.message == &quot;expl&quot;) &amp;&amp; has_firetype(flft_ignitable))
+         return try_ignite(NODIR, flhf_message);
+-    if(msg == &quot;setfire&quot;)
++    if (m.message == &quot;setfire&quot;)
+         return try_ignite(NODIR, flhf_message);
+-    if(msg == &quot;forcefire&quot;)
++    if (m.message == &quot;forcefire&quot;)
+         return force_fire();
+-    if(msg == &quot;stopfire&quot;)
++    if (m.message == &quot;stopfire&quot;)
+         return stop_fire(true);
+-    return Object::message(msg, val);
++    return Object::message(m);
+ }
+ 
+ ecl::V2 Floor::process_mouseforce (Actor *a, ecl::V2 force) {
+@@ -705,7 +705,7 @@
+         CLONEOBJ(Bridge);
+     public:
+         Bridge(bool open=true);
+-        virtual Value message(const string &amp;m, const Value &amp;);
++        virtual Value message(const Message &amp;m);
+     private:
+         enum State {
+             OPEN, CLOSED, OPENING, CLOSING, // normal states
+@@ -748,41 +748,44 @@
+     }
+ }
+ 
+-Value Bridge::message(const string &amp;m, const Value &amp;)
++Value Bridge::message(const Message &amp;m)
+ {
+-    if (m == &quot;open&quot; &amp;&amp; (state==CLOSED || state==CLOSING))
++    if (m.message == &quot;open&quot; &amp;&amp; (state==CLOSED || state==CLOSING)) {
+         change_state(OPENING);
+-    else if (m==&quot;close&quot;)
++        return Value();
++    } else if (m.message == &quot;close&quot;) {
+         switch (state) {
+-        case OPEN:
+-        case OPENING:
+-        case CLOSING_BYSTONE:
+-            change_state(CLOSING);
+-            break;
+-        case CLOSED_BYSTONE:
+-            change_state(CLOSED);
+-            break;
+-        case CLOSED:
+-        case CLOSING:
+-            break; // already closed
+-
++            case OPEN:
++            case OPENING:
++            case CLOSING_BYSTONE:
++                change_state(CLOSING);
++                break;
++            case CLOSED_BYSTONE:
++                change_state(CLOSED);
++                break;
++            case CLOSED:
++            case CLOSING:
++                break; // already closed
+         }
+-    else if (m==&quot;openclose&quot; || m==&quot;signal&quot;)
++        return Value();
++    } else if (m.message == &quot;openclose&quot; || m.message == &quot;signal&quot;) {
+         switch (state) {
+-        case OPEN:
+-        case OPENING:
+-        case CLOSING_BYSTONE:
+-            change_state(CLOSING);
+-            break;
+-        case CLOSED_BYSTONE:
+-            change_state(CLOSED);
+-            break;
+-        case CLOSED:
+-        case CLOSING:
+-            change_state(OPENING);
+-            break;
++            case OPEN:
++            case OPENING:
++            case CLOSING_BYSTONE:
++                change_state(CLOSING);
++                break;
++            case CLOSED_BYSTONE:
++                change_state(CLOSED);
++                break;
++            case CLOSED:
++            case CLOSING:
++                change_state(OPENING);
++                break;
+         }
+-    return Value();
++        return Value();
++    }
++    return Floor::message(m);
+ }
+ 
+ void Bridge::init_model()
+@@ -862,7 +865,7 @@
+         void actor_enter(Actor* a);
+         void animcb();
+         void steal();
+-        virtual Value message(const string &amp;msg, const Value &amp;v);        
++        virtual Value message(const Message &amp;m);        
+     };
+ }
+ 
+@@ -952,8 +955,8 @@
+         sound_event(&quot;thief&quot;);
+ }
+ 
+-Value Thief::message(const string &amp;msg, const Value &amp;v) {
+-    if(msg == &quot;capture&quot; &amp;&amp; state == IDLE) {
++Value Thief::message(const Message &amp;m) {
++    if(m.message == &quot;capture&quot; &amp;&amp; state == IDLE) {
+         state = CAPTURED;
+         Item * it =  GetItem(get_pos());
+         
+@@ -967,8 +970,8 @@
+         bag = NULL;
+         set_anim(get_modelname() + string(&quot;-captured&quot;));
+         return Value(1);
+-    } else
+-        return Floor::message(msg, v);
++    }
++    return Floor::message(m);
+ }
+ 
+ //----------------------------------------
+
+Modified: trunk/src/floors.hh
+===================================================================
+--- trunk/src/floors.hh	2007-12-22 13:49:37 UTC (rev 950)
++++ trunk/src/floors.hh	2007-12-23 22:32:57 UTC (rev 951)
+@@ -94,7 +94,7 @@
+         // Object interface
+         Floor *clone();
+         void dispose();
+-        virtual Value message(const string&amp; msg, const Value &amp;val);
++        virtual Value message(const Message &amp;m);
+         virtual void set_attrib (const string&amp; key, const Value &amp;val);
+ 
+         // Floor interface
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2007-12-22 13:49:37 UTC (rev 950)
++++ trunk/src/items.cc	2007-12-23 22:32:57 UTC (rev 951)
+@@ -195,16 +195,21 @@
+             }
+         }
+ 
+-        virtual Value message(const string &amp;m, const Value &amp;val) {
+-            if (m==&quot;onoff&quot;)
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;onoff&quot;) {
+                 set_on(!is_on());
+-            else if (m==&quot;signal&quot;)
+-                set_on (to_int(val) != 0);
+-            else if (m == &quot;on&quot;)
++                return Value();
++            } else if (m.message == &quot;signal&quot;) {
++                set_on (m.value != 0);
++                return Value();
++            } else if (m.message == &quot;on&quot;) {
+                 set_on(true);
+-            else if (m==&quot;off&quot;)
++                return Value();
++            } else if (m.message == &quot;off&quot;) {
+                 set_on(false);
+-            return Value();
++                return Value();
++            }
++            return Object::message(m);
+         }
+ 
+         // OnOffItem interface
+@@ -272,12 +277,14 @@
+         CLONEOBJ(Squashed);
+         DECL_TRAITS;
+ 
+-        virtual Value on_message (const Message &amp;m) {
++        virtual Value message (const Message &amp;m) {
+             if (enigma_server::GameCompatibility == GAMET_ENIGMA) {
+-                if (m.message == &quot;brush&quot;)
++                if (m.message == &quot;brush&quot;) {
+                     KillItem(this-&gt;get_pos());
++                    return Value();
++                }
+             }
+-            return Value();
++            return Object::message(m);
+         }
+ 
+ 
+@@ -499,12 +506,14 @@
+             return false;
+         }
+ 
+-        virtual Value on_message (const Message &amp;m) {
++        virtual Value message (const Message &amp;m) {
+             if (enigma_server::GameCompatibility == GAMET_ENIGMA) {
+-                if (m.message == &quot;brush&quot;)
++                if (m.message == &quot;brush&quot;) {
+                     KillItem(this-&gt;get_pos());
++                    return Value();
++                }
+             }
+-            return Value();
++            return Object::message(m);
+         }
+ 
+     public:
+@@ -614,7 +623,7 @@
+     class HillHollow : public Item {
+     public:
+         // Object interface.
+-        virtual Value message(const string &amp;m, const Value &amp;);
++        virtual Value message(const Message &amp;m);
+     protected:
+         enum Type { HILL, HOLLOW, TINYHILL, TINYHOLLOW };
+ 
+@@ -727,26 +736,26 @@
+     }
+ }
+ 
+-Value HillHollow::message(const string &amp;m, const Value &amp;val)
++Value HillHollow::message(const Message &amp;m)
+ {
+-    if (m==&quot;trigger&quot;) {
++    if (m.message == &quot;trigger&quot;) {
+         Type flippedkind[] = {HOLLOW,HILL, TINYHOLLOW,TINYHILL};
+         transmute(flippedkind[m_type]);
+-    }
+-    else if (m == &quot;signal&quot;) {
+-        if (val != 0) {
++        return Value();
++    } else if (m.message == &quot;signal&quot;) {
++        if (m.value != 0) {
+             Type flippedkind[] = {HILL,HILL, TINYHILL,TINYHILL};
+             transmute(flippedkind[m_type]);
+         } else {
+             Type flippedkind[] = {HOLLOW,HOLLOW, TINYHOLLOW,TINYHOLLOW};
+             transmute(flippedkind[m_type]);
+         }
+-    }
+-    else if (m==&quot;shovel&quot;)
++        return Value();
++    } else if (m.message == &quot;shovel&quot;) {
+         shovel();
+-    else
+-        Item::message (m, val);
+-    return Value();
++        return Value();
++    } 
++    return Object::message(m);
+ }
+ 
+ V2 HillHollow::vec_to_center (V2 v)
+@@ -1066,15 +1075,17 @@
+             }
+             return ITEM_KILL;	       // remove from inventory
+         }
+-        virtual Value message(const string &amp;msg, const Value &amp;/*val*/) {
++        virtual Value message(const Message &amp;m) {
+             bool explode = false;
+ 
+-            if (msg == &quot;ignite&quot;) {
++            if (m.message == &quot;ignite&quot;) {
+                 // dynamite does not blow up Documents in Oxyd1
+                 explode = server::GameCompatibility != GAMET_OXYD1;
++            } else if (m.message == &quot;expl&quot; || m.message == &quot;bombstone&quot;) {
++                explode = true;
++            } else {
++                return Object::message(m);
+             }
+-            else if (msg == &quot;expl&quot; || msg == &quot;bombstone&quot;)
+-                explode = true;
+ 
+             if (explode)
+                 replace (it_explosion1);
+@@ -1130,16 +1141,18 @@
+             }
+         }
+ 
+-        virtual Value message(const string &amp;msg, const Value &amp;/*val*/) {
+-            if (msg == &quot;ignite&quot; || msg == &quot;expl&quot; || msg == &quot;bombstone&quot;)
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;ignite&quot; || m.message == &quot;expl&quot; || m.message == &quot;bombstone&quot;) {
+                 change_state(BURNING);
+-            else if (msg == &quot;explode&quot;) // currently unused in c++ code
++                return Value();
++            } else if (m.message == &quot;explode&quot;) { // currently unused in c++ code
+                 explode();
+-            else if (msg == &quot;heat&quot;) {  // used by fire-system
++                return Value();
++            } else if (m.message == &quot;heat&quot;) {  // used by fire-system
+                 change_state(BURNING);
+                 return Value(1.0);  // caught message -&gt; no fire!
+             }
+-            return Value();
++            return Object::message(m);
+         }
+         void animcb() { explode(); }
+         void on_laserhit(Direction) {
+@@ -1171,16 +1184,18 @@
+         {}
+ 
+     protected:
+-        virtual Value message(const string &amp;msg, const Value &amp;) {
+-            if (msg == &quot;ignite&quot;  || msg == &quot;expl&quot;)
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;ignite&quot;  || m.message == &quot;expl&quot;) {
+                 burn();
+-            else if (msg == &quot;explode&quot; )
++                return Value();
++            } else if (m.message == &quot;explode&quot; ) {
+                 explode();
+-            else if (msg == &quot;heat&quot;) {  // used by fire-system
++                return Value();
++            } else if (m.message == &quot;heat&quot;) {  // used by fire-system
+                 burn();
+                 return Value(1.0);  // caught message -&gt; no fire!
+             }
+-            return Value();
++            return Object::message(m);
+         }
+ 
+     private:
+@@ -1320,14 +1335,15 @@
+         void actor_leave(Actor *) { m_actorcount -= 1; update_state(); }
+         void stone_change(Stone *) { update_state(); }
+ 
+-        virtual Value on_message (const Message &amp;m) {
++        virtual Value message (const Message &amp;m) {
+             if (m.message == &quot;signal&quot;) {
+                 performAction(m.value.to_bool());  // convert 1/0 values to true/false
++                return Value();                
++            } else if (m.message == &quot;init&quot;) {
++                update_state();                
++                return Value();
+             }
+-            else if (m.message == &quot;init&quot;) {
+-                update_state();
+-            }
+-            return Value();
++            return Object::message(m);
+         }
+     };
+ 
+@@ -1389,11 +1405,12 @@
+         void on_stonehit (Stone *) {start_growing();}
+         void on_laserhit (Direction) {start_growing();}
+ 
+-        virtual Value message(const string &amp;msg, const Value &amp;) {
+-            if (msg == &quot;grow&quot; || msg == &quot;signal&quot;) {
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;grow&quot; || m.message == &quot;signal&quot;) {
+                 start_growing();
++                return Value();
+             }
+-            return Value();
++            return Object::message(m);
+         }
+ 
+         void start_growing() {
+@@ -1493,7 +1510,7 @@
+         enum SubType { SMALL, MEDIUM, LARGE };
+         ShogunDot(SubType size);
+ 
+-        virtual Value message(const string &amp;str, const Value &amp;v);
++        virtual Value message(const Message &amp;m);
+         void stone_change(Stone *st);
+ 
+         // Variables.
+@@ -1523,15 +1540,15 @@
+     }
+ }
+ 
+-Value ShogunDot::message(const string &amp;str, const Value &amp;/*v*/) {
+-    if (str == &quot;noshogun&quot;) {
++Value ShogunDot::message(const Message &amp;m) {
++    if (m.message == &quot;noshogun&quot;) {
+         if (activated) {
+             activated = false;
+             performAction(false);
+         }
+-    }
+-    else {
+-        const char *s = str.c_str();
++        return Value();
++    } else {
++        const char *s = m.message.c_str();
+         bool size_matches =
+             (strncmp(s, &quot;shogun&quot;, 6) == 0)    &amp;&amp;
+             ((s[6]-'1')              == subtype) &amp;&amp;
+@@ -1540,9 +1557,10 @@
+         if (size_matches != activated) {
+             activated = size_matches;
+             performAction(activated);
++            return Value();
+         }
+     }
+-    return Value();
++    return Object::message(m);
+ }
+ 
+ 
+@@ -1820,7 +1838,7 @@
+         bool actor_hit(Actor*);
+         void init_model();
+         void animcb();
+-        virtual Value message(const string &amp;msg, const Value &amp;val);
++        virtual Value message(const Message &amp;m);
+ 
+         // TimeHandler interface
+         void alarm();
+@@ -1909,26 +1927,28 @@
+     return false;
+ }
+ 
+-Value Vortex::message(const string &amp;msg, const Value &amp;val)
++Value Vortex::message(const Message &amp;m)
+ {
+-    if (msg == &quot;signal&quot;) {
+-        int ival = to_int(val);
++    if (m.message == &quot;signal&quot;) {
++        int ival = m.value;
+         if (ival != 0)
+             open();
+         else
+             close();
+-    }
+-    else if (msg == &quot;openclose&quot; || msg == &quot;trigger&quot;)
++        return Value();
++    } else if (m.message == &quot;openclose&quot; || m.message == &quot;trigger&quot;) {
+         openclose();
+-    else if (msg == &quot;open&quot;)
++        return Value();
++    } else if (m.message == &quot;open&quot;) {
+         open();
+-    else if (msg == &quot;close&quot; || (msg == &quot;_passed&quot; &amp;&amp; getAttr(&quot;autoclose&quot;).to_bool())) {
++        return Value();
++    } else if (m.message == &quot;close&quot; || (m.message == &quot;_passed&quot; &amp;&amp; getAttr(&quot;autoclose&quot;).to_bool())) {
+         close();
++        if (m.message == &quot;_passed&quot;)
++            performAction(getAttr(&quot;$grabbed_actor&quot;));
++        return Value();
+     }
+-    
+-    if (msg == &quot;_passed&quot;)
+-        performAction(getAttr(&quot;$grabbed_actor&quot;));
+-    return Value();
++    return Object::message(m);
+ }
+ 
+ void Vortex::init_model() {
+@@ -2194,10 +2214,12 @@
+         DECL_TRAITS_ARRAY(10, subtype);
+ 
+         Pipe(int stype) : subtype(stype) {}
+-        virtual Value message(const string &amp;msg, const Value &amp;) {
+-            if (msg == &quot;expl&quot;)
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;expl&quot;) {
+                 replace (it_explosion1);
+-            return Value();
++                return Value();
++            }
++            return Object::message(m);
+         }
+     public:
+         static void setup() {
+@@ -2374,21 +2396,21 @@
+                 SendMessage(a, &quot;fall&quot;);
+             return false;
+         }
+-        virtual Value message(const string &amp;msg, const Value &amp;val) {
+-            if (msg == &quot;crack&quot; &amp;&amp; state==IDLE &amp;&amp; !is_fixed()) {
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;crack&quot; &amp;&amp; state==IDLE &amp;&amp; !is_fixed()) {
+                 int type = get_type();
+                 if ((type == 0 &amp;&amp; do_crack()) || (type &gt; 0)) {
+                     set_attrib(&quot;type&quot;, Value((int)getAttr(&quot;type&quot;) + 1));
+                     sound_event (&quot;crack&quot;);
+                     init_model();
++                return Value();
+                 }
+-            }
+-            if (msg == &quot;heat&quot;) {
++            } else if (m.message == &quot;heat&quot;) {
+                 sound_event (&quot;crack&quot;);
+                 replace(it_debris);
+                 return Value(1.0);
+             }
+-            return Value();
++            return Object::message(m);
+         }
+ 
+         bool do_crack() {
+@@ -2458,7 +2480,7 @@
+         }
+         State state;
+ 
+-        virtual Value message (const string &amp;msg, const Value &amp;v);
++        virtual Value message(const Message &amp;m);
+         void animcb();
+         bool actor_hit(Actor *a);
+         void init_model();
+@@ -2478,18 +2500,19 @@
+     };
+ }
+ 
+-Value Burnable::message(const string &amp;msg, const Value &amp;v)
+-{
+-    if (msg == &quot;extinguish&quot;) {   // stop / never start burning
++Value Burnable::message(const Message &amp;m) {
++    if (m.message == &quot;extinguish&quot;) {   // stop / never start burning
+         state = FIREPROOF;
+         init_model();
+-    } else if (msg == &quot;brush&quot; &amp;&amp; (state == ASH || state == FIREPROOF)) {
+-        kill();                 // The brush cleans the floor
++        return Value();
++    } else if (m.message == &quot;brush&quot; &amp;&amp; (state == ASH || state == FIREPROOF)) {
++        kill();   // The brush cleans the floor
++        return Value();
+     } else if (Floor *fl = GetFloor(get_pos())) {
+-        if (msg == &quot;trigger&quot; || msg == &quot;ignite&quot; || msg == &quot;expl&quot;)
++        if (m.message == &quot;trigger&quot; || m.message == &quot;ignite&quot; || m.message == &quot;expl&quot;)
+             return SendMessage(fl, &quot;ignite&quot;);
+     }
+-    return Item::message(msg, v);
++    return Object::message(m);
+ }
+ 
+ void Burnable::animcb() {
+@@ -2652,7 +2675,7 @@
+         void change_state(State new_state);
+         void on_creation (GridPos p);
+         void on_removal (GridPos p);
+-        virtual Value message(const string &amp;msg, const Value &amp;val);
++        virtual Value message(const Message &amp;m);
+         void stone_change(Stone *st);
+         void grow();
+         void alarm();
+@@ -2716,34 +2739,36 @@
+ }
+ 
+ 
+-Value Blocker::message(const string &amp;msg, const Value &amp;val)
++Value Blocker::message(const Message &amp;m)
+ {
+-    if (msg == &quot;trigger&quot; || msg == &quot;openclose&quot;) {
++    if (m.message == &quot;trigger&quot; || m.message == &quot;openclose&quot;) {
+         switch (state) {
+-        case IDLE:
+-        case SHRINKED:
+-            grow(); // if no stone on top -&gt; grow
+-            break;
+-
+-            // if stone on top -&gt; toggle state (has no effect until stone leaves)
+-        case BOLDERED:
+-            change_state(COVERED);
+-            break;
+-        case COVERED:
+-            change_state(BOLDERED);
+-            break;
++            case IDLE:
++            case SHRINKED:
++                grow(); // if no stone on top -&gt; grow
++                break;
++    
++                // if stone on top -&gt; toggle state (has no effect until stone leaves)
++            case BOLDERED:
++                change_state(COVERED);
++                break;
++            case COVERED:
++                change_state(BOLDERED);
++                break;
+         }
+-    }
+-    else {
++        return Value();
++    } else {
+         int open = -1;
+ 
+-        if (msg == &quot;signal&quot;) {
+-            open = val;
++        if (m.message == &quot;signal&quot;) {
++            open = m.value;
+         }
+-        else if (msg == &quot;open&quot;)
++        else if (m.message == &quot;open&quot;)
+             open = 1;
+-        else if (msg == &quot;close&quot;)
++        else if (m.message == &quot;close&quot;)
+             open = 0;
++        else
++            return Object::message(m);
+ 
+         if (open == 1)  { // shrink
+             if (state == COVERED)
+@@ -2768,7 +2793,6 @@
+             }
+         }
+     }
+-    return Value();
+ }
+ 
+ void Blocker::stone_change(Stone *st)
+@@ -2846,16 +2870,17 @@
+         CLONEOBJ(OxydBridge);
+         DECL_TRAITS;
+ 
+-        virtual Value message(const string&amp; msg, const Value &amp;val) {
+-            if (msg == &quot;signal&quot;) {
+-                int ival = to_int (val);
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;signal&quot;) {
++                int ival = m.value;
+                 Floor *floor = GetFloor (get_pos());
+                 if (ival &gt; 0)
+                     SendMessage (floor, &quot;close&quot;);
+                 else
+                     SendMessage (floor, &quot;open&quot;);
++                return Value();
+             }
+-            return Value();
++            return Object::message(m);
+         }
+     public:
+         OxydBridge() {}
+@@ -2895,6 +2920,18 @@
+         void actor_enter (Actor *) {
+             performAction(true);
+         }
++        
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;hit&quot;) {   // door knocking forward to black/whitballstone
++                set_attrib(&quot;$hitactor&quot;, m.value);
++                performAction(true);
++                set_attrib(&quot;$hitactor&quot;, (Object *)NULL);
++                return Value();
++            } else if (m.message == &quot;_hitactor&quot;) {
++                return getAttr(&quot;$hitactor&quot;);
++            }
++            return Object::message(m);
++        }
+     };
+     DEF_TRAITSF(Sensor, &quot;it-sensor&quot;, it_sensor, itf_static | itf_invisible);
+ 
+@@ -2924,14 +2961,15 @@
+             ASSERT(type &gt;= 0 &amp;&amp; type &lt;= 1, XLevelRuntime, &quot;SignalFilterItem: type unknown&quot;);
+         }
+ 
+-        virtual Value message(const string&amp; m, const Value&amp; val) {
+-            if (m == &quot;signal&quot;) {
+-                int value = to_int(val);
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;signal&quot;) {
++                int value = m.value;
+ //                 warning(&quot;received signal with value %i&quot;, value);
+                 if (value)
+                     performAction(type != 0);
++                return Value();
+             }
+-            return Value();
++            return Object::message(m);
+         }
+ 
+         // type of signal filter
+@@ -2975,7 +3013,7 @@
+         CLONEOBJ(EasyKillStone);
+         DECL_TRAITS;
+ 
+-        virtual Value on_message (const Message &amp;);
++        virtual Value message(const Message &amp;m);
+     public:
+         EasyKillStone() {}
+     };
+@@ -2983,7 +3021,7 @@
+                 it_easykillstone, itf_invisible | itf_fireproof);
+ }
+ 
+-Value EasyKillStone::on_message (const Message &amp;m )
++Value EasyKillStone::message(const Message &amp;m)
+ {
+     if (m.message == &quot;init&quot;) {
+         // does not work in on_creation() because items are created
+@@ -3001,8 +3039,9 @@
+             }
+         }
+         kill();
++        return Value();
+     }
+-    return Value();
++    return Object::message(m);
+ }
+ 
+ /* -------------------- EasyKeepStone -------------------- */
+@@ -3012,15 +3051,16 @@
+         CLONEOBJ(EasyKeepStone);
+         DECL_TRAITS;
+ 
+-        virtual Value message(const string&amp; m, const Value&amp; ) {
+-            if (m == &quot;init&quot;) {
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;init&quot;) {
+                 // does not work in on_creation() because items are created
+                 // before stones are created.
+                 if (server::GetDifficulty() == DIFFICULTY_HARD)
+                     KillStone(get_pos());
+                 kill();
++                return Value();
+             }
+-            return Value();
++            return Object::message(m);
+         }
+     public:
+         EasyKeepStone() {}
+@@ -3036,13 +3076,14 @@
+         CLONEOBJ (OnePKillStone);
+         DECL_TRAITS;
+ 
+-        virtual Value on_message (const Message &amp;m) {
++        virtual Value message (const Message &amp;m) {
+             if (m.message == &quot;init&quot;) {
+                 if (server::SingleComputerGame)
+                     KillStone (get_pos());
+                 kill();
++                return Value();
+             }
+-            return Value();
++            return Object::message(m);
+         }
+     public:
+         OnePKillStone () {}
+@@ -3054,13 +3095,14 @@
+         CLONEOBJ (TwoPKillStone);
+         DECL_TRAITS;
+ 
+-        virtual Value on_message (const Message &amp;m) {
++        virtual Value message (const Message &amp;m) {
+             if (m.message == &quot;init&quot;) {
+                 if (!server::SingleComputerGame)
+                     KillStone (get_pos());
+                 kill();
++                return Value();
+             }
+-            return Value();
++            return Object::message(m);
+         }
+     public:
+         TwoPKillStone () {}
+@@ -3174,17 +3216,20 @@
+             performAction(true);
+         }
+ 
+-        virtual Value on_message (const Message &amp;m) {
++        virtual Value message(const Message &amp;m) {
+             if (server::GameCompatibility == enigma::GAMET_PEROXYD) {
+                 // Crosses can be used to invert signals in Per.Oxyd
+                 if (m.message == &quot;signal&quot;) {
+-                    performAction(m.value.to_bool()); // convert 1/0 values to true/false
++                    performAction(!m.value.to_bool()); // convert 1/0 values to true/false
++                    return Value();
+                 }
+             } else if (enigma_server::GameCompatibility == GAMET_ENIGMA) {
+-                if (m.message == &quot;brush&quot;)
++                if (m.message == &quot;brush&quot;) {
+                     KillItem(this-&gt;get_pos());
++                    return Value();
++                }
+             }
+-            return Value();
++            return Object::message(m);
+         }
+ 
+     public:
+@@ -3474,9 +3519,12 @@
+         CLONEOBJ(Oxyd5fItem);
+         DECL_TRAITS;
+ 
+-        virtual Value on_message (const Message &amp;) {
+-            performAction(true);
+-            return Value();
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;init&quot;) {
++                performAction(true);
++                return Value();
++            }
++            return Object::message(m);
+         }
+     public:
+         Oxyd5fItem()
+
+Modified: trunk/src/laser.cc
+===================================================================
+--- trunk/src/laser.cc	2007-12-22 13:49:37 UTC (rev 950)
++++ trunk/src/laser.cc	2007-12-23 22:32:57 UTC (rev 951)
+@@ -439,7 +439,7 @@
+     set_model(mname);
+ }
+ 
+-
++
+ /* -------------------- MirrorStone -------------------- */
+ namespace
+ {
+@@ -470,7 +470,7 @@
+         StoneTraits traits;
+ 
+ 	// Object interface.
+-        virtual Value message(const string &amp;m, const Value &amp;);
++        virtual Value message(const Message &amp;m);
+ 
+         // LaserEmitter interface
+         DirectionBits emission_directions() const {
+@@ -519,36 +519,42 @@
+     set_model(mname);
+ }
+ 
+-Value MirrorStone::message(const string &amp;m, const Value &amp;val) {
+-    if (m == &quot;trigger&quot; || m==&quot;turn&quot;) {
++Value MirrorStone::message(const Message &amp;m) {
++    if (m.message == &quot;trigger&quot; || m.message == &quot;turn&quot;) {
+         rotate_right();
++        return Value();
+     }
+-    else if (m == &quot;signal&quot;) {
+-        if (to_double(val) != 0) {
++    else if (m.message == &quot;signal&quot;) {
++        if (to_double(m.value) != 0) {
+             rotate_right();
+         }
++        return Value();
+     }
+-    else if (m == &quot;mirror-north&quot;) {
++    else if (m.message == &quot;mirror-north&quot;) {
+         set_orientation(3);
+         init_model();
+         MaybeRecalcLight(get_pos());
++        return Value();
+     }
+-    else if (m == &quot;mirror-east&quot;) {
++    else if (m.message == &quot;mirror-east&quot;) {
+         set_orientation(4);
+         init_model();
+         MaybeRecalcLight(get_pos());
++        return Value();
+     }
+-    else if (m == &quot;mirror-south&quot;) {
++    else if (m.message == &quot;mirror-south&quot;) {
+         set_orientation(1);
+         init_model();
+         MaybeRecalcLight(get_pos());
++        return Value();
+     }
+-    else if (m == &quot;mirror-west&quot;) {
++    else if (m.message == &quot;mirror-west&quot;) {
+         set_orientation(2);
+         init_model();
+         MaybeRecalcLight(get_pos());
++        return Value();
+     }
+-    return Value();
++    return Object::message(m);
+ }
+ 
+ void MirrorStone::actor_hit(const StoneContact &amp;sc)
+
+Modified: trunk/src/objects.cc
+===================================================================
+--- trunk/src/objects.cc	2007-12-22 13:49:37 UTC (rev 950)
++++ trunk/src/objects.cc	2007-12-23 22:32:57 UTC (rev 951)
+@@ -108,13 +108,7 @@
+     return id;
+ }
+ 
+-Value Object::on_message (const Message &amp;m)
+-{
+-    return message (m.message, m.value);
+-}
+-
+-Value Object::message(const string&amp; /*msg*/, const Value &amp;/*val*/)
+-{
++Value Object::message(const Message &amp;m) {
+     return Value();
+ }
+ 
+@@ -209,10 +203,7 @@
+                 action = &quot;toggle&quot;;
+             for (ObjectList::iterator oit = ol.begin(); oit != ol.end(); ++oit) {
+                 if (*oit != NULL) {
+-                    if (GridObject *go = dynamic_cast&lt;GridObject*&gt;(this)) {
+-                        SendMessage(*oit, Message(action, val, go-&gt;get_pos()));
+-                    } else
+-                        SendMessage(*oit, Message(action, val));
++                    SendMessage(*oit, Message(action, val, this));                    
+                 }
+             }
+         }
+
+Modified: trunk/src/objects.hh
+===================================================================
+--- trunk/src/objects.hh	2007-12-22 13:49:37 UTC (rev 950)
++++ trunk/src/objects.hh	2007-12-23 22:32:57 UTC (rev 951)
+@@ -119,8 +119,11 @@
+ 
+         virtual const char *get_kind() const;
+ 
+-        virtual Value on_message (const Message &amp;m);
+-        virtual Value message(const string&amp; msg, const Value &amp;val);
++        /**
++         * 
++         */
++        virtual Value message(const Message &amp;m);
++        
+         virtual void set_attrib(const string&amp; key, const Value &amp;val);
+         
+         /**
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2007-12-22 13:49:37 UTC (rev 950)
++++ trunk/src/ox_oxyd1.cc	2007-12-23 22:32:57 UTC (rev 951)
+@@ -406,7 +406,7 @@
+     ITEMSPEC(it_UNUSED),                  // 0x5c
+     ITEMSPEC(it_UNUSED),                  // 0x5d
+     ITEMSPEC(it_UNUSED),                  // 0x5e
+-    ITEMSPEC(it_oxyd5f),                  // 0x5f
+-    ITEMSPEC(it_drop),                  // 0x60    drop (turns actor into rotor)
++    ITEMSPEC(it_sensor),                  // 0x5f
++    ITEMSPEC(it_drop),                    // 0x60    drop (turns actor into rotor)
+     // codes &gt;= 0x61 are unused
+ };
+
+Modified: trunk/src/st_switches.cc
+===================================================================
+--- trunk/src/st_switches.cc	2007-12-22 13:49:37 UTC (rev 950)
++++ trunk/src/st_switches.cc	2007-12-23 22:32:57 UTC (rev 951)
+@@ -428,13 +428,14 @@
+             turn();
+         }
+ 
+-        virtual Value on_message(const Message &amp;m)
++        virtual Value message(const Message &amp;m)
+         {
+             if (m.message == &quot;signal&quot; || m.message == &quot;trigger&quot;) {
+                 if (server::GameCompatibility == enigma::GAMET_ENIGMA || m.value == 1)
+                     turn();
++                return Value();
+             }
+-            return Value();
++            return Object::message(m);
+         }
+ 
+         const char *collision_sound() { return &quot;metal&quot;; }
+
+Modified: trunk/src/stones/OxydStone.cc
+===================================================================
+--- trunk/src/stones/OxydStone.cc	2007-12-22 13:49:37 UTC (rev 950)
++++ trunk/src/stones/OxydStone.cc	2007-12-23 22:32:57 UTC (rev 951)
+@@ -854,23 +854,28 @@
+         delete this;
+     }
+     
+-    Value OxydStone::message(const string &amp;m, const Value &amp;val) {
+-        if (m==&quot;closeall&quot;) {
++    Value OxydStone::message(const Message &amp;m) {
++        if (m.message == &quot;closeall&quot;) {
+             closeAllStandardOxyds();
++            return Value();
+         }
+-        else if (m==&quot;shuffle&quot;) {
++        else if (m.message == &quot;shuffle&quot;) {
+             shuffleColors();
++            return Value();
+         }
+-        else if (m==&quot;trigger&quot; || m==&quot;spitter&quot;) {
++        else if (m.message == &quot;trigger&quot; || m.message == &quot;spitter&quot;) {
+             tryOpen();
++            return Value();
+         }
+-        else if (m==&quot;signal&quot; &amp;&amp; to_int(val) != 0) {
++        else if (m.message == &quot;signal&quot; &amp;&amp; m.value != 0) {
+             tryOpen();
++            return Value();
+         }
+-        else if (m==&quot;init&quot;) {
++        else if (m.message == &quot;init&quot;) {
+             initColors();
++            return Value();
+         }
+-        return Value();
++        return Object::message(m);
+     }
+     
+     void OxydStone::set_attrib(const string&amp; key, const Value &amp;val) {
+
+Modified: trunk/src/stones/OxydStone.hh
+===================================================================
+--- trunk/src/stones/OxydStone.hh	2007-12-22 13:49:37 UTC (rev 950)
++++ trunk/src/stones/OxydStone.hh	2007-12-23 22:32:57 UTC (rev 951)
+@@ -83,7 +83,7 @@
+         // Object interface
+         virtual OxydStone * clone();
+         virtual void dispose();
+-        virtual Value message(const string &amp;m, const Value &amp;);
++        virtual Value message(const Message &amp;m);
+         virtual void set_attrib(const string&amp; key, const Value &amp;val);
+         virtual Value getAttr(const string &amp;key) const;
+ 
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2007-12-22 13:49:37 UTC (rev 950)
++++ trunk/src/stones.cc	2007-12-23 22:32:57 UTC (rev 951)
+@@ -362,6 +362,13 @@
+         {
+             set_attrib(&quot;charge&quot;, charge);
+         }
++        virtual Value message(const Message &amp;m) {
++            if (server::GameCompatibility == enigma::GAMET_PEROXYD &amp;&amp; m.message == &quot;signal&quot;) {
++                performAction(m.value);
++                return Value();
++            }
++            return Object::message(m);
++        }
+     private:
+         double get_charge() {
+             double q = getAttr(&quot;charge&quot;);
+@@ -659,11 +666,12 @@
+ 
+         const char *collision_sound() {return &quot;stone&quot;;}
+ 
+-        virtual Value message (const string &amp;msg, const Value &amp;) {
+-            if (msg == &quot;trigger&quot; || msg == &quot;signal&quot;) {
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;trigger&quot; || m.message == &quot;signal&quot;) {
+                 ReplaceStone(get_pos(), MakeStone(&quot;st-plain_hole&quot;));
++                return Value();
+             }
+-            return Value();
++            return Object::message(m);
+         }
+         void actor_hit (const StoneContact &amp;sc) {
+             if (player::WieldedItemIs (sc.actor, &quot;it-pencil&quot;)) {
+@@ -689,11 +697,12 @@
+         CLONEOBJ(PlainStone_Hollow);
+         DECL_TRAITS;
+ 
+-        virtual Value message (const string &amp;msg, const Value &amp;) {
+-            if (msg == &quot;trigger&quot; || msg == &quot;signal&quot;) {
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;trigger&quot; || m.message == &quot;signal&quot;) {
+                 ReplaceStone(get_pos(), MakeStone(&quot;st-plain&quot;));
++                return Value();
+             }
+-            return Value();
++            return Object::message(m);
+         }
+ 
+         StoneResponse collision_response(const StoneContact &amp;) 
+@@ -737,10 +746,12 @@
+         void on_laserhit (Direction) {
+             break_me();
+         }
+-        virtual Value message (const string &amp;msg, const Value &amp;) {
+-            if (msg ==&quot;ignite&quot; || msg == &quot;expl&quot; || msg == &quot;bombstone&quot;)
++        virtual Value message(const Message &amp;m) {
++            if (m.message ==&quot;ignite&quot; || m.message == &quot;expl&quot; || m.message == &quot;bombstone&quot;) {
+                 break_me();
+-            return Value();
++                return Value();
++            }
++            return Object::message(m);
+         }
+         void actor_hit (const StoneContact &amp;sc) {
+             if (player::WieldedItemIs (sc.actor, &quot;it-hammer&quot;)) {
+@@ -776,10 +787,12 @@
+             }
+         }
+ 
+-        virtual Value message (const string &amp;msg, const Value &amp;) {
+-            if (msg ==&quot;ignite&quot; || msg == &quot;expl&quot; || msg == &quot;bombstone&quot;)
++        virtual Value message(const Message &amp;m) {
++            if (m.message ==&quot;ignite&quot; || m.message == &quot;expl&quot; || m.message == &quot;bombstone&quot;) {
+                 break_me();
+-            return Value();
++                return Value();
++            }
++            return Object::message(m);
+         }
+         const char *collision_sound() {return &quot;metal&quot;;}
+     public:
+@@ -816,10 +829,12 @@
+             sound_event (&quot;stonedestroy&quot;);
+             ReplaceStone(get_pos(), MakeStone (&quot;st-plain_breaking&quot;));
+         }
+-        virtual Value message (const string &amp;msg, const Value &amp;) {
+-            if (msg ==&quot;ignite&quot; || msg == &quot;expl&quot; || msg == &quot;bombstone&quot;)
++        virtual Value message(const Message &amp;m) {
++            if (m.message ==&quot;ignite&quot; || m.message == &quot;expl&quot; || m.message == &quot;bombstone&quot;) {
+                 break_me();
+-            return Value();
++                return Value();
++            }
++            return Object::message(m);
+         }
+         void on_move() {
+             Stone::on_move();
+@@ -865,25 +880,36 @@
+     class BlackBallsStone : public Stone {
+         CLONEOBJ(BlackBallsStone);
+ 
+-        virtual Value on_message (const Message &amp;m)
++        virtual Value message(const Message &amp;m)
+         {
+-            GridPos p = get_pos();
+-            Actor *a = CurrentCollisionActor;
+-            if (a &amp;&amp; get_id(a) == ac_blackball) {
+-                if (p.y == m.gridpos.y) {
+-                    SendMessage (GetStone (move (p, EAST)),  &quot;signal&quot;, 1.0);
+-                    SendMessage (GetStone (move (p, WEST)),  &quot;signal&quot;, 1.0);
+-                    SendMessage (GetStone (move (p, NORTH)), &quot;signal&quot;, 0.0);
+-                    SendMessage (GetStone (move (p, SOUTH)), &quot;signal&quot;, 0.0);
++            if (m.message == &quot;signal&quot; || m.message == &quot;hit&quot;) {
++                if (GridObject *sender = dynamic_cast&lt;GridObject*&gt;(m.sender)) {
++                    GridPos p = get_pos();
++                    Object *o;
++                    if (m.message == &quot;hit&quot;)
++                        o = m.value;
++                    else
++                        o= SendMessage(m.sender, &quot;_hitactor&quot;);
++                    
++                    Actor *a = dynamic_cast&lt;Actor *&gt;(o);
++                    if (a &amp;&amp; get_id(a) == ac_blackball) {
++                        if (p.y == sender-&gt;get_pos().y) {
++                            SendMessage (GetStone (move (p, EAST)),  &quot;signal&quot;, 1.0);
++                            SendMessage (GetStone (move (p, WEST)),  &quot;signal&quot;, 1.0);
++                            SendMessage (GetStone (move (p, NORTH)), &quot;signal&quot;, 0.0);
++                            SendMessage (GetStone (move (p, SOUTH)), &quot;signal&quot;, 0.0);
++                        }
++                        else {
++                            SendMessage (GetStone (move (p, EAST)),  &quot;signal&quot;, 0.0);
++                            SendMessage (GetStone (move (p, WEST)),  &quot;signal&quot;, 0.0);
++                            SendMessage (GetStone (move (p, NORTH)), &quot;signal&quot;, 1.0);
++                            SendMessage (GetStone (move (p, SOUTH)), &quot;signal&quot;, 1.0);
++                        }
++                        return Value();
++                    }
+                 }
+-                else {
+-                    SendMessage (GetStone (move (p, EAST)),  &quot;signal&quot;, 0.0);
+-                    SendMessage (GetStone (move (p, WEST)),  &quot;signal&quot;, 0.0);
+-                    SendMessage (GetStone (move (p, NORTH)), &quot;signal&quot;, 1.0);
+-                    SendMessage (GetStone (move (p, SOUTH)), &quot;signal&quot;, 1.0);
+-                }
+             }
+-            return Value();
++            return Object::message(m);
+         }
+     public:
+         BlackBallsStone() : Stone (&quot;st-blackballs&quot;) {
+@@ -893,25 +919,36 @@
+     class WhiteBallsStone : public Stone {
+         CLONEOBJ(WhiteBallsStone);
+ 
+-        virtual Value on_message (const Message &amp;m)
++        virtual Value message(const Message &amp;m)
+         {
+-            GridPos p = get_pos();
+-            Actor *a = CurrentCollisionActor;
+-            if (a &amp;&amp; get_id(a) == ac_whiteball) {
+-                if (p.y == m.gridpos.y) {
+-                    SendMessage (GetStone (move (p, EAST)),  &quot;signal&quot;, 1.0);
+-                    SendMessage (GetStone (move (p, WEST)),  &quot;signal&quot;, 1.0);
+-                    SendMessage (GetStone (move (p, NORTH)), &quot;signal&quot;, 0.0);
+-                    SendMessage (GetStone (move (p, SOUTH)), &quot;signal&quot;, 0.0);
++            if (m.message == &quot;signal&quot; || m.message == &quot;hit&quot;) {
++                if (GridObject *sender = dynamic_cast&lt;GridObject*&gt;(m.sender)) {
++                    GridPos p = get_pos();
++                    Object *o;
++                    if (m.message == &quot;hit&quot;)
++                        o = m.value;
++                    else
++                        o = SendMessage(m.sender, &quot;_hitactor&quot;);
++                        
++                    Actor *a = dynamic_cast&lt;Actor *&gt;(o);
++                    if (a &amp;&amp; get_id(a) == ac_whiteball) {
++                        if (p.y == sender-&gt;get_pos().y) {
++                            SendMessage (GetStone (move (p, EAST)),  &quot;signal&quot;, 1.0);
++                            SendMessage (GetStone (move (p, WEST)),  &quot;signal&quot;, 1.0);
++                            SendMessage (GetStone (move (p, NORTH)), &quot;signal&quot;, 0.0);
++                            SendMessage (GetStone (move (p, SOUTH)), &quot;signal&quot;, 0.0);
++                        }
++                        else {
++                            SendMessage (GetStone (move (p, EAST)),  &quot;signal&quot;, 0.0);
++                            SendMessage (GetStone (move (p, WEST)),  &quot;signal&quot;, 0.0);
++                            SendMessage (GetStone (move (p, NORTH)), &quot;signal&quot;, 1.0);
++                            SendMessage (GetStone (move (p, SOUTH)), &quot;signal&quot;, 1.0);
++                        }
++                        return Value();
++                    }
+                 }
+-                else {
+-                    SendMessage (GetStone (move (p, EAST)),  &quot;signal&quot;, 0.0);
+-                    SendMessage (GetStone (move (p, WEST)),  &quot;signal&quot;, 0.0);
+-                    SendMessage (GetStone (move (p, NORTH)), &quot;signal&quot;, 1.0);
+-                    SendMessage (GetStone (move (p, SOUTH)), &quot;signal&quot;, 1.0);
+-                }
+             }
+-            return Value();
++            return Object::message(m);
+         }
+ 
+     public:
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2007-12-22 13:49:37 UTC (rev 950)
++++ trunk/src/stones_complex.cc	2007-12-23 22:32:57 UTC (rev 951)
+@@ -352,7 +352,7 @@
+         OneWayBase(Direction dir);
+ 
+         void init_model();
+-        virtual Value message(const string&amp; msg, const Value &amp;val);
++        virtual Value message(const Message &amp;m);
+ 
+         void actor_hit (const StoneContact&amp;);
+         StoneResponse collision_response(const StoneContact &amp;sc);
+@@ -423,17 +423,19 @@
+     set_model (mname);
+ }
+ 
+-Value OneWayBase::message(const string&amp; msg, const Value &amp;val) {
+-    if (msg == &quot;direction&quot; &amp;&amp; val.getType() == Value::DOUBLE) {
+-        set_orientation(to_direction(val));
++Value OneWayBase::message(const Message &amp;m) {
++    if (m.message == &quot;direction&quot; &amp;&amp; m.value.getType() == Value::DOUBLE) {
++        set_orientation(to_direction(m.value));
+         init_model();
++        return Value();
+     }
+-    else if (msg == &quot;signal&quot; || msg == &quot;flip&quot;) {
++    else if (m.message == &quot;signal&quot; || m.message == &quot;flip&quot;) {
+         Direction dir = get_orientation();
+         set_orientation(reverse(dir));
+         init_model();
++        return Value();
+     }
+-    return Value();
++    return Object::message(m);
+ }
+ 
+ void OneWayBase::actor_hit(const StoneContact &amp;sc) {
+@@ -598,12 +600,13 @@
+                 trigger_obstacle(impulse.dir);
+         }
+ 
+-        virtual Value message(const string&amp; msg, const Value &amp;val) {
+-            if (msg == &quot;direction&quot; &amp;&amp; state != FALLING) {
+-                set_dir (to_direction(val));
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;direction&quot; &amp;&amp; state != FALLING) {
++                set_dir(to_direction(m.value));
+                 init_model();
++                return Value();
+             }
+-            return Value();
++            return Object::message(m);
+         }
+     };
+     DEF_TRAITSM(BolderStone, &quot;st-bolder&quot;, st_bolder, MOVABLE_IRREGULAR);
+@@ -688,17 +691,18 @@
+             }
+         }
+ 
+-        virtual Value message(const string &amp;msg, const Value &amp;val) {
+-            if (msg == &quot;trigger&quot; || msg == &quot;openclose&quot;) {
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;trigger&quot; || m.message == &quot;openclose&quot;) {
+                 if (state == SHRINKING) {
+                     change_state(GROWING);
+                 }
+                 else {
+                     change_state(SHRINKING);
+                 }
++                return Value();
+             }
+-            else if (msg == &quot;signal&quot;) {
+-                int value = to_int(val);
++            else if (m.message == &quot;signal&quot;) {
++                int value = m.value;
+ //                 warning(&quot;received signal (value=%i)&quot;, value);
+                 if (value) {    // value == 1 -&gt; shrink
+                     if (state != SHRINKING)
+@@ -708,16 +712,19 @@
+                     if (state == SHRINKING)
+                         change_state(GROWING);
+                 }
++                return Value();
+             }
+-            else if (msg == &quot;open&quot;) { // aka &quot;shrink&quot;
++            else if (m.message == &quot;open&quot;) { // aka &quot;shrink&quot;
+                 if (state != SHRINKING)
+                     change_state(SHRINKING);
++                return Value();
+             }
+-            else if (msg == &quot;close&quot;) { // aka &quot;grow&quot;
++            else if (m.message == &quot;close&quot;) { // aka &quot;grow&quot;
+                 if (state == SHRINKING)
+                     change_state(GROWING);
++                return Value();
+             }
+-            return Value();
++            return Object::message(m);
+         }
+ 
+         void actor_contact(Actor *a) {
+@@ -774,14 +781,15 @@
+             }
+         }
+ 
+-        virtual Value message(const string &amp;msg, const Value &amp;) {
+-            if (msg == &quot;trigger&quot;) {
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;trigger&quot;) {
+                 if (state == INACTIVE) {
+                     state = ACTIVE;
+                     init_model();
+                 }
++                return Value();
+             }
+-            return Value();
++            return Object::message(m);
+         }
+ 
+         void spread( GridPos p) {
+@@ -977,7 +985,7 @@
+ 
+         /* ---------- Stone interface ---------- */
+ 
+-        virtual Value message(const string&amp; msg, const Value &amp;val);
++        virtual Value message(const Message &amp;m);
+ 
+         void on_creation (GridPos p);
+         void on_removal (GridPos p);
+@@ -1298,8 +1306,8 @@
+     explode();
+ }
+ 
+-Value PuzzleStone::message(const string&amp; msg, const Value &amp;val) {
+-    if (msg == &quot;scramble&quot;) {
++Value PuzzleStone::message(const Message &amp;m) {
++    if (m.message == &quot;scramble&quot;) {
+         // oxyd levels contain explicit information on how to
+         // scramble puzzle stones. According to that information
+         // a &quot;scramble&quot; message is send to specific puzzle stones
+@@ -1308,7 +1316,7 @@
+         // enigma levels may create scramble messages using
+         // AddScramble() and SetScrambleIntensity()
+ 
+-        Direction dir = to_direction(val);
++        Direction dir = to_direction(m.value);
+         Cluster   c;
+         find_row_or_column_cluster(c, get_pos(), dir, oxyd1_compatible());
+ 
+@@ -1324,8 +1332,9 @@
+         else {
+             warning(&quot;useless scramble (cluster size=%i)&quot;, size);
+         }
++        return Value();
+     }
+-    return Value();
++    return Object::message(m);
+ }
+ 
+ void PuzzleStone::on_impulse(const Impulse&amp; impulse) 
+@@ -1521,7 +1530,7 @@
+ void PuzzleStone::actor_contact (Actor *a)
+ {
+     if (state == EXPLODING)
+-        SendMessage (a, &quot;shatter&quot;);
++        SendMessage(a, &quot;shatter&quot;);
+ }
+ 
+ 
+@@ -1544,7 +1553,7 @@
+         void set_state(State st) { state=st; }
+ 
+         void change_state(State newstate) ;
+-        virtual Value message(const string &amp;m, const Value &amp;);
++        virtual Value message(const Message &amp;m);
+     private:
+         // DoorBase interface
+         virtual string model_basename() { return get_kind(); }
+@@ -1570,18 +1579,21 @@
+     };
+ }
+ 
+-Value DoorBase::message(const string &amp;m, const Value &amp;val) {
++Value DoorBase::message(const Message &amp;m) {
+     State newstate = state;
+ 
+-    if (m == &quot;open&quot;)
++    if (m.message == &quot;open&quot;) {
+         newstate = OPENING;
+-    else if (m == &quot;close&quot;)
++    } else if (m.message == &quot;close&quot;) {
+         newstate = CLOSING;
+-    else if (m == &quot;openclose&quot;)
++    } else if (m.message == &quot;openclose&quot;) {
+         newstate = (state==OPEN || state==OPENING) ? CLOSING : OPENING;
+-    else if (m == &quot;signal&quot;)
+-        newstate = val.to_bool() ? OPENING : CLOSING;
+-
++    } else if (m.message == &quot;signal&quot;) {
++        newstate = m.value.to_bool() ? OPENING : CLOSING;
++    } else {
++        return Object::message(m);
++    }
++    
+     if (newstate==OPENING &amp;&amp; (state==CLOSED || state==CLOSING))
+         change_state(OPENING);
+     else if (newstate==CLOSING &amp;&amp; (state==OPEN || state==OPENING))
+@@ -1675,15 +1687,16 @@
+             return true;        // don't let door press buttons
+         }
+ 
+-        void actor_hit(const StoneContact &amp;)
++        void actor_hit(const StoneContact &amp;sc)
+         {
++            Log &lt;&lt; &quot;door knocking\n&quot;;
+             // door knocking
+             Item *it = GetItem(get_pos());
+             if (it != NULL &amp;&amp; server::GameCompatibility != GAMET_PEROXYD 
+                     &amp;&amp; (server::GameCompatibility != GAMET_ENIGMA || server::EnigmaCompatibility &lt; 1.10 ))
+-                SendMessage(it, &quot;signal&quot;, 1);
++                SendMessage(it, &quot;hit&quot;, sc.actor);
+             else
+-                performAction(true);
++                performAction(sc.actor);
+         }
+ 
+         string model_basename() { return string(&quot;st-door&quot;)+get_type(); }
+@@ -1706,12 +1719,12 @@
+         CLONEOBJ(Door_c);
+     public:
+         Door_c() : DoorBase(&quot;st-door_c&quot;) {}
+-        Value message(const string &amp;m, const Value &amp;val) {
+-            if (m == &quot;ignite&quot; &amp;&amp; server::GameCompatibility == GAMET_OXYD1) {
++        Value message(const Message &amp;m) {
++            if (m.message == &quot;ignite&quot; &amp;&amp; server::GameCompatibility == GAMET_OXYD1) {
+                 KillStone(get_pos());  // TODO animation &amp; sound
+                 return Value();
+             } else {
+-                return DoorBase::message(m, val);
++                return DoorBase::message(m);
+             }
+         }
+     };
+@@ -1720,21 +1733,6 @@
+         CLONEOBJ(Door_c_open);
+     public:
+         Door_c_open() : DoorBase(&quot;st-door_c&quot;, OPEN) {}
+-        Value message(const string &amp;m, const Value &amp;val) {
+-            State newstate = state;
+-        
+-            if (m == &quot;signal&quot;) {
+-                newstate = val.to_bool() ? CLOSING : OPENING;  // inverted
+-                if (newstate==OPENING &amp;&amp; (state==CLOSED || state==CLOSING))
+-                    change_state(OPENING);
+-                else if (newstate==CLOSING &amp;&amp; (state==OPEN || state==OPENING))
+-                    change_state(CLOSING);
+-                return Value();
+-            } else {
+-                return DoorBase::message(m, val);
+-            }
+-        }
+-
+     };    
+ }
+ 
+@@ -1786,11 +1784,12 @@
+         Holes get_holes() const;
+         void notify_item();
+ 
+-        virtual Value message(const string &amp;m, const Value &amp;) {
+-            if (m == &quot;init&quot;) { // request from ShogunDot (if set _after_ ShogunStone)
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;init&quot;) { // request from ShogunDot (if set _after_ ShogunStone)
+                 notify_item();
++                return Value();
+             }
+-            return Value();
++            return Object::message(m);
+         }
+ 
+         void add_hole(Holes h) {
+@@ -1943,19 +1942,21 @@
+ 
+         virtual void notify_state(State st) = 0;
+ 
+-        virtual Value message(const string &amp;m, const Value &amp;value) {
+-            if (m==&quot;trigger&quot;) {
+-                incoming = (value.getType() == Value::DOUBLE)
+-                    ? Direction( static_cast&lt;int&gt; (value.get_double()+0.1))
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;trigger&quot;) {
++                incoming = (m.value.getType() == Value::DOUBLE)
++                    ? Direction( static_cast&lt;int&gt; (m.value.get_double()+0.1))
+                     : NODIR;
+ 
+                 change_state(PULSING);
++                return Value();
+             }
+-            else if (m == &quot;signal&quot; &amp;&amp; to_double (value) != 0) {
++            else if (m.message == &quot;signal&quot; &amp;&amp; to_double(m.value) != 0) {
+                 incoming = NODIR;
+                 change_state (PULSING);
++                return Value();
+             }
+-            return Value();
++            return Object::message(m);
+         }
+ 
+         void animcb() {
+@@ -2185,7 +2186,7 @@
+ 
+     private:
+         // Object interface
+-        virtual Value on_message (const Message &amp;m);
++        virtual Value message(const Message &amp;m);
+         virtual void animcb();
+ 
+         // Private methods
+@@ -2329,16 +2330,17 @@
+     active = false;
+ }
+ 
+-Value Turnstile_Pivot_Base::on_message (const Message &amp;m)
++Value Turnstile_Pivot_Base::message(const Message &amp;m)
+ {
+     if (m.message == &quot;signal&quot;) {
+-        int val = to_int (m.value);
++        int val = m.value;
+         if (val == 1)
+             rotate(false, 0);
+         else
+             rotate(true, 0);
++        return Value();
+     }
+-    return Value();
++    return Object::message(m);
+ }
+ 
+ 
+@@ -2749,7 +2751,7 @@
+         void init_model();
+         void animcb();
+         void set_attrib(const string&amp; key, const Value &amp;val);
+-        virtual Value message(const string &amp;msg, const Value &amp;v);
++        virtual Value message(const Message &amp;m);
+         void actor_hit(const StoneContact &amp;sc);
+         void on_impulse(const Impulse&amp; impulse) {}
+         void alarm();
+@@ -2917,31 +2919,34 @@
+         }
+     }
+ 
+-    Value ChessStone::message(const string &amp;msg, const Value &amp;v) {
+-        if(msg == &quot;capture&quot;) {
+-            if(state == IDLE &amp;&amp; v.to_string() != get_model_name())
++    Value ChessStone::message(const Message &amp;m) {
++        if(m.message == &quot;capture&quot;) {
++            if(state == IDLE &amp;&amp; m.value.to_string() != get_model_name())
+                 if(try_state(CAPTURED)) {
+                     set_anim(get_model_name() + &quot;-captured&quot;);
+                     return Value(1);
+                 }
+             return Value();
+-        } else if(msg == &quot;move_nne&quot;) { return message_move(NORTH, EAST); }
+-        else   if(msg == &quot;move_een&quot;) { return message_move(EAST, NORTH); }
+-        else   if(msg == &quot;move_ees&quot;) { return message_move(EAST, SOUTH); }
+-        else   if(msg == &quot;move_sse&quot;) { return message_move(SOUTH, EAST); }
+-        else   if(msg == &quot;move_ssw&quot;) { return message_move(SOUTH, WEST); }
+-        else   if(msg == &quot;move_wws&quot;) { return message_move(WEST, SOUTH); }
+-        else   if(msg == &quot;move_wwn&quot;) { return message_move(WEST, NORTH); }
+-        else   if(msg == &quot;move_nnw&quot;) { return message_move(NORTH, WEST); }
+-        else   if(msg == &quot;move&quot;) {
++        } else if(m.message == &quot;move_nne&quot;) { return message_move(NORTH, EAST); }
++        else   if(m.message == &quot;move_een&quot;) { return message_move(EAST, NORTH); }
++        else   if(m.message == &quot;move_ees&quot;) { return message_move(EAST, SOUTH); }
++        else   if(m.message == &quot;move_sse&quot;) { return message_move(SOUTH, EAST); }
++        else   if(m.message == &quot;move_ssw&quot;) { return message_move(SOUTH, WEST); }
++        else   if(m.message == &quot;move_wws&quot;) { return message_move(WEST, SOUTH); }
++        else   if(m.message == &quot;move_wwn&quot;) { return message_move(WEST, NORTH); }
++        else   if(m.message == &quot;move_nnw&quot;) { return message_move(NORTH, WEST); }
++        else   if(m.message == &quot;move&quot;) {
+             Direction dir1 = to_direction(getAttr(&quot;direction1&quot;));
+             Direction dir2 = to_direction(getAttr(&quot;direction2&quot;));
+             return message_move(dir1, dir2);
+-        } else if(msg == &quot;signal&quot;) { set_color(to_int(v)); }
+-        else   if(msg == &quot;flip&quot;) { set_color(1 - (int)getAttr(&quot;color&quot;)); }
+-        else
+-            return Stone::message(msg, v);
+-        return Value();
++        } else if(m.message == &quot;signal&quot;) {
++            set_color(to_int(m.value));
++            return Value();
++        } else if(m.message == &quot;flip&quot;) {
++            set_color(1 - (int)getAttr(&quot;color&quot;));
++            return Value();
++        }
++        return Object::message(m);
+     }
+ 
+     Value ChessStone::message_move(Direction dir1, Direction dir2) {
+@@ -3119,13 +3124,24 @@
+             }
+         }
+ 
+-        virtual Value message (const string &amp;msg, const Value &amp;v) {
+-            if      (msg == &quot;onoff&quot;)   set_on(state == INACTIVE);
+-            else if (msg == &quot;signal&quot;)  set_on(to_int(v) != 0);
+-            else if (msg == &quot;on&quot;)      set_on(true);
+-            else if (msg == &quot;off&quot;)     set_on(false);
+-            else if (msg == &quot;trigger&quot;) set_on(state == INACTIVE);
+-            return Value();
++        virtual Value message (const Message &amp;m) {
++            if (m.message == &quot;onoff&quot;) {
++                set_on(state == INACTIVE);
++                return Value();
++            } else if (m.message == &quot;signal&quot;) {
++                set_on(to_int(m.value) != 0);
++                return Value();
++            } else if (m.message == &quot;on&quot;) {
++                set_on(true);
++                return Value();
++            } else if (m.message == &quot;off&quot;) {
++                set_on(false);
++                return Value();
++            } else if (m.message == &quot;trigger&quot;) {
++                set_on(state == INACTIVE);
++                return Value();
++            }
++            return Object::message(m);
+         }
+ 
+         void alarm() {
+
+Modified: trunk/src/stones_internal.hh
+===================================================================
+--- trunk/src/stones_internal.hh	2007-12-22 13:49:37 UTC (rev 950)
++++ trunk/src/stones_internal.hh	2007-12-23 22:32:57 UTC (rev 951)
+@@ -102,18 +102,23 @@
+ 
+         virtual void notify_onoff(bool /*on*/) {}
+ 
+-        virtual Value on_message(const Message &amp;msg)
++        virtual Value on_message(const Message &amp;m)
+         {
+-            const std::string &amp;m = msg.message;
+-            if (m==&quot;onoff&quot;)
++            const std::string &amp;msg = m.message;
++            if (m.message == &quot;onoff&quot;) {
+                 set_on(!is_on());
+-            else if (m==&quot;signal&quot;)
+-                set_on (to_int(msg.value) != 0);
+-            else if (m == &quot;on&quot;)
++                return Value(); 
++            } else if (m.message == &quot;signal&quot;) {
++                set_on (to_int(m.value) != 0);
++                return Value(); 
++            } else if (m.message == &quot;on&quot;) {
+                 set_on(true);
+-            else if (m==&quot;off&quot;)
++                return Value(); 
++            } else if (m.message == &quot;off&quot;) {
+                 set_on(false);
+-            return Value();
++                return Value();
++            }
++            return Object::message(m); 
+         }
+     };
+ 
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2007-12-22 13:49:37 UTC (rev 950)
++++ trunk/src/stones_simple.cc	2007-12-23 22:32:57 UTC (rev 951)
+@@ -130,7 +130,7 @@
+             return Stone::is_transparent(dir);
+         }
+ 
+-        virtual Value on_message (const Message &amp;m)
++        virtual Value message(const Message &amp;m)
+         {
+             if (traits-&gt;hollow &amp;&amp; m.message == &quot;glasses&quot;) {
+                 if (to_int(m.value)) {
+@@ -145,8 +145,9 @@
+                         set_model (this-&gt;get_kind());
+                     }
+                 }
++                return Value();
+             }
+-            return Value();
++            return Object::message(m);
+         }
+ 
+         const SimpleStoneTraits *traits; // owned by simple_stone_traits
+@@ -154,7 +155,7 @@
+     };
+ }
+ 
+-
++
+ /* -------------------- SimpleStoneMovable -------------------- */
+ 
+ namespace
+@@ -267,16 +268,17 @@
+         CLONEOBJ(EasyModeStone);
+         DECL_TRAITS;
+ 
+-        virtual Value message(const std::string &amp;msg, const Value&amp;) {
+-            if (msg == &quot;init&quot;) {
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;init&quot;) {
+                 if (server::GetDifficulty() == DIFFICULTY_EASY) {
+                     SetFloor (get_pos(), MakeFloor (&quot;fl-normal&quot;));
+                 } else {
+                     KillItem (get_pos());
+                 }
+                 KillStone (get_pos());
++                return Value();
+             }
+-            return Value();
++            return Object::message(m);
+         }
+     public:
+         EasyModeStone() 
+@@ -285,7 +287,7 @@
+     DEF_TRAITSM(EasyModeStone, &quot;st-easymode&quot;, st_easymode, MOVABLE_BREAKABLE);
+ }
+ 
+-
++
+ /* -------------------- Grates -------------------- */
+ 
+ namespace
+@@ -565,10 +567,12 @@
+         void animcb() {
+             KillStone(get_pos());
+         }
+-        virtual Value message(const string &amp;msg, const Value &amp;) {
+-            if (msg ==&quot;ignite&quot; || msg == &quot;expl&quot; || msg == &quot;bombstone&quot;)
++        virtual Value message(const Message &amp;m) {
++            if (m.message ==&quot;ignite&quot; || m.message == &quot;expl&quot; || m.message == &quot;bombstone&quot;) {
+                 break_me();
+-            return Value();
++                return Value();
++            }
++            return Object::message(m);
+         }
+ 
+         virtual string get_break_anim() const  {
+@@ -658,10 +662,12 @@
+         bool may_be_broken_by(Actor *a) const {
+             return player::WieldedItemIs (a, &quot;it-hammer&quot;);
+         }
+-        virtual Value message(const string &amp;msg, const Value &amp;) {
+-            if (msg == &quot;trigger&quot;)
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;trigger&quot;) {
+                 break_me();
+-            return Value();
++                return Value();
++            }
++            return Object::message(m);
+         }
+     };
+     DEF_TRAITSM(Break_bolder, &quot;st-break_bolder&quot;, st_break_bolder, MOVABLE_BREAKABLE);
+@@ -1001,15 +1007,17 @@
+             }
+         }
+ 
+-        virtual Value message (const string &amp;msg, const Value &amp;) {
+-            if (msg == &quot;fire&quot; &amp;&amp; !blockfire) {
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;fire&quot; &amp;&amp; !blockfire) {
+                 KillStone(get_pos());
+                 return Value(1.0);  // allow fire to spread
+-            } else if (msg == &quot;heat&quot; &amp;&amp; blockfire) {
++            } else if (m.message == &quot;heat&quot; &amp;&amp; blockfire) {
+                 return Value(1.0);  // block fire
+-            } else if (msg == &quot;fall&quot;)
++            } else if (m.message == &quot;fall&quot;) {
+                 maybe_fall_or_stopfire();
+-            return Value();
++                return Value();
++            }
++            return Object::message(m);
+         }
+ 
+         // in oxyd1 only fall when moving
+@@ -1059,7 +1067,7 @@
+         void animcb() {
+             Stone *st = MakeStone (&quot;st-wood&quot;);
+             ReplaceStone (get_pos(), st);
+-            SendMessage (st, &quot;fall&quot;); // instantly builds a bridge on fl-swamp etc
++            SendMessage(st, &quot;fall&quot;); // instantly builds a bridge on fl-swamp etc
+         }
+         void actor_contact(Actor *a) {SendMessage(a, &quot;shatter&quot;);}
+         void actor_inside(Actor *a) {SendMessage(a, &quot;shatter&quot;);}
+@@ -1336,7 +1344,7 @@
+         void change_state(State newstate);
+         void animcb();
+         void actor_hit(const StoneContact &amp;sc);
+-        virtual Value message(const string &amp;m, const Value &amp;val);
++        virtual Value message(const Message &amp;m);
+ 
+         void on_laserhit(Direction) {
+             change_state(BREAKING);
+@@ -1394,20 +1402,22 @@
+     else
+         change_state(FARTING);
+ }
+-Value FartStone::message (const string &amp;m, const Value &amp;val) 
++Value FartStone::message(const Message &amp;m) 
+ {
+-    if (m == &quot;signal&quot; &amp;&amp; to_int(val) != 0)
++    if (m.message == &quot;signal&quot; &amp;&amp; m.value != 0) {
+         change_state(FARTING);
+-    else if (m==&quot;trigger&quot;)
++        return Value();
++    } else if (m.message == &quot;trigger&quot;) {
+         change_state(FARTING);
+-    else if (m == &quot;ignite&quot; || m == &quot;expl&quot;) 
++        return Value();
++    } else if (m.message == &quot;ignite&quot; || m.message == &quot;expl&quot;) { 
+         change_state(BREAKING);
+-    return Value();
++        return Value();
++    }
++    return Object::message(m);
+ }
+ 
+ 
+-
+-
+ /* -------------------- Thief -------------------- */
+ namespace
+ {
+@@ -1429,7 +1439,7 @@
+         // even a slight touch should steal from the actor: 
+         void actor_touch(const StoneContact &amp;sc) { actor_hit(sc); }
+         void animcb();
+-        virtual Value message(const string &amp;msg, const Value &amp;v);        
++        virtual Value message(const Message &amp;m);        
+ 
+         const char *collision_sound() { return &quot;cloth&quot;; }
+         int affected_player;
+@@ -1494,10 +1504,11 @@
+     }
+ }
+ 
+-Value ThiefStone::message(const string &amp;msg, const Value &amp;v) {
+-    if(msg == &quot;signal&quot; &amp;&amp; server::GameCompatibility != GAMET_ENIGMA) {
+-        performAction(v.to_bool());  // signal multiplier
+-    } else if(msg == &quot;capture&quot; &amp;&amp; state == IDLE) {
++Value ThiefStone::message(const Message &amp;m) {
++    if(m.message == &quot;signal&quot; &amp;&amp; server::GameCompatibility != GAMET_ENIGMA) {
++        performAction(!m.value.to_bool());  // inverse signal multiplier
++        return Value();
++    } else if (m.message == &quot;capture&quot; &amp;&amp; state == IDLE) {
+         state = CAPTURED;
+         Item * it =  GetItem(get_pos());
+         
+@@ -1511,8 +1522,8 @@
+         bag = NULL;
+         set_anim(string(get_kind()) + &quot;-captured&quot;);
+         return Value(1);
+-    } else
+-        return Stone::message(msg, v);
++    }
++    return Object::message(m);
+ }
+ 
+ // -------------------------
+@@ -1567,15 +1578,16 @@
+ 
+         int signalidx;
+ 
+-        virtual Value message (const string &amp;msg, const Value &amp;) {
++        virtual Value message(const Message &amp;m) {
+             if(server::GameCompatibility != GAMET_ENIGMA) {
+                 // Oxyd* usage of ActorImpulseStone as a signal multiplier
+                 ObjectList ol = getAttr(&quot;$!oxyd!destinations&quot;);
+                 
+-                if (msg == &quot;init&quot; &amp;&amp; ol.size() &gt; 0) {
++                if (m.message == &quot;init&quot; &amp;&amp; ol.size() &gt; 0) {
+                     signalidx = 0;
+                     SendMessage(ol.front(), &quot;signal&quot;, 1);
+-                } else if (msg == &quot;signal&quot;) {
++                    return Value();
++                } else if (m.message == &quot;signal&quot;) {
+                     int i = 0;
+                     bool didBreak = false;
+                     for (ObjectList::iterator oit = ol.begin(); oit != ol.end(); ++oit, i++) {
+@@ -1592,9 +1604,10 @@
+                         signalidx = 0;                        
+                     } else
+                         signalidx++;
++                    return Value();
+                 }
+             } // GameCompatibility != GAMET_ENIGMA
+-            return Value();
++            return Object::message(m);
+         }
+ 
+     public:
+@@ -1684,13 +1697,14 @@
+             }
+         }
+ 
+-        virtual Value on_message (const Message &amp;m) {
++        virtual Value message(const Message &amp;m) {
+             if (m.message == &quot;signal&quot; || m.message == &quot;trigger&quot;) {
+                 // toggle between black and white stone
+                 m_type = (m_type + 4) % 8;
+                 init_model();
++                return Value();
+             }
+-            return Value();
++            return Object::message(m);
+         }
+ 
+         bool is_floating() const { return true; }
+@@ -1802,7 +1816,7 @@
+         void actor_hit (const StoneContact &amp;sc);
+         void change_state (State newstate);
+         void animcb();
+-        virtual Value message (const string &amp;msg, const Value &amp;);
++        virtual Value message(const Message &amp;m);
+     };
+ }
+ DEF_TRAITSM(BombStone, &quot;INVALID&quot;, st_INVALID, MOVABLE_BREAKABLE);
+@@ -1829,11 +1843,13 @@
+         SetItem(p, it_explosion1);
+ }
+ 
+-Value BombStone::message(const string &amp;msg, const Value &amp;) 
++Value BombStone::message(const Message &amp;m) 
+ {
+-    if (msg ==&quot;expl&quot; || msg ==&quot;bombstone&quot;)
++    if (m.message ==&quot;expl&quot; || m.message ==&quot;bombstone&quot;) {
+         change_state(BREAK);
+-    return Value();
++        return Value();
++    }
++    return Object::message(m);
+ }
+ 
+ void BombStone::actor_hit(const StoneContact &amp;sc) 
+@@ -1847,7 +1863,7 @@
+     }
+ }
+ 
+-
++
+ /* -------------------- MagicStone -------------------- */
+ namespace
+ {
+@@ -1933,9 +1949,9 @@
+             set_visible_model();
+         }
+ 
+-        virtual Value message(const string&amp; msg, const Value &amp;val) {
+-            if (msg == &quot;glasses&quot;) {
+-                if (to_int(val)) {
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;glasses&quot;) {
++                if (to_int(m.value)) {
+                     if (!visible) {
+                         visible = true;
+                         set_visible_model();
+@@ -1947,8 +1963,9 @@
+                         set_visible_model();
+                     }
+                 }
++                return Value();
+             }
+-            return Value();
++            Object::message(m);
+         }
+     public:
+         DeathStoneInvisible() : visible(false) {}
+@@ -2009,11 +2026,12 @@
+             explode();
+         }
+ 
+-        virtual Value message(const string &amp;msg, const Value &amp;) {
+-            if (msg == &quot;expl&quot;) {
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;expl&quot;) {
+                 explode();
++                return Value();
+             }
+-            return Value();
++            Object::message(m);
+         }
+ 
+         bool is_sticky(const Actor *) const 
+@@ -2050,19 +2068,22 @@
+     private:
+         bool is_floating() const { return true; }
+ 
+-        virtual Value message(const string &amp;msg, const Value &amp;val) {
+-            if (msg == &quot;signal&quot;) {
+-                int ival = to_int (val);
++        virtual Value message(const Message &amp;m) {
++            if (m.message == &quot;signal&quot;) {
++                int ival = m.value;
+                 if (ival &gt; 0)
+                     lighten();
+                 else
+                     darken();
+-            }
+-            else if (msg == &quot;lighten&quot;)
++                return Value();
++            } else if (m.message == &quot;lighten&quot;) {
+                 lighten();
+-            else if (msg == &quot;darken&quot;)
++                return Value();
++            } else if (m.message == &quot;darken&quot;) {
+                 darken();
+-            return Value();
++                return Value();
++            }
++            return Object::message(m);
+         }
+     };
+     class DiscoLight : public DiscoStone {
+@@ -2198,12 +2219,12 @@
+             ReplaceStone(get_pos(), MakeStone(&quot;st-plain_breaking&quot;));
+         }
+ 
+-        virtual Value message (const string &amp;msg, const Value &amp;) {
+-            if (msg ==&quot;heat&quot; || msg == &quot;fire&quot;) {
++        virtual Value message(const Message &amp;m) {
++            if (m.message ==&quot;heat&quot; || m.message == &quot;fire&quot;) {
+                 break_me();
+                 return Value(1.0);
+             }
+-            return Value();
++            return Object::message(m);
+         }
+ 
+         void actor_hit(const StoneContact &amp;sc) {
+@@ -2229,10 +2250,12 @@
+             ReplaceStone(get_pos(), MakeStone(&quot;st-plain_breaking&quot;));
+         }
+ 
+-        virtual Value message (const string &amp;msg, const Value &amp;) {
+-            if (msg ==&quot;fire&quot;)
++        virtual Value message(const Message &amp;m) {
++            if (m.message ==&quot;fire&quot;) {
+                 break_me();
+-            return Value();
++                return Value();
++            }
++            return Object::message(m);
+         }
+ 
+         void actor_hit(const StoneContact &amp;sc) {
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2007-12-22 13:49:37 UTC (rev 950)
++++ trunk/src/world.cc	2007-12-23 22:32:57 UTC (rev 951)
+@@ -85,17 +85,11 @@
+ 
+ /* -------------------- Messages -------------------- */
+ 
+-Message::Message ()
+-{
++Message::Message () : sender (NULL) {
+ }
+  
+-Message::Message (const std::string &amp;message_,
+-                  const Value &amp;value_,
+-                  GridPos from_)
+-: message (message_),
+-  value (value_),
+-  gridpos (from_)
+-{
++Message::Message (const std::string &amp;theMessage, const Value &amp;theValue, Object * theSender) : 
++        message (theMessage), value (theValue), sender (theSender) {
+ }
+ 
+ /* -------------------- RubberBandData -------------------- */
+@@ -255,7 +249,6 @@
+ 
+ enigma::Timer  GameTimer;
+ bool           TrackMessages;
+-Actor         *CurrentCollisionActor = 0;
+ 
+ 
+ 
+@@ -1094,10 +1087,8 @@
+             if (!has_nearby_contact(ai.last_contacts, ai.last_contacts_count, 
+                     contact)) {
+                 if (Stone *stone = GetStone(sc.stonepos)) {
+-                    CurrentCollisionActor = a;
+                     if (slow_collision) stone-&gt;actor_touch(sc);
+                     else stone-&gt;actor_hit(sc);
+-                    CurrentCollisionActor = 0;
+ 
+                     if (!slow_collision) {
+                         client::Msg_Sparkle (sc.contact_point);
+@@ -1568,7 +1559,6 @@
+ void WorldPrepareLevel ()
+ {
+     GameTimer.clear();
+-    CurrentCollisionActor = 0;
+     Resize (20, 13);
+ }
+ 
+@@ -1828,8 +1818,8 @@
+             srcloc.pos.x, srcloc.pos.y, srcloc.layer, dstloc.pos.x, dstloc.pos.y, dstloc.layer, msg.c_str());
+         return; // ignore signal
+     }
+-//    Log &lt;&lt; ecl::strf(&quot;AddSignal: Valid signal destination src=%i/%i-%d dest=%i/%i-%d msg='%s'\n&quot;,
+-//        srcloc.pos.x, srcloc.pos.y, srcloc.layer, dstloc.pos.x, dstloc.pos.y, dstloc.layer, msg.c_str());
++//    Log &lt;&lt; ecl::strf(&quot;AddSignal: Valid signal destination src=%i/%i-%d (%s) dest=%i/%i-%d (%s) msg='%s'\n&quot;,
++//        srcloc.pos.x, srcloc.pos.y, srcloc.layer, src-&gt;get_kind(), dstloc.pos.x, dstloc.pos.y, dstloc.layer, dst-&gt;get_kind(), msg.c_str());
+     
+     Value dstValue(dst);
+     
+@@ -1891,22 +1881,17 @@
+ }
+ 
+ 
+-Value SendMessage(Object *o, const std::string &amp;msg) 
++Value SendMessage(Object *obj, const std::string &amp;msg, const Value&amp; value, Object *sender)
+ {
+-    return SendMessage (o, Message (msg, Value()));
++    return SendMessage (obj, Message (msg, value, sender));
+ }
+ 
+-Value SendMessage(Object *o, const std::string &amp;msg, const Value&amp; value)
++Value SendMessage (Object *obj, const Message &amp;m)
+ {
+-    return SendMessage (o, Message (msg, value));
+-}
+-
+-Value SendMessage (Object *o, const Message &amp;m)
+-{
+-    if (o) {
++    if (obj) {
+         if (TrackMessages)
+-            o-&gt;warning(&quot;will be sent message '%s' (with Value)&quot;, m.message.c_str());
+-        return o-&gt;on_message(m);
++            obj-&gt;warning(&quot;will be sent message '%s' (with Value)&quot;, m.message.c_str());
++        return obj-&gt;message(m);
+     }
+     else if (TrackMessages) {
+         fprintf(stderr, &quot;Sending message '%s' to NULL-object\n&quot;, m.message.c_str());
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2007-12-22 13:49:37 UTC (rev 950)
++++ trunk/src/world.hh	2007-12-23 22:32:57 UTC (rev 951)
+@@ -55,16 +55,13 @@
+ 
+     struct Message {
+         // Variables
+-        std::string    message;
+-        Value  value;
+-        GridPos        gridpos;
++        std::string message;
++        Value value;
++        Object *sender;
+ 
+         // Constructors
+         Message ();
+-        Message (const std::string &amp;message,
+-                 const Value &amp;value,
+-                 GridPos gridpos = GridPos());
+-
++        Message (const std::string &amp;message, const Value &amp;value, Object *sender);
+     };
+ 
+ 
+@@ -250,9 +247,8 @@
+     void BroadcastMessage (const std::string&amp; msg, const Value&amp; value, 
+                            GridLayerBits grids);
+ 
+-    Value SendMessage (Object *o, const string &amp;msg);
+-    Value SendMessage (Object *o, const string &amp;msg, const Value&amp; value);
+-    Value SendMessage (Object *o, const Message &amp;m);
++    Value SendMessage (Object *obj, const string &amp;msg, const Value&amp; value = Value(), Object *sender = NULL);
++    Value SendMessage (Object *obj, const Message &amp;m);
+ 
+ 
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000382.html">[Enigma-game-svn] r950 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="000384.html">[Enigma-game-svn] r952 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#383">[ date ]</a>
+              <a href="thread.html#383">[ thread ]</a>
+              <a href="subject.html#383">[ subject ]</a>
+              <a href="author.html#383">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

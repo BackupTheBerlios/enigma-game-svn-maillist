@@ -1,0 +1,264 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1494 - in trunk: data/schemas src src/others
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1494%20-%20in%20trunk%3A%20data/schemas%20src%20src/others&In-Reply-To=%3C200901302203.n0UM3mWw028908%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000922.html">
+   <LINK REL="Next"  HREF="000924.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1494 - in trunk: data/schemas src src/others</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1494%20-%20in%20trunk%3A%20data/schemas%20src%20src/others&In-Reply-To=%3C200901302203.n0UM3mWw028908%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1494 - in trunk: data/schemas src src/others">ral at mail.berlios.de
+       </A><BR>
+    <I>Fri Jan 30 23:03:48 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000922.html">[Enigma-game-svn] r1493 - in trunk: data/schemas src
+</A></li>
+        <LI>Next message: <A HREF="000924.html">[Enigma-game-svn] r1495 - in trunk: data data/gfx32 data/gfx40	data/gfx48 data/schemas src src/actors src/items
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#923">[ date ]</a>
+              <a href="thread.html#923">[ thread ]</a>
+              <a href="subject.html#923">[ subject ]</a>
+              <a href="author.html#923">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-01-30 23:03:47 +0100 (Fri, 30 Jan 2009)
+New Revision: 1494
+
+Added:
+   trunk/src/others/CounterGadget.cc
+   trunk/src/others/CounterGadget.hh
+Modified:
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/world.cc
+Log:
+Trunk 1.1:
+- fix r1493 broken nearest object code
+- add new other gadget &quot;ot_counter&quot;:
+  - counts action messages &quot;signal&quot; received from triggers, sensors, switches
+  - current count as attribute &quot;state&quot; that should be preset to the initial
+    value of counting objects
+  - by usage of state dependent target/actions attributes the counter acts
+    on specific count values
+
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2009-01-29 23:50:37 UTC (rev 1493)
++++ trunk/data/schemas/objects.xml	2009-01-30 22:03:47 UTC (rev 1494)
+@@ -703,6 +703,9 @@
+     &lt;object name=&quot;it_wrench&quot;/&gt;
+     &lt;object name=&quot;ot&quot; abstract=&quot;true&quot;&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;ot_counter&quot;&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;ot_rubberband&quot;&gt;
+       &lt;attr name=&quot;anchor1&quot;/&gt;
+       &lt;attr name=&quot;anchor2&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2009-01-29 23:50:37 UTC (rev 1493)
++++ trunk/src/Makefile.am	2009-01-30 22:03:47 UTC (rev 1494)
+@@ -270,6 +270,8 @@
+ 	lev/ScoreManager.hh	\
+ 	lev/VolatileIndex.cc	\
+ 	lev/VolatileIndex.hh	\
++	others/CounterGadget.cc	\
++	others/CounterGadget.hh	\
+ 	others/Other.cc		\
+ 	others/Other.hh		\
+ 	others/Rubberband.cc	\
+
+Added: trunk/src/others/CounterGadget.cc
+===================================================================
+--- trunk/src/others/CounterGadget.cc	2009-01-29 23:50:37 UTC (rev 1493)
++++ trunk/src/others/CounterGadget.cc	2009-01-30 22:03:47 UTC (rev 1494)
+@@ -0,0 +1,59 @@
++/*
++ * Copyright (C) 2009 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;others/CounterGadget.hh&quot;
++#include &quot;errors.hh&quot;
++#include &quot;main.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    CounterGadget::CounterGadget() : Other() {
++    }
++    
++    std::string CounterGadget::getClass() const {
++        return &quot;ot_counter&quot;;
++    }
++
++    void CounterGadget::setAttr(const std::string &amp;key, const Value &amp;val) {
++        if (key == &quot;state&quot;) {
++            state = val;
++        }
++        Other::setAttr(key, val);
++    }
++    
++    Value CounterGadget::message(const Message &amp;m) {
++        if (m.message == &quot;signal&quot;) {
++            if (m.value.to_bool()) {
++                state++;
++            } else {
++                state--;
++            }
++            if (Value stateTarget = getAttr(ecl::strf(&quot;target_%d&quot;, state))) {
++                performAction(true);
++            }
++            return Value();
++        }
++        return Other::message(m);
++    }
++
++    BOOT_REGISTER_START
++        BootRegister(new CounterGadget(), &quot;ot_counter&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/others/CounterGadget.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/others/CounterGadget.hh
+===================================================================
+--- trunk/src/others/CounterGadget.hh	2009-01-29 23:50:37 UTC (rev 1493)
++++ trunk/src/others/CounterGadget.hh	2009-01-30 22:03:47 UTC (rev 1494)
+@@ -0,0 +1,48 @@
++/*
++ * Copyright (C) 2009 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef COUNTERGADGET_HH
++#define COUNTERGADGET_HH
++
++#include &quot;others/Other.hh&quot;
++#include &quot;display.hh&quot;
++#include &quot;stones.hh&quot;
++
++/* -------------------- Other -------------------- */
++
++
++namespace enigma {
++    
++    class CounterGadget : public Other {
++        CLONEOBJ(CounterGadget)
++
++    public:
++        CounterGadget();
++        
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const std::string &amp;key, const Value &amp;val);
++//        virtual Value getAttr(const std::string &amp;key) const;
++        virtual Value message(const Message &amp;m);
++        
++    private:
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/others/CounterGadget.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2009-01-29 23:50:37 UTC (rev 1493)
++++ trunk/src/world.cc	2009-01-30 22:03:47 UTC (rev 1494)
+@@ -287,12 +287,12 @@
+     double mindist = -1;
+     if (pattern.size() &gt; 0 &amp;&amp; pattern[0] == '@') {
+         pattern.erase(0, 1); // erase the leading @
+-        if (pattern.size() &gt; 0 &amp;&amp; pattern[0] == '@') {
+-            pattern.erase(0, 1); // erase the leading @@
+-        } else {
++        if (pattern.size() == 0) {
+             // a single &quot;@&quot; is a self reference
+             result.push_back(reference);
+             return result;
++        } else if (pattern[0] == '@') {
++            pattern.erase(0, 1); // erase the leading @@
+         }
+         if (reference != NULL)
+             nearest = true;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000922.html">[Enigma-game-svn] r1493 - in trunk: data/schemas src
+</A></li>
+	<LI>Next message: <A HREF="000924.html">[Enigma-game-svn] r1495 - in trunk: data data/gfx32 data/gfx40	data/gfx48 data/schemas src src/actors src/items
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#923">[ date ]</a>
+              <a href="thread.html#923">[ thread ]</a>
+              <a href="subject.html#923">[ subject ]</a>
+              <a href="author.html#923">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

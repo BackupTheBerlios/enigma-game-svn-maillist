@@ -1,0 +1,192 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1528 - in trunk/src: items stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1528%20-%20in%20trunk/src%3A%20items%20stones&In-Reply-To=%3C200902082226.n18MQl9C016054%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000957.html">
+   <LINK REL="Next"  HREF="000959.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1528 - in trunk/src: items stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1528%20-%20in%20trunk/src%3A%20items%20stones&In-Reply-To=%3C200902082226.n18MQl9C016054%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1528 - in trunk/src: items stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Feb  8 23:26:47 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000957.html">[Enigma-game-svn] r1527 - trunk/doc/reference
+</A></li>
+        <LI>Next message: <A HREF="000959.html">[Enigma-game-svn] r1529
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#958">[ date ]</a>
+              <a href="thread.html#958">[ thread ]</a>
+              <a href="subject.html#958">[ subject ]</a>
+              <a href="author.html#958">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-02-08 23:26:47 +0100 (Sun, 08 Feb 2009)
+New Revision: 1528
+
+Modified:
+   trunk/src/items/Crack.cc
+   trunk/src/items/Crack.hh
+   trunk/src/items/Landmine.cc
+   trunk/src/items/SimpleItems.cc
+   trunk/src/items/SimpleItems.hh
+   trunk/src/stones/SimpleStones.cc
+Log:
+Trunk 1.1: new API reengineering
+- fix landmine - renaming typo on explosion type
+- fix spitter - missing init_model on return to idle state
+- fix explosion item - shatter actors on grid
+- fix crack - just crack on entering a grid, not on moving on the grid
+
+Modified: trunk/src/items/Crack.cc
+===================================================================
+--- trunk/src/items/Crack.cc	2009-02-08 19:55:03 UTC (rev 1527)
++++ trunk/src/items/Crack.cc	2009-02-08 22:26:47 UTC (rev 1528)
+@@ -72,21 +72,20 @@
+         }
+     }
+     
+-    void Crack::animcb() {
+-        GridPos p= get_pos();
+-        SetFloor(p, MakeFloor(&quot;fl_abyss&quot;));
+-        KillItem(p);
+-    }
+-    
+-    bool Crack::actor_hit(Actor *a) {
++    void Crack::actor_enter(Actor *a) {
+         if (a-&gt;is_on_floor()) {
+             crack();
+             if (state &lt; DISSOLVING)
+                 spread();
+         }
+-        return false;
+     }
+     
++    void Crack::animcb() {
++        GridPos p= get_pos();
++        SetFloor(p, MakeFloor(&quot;fl_abyss&quot;));
++        KillItem(p);
++    }
++    
+     void Crack::crack() {
+         Floor *fl = GetFloor(get_pos());
+         if (fl != NULL &amp;&amp; fl-&gt;is_destructible()) {
+
+Modified: trunk/src/items/Crack.hh
+===================================================================
+--- trunk/src/items/Crack.hh	2009-02-08 19:55:03 UTC (rev 1527)
++++ trunk/src/items/Crack.hh	2009-02-08 22:26:47 UTC (rev 1528)
+@@ -55,13 +55,11 @@
+ 
+         // GridObject interface
+         virtual void init_model();
++        virtual void actor_enter(Actor *a);
+         
+         // ModelCallback interface
+         virtual void animcb();
+         
+-        // Item interface
+-        virtual bool actor_hit(Actor *a);
+-        
+     private:
+         void crack();
+         void spread();
+
+Modified: trunk/src/items/Landmine.cc
+===================================================================
+--- trunk/src/items/Landmine.cc	2009-02-08 19:55:03 UTC (rev 1527)
++++ trunk/src/items/Landmine.cc	2009-02-08 22:26:47 UTC (rev 1528)
+@@ -45,7 +45,7 @@
+     
+     void Landmine::explode() {
+         sound_event (&quot;landmine&quot;);
+-        replace(&quot;it-explosion2&quot;);
++        replace(&quot;it_explosion_hollow&quot;);
+     }
+ 
+     DEF_ITEMTRAITSF(Landmine, &quot;it_landmine&quot;, it_landmine, itf_static);
+
+Modified: trunk/src/items/SimpleItems.cc
+===================================================================
+--- trunk/src/items/SimpleItems.cc	2009-02-08 19:55:03 UTC (rev 1527)
++++ trunk/src/items/SimpleItems.cc	2009-02-08 22:26:47 UTC (rev 1528)
+@@ -138,6 +138,11 @@
+         else
+             kill();
+      }
++
++    bool Explosion::actor_hit(Actor *actor) {
++        SendMessage(actor, &quot;shatter&quot;);
++        return false;
++    }
+      
+     DEF_ITEMTRAITSF(Explosion, &quot;it_explosion&quot;, it_explosion, itf_static |
+                 itf_animation | itf_indestructible | itf_norespawn | itf_fireproof);
+
+Modified: trunk/src/items/SimpleItems.hh
+===================================================================
+--- trunk/src/items/SimpleItems.hh	2009-02-08 19:55:03 UTC (rev 1527)
++++ trunk/src/items/SimpleItems.hh	2009-02-08 22:26:47 UTC (rev 1528)
+@@ -126,6 +126,9 @@
+         
+         // ModelCallback interface
+         virtual void animcb();
++        
++        // Item interface
++        virtual bool actor_hit(Actor *a);
+     };
+     
+     /**
+
+Modified: trunk/src/stones/SimpleStones.cc
+===================================================================
+--- trunk/src/stones/SimpleStones.cc	2009-02-08 19:55:03 UTC (rev 1527)
++++ trunk/src/stones/SimpleStones.cc	2009-02-08 22:26:47 UTC (rev 1528)
+@@ -256,6 +256,7 @@
+             }
+             case SPITTING:
+                 state = IDLE;
++                init_model();
+                 break;
+             }
+     }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000957.html">[Enigma-game-svn] r1527 - trunk/doc/reference
+</A></li>
+	<LI>Next message: <A HREF="000959.html">[Enigma-game-svn] r1529
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#958">[ date ]</a>
+              <a href="thread.html#958">[ thread ]</a>
+              <a href="subject.html#958">[ subject ]</a>
+              <a href="author.html#958">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

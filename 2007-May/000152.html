@@ -1,0 +1,189 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r715 - branches/1.0/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r715%20-%20branches/1.0/src&In-Reply-To=%3C200705032123.l43LNEY6024956%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000151.html">
+   <LINK REL="Next"  HREF="000153.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r715 - branches/1.0/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r715%20-%20branches/1.0/src&In-Reply-To=%3C200705032123.l43LNEY6024956%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r715 - branches/1.0/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu May  3 23:23:14 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000151.html">[Enigma-game-svn] r714 - in branches/1.0/data/levels: enigma_cross	enigma_sokoban enigma_vi enigma_vii
+</A></li>
+        <LI>Next message: <A HREF="000153.html">[Enigma-game-svn] r716 - in branches/1.0: data/levels/enigma_cross	data/levels/enigma_vii src/gui
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#152">[ date ]</a>
+              <a href="thread.html#152">[ thread ]</a>
+              <a href="subject.html#152">[ subject ]</a>
+              <a href="author.html#152">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-05-03 23:23:14 +0200 (Thu, 03 May 2007)
+New Revision: 715
+
+Modified:
+   branches/1.0/src/client.cc
+   branches/1.0/src/client.hh
+   branches/1.0/src/server.cc
+   branches/1.0/src/server.hh
+Log:
+Branch 1.0: 
+- F6 for jump back to last played level when next level is loaded
+
+
+Modified: branches/1.0/src/client.cc
+===================================================================
+--- branches/1.0/src/client.cc	2007-05-01 22:58:56 UTC (rev 714)
++++ branches/1.0/src/client.cc	2007-05-03 21:23:14 UTC (rev 715)
+@@ -436,6 +436,7 @@
+ 
+         case SDLK_F4: Msg_AdvanceLevel(lev::ADVANCE_STRICTLY); break;
+         case SDLK_F5: Msg_AdvanceLevel(lev::ADVANCE_UNSOLVED); break;
++        case SDLK_F6: Msg_JumpBack(); break;
+ 
+         case SDLK_F10: {
+             lev::Proxy *level = lev::Proxy::loadedLevel();
+@@ -479,10 +480,11 @@
+     N_(&quot;Shift+F3:&quot;),                N_(&quot;Restart the current level&quot;),
+     N_(&quot;F4:&quot;),                      N_(&quot;Skip to next level&quot;),
+     N_(&quot;F5:&quot;),                      0, // see below
++    N_(&quot;F6:&quot;),                      N_(&quot;Jump back to last level&quot;),
+     N_(&quot;F10:&quot;),                     N_(&quot;Make screenshot&quot;),
+     N_(&quot;Left/right arrow:&quot;),        N_(&quot;Change mouse speed&quot;),
+     N_(&quot;Alt+x:&quot;),                   N_(&quot;Return to level menu&quot;),
+-    N_(&quot;Alt+Return:&quot;),              N_(&quot;Switch between fullscreen and window&quot;),
++//    N_(&quot;Alt+Return:&quot;),              N_(&quot;Switch between fullscreen and window&quot;),
+     0
+ };
+ 
+@@ -902,6 +904,12 @@
+         client::Msg_Command(&quot;abort&quot;);
+ }
+ 
++void client::Msg_JumpBack() {
++    // log last played level
++    lev::PersistentIndex::addCurrentToHistory();
++    server::Msg_JumpBack();
++}
++
+ bool client::AbortGameP() {
+     return CLIENT.abort_p();
+ }
+
+Modified: branches/1.0/src/client.hh
+===================================================================
+--- branches/1.0/src/client.hh	2007-05-01 22:58:56 UTC (rev 714)
++++ branches/1.0/src/client.hh	2007-05-03 21:23:14 UTC (rev 715)
+@@ -41,6 +41,7 @@
+     void Msg_Command(const std::string&amp; cmd);
+     
+     void Msg_AdvanceLevel (lev::LevelAdvanceMode mode);
++    void Msg_JumpBack();
+ 
+     void Msg_LevelLoaded(bool isRestart);
+ 
+
+Modified: branches/1.0/src/server.cc
+===================================================================
+--- branches/1.0/src/server.cc	2007-05-01 22:58:56 UTC (rev 714)
++++ branches/1.0/src/server.cc	2007-05-03 21:23:14 UTC (rev 715)
+@@ -111,6 +111,10 @@
+     double             time_accu           = 0;
+     double             current_state_dtime = 0;
+     int                 move_counter; // counts movements of stones
++    lev::Index *currentIndex = NULL;  // volatile F6 jump back history
++    int currentLevel;
++    lev::Index *previousIndex = NULL;
++    int previousLevel;
+     ENetAddress        network_address;
+     ENetHost           *network_host       = 0;
+ }
+@@ -339,10 +343,31 @@
+ 
+ void server::Msg_LoadLevel (lev::Proxy *levelProxy, bool isPreview) {
+     server::CreatingPreview = isPreview;
++    if (!isPreview) {
++	// update F6 jump back history
++	if (currentIndex != lev::Index::getCurrentIndex() ||
++		currentLevel != currentIndex-&gt;getCurrentPosition()) {
++	    previousIndex = currentIndex;
++	    previousLevel = currentLevel;
++	    currentIndex = lev::Index::getCurrentIndex();
++	    currentLevel = currentIndex-&gt;getCurrentPosition();
++	}
++    }
+     load_level(levelProxy, false);
+ }
+ 
++void server::Msg_JumpBack() {
++    if (previousIndex != NULL) {
++	lev::Index::setCurrentIndex(previousIndex-&gt;getName());
++	previousIndex-&gt;setCurrentPosition(previousLevel);
++	currentIndex = previousIndex;
++	currentLevel = previousLevel;
++	Msg_LoadLevel(currentIndex-&gt;getProxy(currentLevel), false);
++	Msg_Command(&quot;restart&quot;);
++    }
++}
+ 
++
+ void server::Msg_StartGame()
+ {
+     if (state == sv_waiting_for_clients) {
+
+Modified: branches/1.0/src/server.hh
+===================================================================
+--- branches/1.0/src/server.hh	2007-05-01 22:58:56 UTC (rev 714)
++++ branches/1.0/src/server.hh	2007-05-03 21:23:14 UTC (rev 715)
+@@ -144,6 +144,8 @@
+     void Msg_SetLevelPack (const std::string &amp;name);
+ 
+     void Msg_LoadLevel (lev::Proxy *levelProxy, bool isPreview);
++     
++    void Msg_JumpBack();
+ 
+     /*! After loading the level, the server sends a &quot;LevelLoaded&quot;
+       message to all clients.  The game only starts after they have
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000151.html">[Enigma-game-svn] r714 - in branches/1.0/data/levels: enigma_cross	enigma_sokoban enigma_vi enigma_vii
+</A></li>
+	<LI>Next message: <A HREF="000153.html">[Enigma-game-svn] r716 - in branches/1.0: data/levels/enigma_cross	data/levels/enigma_vii src/gui
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#152">[ date ]</a>
+              <a href="thread.html#152">[ thread ]</a>
+              <a href="subject.html#152">[ subject ]</a>
+              <a href="author.html#152">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

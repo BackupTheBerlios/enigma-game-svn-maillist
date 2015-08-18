@@ -1,0 +1,246 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1143 - in trunk/src: . gui
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1143%20-%20in%20trunk/src%3A%20.%20gui&In-Reply-To=%3C200805132227.m4DMRLGW004549%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000575.html">
+   <LINK REL="Next"  HREF="000577.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1143 - in trunk/src: . gui</H1>
+    <B>andreasl at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1143%20-%20in%20trunk/src%3A%20.%20gui&In-Reply-To=%3C200805132227.m4DMRLGW004549%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1143 - in trunk/src: . gui">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Wed May 14 00:27:21 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000575.html">[Enigma-game-svn] r1142 - in trunk: data data/levels/lib src/stones
+</A></li>
+        <LI>Next message: <A HREF="000577.html">[Enigma-game-svn] r1144 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#576">[ date ]</a>
+              <a href="thread.html#576">[ thread ]</a>
+              <a href="subject.html#576">[ subject ]</a>
+              <a href="author.html#576">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2008-05-14 00:27:21 +0200 (Wed, 14 May 2008)
+New Revision: 1143
+
+Modified:
+   trunk/src/SoundEffectManager.cc
+   trunk/src/SoundEffectManager.hh
+   trunk/src/SoundEngine.cc
+   trunk/src/gui/GameMenu.cc
+   trunk/src/gui/OptionsMenu.cc
+Log:
+Trunk:
+ - Fix Bug #10928: Sound merging.
+   Volume is set to maximum, position calculation
+   is more robust, merging and effective volume
+   had been extracted to own functions.
+ - Fix Bug #8032: Border in Levelpause-screen.
+   Bug was due to conversion from int to double,
+   division and multiplication by the same factor,
+   and subsequent implicit conversion to int.
+   Made in total a loss of 1 pixel in height and
+   width.
+ - Small adjustment in options menu.
+
+   
+   
+
+Modified: trunk/src/SoundEffectManager.cc
+===================================================================
+--- trunk/src/SoundEffectManager.cc	2008-05-13 20:42:16 UTC (rev 1142)
++++ trunk/src/SoundEffectManager.cc	2008-05-13 22:27:21 UTC (rev 1143)
+@@ -146,11 +146,38 @@
+ 
+ SoundEvent::SoundEvent ()
+ : name(&quot;&quot;), has_position(false), position(),
+-  priority (0), volume (0.0),
+-  left (0), right(0), active (false),
+-  playing_time (0)
++  priority(0), volume(0.0), range(30.0), fullvol_range(0.2),
++  number_events(1), left(0), right(0), active(false),
++  playing_time(0)
+ {}
+ 
++double SoundEvent::effectiveVolume(double dist) {
++    double reduced_dist = max(0.0, dist - fullvol_range);
++    return (1 - reduced_dist / range) * volume;
++}
++
++bool SoundEvent::merge(SoundEvent se) {
++    if (has_position &amp;&amp; se.has_position) {
++        /*! Merge the soundevent se onto this one. The loudness profile
++           of a soundevent se is that of a cylinder shaped center region
++           with height se.volume and radius se.fullvol_range,
++           surrounded by a linearly decreasing area of breadth se.range.
++           The merged soundevent will have a center region covering both
++           old center regions, and its volume is set to the maximum
++           of the two volumes. */
++        double dist = ecl::length(position - se.position);
++        volume = max(volume, se.volume);
++        fullvol_range += dist/2;
++        position = (number_events * position + se.number_events * se.position)
++                       / (number_events + se.number_events);
++        number_events += se.number_events;
++        return true;
++    } else {
++        // Don't merge global sounds.
++        return false;
++    }
++}            
++
+ /* -------------------- SoundEffectManager -------------------- */
+ 
+ SoundEffectManager *SoundEffectManager::theSingleton = 0;
+
+Modified: trunk/src/SoundEffectManager.hh
+===================================================================
+--- trunk/src/SoundEffectManager.hh	2008-05-13 20:42:16 UTC (rev 1142)
++++ trunk/src/SoundEffectManager.hh	2008-05-13 22:27:21 UTC (rev 1143)
+@@ -219,6 +219,9 @@
+         ecl::V2   position;
+         int       priority;
+         double    volume;           // Volume between 0.0 and 1.0
++        double    range;            // How far can sound travel? (Default: 30.0)
++        double    fullvol_range;    // If distance sound origin &lt;= this value, play at full volume
++        int       number_events;    // Increased when soundevents are merged
+         int       left;
+         int       right;
+ 
+@@ -228,6 +231,12 @@
+ 
+         // Constructor
+         SoundEvent ();
++        
++        // Effective volume calculation
++        double    effectiveVolume(double dist);
++        
++        // Merge another sound event onto this one.
++        bool      merge(SoundEvent se);
+     };
+ 
+ /* -------------------- SoundEffect and SoundEffectRepository ---------------- */
+
+Modified: trunk/src/SoundEngine.cc
+===================================================================
+--- trunk/src/SoundEngine.cc	2008-05-13 20:42:16 UTC (rev 1142)
++++ trunk/src/SoundEngine.cc	2008-05-13 22:27:21 UTC (rev 1143)
+@@ -351,12 +351,6 @@
+ 
+ void SoundEngine_SDL::update_channel (int channel)
+ {
+-    // If distance sound origin &lt;= this value, play at full volume
+-    const double fullvol_range = 0.2;
+-
+-    // How far can sound travel?
+-    const double range = 30;    
+-
+     SoundEvent &amp;se = m_channelinfo[channel];
+ 
+     double volume;
+@@ -364,13 +358,10 @@
+     int    right;
+     if (se.has_position) {
+         ecl::V2 distv = se.position - m_listenerpos;
+-        double dist = max(0.0, length(distv) - fullvol_range);
+-
+         int xdist = int(distv[0] * options::GetDouble(&quot;StereoSeparation&quot;));
+-
+         left  = ecl::Clamp (255 - xdist, 0, 255);
+         right = ecl::Clamp (255 + xdist, 0, 255);
+-        volume = (1 - dist/range) * se.volume;
++        volume = se.effectiveVolume(length(distv));
+     }
+     else
+     {
+@@ -392,7 +383,7 @@
+ 
+         if (se.active &amp;&amp; se.name == s.name &amp;&amp; se.playing_time &lt; 0.05
+             &amp;&amp; (!se.has_position || !s.has_position ||
+-		ecl::length(se.position - s.position) &lt; 30))
++		ecl::length(se.position - s.position) &lt; se.range + se.fullvol_range))
+             return static_cast&lt;int&gt; (i);
+     }
+     return -1;
+@@ -429,9 +420,8 @@
+     if (channel != -1) {
+         MutexLock (m_instance-&gt;m_mutex);
+         SoundEvent &amp;se = m_channelinfo [channel];
+-        if (se.has_position) {
+-            se.position = (se.position + s.position) / 2;
+-            update_channel (channel);
++        if(se.merge(s)) {
++            update_channel(channel);
+             return true;
+         }
+     }
+
+Modified: trunk/src/gui/GameMenu.cc
+===================================================================
+--- trunk/src/gui/GameMenu.cc	2008-05-13 20:42:16 UTC (rev 1142)
++++ trunk/src/gui/GameMenu.cc	2008-05-13 22:27:21 UTC (rev 1143)
+@@ -123,7 +123,7 @@
+     //             delete src;
+     //             src = tmp;
+     //         }
+-            zoomed = src-&gt;zoom(vminfo-&gt;width, vminfo-&gt;height);
++            zoomed = src-&gt;zoom(vminfo-&gt;width+1, vminfo-&gt;height+1);
+             delete src;
+         }
+     
+
+Modified: trunk/src/gui/OptionsMenu.cc
+===================================================================
+--- trunk/src/gui/OptionsMenu.cc	2008-05-13 20:42:16 UTC (rev 1142)
++++ trunk/src/gui/OptionsMenu.cc	2008-05-13 22:27:21 UTC (rev 1143)
+@@ -461,7 +461,8 @@
+ #define OPTIONS_NEW_L(label) lb = new HList;\
+         lb-&gt;set_spacing(param[vtt].hoption_option); \
+         lb-&gt;set_alignment(HALIGN_LEFT, VALIGN_TOP); \
+-        lb-&gt;set_default_size(param[vtt].optionb_width, param[vtt].button_height); \
++        lb-&gt;set_default_size(2*param[vtt].optionb_width + param[vtt].hoption_option, \
++                             param[vtt].button_height); \
+         lb-&gt;add_back(new Label(label, HALIGN_LEFT, VALIGN_BOTTOM)); \
+         optionsVList-&gt;add_back(lb); \
+ // end define
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000575.html">[Enigma-game-svn] r1142 - in trunk: data data/levels/lib src/stones
+</A></li>
+	<LI>Next message: <A HREF="000577.html">[Enigma-game-svn] r1144 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#576">[ date ]</a>
+              <a href="thread.html#576">[ thread ]</a>
+              <a href="subject.html#576">[ subject ]</a>
+              <a href="author.html#576">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

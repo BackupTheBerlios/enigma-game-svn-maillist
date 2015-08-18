@@ -1,0 +1,194 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1277 - in trunk: data src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-August/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1277%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200808201845.m7KIjiFQ010774%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000706.html">
+   <LINK REL="Next"  HREF="000708.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1277 - in trunk: data src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1277%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200808201845.m7KIjiFQ010774%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1277 - in trunk: data src">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Aug 20 20:45:44 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000706.html">[Enigma-game-svn] r1276 - in homepage: images/articles input	input/articles input/lotm
+</A></li>
+        <LI>Next message: <A HREF="000708.html">[Enigma-game-svn] r1278 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#707">[ date ]</a>
+              <a href="thread.html#707">[ thread ]</a>
+              <a href="subject.html#707">[ subject ]</a>
+              <a href="author.html#707">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-08-20 20:45:43 +0200 (Wed, 20 Aug 2008)
+New Revision: 1277
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/src/ObjectValidator.cc
+   trunk/src/lua.cc
+Log:
+Trunk 1.1: Error handling improvements
+- global Lua variables &quot;res&quot; and &quot;lib&quot; with error handler for access of
+  not existing entries
+- object validator added exception handling for semantical errors in 
+  declarations.
+- improved error messages for errors thrown within resolver implementations
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2008-08-20 17:35:16 UTC (rev 1276)
++++ trunk/data/api2init.lua	2008-08-20 18:45:43 UTC (rev 1277)
+@@ -216,10 +216,34 @@
+ )
+ 
+ ---------------
++-- Libraries --
++---------------
++
++lib = {}
++setmetatable(lib, {__index = 
++    function (table, key)
++        if type(key) == &quot;string&quot; then
++            error(&quot;Library function named '&quot;..key..&quot;' not existing. A typo or a missing library dependency may cause this fault.&quot;, 2)
++        else
++            error(&quot;Library function access with a key of type '&quot;..type(key)..&quot;'. A name is mandatory.&quot;, 2)
++        end
++    end 
++})
++
++---------------
+ -- Resolvers --
+ ---------------
+ 
+ res = {}
++setmetatable(res, {__index = 
++    function (table, key)
++        if type(key) == &quot;string&quot; then
++            error(&quot;Resolver named '&quot;..key..&quot;' not existing. A typo or a missing library dependency may cause this fault.&quot;, 2)
++        else
++            error(&quot;Resolver access with a key of type '&quot;..type(key)..&quot;'. A name is mandatory.&quot;, 2)
++        end
++    end 
++})
+ 
+ function res.random_implementation(context, evaluator, key, x, y)
+     for hit_itr, hit_pair in ipairs(context[4]) do
+
+Modified: trunk/src/ObjectValidator.cc
+===================================================================
+--- trunk/src/ObjectValidator.cc	2008-08-20 17:35:16 UTC (rev 1276)
++++ trunk/src/ObjectValidator.cc	2008-08-20 18:45:43 UTC (rev 1277)
+@@ -105,25 +105,33 @@
+     void ObjectValidator::init() {
+         ASSERT(doc != NULL, XFrontend, &quot;ObjectValidator try to init without given document&quot;);
+         
++        std::string errMessage;
+         DOMNodeList *elemList;
+         DOMElement *baseElem;
+         
+-        baseElem = dynamic_cast&lt;DOMElement *&gt;(doc-&gt;getElementsByTagName(Utf8ToXML(&quot;attributes&quot;).x_str())-&gt;item(0));
+-        elemList = baseElem-&gt;getElementsByTagName(Utf8ToXML(&quot;attr&quot;).x_str());
+-        for (int i = 0, l = elemList-&gt;getLength(); i &lt; l; i++) {
+-            scanAttributeElement(dynamic_cast&lt;DOMElement *&gt;(elemList-&gt;item(i)));
++        try{
++            baseElem = dynamic_cast&lt;DOMElement *&gt;(doc-&gt;getElementsByTagName(Utf8ToXML(&quot;attributes&quot;).x_str())-&gt;item(0));
++            elemList = baseElem-&gt;getElementsByTagName(Utf8ToXML(&quot;attr&quot;).x_str());
++            for (int i = 0, l = elemList-&gt;getLength(); i &lt; l; i++) {
++                scanAttributeElement(dynamic_cast&lt;DOMElement *&gt;(elemList-&gt;item(i)));
++            }
++            
++            baseElem = dynamic_cast&lt;DOMElement *&gt;(doc-&gt;getElementsByTagName(Utf8ToXML(&quot;messages&quot;).x_str())-&gt;item(0));
++            elemList = baseElem-&gt;getElementsByTagName(Utf8ToXML(&quot;msg&quot;).x_str());
++            for (int i = 0, l = elemList-&gt;getLength(); i &lt; l; i++) {
++                scanMessageElement(dynamic_cast&lt;DOMElement *&gt;(elemList-&gt;item(i)));
++            }
++            
++            elemList = doc-&gt;getElementsByTagName(Utf8ToXML(&quot;object&quot;).x_str());
++            for (int i = 0, l = elemList-&gt;getLength(); i &lt; l; i++) {
++                scanObjectElement(dynamic_cast&lt;DOMElement *&gt;(elemList-&gt;item(i)));
++            }
++        } catch (...) {
++            errMessage = &quot;Exception on parse of object declarations\n&quot;;
+         }
+-        
+-        baseElem = dynamic_cast&lt;DOMElement *&gt;(doc-&gt;getElementsByTagName(Utf8ToXML(&quot;messages&quot;).x_str())-&gt;item(0));
+-        elemList = baseElem-&gt;getElementsByTagName(Utf8ToXML(&quot;msg&quot;).x_str());
+-        for (int i = 0, l = elemList-&gt;getLength(); i &lt; l; i++) {
+-            scanMessageElement(dynamic_cast&lt;DOMElement *&gt;(elemList-&gt;item(i)));
++        if (!errMessage.empty()) {
++            throw XFrontend(&quot;Cannot init object declarations file: \nError: &quot; + errMessage);
+         }
+-        
+-        elemList = doc-&gt;getElementsByTagName(Utf8ToXML(&quot;object&quot;).x_str());
+-        for (int i = 0, l = elemList-&gt;getLength(); i &lt; l; i++) {
+-            scanObjectElement(dynamic_cast&lt;DOMElement *&gt;(elemList-&gt;item(i)));
+-        }
+     }
+     
+     void ObjectValidator::shutdown() {
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-08-20 17:35:16 UTC (rev 1276)
++++ trunk/src/lua.cc	2008-08-20 18:45:43 UTC (rev 1277)
+@@ -1960,7 +1960,7 @@
+         lua_pushvalue(L, -4);       // duplicate y
+         int retval=lua_pcall(L, 3, 1, 0);     // resolver(key,x,y) -&gt;  tile
+         if (retval!=0) {
+-            throwLuaError(L, &quot;Error within tile key resolver&quot;);
++            throwLuaError(L, ecl::strf(&quot;Error within tile key resolver: \n  %s&quot;, lua_tostring(L, -1)).c_str());
+             return 0;
+         }
+         // check result - must be tile or table or nil
+@@ -1979,7 +1979,7 @@
+         lua_pushvalue(L, -6);       // duplicate y
+         int retval=lua_pcall(L, 5, 1, 0);     // resolver(context,evaluator,key,x,y) -&gt;  tile
+         if (retval!=0) { 
+-            throwLuaError(L, &quot;Error within tile key resolver&quot;);
++            throwLuaError(L, ecl::strf(&quot;Error within tile key resolver: \n  %s&quot;, lua_tostring(L, -1)).c_str());
+             return 0;
+         }
+         // check result - must be tile or table or nil
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000706.html">[Enigma-game-svn] r1276 - in homepage: images/articles input	input/articles input/lotm
+</A></li>
+	<LI>Next message: <A HREF="000708.html">[Enigma-game-svn] r1278 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#707">[ date ]</a>
+              <a href="thread.html#707">[ thread ]</a>
+              <a href="subject.html#707">[ subject ]</a>
+              <a href="author.html#707">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

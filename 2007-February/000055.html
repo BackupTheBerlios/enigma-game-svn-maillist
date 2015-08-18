@@ -1,0 +1,178 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r616 - branches/1.0/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r616%20-%20branches/1.0/src&In-Reply-To=%3C200702242053.l1OKr5AI021963%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000054.html">
+   <LINK REL="Next"  HREF="000056.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r616 - branches/1.0/src</H1>
+    <B>andreasl at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r616%20-%20branches/1.0/src&In-Reply-To=%3C200702242053.l1OKr5AI021963%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r616 - branches/1.0/src">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Sat Feb 24 21:53:05 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000054.html">[Enigma-game-svn] r615 - trunk/doc/reference
+</A></li>
+        <LI>Next message: <A HREF="000056.html">[Enigma-game-svn] r617 - in homepage: input news
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#55">[ date ]</a>
+              <a href="thread.html#55">[ thread ]</a>
+              <a href="subject.html#55">[ subject ]</a>
+              <a href="author.html#55">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2007-02-24 21:53:04 +0100 (Sat, 24 Feb 2007)
+New Revision: 616
+
+Modified:
+   branches/1.0/src/stones.cc
+   branches/1.0/src/stones.hh
+   branches/1.0/src/world.cc
+   branches/1.0/src/world.hh
+   branches/1.0/src/world_internal.hh
+Log:
+Patching delayed impulses:
+ - When a stone is killed, all delayed impulses with this stone
+   as sender or as receiver are revoked.
+ - Still missing: Check when killing other objects. However,
+   no other objects are actually using delayed impulses, not
+   even it-puller.
+
+
+
+Modified: branches/1.0/src/stones.cc
+===================================================================
+--- branches/1.0/src/stones.cc	2007-02-24 19:50:03 UTC (rev 615)
++++ branches/1.0/src/stones.cc	2007-02-24 20:53:04 UTC (rev 616)
+@@ -115,6 +115,8 @@
+ : GridObject (kind)
+ {}
+ 
++Stone::~Stone() { revokeDelayedImpulses(this); }
++
+ const StoneTraits &amp;Stone::get_traits() const
+ {
+     static StoneTraits default_traits = {
+
+Modified: branches/1.0/src/stones.hh
+===================================================================
+--- branches/1.0/src/stones.hh	2007-02-24 19:50:03 UTC (rev 615)
++++ branches/1.0/src/stones.hh	2007-02-24 20:53:04 UTC (rev 616)
+@@ -91,6 +91,7 @@
+     public:
+         Stone();
+         Stone(const char *kind);
++        ~Stone();
+ 
+         /* ---------- Virtual functions ---------- */
+         virtual Stone *clone() = 0;
+
+Modified: branches/1.0/src/world.cc
+===================================================================
+--- branches/1.0/src/world.cc	2007-02-24 19:50:03 UTC (rev 615)
++++ branches/1.0/src/world.cc	2007-02-24 20:53:04 UTC (rev 616)
+@@ -1770,6 +1770,19 @@
+     level-&gt;delayed_impulses.push_back(DelayedImpulse(impulse, delay, estimated_receiver));
+ }
+ 
++void world::revokeDelayedImpulses(const Stone *target)
++{
++    // Revokes delayed impulses to and from target
++    ImpulseList::iterator i = level-&gt;delayed_impulses.begin(),
++        end = level-&gt;delayed_impulses.end();
++    while (i != end) {
++        if (i-&gt;is_receiver(target) || i-&gt;is_sender(target))
++            i = level-&gt;delayed_impulses.erase(i);
++        else
++            ++i;
++    }
++}
++
+ void world::Tick(double dtime) {
+     level-&gt;tick (dtime);
+ }
+
+Modified: branches/1.0/src/world.hh
+===================================================================
+--- branches/1.0/src/world.hh	2007-02-24 19:50:03 UTC (rev 615)
++++ branches/1.0/src/world.hh	2007-02-24 20:53:04 UTC (rev 616)
+@@ -349,7 +349,10 @@
+     void addDelayedImpulse(const Impulse&amp; impulse, double delay,
+                            const Stone *estimated_receiver);
+ 
++    /*! Revoke all delayed impulses with TARGET as sender or receiver. */
++    void revokeDelayedImpulses(const Stone *target);
+ 
++
+ /* -------------------- Explosions -------------------- */
+ 
+     enum ExplosionType { 
+
+Modified: branches/1.0/src/world_internal.hh
+===================================================================
+--- branches/1.0/src/world_internal.hh	2007-02-24 19:50:03 UTC (rev 615)
++++ branches/1.0/src/world_internal.hh	2007-02-24 20:53:04 UTC (rev 616)
+@@ -138,6 +138,14 @@
+ 
+         const GridPos&amp; destination() const { return impulse.dest; }
+ 
++        bool is_receiver(const Stone *target) const {
++            return target == receiver;
++        }
++
++        bool is_sender(const Stone *target) const {
++            return target == impulse.sender;
++        }
++
+         void send_impulse(Stone *target) const {
+ 
+             // @@@ FIXME: the test for equality of Stones sometimes fails
+@@ -149,7 +157,7 @@
+             //
+             // Possible fix : add unique ID to all objects
+ 
+-            if (target == receiver) { 
++            if (is_receiver(target)) { 
+                 // if object did not change since impulse was initiated
+                 target-&gt;on_impulse(impulse);
+             }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000054.html">[Enigma-game-svn] r615 - trunk/doc/reference
+</A></li>
+	<LI>Next message: <A HREF="000056.html">[Enigma-game-svn] r617 - in homepage: input news
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#55">[ date ]</a>
+              <a href="thread.html#55">[ thread ]</a>
+              <a href="subject.html#55">[ subject ]</a>
+              <a href="author.html#55">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

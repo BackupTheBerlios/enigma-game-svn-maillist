@@ -1,0 +1,2325 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r901 - in trunk: data/levels/enigma_experimental	data/levels/lib src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r901%20-%20in%20trunk%3A%20data/levels/enigma_experimental%0A%09data/levels/lib%20src&In-Reply-To=%3C200710112348.l9BNmbn7006527%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000332.html">
+   <LINK REL="Next"  HREF="000334.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r901 - in trunk: data/levels/enigma_experimental	data/levels/lib src</H1>
+    <B>andreasl at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r901%20-%20in%20trunk%3A%20data/levels/enigma_experimental%0A%09data/levels/lib%20src&In-Reply-To=%3C200710112348.l9BNmbn7006527%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r901 - in trunk: data/levels/enigma_experimental	data/levels/lib src">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Fri Oct 12 01:48:37 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000332.html">[Enigma-game-svn] r900 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="000334.html">[Enigma-game-svn] r902 - in trunk: lib-src/enigma-core src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#333">[ date ]</a>
+              <a href="thread.html#333">[ thread ]</a>
+              <a href="subject.html#333">[ subject ]</a>
+              <a href="author.html#333">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2007-10-12 01:48:36 +0200 (Fri, 12 Oct 2007)
+New Revision: 901
+
+Added:
+   trunk/data/levels/lib/libsoko-designlist.xml
+   trunk/data/levels/lib/libsoko-endphase.xml
+Modified:
+   trunk/data/levels/enigma_experimental/test_libsoko.xml
+   trunk/data/levels/lib/libsoko.xml
+   trunk/src/stones.cc
+   trunk/src/world.cc
+Log:
+Trunk:
+ - When a stone moves, neighbors are freezechecked as well.
+Sokoban:
+ - Split libsoko.xml into
+    libsoko.xml            : base file
+    libsoko-endphase.xml   : endphase functions and goal triggering
+    libsoko-designlist.xml : design list and ralfcode conversion table
+ - Packed all global variables into a single array of struct named
+   &quot;sokoarea&quot; (which is global). This allows to set and control
+   multiple sokoban-kind areas in a single level with libsoko.
+ - Redundant walls are removed from level strings and the level
+   is trimmed from empty lines and columns.
+ - Added a table to convert Ralf's design codes into libsoko's
+   design numbers.
+ - First works on endphase:
+    - easy hooking of endphase and goal triggering to use
+      the lib to construct sokoareas in more complicated levels
+    - transform level for endphase
+    - algorithm &quot;outside&quot; complete
+    - algorithm &quot;circle&quot; now uses correct oxyd stones
+    - added endphase information to the first 75 designs,
+        but these are not final.
+ - Made test_libsoko easier to solve. ;-)
+Todo:
+ - Remaining endphase algorithms
+   (forget the current code in endphase_set_block_oxyds, it's rubbish)
+Note:
+ - libsoko uses &quot;find&quot;-functions from the string-library.
+   If they're not available with your version of lua, please
+   give me a note.
+
+
+Modified: trunk/data/levels/enigma_experimental/test_libsoko.xml
+===================================================================
+--- trunk/data/levels/enigma_experimental/test_libsoko.xml	2007-10-11 22:59:06 UTC (rev 900)
++++ trunk/data/levels/enigma_experimental/test_libsoko.xml	2007-10-11 23:48:36 UTC (rev 901)
+@@ -3,7 +3,7 @@
+   &lt;el:protected&gt;
+     &lt;el:info el:type=&quot;level&quot;&gt;
+       &lt;el:identity el:title=&quot;Libsoko - Test&quot; el:subtitle=&quot;&quot; el:id=&quot;test_libsoko&quot;/&gt;
+-      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;0&quot; el:status=&quot;experimental&quot;/&gt;
++      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;2&quot; el:status=&quot;experimental&quot;/&gt;
+       &lt;el:author el:name=&quot;Andreas Lochmann&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
+       &lt;el:copyright&gt;Copyright &#169; 2007 Andreas Lochmann&lt;/el:copyright&gt;
+       &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
+@@ -267,13 +267,13 @@
+ ..&quot;&gt; 13\n&quot;
+ ..&quot;  #####\n&quot;
+ ..&quot;  #   #\n&quot;
+-..&quot;  # $ #\n&quot;
+-..&quot; ## #$#\n&quot;
++..&quot;  #   #\n&quot;
++..&quot; ## # #\n&quot;
+ ..&quot;##   @##\n&quot;
+-..&quot;#  .#$ #\n&quot;
+-..&quot;#.#*.. #\n&quot;
+-..&quot;#  . # #\n&quot;
+-..&quot;# $# $ #\n&quot;
++..&quot;#  $#  #\n&quot;
++..&quot;# #.   #\n&quot;
++..&quot;#    # #\n&quot;
++..&quot;#  #   #\n&quot;
+ ..&quot;##   ###\n&quot;
+ ..&quot; #####\n&quot;
+ 
+@@ -311,16 +311,28 @@
+ 
+ 
+ 
+-design_min = 76
++design_min = 1 --76
+ design_max = table.getn(design_list)
+ 
+ design_number = design_max
+ 
++--create_sokoball(multilevel2, 1, 1)
+ create_sokoball(multilevel2, 13, design_number)
+ --create_sokoball(chessoban, 2)
++--draw_sokoball(0, 0, chessoban, 2, nil, true) --leftending)
+ set_stone(&quot;st-switch&quot;, 9, 1, {action=&quot;callback&quot;, target=&quot;design_minus_one&quot;})
+ set_stone(&quot;st-switch&quot;, 10, 1, {action=&quot;callback&quot;, target=&quot;design_plus_one&quot;})
++design_statistics()
+ 
++function leftending(nr)
++  if nr == 2 then
++    recreate_sokoball(150, 2)
++  else
++    error(&quot;Should never happen!&quot;)
++  end
++end
++
++
+ function design_minus_one()
+   design_number = design_number - 1
+   if design_number &lt; design_min then
+@@ -340,6 +352,7 @@
+   set_stone(&quot;st-switch&quot;, 10, 1, {action=&quot;callback&quot;, target=&quot;design_plus_one&quot;})
+ end
+ 
++
+     ]]&gt;&lt;/el:luamain&gt;
+     &lt;el:i18n&gt;
+       &lt;el:string el:key=&quot;title&quot;&gt;
+
+Added: trunk/data/levels/lib/libsoko-designlist.xml
+===================================================================
+--- trunk/data/levels/lib/libsoko-designlist.xml	2007-10-11 22:59:06 UTC (rev 900)
++++ trunk/data/levels/lib/libsoko-designlist.xml	2007-10-11 23:48:36 UTC (rev 901)
+@@ -0,0 +1,538 @@
++&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;no&quot; ?&gt;
++&lt;el:level xmlns:xsi=&quot;<A HREF="http://www.w3.org/2001/XMLSchema-instance">http://www.w3.org/2001/XMLSchema-instance</A>&quot; xsi:schemaLocation=&quot;<A HREF="http://enigma-game.org/schema/level/1">http://enigma-game.org/schema/level/1</A> level.xsd&quot; xmlns:el=&quot;<A HREF="http://enigma-game.org/schema/level/1">http://enigma-game.org/schema/level/1</A>&quot;&gt;
++  &lt;el:protected&gt;
++    &lt;el:info el:type=&quot;library&quot;&gt;
++      &lt;el:identity el:title=&quot;&quot; el:id=&quot;lib/libsoko-designlist&quot;/&gt;
++      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;1&quot; el:status=&quot;experimental&quot;/&gt;
++      &lt;el:author  el:name=&quot;Enigma Team&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
++      &lt;el:copyright&gt;Copyright &#169; 2007 Enigma Team&lt;/el:copyright&gt;
++      &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
++      &lt;el:compatibility el:enigma=&quot;1.00&quot;&gt;
++      &lt;/el:compatibility&gt;
++      &lt;el:modes el:easy=&quot;false&quot; el:single=&quot;false&quot; el:network=&quot;false&quot;/&gt;
++      &lt;el:comments&gt;
++      &lt;/el:comments&gt;
++      &lt;el:score el:easy=&quot;-&quot; el:difficult=&quot;-&quot;/&gt;
++    &lt;/el:info&gt;
++    &lt;el:luamain&gt;&lt;![CDATA[
++
++-- This &quot;library&quot; is merely a collection of designs, outsourced from
++-- libsoko.xml. Don't include this library with your levels (it won't
++-- have any effect), but libsoko.xml.
++
++------------------------------------------------------------------------
++-- Designs
++------------------------------------------------------------------------
++
++-- This section holds a table with all default designs. Each design
++-- is again a table consisting of the following entries:
++--    wall, inf, outf, box, goal, oxyd, endp
++-- Each of these entries is either a string representing the objects to
++-- be used, or a table if several objects shall be used. Such a
++-- combination of objects will be called &quot;element&quot;.
++--
++-- If object types (like floors) repeat in the table, they are used in
++-- a checkerboard pattern. You can change this pattern by adding an
++-- element of the form &quot;al:ALGORITHM&quot;, where ALGORITHM is one of the
++-- algorithms listed below. Same for &quot;fr:1.23&quot; and &quot;mf:4.5&quot; for friction
++-- and mouseforce. From all these attributes, only the last one will
++-- be used, all others ignored. This contrasts with the situation of
++-- the gaming objects (&quot;fl-&quot;, &quot;st-&quot;, &quot;it-&quot;), whose order doesn't matter.
++--
++-- &quot;oxyd&quot; only holds the oxyd's flavor, &quot;endp&quot; the way of resolving the
++-- level from Sokoban to opening oxyds. Use &quot;st-none&quot; and &quot;it-none&quot; to
++-- place spaces between stones/items.
++--
++-- The table might hold additional flags. Currently, only &quot;white&quot;
++-- is implemented, which turns the marble and chess-knights white.
++-- If an entry is missing, the corresponding entry from default_design
++-- will be used.
++--
++-- Example:
++--
++--   [5] = { outf = &quot;fl-leaves&quot;, inf = &quot;fl-leavesb&quot;, box = &quot;st-wood&quot;
++--           wall = {&quot;st-glass&quot;, &quot;fl-wood&quot;, &quot;fl-leaves&quot;, &quot;al:random&quot;},
++--           oxyd = &quot;a&quot;, white = true }
++--
++--   will define design 5. The walls will alternate between
++--   st-glass/fl-wood and st-glass/fl-leaves. The goal will be
++--   it-trigger by default. The actor will be ac-whiteball.
++--
++-- Possible flags:
++--
++--   white  : Use white marble and st-chess_white.
++--
++-- Algorithms:
++--
++--   checkerboard : default, up to 3 different floors in checkerboard pattern
++--   lines : arbitrary number of floors in diagonal lines
++--   waves : works best with 4 different floors
++--   random : arbitrary number of floors, randomly chosen
++--
++
++default_design = {
++  wall = { &quot;st-rock3&quot;, &quot;fl-leaves&quot; },
++   inf = { &quot;fl-wood&quot; },
++  outf = { &quot;fl-water&quot;, &quot;st-invisible&quot; },
++   box = { &quot;st-brownie&quot; },
++  goal = { &quot;it-trigger&quot; },
++  oxyd = &quot;a&quot;,
++  endp = { alg = &quot;circle&quot; }
++}
++
++design_list = {
++
++-- endp-algs: circle, ralf, hide, outside, allcrack, block, fourswitch
++--            vortex, gradients, magnets, jumpyoxyds
++
++-- Ralf's designs
++[1]={box=&quot;st-brownie&quot;, wall=&quot;st-bluegray&quot;, inf=&quot;fl-bluegray&quot;,
++     outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;,
++     endp={goal=&quot;st-none&quot;, alg=&quot;circle&quot;}},
++[2]={box=&quot;st-glass_move&quot;, wall=&quot;st-bluegray&quot;, inf=&quot;fl-bluegray&quot;,
++     outf=&quot;fl-water&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;a&quot;,
++     endp={goal=&quot;st-glass1_hole&quot;, alg=&quot;ralf&quot;}},
++[3]={box=&quot;st-wood-growing&quot;, wall=&quot;st-bluegray&quot;, inf=&quot;fl-bluegray&quot;,
++     outf=&quot;fl-abyss&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;a&quot;,
++     endp={goal={&quot;fl-abyss&quot;, &quot;it-none&quot;}, wall=&quot;st-thief&quot;, give=&quot;it-hammer&quot;,
++           alg=&quot;block:st-plain_cracked&quot;}},
++[4]={box=&quot;st-brownie&quot;, wall=&quot;st-bluegray&quot;, inf=&quot;fl-white&quot;,
++     outf=&quot;fl-sahara&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;,
++     endp={goal=&quot;st-none&quot;, wall={&quot;st-none&quot;, &quot;fl-bluegray&quot;}, alg=&quot;outside&quot;}},
++[5]={box=&quot;st-wood&quot;, wall=&quot;st-bluegray&quot;, inf=&quot;fl-white&quot;,
++     outf=&quot;fl-space&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;c&quot;,
++     endp={goal={&quot;fl-abyss&quot;, &quot;it-none&quot;}, wall={&quot;st-bluegray_hole&quot;}, alg=&quot;outside&quot;}},
++[6]={box=&quot;st-greenbrown_move&quot;, wall=&quot;st-bluegray&quot;, inf=&quot;fl-white&quot;,
++     outf=&quot;fl-space&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;c&quot;,
++     endp={goal=&quot;st-greenbrown_hole&quot;, wall=&quot;st-thief&quot;, give=&quot;it-sword&quot;,
++           alg=&quot;block:st-knight&quot;}},
++[7]={box=&quot;st-wood&quot;, wall=&quot;st-bluegray&quot;, inf=&quot;fl-white&quot;,
++     outf=&quot;fl-space&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;c&quot;,
++     endp={goal={&quot;fl-abyss&quot;, &quot;it-none&quot;}, alg=&quot;fourswitch&quot;}},
++
++[8]={box=&quot;st-rock3_move&quot;, wall=&quot;st-blue-sand&quot;, inf=&quot;fl-light&quot;,
++     outf=&quot;fl-rough-blue&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;d&quot;,
++     endp={goal=&quot;st-rock3_break&quot;, give=&quot;it-hammer&quot;, alg=&quot;ralf&quot;}},
++[9]={box=&quot;st-block&quot;, wall=&quot;st-blue-sand&quot;, inf=&quot;fl-light&quot;,
++     outf=&quot;fl-rough-blue&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;d&quot;,
++     endp={goal=&quot;st-none&quot;, alg=&quot;circle&quot;}},
++[10]={box=&quot;st-shogun&quot;, wall=&quot;st-blue-sand&quot;, inf=&quot;fl-rough&quot;,
++      outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;, goal=&quot;it-shogun-s&quot;,
++      endp={goal=&quot;st-none&quot;, alg=&quot;magnets&quot;}},
++[11]={box=&quot;st-marble_move&quot;, wall=&quot;st-blue-sand&quot;, inf=&quot;fl-rough&quot;,
++      outf=&quot;fl-abyss&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;b&quot;,
++      endp={goal=&quot;st-marble&quot;, alg=&quot;vortex&quot;}},
++[12]={box=&quot;st-shogun&quot;, wall=&quot;st-blue-sand&quot;, inf=&quot;fl-rough&quot;,
++      outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;, goal=&quot;it-shogun-s&quot;,
++      endp={goal=&quot;st-none&quot;, give=&quot;it-hammer&quot;, alg=&quot;block:st-stone_break&quot;}},
++[13]={box=&quot;st-block&quot;, wall=&quot;st-blue-sand&quot;, inf=&quot;fl-rough&quot;,
++      outf=&quot;fl-leaves&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;b&quot;,
++      endp={goal={&quot;fl-swamp&quot;, &quot;it-none&quot;}, alg=&quot;ralf&quot;}},
++
++[14]={box=&quot;st-brownie&quot;, wall={&quot;st-glass&quot;, &quot;fl-himalaya&quot;, &quot;fl-water&quot;},
++      inf=&quot;fl-himalaya&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;,
++      endp={goal=&quot;st-pull&quot;, alg=&quot;magnets&quot;}},
++[15]={box=&quot;st-brownie&quot;, wall={&quot;st-glass&quot;, &quot;fl-himalaya&quot;, &quot;fl-water&quot;},
++      inf=&quot;fl-himalaya&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;,
++      endp={goal=&quot;st-none&quot;, alg=&quot;fourswitch&quot;}},
++[16]={box=&quot;st-shogun&quot;, wall={&quot;st-glass&quot;, &quot;fl-rough-red&quot;, &quot;fl-abyss&quot;},
++      inf=&quot;fl-rough-red&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;c&quot;,
++      goal=&quot;it-shogun-s&quot;,
++      endp={alg=&quot;circle&quot;}},
++[17]={box=&quot;st-brownie&quot;, wall={&quot;st-glass&quot;, &quot;fl-rough-red&quot;, &quot;fl-sahara&quot;},
++      inf=&quot;fl-rough-red&quot;, outf=&quot;fl-sahara&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;,
++      endp={goal=&quot;st-grate2&quot;, wall=&quot;st-grate2&quot;, alg=&quot;outside&quot;}},
++[18]={box=&quot;st-greenbrown_move&quot;, wall={&quot;st-glass&quot;, &quot;fl-wood&quot;, &quot;fl-water&quot;},
++      inf=&quot;fl-wood&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;c&quot;,
++      endp={goal=&quot;st-greenbrown_hole&quot;, alg=&quot;ralf&quot;}},
++[19]={box=&quot;st-block&quot;, wall={&quot;st-glass&quot;, &quot;fl-wood&quot;, &quot;fl-abyss&quot;},
++      inf=&quot;fl-wood&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;d&quot;,
++      endp={goal={&quot;fl-abyss&quot;, &quot;it-none&quot;}, alg=&quot;vortex&quot;}},
++[20]={box=&quot;st-wood-growing&quot;, wall={&quot;st-glass&quot;, &quot;fl-wood&quot;, &quot;fl-abyss&quot;},
++      inf=&quot;fl-wood&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;a&quot;,
++      endp={goal={&quot;fl-swamp&quot;, &quot;it-none&quot;}, alg=&quot;magnets&quot;}},
++[21]={box=&quot;st-wood&quot;, wall={&quot;st-glass&quot;, &quot;fl-wood&quot;, &quot;fl-sahara&quot;},
++      inf=&quot;fl-wood&quot;, outf=&quot;fl-sahara&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;c&quot;,
++      endp={goal={&quot;fl-swamp&quot;, &quot;it-none&quot;}, give=&quot;ac-bug&quot;, alg=&quot;block:st-bug&quot;}},
++[22]={box=&quot;st-shogun&quot;, wall={&quot;st-glass&quot;, &quot;fl-wood&quot;, &quot;fl-leaves&quot;}, inf=&quot;fl-wood&quot;,
++      outf=&quot;fl-leaves&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;, goal=&quot;it-shogun-s&quot;,
++      endp={goal=&quot;st-none&quot;, give=&quot;it-sword&quot;, alg=&quot;block:st-knight&quot;}},
++[23]={box=&quot;st-block&quot;, wall={&quot;st-glass&quot;, &quot;fl-wood&quot;, &quot;fl-abyss&quot;},
++      inf=&quot;fl-wood&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;d&quot;,
++      endp={goal={&quot;st-none&quot;, &quot;it-none&quot;}, alg=&quot;allcrack&quot;}},
++[24]={box=&quot;st-brownie&quot;, wall={&quot;st-glass&quot;, &quot;fl-wood&quot;, &quot;fl-sahara&quot;},
++      inf=&quot;fl-wood&quot;, outf=&quot;fl-sahara&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;,
++      endp={goal=&quot;st-none&quot;, give=&quot;ac-bug&quot;, alg=&quot;block:st-bug&quot;}},
++[25]={box=&quot;st-brownie&quot;, wall={&quot;st-glass&quot;, &quot;fl-wood&quot;, &quot;fl-leaves&quot;, &quot;it-cherry&quot;},
++      inf=&quot;fl-wood&quot;, outf=&quot;fl-leaves&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;,
++      endp={goal={&quot;st-glass&quot;, &quot;fl-wood&quot;, &quot;fl-leaves&quot;, &quot;it-cherry&quot;},
++            give=&quot;it-cherry&quot;, alg=&quot;outside&quot;}},
++
++[26]={box=&quot;st-brownie&quot;, wall=&quot;st-likeoxydc-open&quot;, inf=&quot;fl-acblack&quot;,
++      outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;,
++      endp={goal=&quot;st-grate1&quot;, alg=&quot;ralf&quot;}},
++[27]={box=&quot;st-greenbrown_move&quot;, wall=&quot;st-likeoxydc-open&quot;, inf=&quot;fl-acblack&quot;,
++      outf=&quot;fl-water&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;c&quot;,
++      endp={goal=&quot;st-greenbrown_hole&quot;, alg=&quot;hide&quot;}},
++[28]={box=&quot;st-wood-growing&quot;, wall=&quot;st-likeoxydc-open&quot;, inf=&quot;fl-tigris&quot;,
++      outf=&quot;fl-sahara&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;a&quot;,
++      endp={goal={&quot;fl-swamp&quot;, &quot;it-none&quot;}, alg=&quot;fourswitch&quot;}},
++[29]={box=&quot;st-brownie&quot;, wall=&quot;st-likeoxydc-open&quot;, inf=&quot;fl-tigris&quot;,
++      outf=&quot;fl-leaves&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;,
++      endp={goal=&quot;st-pull&quot;, give=&quot;it-sword&quot;, alg=&quot;block:st-knight&quot;}},
++[30]={box=&quot;st-wood-growing&quot;, wall=&quot;st-likeoxydc-open&quot;, inf=&quot;fl-tigris&quot;,
++      outf=&quot;fl-sahara&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;a&quot;,
++      endp={goal={&quot;fl-abyss&quot;, &quot;it-none&quot;}, give=&quot;it-hammer&quot;, alg=&quot;block:st-stone_break&quot;}},
++[31]={box=&quot;st-glass_move&quot;, wall=&quot;st-likeoxydc-open&quot;, inf=&quot;fl-tigris&quot;,
++      outf=&quot;fl-space&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;a&quot;,
++      endp={wall=&quot;st-grate1&quot;, give=&quot;it-cherry&quot;, alg=&quot;outside&quot;}},
++
++[32]={box=&quot;st-block&quot;, wall=&quot;st-metal&quot;, inf=&quot;fl-bluegray&quot;,
++      outf=&quot;fl-space&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;d&quot;,
++      endp={goal={&quot;fl-abyss&quot;, &quot;it-none&quot;}, alg=&quot;vortex&quot;}},
++[33]={box=&quot;st-shogun&quot;, wall=&quot;st-metal&quot;, inf=&quot;fl-bluegray&quot;,
++      outf=&quot;fl-rough-blue&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;, goal=&quot;it-shogun-s&quot;,
++      endp={goal=&quot;st-metal_hole&quot;, alg=&quot;magnets&quot;}},
++[34]={box=&quot;st-shogun&quot;, wall=&quot;st-metal&quot;, inf=&quot;fl-white&quot;,
++      outf=&quot;fl-abyss&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;, goal=&quot;it-shogun-s&quot;,
++      endp={goal=&quot;st-none&quot;, alg=&quot;gradients&quot;}},
++[35]={box=&quot;st-block&quot;, wall=&quot;st-metal&quot;, inf=&quot;fl-white&quot;,
++      outf=&quot;fl-abyss&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;b&quot;,
++      endp={box=&quot;fl-swamp&quot;, alg=&quot;ralf&quot;}},
++[36]={box=&quot;st-shogun&quot;, wall=&quot;st-metal&quot;, inf=&quot;fl-white&quot;,
++      outf=&quot;fl-abyss&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;, goal=&quot;it-shogun-s&quot;,
++      endp={alg=&quot;circle&quot;}},
++
++[37]={box=&quot;st-wood-growing&quot;, wall=&quot;st-rock1&quot;, inf=&quot;fl-light&quot;,
++      outf=&quot;fl-leaves&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;a&quot;,
++      endp={goal={&quot;fl-swamp&quot;, &quot;it-none&quot;}, wall=&quot;st-grate2&quot;, alg=&quot;outside&quot;}},
++[38]={box=&quot;st-glass_move&quot;, wall=&quot;st-rock1&quot;, inf=&quot;fl-light&quot;,
++      outf=&quot;fl-abyss&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;a&quot;,
++      endp={give=&quot;it-cherry&quot;, alg=&quot;ralf&quot;}},
++[39]={box=&quot;st-brownie&quot;, wall=&quot;st-rock1&quot;, inf=&quot;fl-light&quot;,
++      outf=&quot;fl-abyss&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;,
++      endp={goal=&quot;st-grate2&quot;, alg=&quot;fourswitch&quot;}},
++[40]={box=&quot;st-glass_move&quot;, wall=&quot;st-rock1&quot;, inf=&quot;fl-light&quot;,
++      outf=&quot;fl-abyss&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;a&quot;,
++      endp={goal=&quot;st-glass1_hole&quot;, give=&quot;it-sword&quot;, alg=&quot;block:st-knight&quot;}},
++[41]={box=&quot;st-brownie&quot;, wall=&quot;st-rock1&quot;, inf=&quot;fl-rough&quot;,
++      outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;,
++      endp={goal={&quot;st-none&quot;, &quot;it-none&quot;, &quot;fl-hay&quot;}, wall=&quot;st-rock1_hole&quot;,
++            alg=&quot;outside&quot;}},
++[42]={box=&quot;st-greenbrown_move&quot;, wall=&quot;st-rock1&quot;, inf=&quot;fl-rough&quot;,
++      outf=&quot;fl-sahara&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;c&quot;,
++      endp={goal=&quot;st-greenbrown&quot;, alg=&quot;vortex&quot;}},
++
++[43]={box=&quot;st-brownie&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;,
++      outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;,
++      endp={goal=&quot;st-rock3_hole&quot;, wall=&quot;st-rock3_hole&quot;, alg=&quot;outside&quot;}},
++[44]={box=&quot;st-marble_move&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;,
++      outf=&quot;fl-rough-blue&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;b&quot;,
++      endp={&quot;st-marble_hole&quot;, alg=&quot;ralf&quot;}},
++[45]={box=&quot;st-wood-growing&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;,
++      outf=&quot;fl-leaves&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;a&quot;,
++      endp={goal={&quot;fl-swamp&quot;, &quot;it-none&quot;}, give=&quot;ac-bug&quot;, alg=&quot;block:st-bug&quot;}},
++[46]={box=&quot;st-shogun&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;,
++      outf=&quot;fl-abyss&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;, goal=&quot;it-shogun-s&quot;,
++      endp={goal=&quot;st-none&quot;, give=&quot;it-hammer&quot;, alg=&quot;block:st-plain_cracked&quot;}},
++[47]={box=&quot;st-greenbrown_move&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;,
++      outf=&quot;fl-sahara&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;c&quot;,
++      endp={goal=&quot;st-greenbrown_hole&quot;, give=&quot;ac-bug&quot;, alg=&quot;block:st-bug&quot;}},
++[48]={box=&quot;st-glass_move&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;,
++      outf=&quot;fl-leaves&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;a&quot;,
++      endp={give=&quot;it-cherry&quot;, alg=&quot;ralf&quot;}},
++[49]={box=&quot;st-marble_move&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;,
++      outf=&quot;fl-rough-blue&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;b&quot;,
++      endp={goal=&quot;st-marble_hole&quot;, give=&quot;it-hammer&quot;, alg=&quot;block:st-plain_cracked&quot;}},
++[50]={box=&quot;st-shogun&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;,
++      outf=&quot;fl-leaves&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;a&quot;, goal=&quot;it-shogun-s&quot;,
++      endp={alg=&quot;circle&quot;}},
++[51]={box=&quot;st-wood-growing&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;,
++      outf=&quot;fl-leaves&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;a&quot;,
++      endp={goal={&quot;fl-swamp&quot;, &quot;it-none&quot;},
++            wall={&quot;st-plain_breaking&quot;, &quot;fl-sahara&quot;}, alg=&quot;outside&quot;}},
++[52]={box=&quot;st-wood&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;,
++      outf=&quot;fl-water&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;c&quot;,
++      endp={goal={&quot;st-grate1&quot;, &quot;it-none&quot;}, alg=&quot;ralf&quot;}},
++[53]={box=&quot;st-shogun&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;,
++      outf=&quot;fl-space&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;d&quot;, goal=&quot;it-shogun-s&quot;,
++      endp={goal={&quot;st-none&quot;, &quot;fl-swamp&quot;}, alg=&quot;fourswitch&quot;}},
++
++[54]={box=&quot;st-shogun&quot;, wall=&quot;st-rock4&quot;, inf=&quot;fl-himalaya&quot;,
++      outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;, goal=&quot;it-shogun-s&quot;,
++      endp={alg=&quot;vortex&quot;}},
++[55]={box=&quot;st-marble_move&quot;, wall=&quot;st-rock4&quot;, inf=&quot;fl-himalaya&quot;,
++      outf=&quot;fl-abyss&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;b&quot;,
++      endp={goal=&quot;st-marble_hole&quot;, alg=&quot;ralf&quot;}},
++[56]={box=&quot;st-shogun&quot;, wall=&quot;st-rock4&quot;, inf=&quot;fl-himalaya&quot;,
++      outf=&quot;fl-abyss&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;b&quot;, goal=&quot;it-shogun-s&quot;,
++      endp={alg=&quot;circle&quot;}},
++[57]={box=&quot;st-block&quot;, wall=&quot;st-rock4&quot;, inf=&quot;fl-rough-red&quot;,
++      outf=&quot;fl-rough-blue&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;d&quot;,
++      endp={goal=&quot;st-explosion&quot;, wall=&quot;st-explosion&quot;, alg=&quot;outside&quot;}},
++[58]={box=&quot;st-rock3_move&quot;, wall=&quot;st-rock4&quot;, inf=&quot;fl-rough-red&quot;,
++      outf=&quot;fl-space&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;d&quot;,
++      endp={goal=&quot;st-plain_cracked&quot;, give=&quot;it-hammer&quot;, alg=&quot;block:st-plain_cracked&quot;}},
++[59]={box=&quot;st-shogun&quot;, wall=&quot;st-rock4&quot;, inf=&quot;fl-rough-red&quot;,
++      outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;, goal=&quot;it-shogun-s&quot;,
++      endp={goal=&quot;st-none&quot;, alg=&quot;ralf&quot;}},
++[60]={box=&quot;st-rock3_move&quot;, wall=&quot;st-rock4&quot;, inf=&quot;fl-rough-red&quot;,
++      outf=&quot;fl-space&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;d&quot;,
++      endp={goal=&quot;st-bug&quot;, give=&quot;ac-bug&quot;, alg=&quot;block:st-bug&quot;}},
++
++[61]={box=&quot;st-greenbrown_move&quot;, wall=&quot;st-rock5&quot;, inf=&quot;fl-samba&quot;,
++      outf=&quot;fl-leaves&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;c&quot;,
++      endp={goal=&quot;st-greenbrown_hole&quot;, alg=&quot;fourswitch&quot;}},
++[62]={box=&quot;st-block&quot;, wall=&quot;st-rock5&quot;, inf=&quot;fl-samba&quot;,
++      outf=&quot;fl-water&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;b&quot;,
++      endp={goal={&quot;fl-water&quot;, &quot;it-none&quot;}, alg=&quot;vortex&quot;}},
++[63]={box=&quot;st-rock3_move&quot;, wall=&quot;st-rock5&quot;, inf=&quot;fl-samba&quot;,
++      outf=&quot;fl-leaves&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;d&quot;,
++      endp={goal=&quot;st-plain_cracked&quot;, give=&quot;it-hammer&quot;,
++            alg=&quot;block:st-plain_cracked&quot;}},
++[64]={box=&quot;st-marble_move&quot;, wall=&quot;st-rock5&quot;, inf=&quot;fl-samba&quot;,
++      outf=&quot;fl-water&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;b&quot;,
++      endp={goal=&quot;st-marble_hole&quot;, alg=&quot;gradients&quot;}},
++[65]={box=&quot;st-wood-growing&quot;, wall=&quot;st-rock5&quot;, inf=&quot;fl-samba&quot;,
++      outf=&quot;fl-space&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;a&quot;,
++      endp={goal={&quot;fl-water&quot;, &quot;it-none&quot;}, alg=&quot;ralf&quot;}},
++[66]={box=&quot;st-greenbrown_move&quot;, wall=&quot;st-rock5&quot;, inf=&quot;fl-samba&quot;,
++      outf=&quot;fl-leaves&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;c&quot;,
++      endp={goal=&quot;st-greenbrown&quot;, alg=&quot;vortex&quot;}},
++[67]={box=&quot;st-block&quot;, wall=&quot;st-rock5&quot;, inf=&quot;fl-samba&quot;,
++      outf=&quot;fl-water&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;b&quot;,
++      endp={alg=&quot;circle&quot;}},
++[68]={box=&quot;st-brownie&quot;, wall=&quot;st-rock5&quot;, inf=&quot;fl-samba&quot;,
++      outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;,
++      endp={goal=&quot;st-none&quot;, alg=&quot;allcrack&quot;}},
++[69]={box=&quot;st-block&quot;, wall=&quot;st-rock5&quot;, inf=&quot;fl-samba&quot;,
++      outf=&quot;fl-space&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;d&quot;,
++      endp={goal={&quot;fl-swamp&quot;, &quot;it-none&quot;}, alg=&quot;ralf&quot;}},
++
++[70]={box=&quot;st-rock3_move&quot;, wall=&quot;st-rock6&quot;, inf=&quot;fl-acblack&quot;,
++      outf=&quot;fl-space&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;d&quot;,
++      endp={goal=&quot;st-plain_breaking&quot;, alg=&quot;ralf&quot;}},
++[71]={box=&quot;st-shogun&quot;, wall=&quot;st-rock6&quot;, inf=&quot;fl-acblack&quot;,
++      outf=&quot;fl-leaves&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;, goal=&quot;it-shogun-s&quot;,
++      endp={goal=&quot;st-explosion&quot;, wall=&quot;st-explosion&quot;, alg=&quot;outside&quot;}},
++[72]={box=&quot;st-block&quot;, wall=&quot;st-rock6&quot;, inf=&quot;fl-acblack&quot;,
++      outf=&quot;fl-leaves&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;d&quot;,
++      endp={goal={&quot;fl-swamp&quot;, &quot;it-none&quot;}, alg=&quot;magnets&quot;}},
++[73]={box=&quot;st-shogun&quot;, wall=&quot;st-rock6&quot;, inf=&quot;fl-acblack&quot;,
++      outf=&quot;fl-leaves&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;, goal=&quot;it-shogun-s&quot;,
++      endp={goal=&quot;st-knight&quot;, give=&quot;it-sword&quot;, alg=&quot;block:st-knight&quot;}},
++[74]={box=&quot;st-shogun&quot;, wall=&quot;st-rock6&quot;, inf=&quot;fl-tigris&quot;,
++      outf=&quot;fl-rough-blue&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;b&quot;, goal=&quot;it-shogun-s&quot;,
++      endp={goal=&quot;st-none&quot;, alg=&quot;fourswitch&quot;}},
++[75]={box=&quot;st-shogun&quot;, wall=&quot;st-rock6&quot;, inf=&quot;fl-tigris&quot;,
++      outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;, goal=&quot;it-shogun-s&quot;,
++      endp={goal=&quot;st-explosion&quot;, alg=&quot;gradients&quot;}},
++
++-- New designs
++[76]={box=&quot;st-glass1_move&quot;, wall=&quot;st-glass2&quot;, inf=&quot;fl-lightgray&quot;,
++      outf=&quot;fl-abyss&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;,
++      endp={goal=&quot;st-pull&quot;, alg=&quot;hide&quot;}},
++[77]={box=&quot;st-rock3_move&quot;, wall=&quot;st-brick&quot;, inf=&quot;fl-darkgray&quot;, outf=&quot;fl-leavesb&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[78]={box=&quot;st-rock3_move&quot;, wall=&quot;st-bumps&quot;, inf=&quot;fl-dunes&quot;, outf=&quot;fl-sand&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[79]={box=&quot;st-flrock&quot;, wall=&quot;st-camouflage&quot;, inf=&quot;fl-gravel&quot;, outf={&quot;fl-gravel&quot;, &quot;st-disco-medium&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[80]={box=&quot;st-flhay&quot;, wall=&quot;st-camouflage&quot;, inf=&quot;fl-leaves&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[81]={box=&quot;st-glass2_move&quot;, wall={&quot;st-glass1&quot;, &quot;fl-lightgray&quot;}, inf=&quot;fl-black&quot;, outf=&quot;fl-white&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
++[82]={box=&quot;st-wood&quot;, wall={&quot;st-glass1&quot;, &quot;fl-water&quot;}, inf=&quot;fl-sand&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
++[83]={box=&quot;st-camouflage_move&quot;, wall=&quot;st-glass2&quot;, inf=&quot;fl-lightgray&quot;, outf={&quot;fl-leavesb&quot;, &quot;st-disco-medium&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
++[84]={box=&quot;st-flrock&quot;, wall=&quot;st-glass2&quot;, inf=&quot;fl-sand&quot;, outf={&quot;fl-water&quot;, &quot;st-disco-medium&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
++[85]={box=&quot;st-flrock&quot;, wall=&quot;st-brick&quot;, inf=&quot;fl-sand&quot;, outf={&quot;fl-water&quot;, &quot;st-disco-medium&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[86]={box=&quot;st-glass1_move&quot;, wall={&quot;st-glass3&quot;, &quot;fl-abyss_fake&quot;}, inf=&quot;fl-red&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[87]={box=&quot;st-rock3_move&quot;, wall={&quot;st-glass3&quot;, &quot;fl-rough-blue&quot;}, inf=&quot;fl-plank&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[88]={box=&quot;st-glass1_move&quot;, wall=&quot;st-likeoxyda&quot;, inf=&quot;fl-black&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[89]={box=&quot;st-greenbrown_move&quot;, wall=&quot;st-likeoxyda-open&quot;, inf=&quot;fl-brick&quot;, outf={&quot;fl-mortar&quot;, &quot;st-disco-medium&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[90]={box=&quot;st-rock3_move&quot;, wall=&quot;st-likeoxydb&quot;, inf=&quot;fl-rough-red&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
++[91]={box=&quot;st-flhay&quot;, wall=&quot;st-likeoxydb-open&quot;, inf=&quot;fl-rough-blue&quot;, outf={&quot;fl-swamp&quot;, &quot;st-disco-light&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
++[92]={box=&quot;st-glass2_move&quot;, wall=&quot;st-likeoxydc&quot;, inf=&quot;fl-sahara&quot;, outf={&quot;fl-water&quot;, &quot;st-disco-light&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
++[93]={box=&quot;st-glass_move&quot;, wall=&quot;st-likeoxydc-open&quot;, inf=&quot;fl-red&quot;, outf={&quot;st-blackballs&quot;, &quot;fl-abyss&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
++[94]={box=&quot;st-glass2_move&quot;, wall=&quot;st-likeoxydd&quot;, inf=&quot;fl-concrete&quot;, outf=&quot;fl-sand&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[95]={box=&quot;st-flrock&quot;, wall=&quot;st-likeoxydd-open&quot;, inf=&quot;fl-marble&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[96]={box=&quot;st-flrock&quot;, wall=&quot;st-marble&quot;, inf=&quot;fl-marble&quot;, outf={&quot;fl-leavesc3&quot;, &quot;fl-leavesd3&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[97]={box=&quot;st-camouflage_move&quot;, wall=&quot;st-marble&quot;, inf=&quot;fl-leaves&quot;, outf={&quot;fl-leaves&quot;, &quot;st-marble&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[98]={box=&quot;st-rock1_move&quot;, wall=&quot;st-redrock&quot;, inf=&quot;fl-acblack&quot;, outf={&quot;fl-acblack&quot;, &quot;st-redrock&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
++[99]={box=&quot;st-glass1_move&quot;, wall=&quot;st-redrock&quot;, inf=&quot;fl-mortar&quot;, outf=&quot;fl-brick&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
++[100]={box=&quot;st-block&quot;, wall=&quot;st-redrock&quot;, inf=&quot;fl-mortar&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
++[101]={box=&quot;st-glass2_move&quot;, wall=&quot;st-redrock&quot;, inf=&quot;fl-leavesb&quot;, outf={&quot;fl-leavesc3&quot;, &quot;fl-leavesd4&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[102]={box=&quot;st-camouflage_move&quot;, wall=&quot;st-rock2&quot;, inf=&quot;fl-rock&quot;, outf={&quot;fl-rock&quot;, &quot;st-disco-medium&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
++[103]={box=&quot;st-glass2_move&quot;, wall=&quot;st-rock2&quot;, inf=&quot;fl-stone&quot;, outf={&quot;fl-water&quot;, &quot;st-disco-medium&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
++[104]={box=&quot;st-wood&quot;, wall=&quot;st-rock2&quot;, inf=&quot;fl-lightgray&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
++[105]={box=&quot;st-camouflage_move&quot;, wall=&quot;st-rock7&quot;, inf=&quot;fl-woven&quot;, outf=&quot;fl-gravel&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[106]={box=&quot;st-brownie&quot;, wall=&quot;st-rock7&quot;, inf=&quot;fl-black&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
++[107]={box=&quot;st-glass_move&quot;, wall=&quot;st-rock8&quot;, inf=&quot;fl-plank&quot;, outf={&quot;fl-plank&quot;, &quot;st-rock8&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[108]={box=&quot;st-glass2_move&quot;, wall={&quot;st-rock8&quot;, &quot;fl-water&quot;}, inf=&quot;fl-leaves&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
++[109]={box=&quot;st-marble_move&quot;, wall={&quot;st-rock8&quot;, &quot;fl-abyss_fake&quot;}, inf=&quot;fl-stone&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
++[110]={box=&quot;st-greenbrown_move&quot;, wall=&quot;st-rock9&quot;, inf=&quot;fl-rock&quot;, outf={&quot;fl-rock&quot;, &quot;st-rock9&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[111]={box=&quot;st-glass_move&quot;, wall=&quot;st-rock9&quot;, inf=&quot;fl-sand&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
++[112]={box=&quot;st-camouflage_move&quot;, wall=&quot;st-rock9&quot;, inf=&quot;fl-stone&quot;, outf=&quot;fl-swamp&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[113]={box=&quot;st-block&quot;, wall=&quot;st-rock10&quot;, inf=&quot;fl-bluegreen&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[114]={box=&quot;st-wood&quot;, wall=&quot;st-rock10&quot;, inf=&quot;fl-sand&quot;, outf={&quot;fl-sand&quot;, &quot;st-rock10&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
++[115]={box=&quot;st-glass2_move&quot;, wall=&quot;st-stone1&quot;, inf={&quot;fl-lightgray&quot;, &quot;fl-white&quot;}, outf={&quot;fl-space&quot;, &quot;fl-abyss&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[116]={box=&quot;st-rock1_move&quot;, wall=&quot;st-stone1&quot;, inf=&quot;fl-stwood&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[117]={box=&quot;st-glass_move&quot;, wall=&quot;st-stone1&quot;, inf=&quot;fl-black&quot;, outf=&quot;st-stone1&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[118]={box=&quot;st-glass_move&quot;, wall=&quot;st-stone2&quot;, inf=&quot;fl-black&quot;, outf=&quot;fl-gravel&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
++[119]={box=&quot;st-block&quot;, wall=&quot;st-stone2&quot;, inf=&quot;fl-rough-red&quot;, outf={&quot;fl-rough-blue&quot;, &quot;st-disco-light&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[120]={box=&quot;st-rock3_move&quot;, wall={&quot;st-marble&quot;, &quot;st-stone2&quot;}, inf=&quot;fl-black&quot;, outf={&quot;st-marble&quot;, &quot;st-stone2&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
++[121]={box=&quot;st-wood&quot;, wall=&quot;st-panel&quot;, inf=&quot;fl-wood&quot;, outf={&quot;fl-leavesd3&quot;, &quot;fl-leavesd2&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[122]={box=&quot;st-block&quot;, wall=&quot;st-panel&quot;, inf=&quot;fl-leaves&quot;, outf=&quot;fl-leavesb&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[123]={box=&quot;st-glass1_move&quot;, wall=&quot;st-woven&quot;, inf=&quot;fl-dunes&quot;, outf=&quot;fl-bluegreen&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[124]={box=&quot;st-marble_move&quot;, wall=&quot;st-woven&quot;, inf=&quot;fl-hay&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[125]={box=&quot;st-rock3_move&quot;, wall=&quot;st-yellow&quot;, inf=&quot;fl-leavesb&quot;, outf=&quot;fl-leaves&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[126]={box=&quot;st-glass_move&quot;, wall=&quot;st-yellow&quot;, inf=&quot;fl-rough-blue&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[127]={box=&quot;st-block&quot;, wall=&quot;st-yellow&quot;, inf=&quot;fl-lightgray&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[128]={box=&quot;st-glass1_move&quot;, wall=&quot;st-rock7&quot;, inf=&quot;fl-himalaya&quot;, outf={&quot;fl-himalaya&quot;, &quot;st-rock8&quot;, &quot;st-rock7&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[129]={box=&quot;st-camouflage_move&quot;, wall={&quot;st-rock9&quot;, &quot;fl-leavesb&quot;}, inf=&quot;fl-dunes&quot;,
++       outf={&quot;fl-leavese1&quot;, &quot;fl-leavese2&quot;, &quot;fl-leavese3&quot;, &quot;fl-leavese4&quot;, &quot;al:waves&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[130]={box=&quot;st-glass1_move&quot;, wall=&quot;st-redrock&quot;, inf=&quot;fl-darkgray&quot;,
++       outf={&quot;fl-black&quot;, &quot;st-redrock&quot;, &quot;st-invisible&quot;, &quot;st-invisible&quot;, &quot;st-invisible&quot;, &quot;al:waves&quot;},
++       door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[131]={box=&quot;st-glass1_move&quot;, wall={&quot;st-yellow&quot;, &quot;st-yellow&quot;, &quot;st-redrock&quot;, &quot;st-redrock&quot;, &quot;al:waves&quot;}, inf=&quot;fl-wood&quot;,
++       outf={&quot;fl-wood&quot;, &quot;st-yellow&quot;, &quot;st-yellow&quot;, &quot;st-redrock&quot;, &quot;st-redrock&quot;, &quot;al:waves&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[132]={box=&quot;st-wood&quot;, wall=&quot;st-camouflage&quot;, inf=&quot;fl-leavesb&quot;,
++       outf={&quot;fl-water&quot;, &quot;fl-swamp&quot;, &quot;fl-water&quot;, &quot;fl-water&quot;, &quot;al:random&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
++[133]={box=&quot;st-glass2_move&quot;, wall=&quot;st-metal&quot;, inf=&quot;fl-metal&quot;,
++       outf={&quot;fl-space&quot;, &quot;fl-abyss&quot;, &quot;fl-abyss&quot;, &quot;fl-abyss&quot;, &quot;al:random&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[134]={box=&quot;st-marble_move&quot;, wall=&quot;st-metal&quot;, inf=&quot;fl-white&quot;,
++       outf={&quot;fl-abyss&quot;, &quot;st-grate1&quot;, &quot;st-invisible&quot;, &quot;st-invisible&quot;, &quot;st-invisible&quot;, &quot;al:waves&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[135]={box=&quot;st-glass_move&quot;, wall=&quot;st-likeoxydc&quot;, inf=&quot;fl-white&quot;,
++       outf={&quot;fl-white&quot;, &quot;st-rock1&quot;, &quot;st-invisible&quot;, &quot;st-invisible&quot;, &quot;st-invisible&quot;, &quot;al:random&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
++[136]={box=&quot;st-block&quot;, wall={&quot;st-oneway_white-n&quot;, &quot;st-oneway_white-s&quot;, &quot;st-oneway_white-e&quot;, &quot;st-oneway_white-w&quot;, &quot;al:random&quot;}, inf=&quot;fl-rough&quot;,
++       outf={&quot;st-oneway_white-n&quot;, &quot;st-oneway_white-s&quot;, &quot;st-oneway_white-e&quot;, &quot;st-oneway_white-w&quot;, &quot;al:random&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[137]={box={&quot;st-mirror-p-m&quot;, &quot;st-mirror-p/m&quot;, &quot;st-mirror-p\\m&quot;, &quot;st-mirror-p|m&quot;, &quot;al:random&quot;},
++       wall={&quot;st-glass3&quot;, &quot;fl-abyss&quot;}, inf=&quot;fl-metal&quot;,
++       outf={&quot;st-mirror-p-&quot;, &quot;st-mirror-p/&quot;, &quot;st-mirror-p|&quot;, &quot;st-mirror-p\\&quot;, &quot;al:random&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
++[138]={box=&quot;st-shogun-s&quot;, wall=&quot;st-panel&quot;, inf=&quot;fl-stwood&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[139]={box=&quot;st-shogun-s&quot;, wall={&quot;st-white4&quot;, &quot;fl-springboard&quot;, &quot;fl-abyss_fake&quot;}, inf={&quot;fl-springboard&quot;, &quot;fl-abyss_fake&quot;},
++       outf={&quot;st-white1&quot;, &quot;st-black1&quot;, &quot;fl-springboard&quot;, &quot;fl-abyss_fake&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
++[140]={box=&quot;st-brownie&quot;, wall={&quot;st-stone1&quot;, &quot;fl-leavesb&quot;}, inf={&quot;fl-floor_001&quot;, &quot;fr:3.0&quot;},
++       outf={&quot;fl-leavese4&quot;, &quot;fl-leavese2&quot;, &quot;fl-leavese1&quot;, &quot;fl-leavese3&quot;, &quot;al:waves&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[141]={box=&quot;st-brownie&quot;, wall={&quot;st-rock4&quot;, &quot;fl-leavesb&quot;}, inf={&quot;fl-bluegreenx&quot;, &quot;mf:1.0&quot;, &quot;fr:3.0&quot;},
++       outf={&quot;fl-water&quot;, &quot;st-rock10&quot;, &quot;st-invisible&quot;, &quot;st-invisible&quot;, &quot;st-invisible&quot;, &quot;al:waves&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[142]={box=&quot;st-glass2_move&quot;, wall={&quot;st-glass1&quot;, &quot;fl-leavesb&quot;}, inf=&quot;fl-leavesb&quot;,
++       outf={&quot;fl-leavesc4&quot;, &quot;fl-leavesd2&quot;, &quot;fl-leavesc2&quot;, &quot;fl-leavese3&quot;, &quot;al:waves&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[143]={box=&quot;st-block&quot;, wall={&quot;st-rock5&quot;, &quot;fl-stwood&quot;}, inf=&quot;fl-wood&quot;,
++       outf={&quot;st-disco-light&quot;, &quot;fl-wood1&quot;, &quot;fl-wood1&quot;, &quot;fl-wood1&quot;, &quot;fl-wood2&quot;, &quot;al:waves&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[144]={box=&quot;st-wood&quot;, wall=&quot;st-rock6&quot;, inf=&quot;fl-bluegreen&quot;,
++       outf={&quot;fl-space&quot;, &quot;it-squashed&quot;, &quot;it-sensor&quot;, &quot;it-sensor&quot;, &quot;it-sensor&quot;, &quot;al:random&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
++[145]={box=&quot;st-glass1_move&quot;, wall={&quot;st-greenbrown&quot;, &quot;fl-sand&quot;}, inf=&quot;fl-dunes&quot;,
++       outf={&quot;fl-sand&quot;, &quot;it-landmine&quot;, &quot;it-booze-broken&quot;, &quot;it-none&quot;, &quot;it-none&quot;, &quot;it-none&quot;, &quot;it-none&quot;, &quot;it-none&quot;, &quot;it-none&quot;, &quot;al:random&quot;},
++       door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[146]={box=&quot;st-wood&quot;, wall=&quot;st-rock1&quot;, inf=&quot;fl-black&quot;,
++       outf={&quot;fl-abyss&quot;, &quot;st-grate1&quot;, &quot;st-none&quot;, &quot;st-none&quot;, &quot;st-none&quot;, &quot;st-none&quot;, &quot;st-none&quot;, &quot;st-none&quot;,
++       &quot;st-none&quot;, &quot;st-none&quot;, &quot;st-none&quot;, &quot;st-none&quot;, &quot;al:random&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;, white = true},
++[147]={box=&quot;st-wood&quot;, wall=&quot;st-whiteballs&quot;, inf=&quot;fl-gray&quot;, white = true,
++       outf={&quot;fl-gradient5&quot;, &quot;fl-gradient6&quot;, &quot;fl-gradient7&quot;, &quot;fl-gradient8&quot;, &quot;al:waves&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[148]={box=&quot;st-shogun-s&quot;, wall=&quot;st-metal&quot;, inf=&quot;fl-rough-blue&quot;, white = true,
++       outf={&quot;fl-rough-red&quot;, &quot;fl-rough-blue&quot;, &quot;st-disco-light&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
++[149]={box=&quot;st-shogun-s&quot;, wall=&quot;st-yellow&quot;, inf=&quot;fl-wood&quot;, outf=&quot;fl-swamp&quot;, door=&quot;st-door_a&quot;,
++       oxyd=&quot;c&quot;, goal=&quot;it-shogun-s&quot;, white = true},
++[150]={box=&quot;st-flrock&quot;, wall=&quot;st-redrock&quot;, inf=&quot;fl-brick&quot;,
++       outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;, white=true},
++}
++
++-- The 75 first designs use the following boxes:
++--  st-block  -&gt;  st-black, st-blocker, st-brake, st-laser, fl-swamp
++--  st-brownie  -&gt;  st-coinslot, st-pull
++--  st-glass_move  -&gt;  cherry
++--  st-greenbrown_move  -&gt;  hole
++--  st-marble_move  -&gt;  hole
++--  st-rock3_move  -&gt;  *
++--  st-shogun  -&gt;  st-shogun-m (not completely!)
++--  st-wood[-growing]  -&gt;  fl-swamp
++
++-- Next follows a table to convert the codes Ralf used in his levels
++-- and ralf_sokoban to libsoko-designs. Note that there is a shift
++-- by -1 of the ralfcode in his library, except for design 0.
++-- Hence, when you start an old sokoban level with
++--   play_sokoban(level,715)
++-- then ralf_sokoban.init is called with argument 714, which corresponds
++-- to libsoko-design 4. Use
++--   create_sokoban(..., ..., ralfcode_conversion_table[715])
++-- to activate it.
++--
++ralfcode_conversion_table = {
++     [0]   = 1,
++   [714+1] = 4,
++   [715+1] = 70,
++   [716+1] = 37,
++   [718+1] = 18,
++   [719+1] = 57,
++   [720+1] = 43,
++   [764+1] = 28,
++   [765+1] = 10,
++   [766+1] = 61,
++   [767+1] = 19,
++   [768+1] = 14,
++   [769+1] = 44,
++   [770+1] = 5,
++   [771+1] = 71,
++   [772+1] = 38,
++   [773+1] = 62,
++   [775+1] = 58,
++   [776+1] = 45,
++   [777+1] = 34,
++   [867+1] = 46,
++   [868+1] = 2,
++   [869+1] = 74,
++   [870+1] = 41,
++   [871+1] = 63,
++   [872+1] = 20,
++   [873+1] = 54,
++   [874+1] = 47,
++   [875+1] = 32,
++   [876+1] = 29,
++   [877+1] = 11,
++   [910+1] = 6,
++   [911+1] = 72,
++   [912+1] = 39,
++   [913+1] = 64,
++   [914+1] = 21,
++   [915+1] = 59,
++   [916+1] = 48,
++   [917+1] = 35,
++   [918+1] = 26,
++   [919+1] = 8,
++   [920+1] = 65,
++   [921+1] = 22,
++   [922+1] = 16,
++  [1184+1] = 30,
++  [1185+1] = 12,
++  [1186+1] = 66,
++  [1187+1] = 23,
++  [1188+1] = 15,
++  [1189+1] = 49,
++  [1190+1] = 7,
++  [1191+1] = 73,
++  [1192+1] = 40,
++  [1193+1] = 67,
++  [1194+1] = 24,
++  [1195+1] = 60,
++  [1196+1] = 50,
++  [1196+1] = 51,
++  [1197+1] = 36,
++  [1198+1] = 27,
++  [1199+1] = 9,
++  [1200+1] = 68,
++  [1232+1] = 3,
++  [1233+1] = 75,
++  [1234+1] = 42,
++  [1235+1] = 69,
++  [1236+1] = 25,
++  [1237+1] = 55,
++  [1237+1] = 56,
++  [1238+1] = 52,
++  [1239+1] = 33,
++  [1240+1] = 31,
++  [1241+1] = 13,
++  [1314+1] = 17,
++  [1315+1] = 53
++}
++
++    ]]&gt;&lt;/el:luamain&gt;
++    &lt;el:i18n&gt;
++    &lt;/el:i18n&gt;
++  &lt;/el:protected&gt;
++&lt;/el:level&gt;
+
+Added: trunk/data/levels/lib/libsoko-endphase.xml
+===================================================================
+--- trunk/data/levels/lib/libsoko-endphase.xml	2007-10-11 22:59:06 UTC (rev 900)
++++ trunk/data/levels/lib/libsoko-endphase.xml	2007-10-11 23:48:36 UTC (rev 901)
+@@ -0,0 +1,372 @@
++&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;no&quot; ?&gt;
++&lt;el:level xmlns:xsi=&quot;<A HREF="http://www.w3.org/2001/XMLSchema-instance">http://www.w3.org/2001/XMLSchema-instance</A>&quot; xsi:schemaLocation=&quot;<A HREF="http://enigma-game.org/schema/level/1">http://enigma-game.org/schema/level/1</A> level.xsd&quot; xmlns:el=&quot;<A HREF="http://enigma-game.org/schema/level/1">http://enigma-game.org/schema/level/1</A>&quot;&gt;
++  &lt;el:protected&gt;
++    &lt;el:info el:type=&quot;library&quot;&gt;
++      &lt;el:identity el:title=&quot;&quot; el:id=&quot;lib/libsoko-endphase&quot;/&gt;
++      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;1&quot; el:status=&quot;experimental&quot;/&gt;
++      &lt;el:author  el:name=&quot;Enigma Team&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
++      &lt;el:copyright&gt;Copyright &#169; 2007 Enigma Team&lt;/el:copyright&gt;
++      &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
++      &lt;el:compatibility el:enigma=&quot;1.00&quot;&gt;
++      &lt;/el:compatibility&gt;
++      &lt;el:modes el:easy=&quot;false&quot; el:single=&quot;false&quot; el:network=&quot;false&quot;/&gt;
++      &lt;el:comments&gt;
++      &lt;/el:comments&gt;
++      &lt;el:score el:easy=&quot;-&quot; el:difficult=&quot;-&quot;/&gt;
++    &lt;/el:info&gt;
++    &lt;el:luamain&gt;&lt;![CDATA[
++
++-- This &quot;library&quot; holds those functions and algorithms needed by libsoko.xml
++-- that are used for triggering goals and preparing and executing the sokoball-
++-- endphases. Don't include this library with your levels (it won't
++-- have any effect), but libsoko.xml.
++
++------------------------------------------------------------------------
++-- Goal Trigger and Endphase Main Functions
++------------------------------------------------------------------------
++
++function goal_trigger(onoff, sender)
++  local x, y = enigma.GetPos(sender)
++  local nr = enigma.GetAttrib(sender, &quot;sokoarea&quot;)
++  local more_boxes = false  -- memorizes whether a box was added or removed
++  if sokoarea[nr].endphase_started then
++    return
++  end
++  if(enigma.GetAttrib(sender, &quot;box&quot;) == 0) then
++    if enigma.GetStone(x,y) then
++      enigma.SetAttrib(sender, &quot;box&quot;, 1)
++      sokoarea[nr].goals_filled = sokoarea[nr].goals_filled + 1
++    end
++  else
++    enigma.SetAttrib(sender, &quot;box&quot;, 0)
++    sokoarea[nr].goals_filled = sokoarea[nr].goals_filled - 1
++  end
++  if type(goal_hook) == &quot;function&quot; then
++    goal_hook(nr, sender, more_boxes, sokoarea[nr].goals_filled,
++              sokoarea[nr].number_goals)
++  end
++  if sokoarea[nr].goals_filled == sokoarea[nr].number_goals then
++    sokoarea[nr].endphase_started = true
++    if type(sokoarea[nr].endphase_hook) == &quot;function&quot; then
++      sokoarea[nr].endphase_hook(nr)
++    else
++      mydebug(&quot;libsoko: No endphase hook found!&quot;)
++    end
++  end
++end
++
++function prepare_endphase(sokoarea_number)
++  -- ensure a correctly set endphase-attribute
++  local endp = sokoarea[sokoarea_number].design.endp
++  if not endp then
++    endp = {alg = &quot;circle&quot;}
++    sokoarea[sokoarea_number].design.endp = endp
++  end
++  if type(endp) ~= &quot;table&quot; then
++    myerror(&quot;This design's endphase is given as &quot;..type(endp)
++            ..&quot;, should be table.&quot;)
++  end
++  local alg = endp.alg
++  if type(alg) ~= &quot;string&quot; then
++    myerror(&quot;This design's endphase algorithm is given as &quot;..type(alg)
++            ..&quot;, should be string.&quot;)
++  end
++
++  -- decompose alg into algorithm name and additional parameter
++  local param = &quot;&quot;
++  local sep = string.find(alg, &quot;:&quot;)
++  if sep then
++    alg = string.sub(endp.alg, 1, sep - 1)
++    param = string.sub(endp.alg, sep + 1)
++  end
++  
++  -- prepare oxyds
++  if     (alg == &quot;circle&quot;)
++      or (alg == &quot;hide&quot;)
++      or (alg == &quot;fourswitch&quot;)
++      or (alg == &quot;vortex&quot;)
++      or (alg == &quot;gradients&quot;)
++      or (alg == &quot;magnets&quot;) then
++    -- nothing to prepare
++  elseif (alg == &quot;ralf&quot;)
++      or (alg == &quot;allcrack&quot;) then
++    endphase_set_block_oxyds(sokoarea_number, endp.door)
++  elseif alg == &quot;block&quot; then
++    endphase_set_block_oxyds(sokoarea_number, param)
++  elseif (alg == &quot;outside&quot;) then
++    endphase_set_outside_oxyds(sokoarea_number)
++  elseif alg == &quot;jumpyoxyds&quot; then
++    endphase_set_block_oxyds(sokoarea_number, &quot;jumpy&quot;)
++  else
++    mywarning(&quot;Endphase algorithm &quot;..alg..&quot; unknown! Will use 'circle' instead.&quot;)
++  end
++end
++
++function endphase(sokoarea_number)
++  -- Correct structure of endp-attribute has been checked
++  -- by prepare_endphase, we trust it blindly.
++  local endp = sokoarea[sokoarea_number].design.endp
++  local alg = endp.alg
++  local param = &quot;&quot;
++  local px, py = enigma.GetPos(enigma.GetNamedObject(&quot;marble_&quot;..sokoarea_number..&quot;_1&quot;))
++  
++  -- decompose alg into algorithm name and additional parameter
++  local sep = string.find(alg, &quot;:&quot;)
++  if sep then
++    alg = string.sub(endp.alg, 1, sep - 1)
++    param = string.sub(endp.alg, sep + 1)
++  end
++  if param == &quot;&quot; then
++    mydebug(&quot;Endphase starts of type &quot;..alg..&quot;, no parameter.&quot;)
++  else
++    mydebug(&quot;Endphase starts of type &quot;..alg..&quot;, parameter &quot;..param..&quot;.&quot;)
++  end
++
++  -- redraw level and give items
++  endphase_redraw_level_array(sokoarea_number)
++  local give = endp.give
++  if type(give) == &quot;string&quot; then
++    give = {give}
++  end
++  if type(give) == &quot;table&quot; then
++    for k, v in pairs(give) do
++      if is_item(v) then
++        set_item(v, px, py)
++      elseif is_actor(v) then
++        set_actor(v, px + 0.5, py + 0.5)
++      else
++        myerror(&quot;Can't give &quot;..v..&quot;.&quot;)
++      end
++    end
++  elseif type(give) ~= &quot;nil&quot; then
++    myerror(&quot;Can't give something of type &quot;..type(v)..&quot;.&quot;)
++  end
++
++  if alg == &quot;circle&quot; then
++    endphase_circle(sokoarea_number)
++  elseif alg == &quot;ralf&quot; then
++  
++  elseif alg == &quot;hide&quot; then
++  
++  elseif alg == &quot;outside&quot; then
++  
++  elseif alg == &quot;allcrack&quot; then
++  
++  elseif alg == &quot;block&quot; then
++    -- done in prepare_endphase
++  elseif alg == &quot;fourswitch&quot; then
++  
++  elseif alg == &quot;vortex&quot; then
++  
++  elseif alg == &quot;gradients&quot; then
++  
++  elseif alg == &quot;magnets&quot; then
++  
++  elseif alg == &quot;jumpyoxyds&quot; then
++
++  else
++    -- use default: &quot;circle&quot;
++    endphase_circle(sokoarea_number)
++  end
++end
++
++function endphase_redraw_level_array(sokoarea_number)
++  local nr = sokoarea_number or 1
++  local endp = sokoarea[nr].design.endp
++  local dx = sokoarea[nr].offset.x
++  local dy = sokoarea[nr].offset.y
++  local mx = sokoarea[nr].array_width
++  local my = sokoarea[nr].array_height
++
++  -- If level_width and level_height are set, the level has been drawn
++  -- by create_sokoball. Hence we have to redraw everything outside
++  -- the level_array-area as well:
++  if endp.outf and sokoarea[nr].level_width and sokoarea[nr].level_height then
++    for x = 0, sokoarea[nr].level_width - 1 do
++      for y = 0, sokoarea[nr].level_height - 1 do
++        if (x &lt; dx) or (x &gt; mx+dx-1) or (y &lt; dy) or (y &gt; my+dy-1) then
++          set_element(x, y, nr, k, endp.outf)
++        end
++      end
++    end
++  end  
++
++  -- Now redraw the area inside level_array:
++  for y = 0, my - 1 do
++    for x = 0, mx - 1 do
++      local ch = sokoarea[nr].level_array[y+1][x+1]
++      for k, v in pairs(endp) do
++        if    ((k == &quot;outf&quot;) and char_is_outf(ch))
++           or ((k == &quot;inf&quot;)  and char_is_inf(ch))
++           or ((k == &quot;wall&quot;) and char_is_wall(ch))
++           or ((k == &quot;goal&quot;) and char_is_goal(ch)) then
++          set_element(x+dx, y+dy, nr, k, v)
++        end
++      end
++    end
++  end
++end
++
++------------------------------------------------------------------------
++-- Endphase Games and Algorithms
++------------------------------------------------------------------------
++
++function endphase_circle(sokoarea_number)
++  local acname = &quot;marble_&quot;..sokoarea_number..&quot;_1&quot;
++  local flavor = sokoarea[sokoarea_number].design.oxyd or &quot;b&quot;
++  local actor = enigma.GetNamedObject(acname)
++  if not actor then
++    acname = &quot;marble&quot;
++    actor = enigma.GetNamedObject(acname)
++    if not actor then
++      myerror(&quot;No marble found. Please name it 'marble'.&quot;)  
++    end
++  end
++  local x, y = enigma.GetPos(actor)
++  if x &gt; 10 then
++    x = x - 2
++  end
++  if y &gt; 6 then
++    y = y - 2
++  end
++  for j = 0, 2 do
++    oxyd(x+j, y-1, flavor)
++    oxyd(x-1, y+j, flavor)
++    oxyd(x+j, y+3, flavor)
++    oxyd(x+3, y+j, flavor)
++    for k = 0, 2 do
++      kill_stone(x+j, y+k)
++      kill_item(x+j, y+k)
++      set_element(x+j, y+k, sokoarea_number, &quot;inf&quot;)
++    end
++  end
++  set_stone(&quot;st-fart&quot;, x+1, y+1)
++  oxyd_shuffle()
++end
++
++function endphase_set_outside_oxyds(sokoarea_number)
++  local places = {}
++  local nr = sokoarea_number or 1
++  local dx = sokoarea[nr].offset.x
++  local dy = sokoarea[nr].offset.y
++  local mx = sokoarea[nr].array_width
++  local my = sokoarea[nr].array_height
++  local flavor = sokoarea[nr].design.oxyd or &quot;b&quot;
++
++  -- If level_width and level_height are set, there are more
++  -- oxyds possible than level_array alone would allow:
++  if sokoarea[nr].level_width and sokoarea[nr].level_height then
++    for x = 0, sokoarea[nr].level_width - 1 do
++      for y = 0, sokoarea[nr].level_height - 1 do
++        if (x &lt; dx) or (x &gt; mx+dx-1) or (y &lt; dy) or (y &gt; my+dy-1) then
++          table.insert(places, {x=x, y=y})
++        end
++      end
++    end
++  end  
++
++  -- Now outf-tiles inside level_array and far-away wall-tiles:
++  for y = 0, my - 1 do
++    for x = 0, mx - 1 do
++      local ch = sokoarea[nr].level_array[y+1][x+1]
++      if     char_is_outf(ch) 
++         or (char_is_wall(ch) and no_way_near(x+1, y+1, nr)) then
++        table.insert(places, {x=x+dx, y=y+dy})
++      end
++    end
++  end
++
++  -- Choose some appropriate subset
++  local max = table.getn(places)
++  local number_pairs = 0
++  if max &lt; 2 then
++    myerror(&quot;Not enough free places outside. This can't happen?!&quot;)
++  elseif max &lt;   4 then  number_pairs = 1
++  else                   number_pairs = 2  end
++  --elseif max &lt;   8 then  number_pairs = 2
++  --elseif max &lt;  30 then  number_pairs = 3
++  --elseif max &lt;  50 then  number_pairs = 4
++  --elseif max &lt;  80 then  number_pairs = 5
++  --elseif max &lt; 120 then  number_pairs = 6
++  --elseif max &lt; 180 then  number_pairs = 7
++  --else                   number_pairs = 8  end
++  for j = 1, max do
++    places[j].sort_field = math.random()
++  end
++  table.sort(places, function (a, b) return a.sort_field &lt; b.sort_field end)
++  for j = 1, number_pairs do
++    oxyd(places[2*j-1].x, places[2*j-1].y, flavor, j)
++    oxyd(places[2*j].x, places[2*j].y, flavor, j)
++  end
++  oxyd_shuffle()
++end
++
++function endphase_set_block_oxyds(sokoarea_number, blocker)
++
++  if 1 + 1 == 2 then return end
++  
++  local places = {}
++  local nr = sokoarea_number or 1
++  local dx = sokoarea[nr].offset.x
++  local dy = sokoarea[nr].offset.y
++  local mx = sokoarea[nr].array_width
++  local my = sokoarea[nr].array_height
++  local flavor = sokoarea[nr].design.oxyd or &quot;b&quot;
++
++  -- If level_width and level_height are set, there are more
++  -- oxyds possible than level_array alone would allow:
++  if sokoarea[nr].level_width and sokoarea[nr].level_height then
++    for x = 0, sokoarea[nr].level_width - 1 do
++      for y = 0, sokoarea[nr].level_height - 1 do
++        local pos = one_tile_far_from_way(x+dx, y+dy, nr)
++        if pos then
++          table.insert(places, {x=x, y=y, door_x=pos.x, door_y=pos.y})
++          --set_stone(&quot;st-pull&quot;, x, y)
++          --set_floor(&quot;fl-red&quot;, pos.x, pos.y)
++        end
++      end
++    end
++  else
++    for y = 0, my - 1 do
++      for x = 0, mx - 1 do
++        local pos = one_tile_far_from_way(x+dx, y+dy, nr)
++        if pos then
++          table.insert(places, {x=x, y=y, door_x=pos.x, door_y=pos.y})
++          --set_stone(&quot;st-pull&quot;, x, y)
++          --set_floor(&quot;fl-red&quot;, pos.x, pos.y)
++        end
++      end
++    end  
++  end
++
++
++  -- Choose some appropriate subset
++  local max = table.getn(places)
++  local number_pairs = 0
++  if max &lt; 2 then
++    myerror(&quot;Not enough free places outside. This can't happen?!&quot;)
++  elseif max &lt;   4 then  number_pairs = 1
++  else                   number_pairs = 2  end
++  --elseif max &lt;   8 then  number_pairs = 2
++  --elseif max &lt;  30 then  number_pairs = 3
++  --elseif max &lt;  50 then  number_pairs = 4
++  --elseif max &lt;  80 then  number_pairs = 5
++  --elseif max &lt; 120 then  number_pairs = 6
++  --elseif max &lt; 180 then  number_pairs = 7
++  --else                   number_pairs = 8  end
++  for j = 1, max do
++    places[j].sort_field = math.random()
++  end
++  table.sort(places, function (a, b) return a.sort_field &lt; b.sort_field end)
++  for j = 1, number_pairs do
++    oxyd(places[2*j-1].x, places[2*j-1].y, flavor, j)
++    oxyd(places[2*j].x, places[2*j].y, flavor, j)
++  end
++  oxyd_shuffle()
++end
++
++    ]]&gt;&lt;/el:luamain&gt;
++    &lt;el:i18n&gt;
++    &lt;/el:i18n&gt;
++  &lt;/el:protected&gt;
++&lt;/el:level&gt;
+
+Modified: trunk/data/levels/lib/libsoko.xml
+===================================================================
+--- trunk/data/levels/lib/libsoko.xml	2007-10-11 22:59:06 UTC (rev 900)
++++ trunk/data/levels/lib/libsoko.xml	2007-10-11 23:48:36 UTC (rev 901)
+@@ -8,6 +8,8 @@
+       &lt;el:copyright&gt;Copyright &#169; 2007 Enigma Team&lt;/el:copyright&gt;
+       &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
+       &lt;el:compatibility el:enigma=&quot;1.00&quot;&gt;
++        &lt;el:dependency el:path=&quot;lib/libsoko-designlist&quot; el:id=&quot;lib/libsoko-designlist&quot; el:release=&quot;1&quot; el:preload=&quot;true&quot;/&gt;
++        &lt;el:dependency el:path=&quot;lib/libsoko-endphase&quot; el:id=&quot;lib/libsoko-endphase&quot; el:release=&quot;1&quot; el:preload=&quot;true&quot;/&gt;
+       &lt;/el:compatibility&gt;
+       &lt;el:modes el:easy=&quot;false&quot; el:single=&quot;false&quot; el:network=&quot;false&quot;/&gt;
+       &lt;el:comments&gt;
+@@ -20,288 +22,57 @@
+     &lt;/el:info&gt;
+     &lt;el:luamain&gt;&lt;![CDATA[
+ 
++-- libsoko.xml uses data from libsoko-designlist.xml and functions from
++-- libsoko-endphase.xml. Please read the comments in libsoko-designlist.xml
++-- to understand design tables, and libsoko-endphase.xml for goal-triggering
++-- and endphases.
++
+ ------------------------------------------------------------------------
+--- Designs
++-- Global variables
+ ------------------------------------------------------------------------
+ 
+--- This section holds a table with all default designs. Each design
+--- is again a table consisting of the following entries:
+---    wall, inf, outf, box, goal, oxyd, oxop
+--- Each of these entries is either a string representing the objects to
+--- be used, or a table if several objects shall be used. Such a
+--- combination of objects will be called &quot;element&quot;.
++-- The global table &quot;sokoarea&quot; holds all sokoban parts a level
++-- creates. I.e., sokoarea[1] holds information about the first
++-- part, sokoarea[2] about the second etc. In most cases, only
++-- sokoarea[1] will be used.
++-- Each sokoarea[j] is again a table with the following entries:
+ --
+--- If object types (like floors) repeat in the table, they are used in
+--- a checkerboard pattern. You can change this pattern by adding an
+--- element of the form &quot;al:ALGORITHM&quot;, where ALGORITHM is one of the
+--- algorithms listed below. Same for &quot;fr:1.23&quot; and &quot;mf:4.5&quot; for friction
+--- and mouseforce. From all these attributes, only the last one will
+--- be used, all others ignored. This contrasts with the situation of
+--- the gaming objects (&quot;fl-&quot;, &quot;st-&quot;, &quot;it-&quot;), whose order doesn't matter.
++--        level_array - a 2D-array of characters defining the sokoban part
++--        array_width - width of level_array
++--       array_height - height of level_array
++--             design - the used design table
++--       number_goals - number of goals this part controls
++--       goals_filled - number of filled goals
++--        actor_count - number of actors in this sokoban part
++--   endphase_started - a flag to mark completed sokobans
++--             offset - position of the level_array within the whole level
++--         uses_chess - flag to note that st-chess was used (no shogun-triggers)
++--        level_width - width of whole level (create_sokoban only)
++--       level_height - height of whole level (create_sokoban only)
++--          goal_hook - function to call when a goal activates/deactivates
++--      endphase_hook - function to call when all triggers are filled
+ --
+--- &quot;oxyd&quot; only holds the oxyd's flavor, &quot;oxop&quot; the way of resolving the
+--- level from Sokoban to opening oxyds. Use &quot;st-none&quot; and &quot;it-none&quot; to
+--- place spaces between stones/items.
++-- endphase_hook is a function with one argument, the sokoarea-number.
++-- goal_hook takes five arguments: Sokoarea-number, goal-object that was
++-- triggered, a bool whether the box was added (instead of removed), number
++-- of now-filled goals in this area, number of all goals in this area.
++-- Hooking goal_hook does not interfere the default operations of libsoko,
++-- but hooking endphase_hook results in skipping the usual endphase.
++-- However, you can call endphase(sokoarea_number) yourself if neccessary.
+ --
+--- The table might hold additional flags. Currently, only &quot;white&quot;
+--- is implemented, which turns the marble and chess-knights white.
+--- If an entry is missing, the corresponding entry from default_design
+--- will be used.
++--       list_outside - list of positions of outf-tiles
++--           list_way - list of all inside positions that the marble
++--                      can reach on level-end
++--      list_wall_one - list of outer walls near ways
++--      list_wall_two - list of outer walls one tile away from ways,
++--                      together with a list of neighboring wall_ones.
+ --
+--- Example:
+---
+---   [5] = { outf = &quot;fl-leaves&quot;, inf = &quot;fl-leavesb&quot;, box = &quot;st-wood&quot;
+---           wall = {&quot;st-glass&quot;, &quot;fl-wood&quot;, &quot;fl-leaves&quot;, &quot;al:random&quot;},
+---           oxyd = &quot;a&quot;, white = true }
+---
+---   will define design 5. The walls will alternate between
+---   st-glass/fl-wood and st-glass/fl-leaves. The goal will be
+---   it-trigger by default. The actor will be ac-whiteball.
+---
+--- Possible flags:
+---
+---   white  : Use white marble and st-chess_white.
+---
+--- Algorithms:
+---
+---   checkerboard : default, up to 3 different floors in checkerboard pattern
+---   lines : arbitrary number of floors in diagonal lines
+---   waves : works best with 4 different floors
+---   random : arbitrary number of floors, randomly chosen
+---
++-- Each list entry is a table: Entries x and y are absolute positions,
++-- lx and ly are positions in the level_array, if existent (nil else).
+ 
+-default_design = {
+-  wall = { &quot;st-rock3&quot;, &quot;fl-leaves&quot; },
+-   inf = { &quot;fl-wood&quot; },
+-  outf = { &quot;fl-water&quot;, &quot;st-invisible&quot; },
+-   box = { &quot;st-brownie&quot; },
+-  goal = { &quot;it-trigger&quot; },
+-  oxyd = &quot;a&quot;,
+-  oxop = 1 }
++sokoarea = {}
+ 
+-design_list = {
+-
+--- Ralf's designs
+-[1]={box=&quot;st-brownie&quot;, wall=&quot;st-bluegray&quot;, inf=&quot;fl-bluegray&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[2]={box=&quot;st-glass_move&quot;, wall=&quot;st-bluegray&quot;, inf=&quot;fl-bluegray&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;a&quot;},
+-[3]={box=&quot;st-wood-growing&quot;, wall=&quot;st-bluegray&quot;, inf=&quot;fl-bluegray&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;a&quot;},
+-[4]={box=&quot;st-brownie&quot;, wall=&quot;st-bluegray&quot;, inf=&quot;fl-white&quot;, outf=&quot;fl-sahara&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
+-[5]={box=&quot;st-wood&quot;, wall=&quot;st-bluegray&quot;, inf=&quot;fl-white&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;c&quot;},
+-[6]={box=&quot;st-greenbrown_move&quot;, wall=&quot;st-bluegray&quot;, inf=&quot;fl-white&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;c&quot;},
+-[7]={box=&quot;st-wood&quot;, wall=&quot;st-bluegray&quot;, inf=&quot;fl-white&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;c&quot;},
+-[8]={box=&quot;st-rock3_move&quot;, wall=&quot;st-blue-sand&quot;, inf=&quot;fl-light&quot;, outf=&quot;fl-rough-blue&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;d&quot;},
+-[9]={box=&quot;st-block&quot;, wall=&quot;st-blue-sand&quot;, inf=&quot;fl-light&quot;, outf=&quot;fl-rough-blue&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;d&quot;},
+-[10]={box=&quot;st-shogun&quot;, wall=&quot;st-blue-sand&quot;, inf=&quot;fl-rough&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[11]={box=&quot;st-marble_move&quot;, wall=&quot;st-blue-sand&quot;, inf=&quot;fl-rough&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;b&quot;},
+-[12]={box=&quot;st-shogun&quot;, wall=&quot;st-blue-sand&quot;, inf=&quot;fl-rough&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[13]={box=&quot;st-block&quot;, wall=&quot;st-blue-sand&quot;, inf=&quot;fl-rough&quot;, outf=&quot;fl-leaves&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;b&quot;},
+-[14]={box=&quot;st-brownie&quot;, wall=&quot;st-glass&quot;, inf=&quot;fl-himalaya&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[15]={box=&quot;st-brownie&quot;, wall=&quot;st-glass&quot;, inf=&quot;fl-himalaya&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[16]={box=&quot;st-shogun&quot;, wall=&quot;st-glass&quot;, inf=&quot;fl-rough-red&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;c&quot;},
+-[17]={box=&quot;st-brownie&quot;, wall=&quot;st-glass&quot;, inf=&quot;fl-rough-red&quot;, outf=&quot;fl-sahara&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
+-[18]={box=&quot;st-greenbrown_move&quot;, wall=&quot;st-glass&quot;, inf=&quot;fl-wood&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;c&quot;},
+-[19]={box=&quot;st-block&quot;, wall=&quot;st-glass&quot;, inf=&quot;fl-wood&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;d&quot;},
+-[20]={box=&quot;st-wood-growing&quot;, wall=&quot;st-glass&quot;, inf=&quot;fl-wood&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;a&quot;},
+-[21]={box=&quot;st-wood&quot;, wall=&quot;st-glass&quot;, inf=&quot;fl-wood&quot;, outf=&quot;fl-sahara&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;c&quot;},
+-[22]={box=&quot;st-shogun&quot;, wall=&quot;st-glass&quot;, inf=&quot;fl-wood&quot;, outf=&quot;fl-leaves&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[23]={box=&quot;st-block&quot;, wall=&quot;st-glass&quot;, inf=&quot;fl-wood&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;d&quot;},
+-[24]={box=&quot;st-brownie&quot;, wall=&quot;st-glass&quot;, inf=&quot;fl-wood&quot;, outf=&quot;fl-sahara&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
+-[25]={box=&quot;st-brownie&quot;, wall=&quot;st-glass&quot;, inf=&quot;fl-wood&quot;, outf=&quot;fl-leaves&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[26]={box=&quot;st-brownie&quot;, wall=&quot;st-likeoxydc-open&quot;, inf=&quot;fl-acblack&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
+-[27]={box=&quot;st-greenbrown_move&quot;, wall=&quot;st-likeoxydc-open&quot;, inf=&quot;fl-acblack&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;c&quot;},
+-[28]={box=&quot;st-wood-growing&quot;, wall=&quot;st-likeoxydc-open&quot;, inf=&quot;fl-tigris&quot;, outf=&quot;fl-sahara&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;a&quot;},
+-[29]={box=&quot;st-brownie&quot;, wall=&quot;st-likeoxydc-open&quot;, inf=&quot;fl-tigris&quot;, outf=&quot;fl-leaves&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[30]={box=&quot;st-wood-growing&quot;, wall=&quot;st-likeoxydc-open&quot;, inf=&quot;fl-tigris&quot;, outf=&quot;fl-sahara&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;a&quot;},
+-[31]={box=&quot;st-glass_move&quot;, wall=&quot;st-likeoxydc-open&quot;, inf=&quot;fl-tigris&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;a&quot;},
+-[32]={box=&quot;st-block&quot;, wall=&quot;st-metal&quot;, inf=&quot;fl-bluegray&quot;, outf=&quot;fl-space&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;d&quot;},
+-[33]={box=&quot;st-shogun&quot;, wall=&quot;st-metal&quot;, inf=&quot;fl-bluegray&quot;, outf=&quot;fl-rough-blue&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[34]={box=&quot;st-shogun&quot;, wall=&quot;st-metal&quot;, inf=&quot;fl-white&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[35]={box=&quot;st-block&quot;, wall=&quot;st-metal&quot;, inf=&quot;fl-white&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;b&quot;},
+-[36]={box=&quot;st-shogun&quot;, wall=&quot;st-metal&quot;, inf=&quot;fl-white&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[37]={box=&quot;st-wood-growing&quot;, wall=&quot;st-rock1&quot;, inf=&quot;fl-light&quot;, outf=&quot;fl-leaves&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;a&quot;},
+-[38]={box=&quot;st-glass_move&quot;, wall=&quot;st-rock1&quot;, inf=&quot;fl-light&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;a&quot;},
+-[39]={box=&quot;st-brownie&quot;, wall=&quot;st-rock1&quot;, inf=&quot;fl-light&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[40]={box=&quot;st-glass_move&quot;, wall=&quot;st-rock1&quot;, inf=&quot;fl-light&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;a&quot;},
+-[41]={box=&quot;st-brownie&quot;, wall=&quot;st-rock1&quot;, inf=&quot;fl-rough&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
+-[42]={box=&quot;st-greenbrown_move&quot;, wall=&quot;st-rock1&quot;, inf=&quot;fl-rough&quot;, outf=&quot;fl-sahara&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;c&quot;},
+-[43]={box=&quot;st-brownie&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[44]={box=&quot;st-marble_move&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;, outf=&quot;fl-rough-blue&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;b&quot;},
+-[45]={box=&quot;st-wood-growing&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;, outf=&quot;fl-leaves&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;a&quot;},
+-[46]={box=&quot;st-shogun&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[47]={box=&quot;st-greenbrown_move&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;, outf=&quot;fl-sahara&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;c&quot;},
+-[48]={box=&quot;st-glass_move&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;, outf=&quot;fl-leaves&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;a&quot;},
+-[49]={box=&quot;st-marble_move&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;, outf=&quot;fl-rough-blue&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;b&quot;},
+-[50]={box=&quot;st-shogun&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;, outf=&quot;fl-leaves&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;a&quot;},
+-[51]={box=&quot;st-wood-growing&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;, outf=&quot;fl-leaves&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;a&quot;},
+-[52]={box=&quot;st-wood&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;c&quot;},
+-[53]={box=&quot;st-shogun&quot;, wall=&quot;st-rock3&quot;, inf=&quot;fl-leaves&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;d&quot;},
+-[54]={box=&quot;st-shogun&quot;, wall=&quot;st-rock4&quot;, inf=&quot;fl-himalaya&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[55]={box=&quot;st-marble_move&quot;, wall=&quot;st-rock4&quot;, inf=&quot;fl-himalaya&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;b&quot;},
+-[56]={box=&quot;st-shogun&quot;, wall=&quot;st-rock4&quot;, inf=&quot;fl-himalaya&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;b&quot;},
+-[57]={box=&quot;st-block&quot;, wall=&quot;st-rock4&quot;, inf=&quot;fl-rough-red&quot;, outf=&quot;fl-rough-blue&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;d&quot;},
+-[58]={box=&quot;st-rock3_move&quot;, wall=&quot;st-rock4&quot;, inf=&quot;fl-rough-red&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;d&quot;},
+-[59]={box=&quot;st-shogun&quot;, wall=&quot;st-rock4&quot;, inf=&quot;fl-rough-red&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[60]={box=&quot;st-rock3_move&quot;, wall=&quot;st-rock4&quot;, inf=&quot;fl-rough-red&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;d&quot;},
+-[61]={box=&quot;st-greenbrown_move&quot;, wall=&quot;st-rock5&quot;, inf=&quot;fl-samba&quot;, outf=&quot;fl-leaves&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;c&quot;},
+-[62]={box=&quot;st-block&quot;, wall=&quot;st-rock5&quot;, inf=&quot;fl-samba&quot;, outf=&quot;fl-water&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;b&quot;},
+-[63]={box=&quot;st-rock3_move&quot;, wall=&quot;st-rock5&quot;, inf=&quot;fl-samba&quot;, outf=&quot;fl-leaves&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;d&quot;},
+-[64]={box=&quot;st-marble_move&quot;, wall=&quot;st-rock5&quot;, inf=&quot;fl-samba&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;b&quot;},
+-[65]={box=&quot;st-wood-growing&quot;, wall=&quot;st-rock5&quot;, inf=&quot;fl-samba&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_c&quot;, oxyd=&quot;a&quot;},
+-[66]={box=&quot;st-greenbrown_move&quot;, wall=&quot;st-rock5&quot;, inf=&quot;fl-samba&quot;, outf=&quot;fl-leaves&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;c&quot;},
+-[67]={box=&quot;st-block&quot;, wall=&quot;st-rock5&quot;, inf=&quot;fl-samba&quot;, outf=&quot;fl-water&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;b&quot;},
+-[68]={box=&quot;st-brownie&quot;, wall=&quot;st-rock5&quot;, inf=&quot;fl-samba&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[69]={box=&quot;st-block&quot;, wall=&quot;st-rock5&quot;, inf=&quot;fl-samba&quot;, outf=&quot;fl-space&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;d&quot;},
+-[70]={box=&quot;st-rock3_move&quot;, wall=&quot;st-rock6&quot;, inf=&quot;fl-acblack&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_b&quot;, oxyd=&quot;d&quot;},
+-[71]={box=&quot;st-shogun&quot;, wall=&quot;st-rock6&quot;, inf=&quot;fl-acblack&quot;, outf=&quot;fl-leaves&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[72]={box=&quot;st-block&quot;, wall=&quot;st-rock6&quot;, inf=&quot;fl-acblack&quot;, outf=&quot;fl-leaves&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;d&quot;},
+-[73]={box=&quot;st-shogun&quot;, wall=&quot;st-rock6&quot;, inf=&quot;fl-acblack&quot;, outf=&quot;fl-leaves&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[74]={box=&quot;st-shogun&quot;, wall=&quot;st-rock6&quot;, inf=&quot;fl-tigris&quot;, outf=&quot;fl-rough-blue&quot;, door=&quot;st-blocker&quot;, oxyd=&quot;b&quot;},
+-[75]={box=&quot;st-shogun&quot;, wall=&quot;st-rock6&quot;, inf=&quot;fl-tigris&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-
+--- New designs
+-[76]={box=&quot;st-glass1_move&quot;, wall=&quot;st-glass2&quot;, inf=&quot;fl-lightgray&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[77]={box=&quot;st-rock3_move&quot;, wall=&quot;st-brick&quot;, inf=&quot;fl-darkgray&quot;, outf=&quot;fl-leavesb&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[78]={box=&quot;st-rock3_move&quot;, wall=&quot;st-bumps&quot;, inf=&quot;fl-dunes&quot;, outf=&quot;fl-sand&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[79]={box=&quot;st-flrock&quot;, wall=&quot;st-camouflage&quot;, inf=&quot;fl-gravel&quot;, outf={&quot;fl-gravel&quot;, &quot;st-disco-medium&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[80]={box=&quot;st-flhay&quot;, wall=&quot;st-camouflage&quot;, inf=&quot;fl-leaves&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[81]={box=&quot;st-glass2_move&quot;, wall={&quot;st-glass1&quot;, &quot;fl-lightgray&quot;}, inf=&quot;fl-black&quot;, outf=&quot;fl-white&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
+-[82]={box=&quot;st-wood&quot;, wall={&quot;st-glass1&quot;, &quot;fl-water&quot;}, inf=&quot;fl-sand&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
+-[83]={box=&quot;st-camouflage_move&quot;, wall=&quot;st-glass2&quot;, inf=&quot;fl-lightgray&quot;, outf={&quot;fl-leavesb&quot;, &quot;st-disco-medium&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[84]={box=&quot;st-flrock&quot;, wall=&quot;st-glass2&quot;, inf=&quot;fl-sand&quot;, outf={&quot;fl-water&quot;, &quot;st-disco-medium&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[85]={box=&quot;st-flrock&quot;, wall=&quot;st-brick&quot;, inf=&quot;fl-sand&quot;, outf={&quot;fl-water&quot;, &quot;st-disco-medium&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[86]={box=&quot;st-glass1_move&quot;, wall={&quot;st-glass3&quot;, &quot;fl-abyss_fake&quot;}, inf=&quot;fl-red&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[87]={box=&quot;st-rock3_move&quot;, wall={&quot;st-glass3&quot;, &quot;fl-rough-blue&quot;}, inf=&quot;fl-plank&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[88]={box=&quot;st-glass1_move&quot;, wall=&quot;st-likeoxyda&quot;, inf=&quot;fl-black&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[89]={box=&quot;st-greenbrown_move&quot;, wall=&quot;st-likeoxyda-open&quot;, inf=&quot;fl-brick&quot;, outf={&quot;fl-mortar&quot;, &quot;st-disco-medium&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[90]={box=&quot;st-rock3_move&quot;, wall=&quot;st-likeoxydb&quot;, inf=&quot;fl-rough-red&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[91]={box=&quot;st-flhay&quot;, wall=&quot;st-likeoxydb-open&quot;, inf=&quot;fl-rough-blue&quot;, outf={&quot;fl-swamp&quot;, &quot;st-disco-light&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[92]={box=&quot;st-glass2_move&quot;, wall=&quot;st-likeoxydc&quot;, inf=&quot;fl-sahara&quot;, outf={&quot;fl-water&quot;, &quot;st-disco-light&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
+-[93]={box=&quot;st-glass_move&quot;, wall=&quot;st-likeoxydc-open&quot;, inf=&quot;fl-red&quot;, outf={&quot;st-blackballs&quot;, &quot;fl-abyss&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
+-[94]={box=&quot;st-glass2_move&quot;, wall=&quot;st-likeoxydd&quot;, inf=&quot;fl-concrete&quot;, outf=&quot;fl-sand&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[95]={box=&quot;st-flrock&quot;, wall=&quot;st-likeoxydd-open&quot;, inf=&quot;fl-marble&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[96]={box=&quot;st-flrock&quot;, wall=&quot;st-marble&quot;, inf=&quot;fl-marble&quot;, outf={&quot;fl-leavesc3&quot;, &quot;fl-leavesd3&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[97]={box=&quot;st-camouflage_move&quot;, wall=&quot;st-marble&quot;, inf=&quot;fl-leaves&quot;, outf={&quot;fl-leaves&quot;, &quot;st-marble&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[98]={box=&quot;st-rock1_move&quot;, wall=&quot;st-redrock&quot;, inf=&quot;fl-acblack&quot;, outf={&quot;fl-acblack&quot;, &quot;st-redrock&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[99]={box=&quot;st-glass1_move&quot;, wall=&quot;st-redrock&quot;, inf=&quot;fl-mortar&quot;, outf=&quot;fl-brick&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[100]={box=&quot;st-block&quot;, wall=&quot;st-redrock&quot;, inf=&quot;fl-mortar&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[101]={box=&quot;st-glass2_move&quot;, wall=&quot;st-redrock&quot;, inf=&quot;fl-leavesb&quot;, outf={&quot;fl-leavesc3&quot;, &quot;fl-leavesd4&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[102]={box=&quot;st-camouflage_move&quot;, wall=&quot;st-rock2&quot;, inf=&quot;fl-rock&quot;, outf={&quot;fl-rock&quot;, &quot;st-disco-medium&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[103]={box=&quot;st-glass2_move&quot;, wall=&quot;st-rock2&quot;, inf=&quot;fl-stone&quot;, outf={&quot;fl-water&quot;, &quot;st-disco-medium&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[104]={box=&quot;st-wood&quot;, wall=&quot;st-rock2&quot;, inf=&quot;fl-lightgray&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[105]={box=&quot;st-camouflage_move&quot;, wall=&quot;st-rock7&quot;, inf=&quot;fl-woven&quot;, outf=&quot;fl-gravel&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[106]={box=&quot;st-brownie&quot;, wall=&quot;st-rock7&quot;, inf=&quot;fl-black&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[107]={box=&quot;st-glass_move&quot;, wall=&quot;st-rock8&quot;, inf=&quot;fl-plank&quot;, outf={&quot;fl-plank&quot;, &quot;st-rock8&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[108]={box=&quot;st-glass2_move&quot;, wall={&quot;st-rock8&quot;, &quot;fl-water&quot;}, inf=&quot;fl-leaves&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
+-[109]={box=&quot;st-marble_move&quot;, wall={&quot;st-rock8&quot;, &quot;fl-abyss_fake&quot;}, inf=&quot;fl-stone&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
+-[110]={box=&quot;st-greenbrown_move&quot;, wall=&quot;st-rock9&quot;, inf=&quot;fl-rock&quot;, outf={&quot;fl-rock&quot;, &quot;st-rock9&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[111]={box=&quot;st-glass_move&quot;, wall=&quot;st-rock9&quot;, inf=&quot;fl-sand&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
+-[112]={box=&quot;st-camouflage_move&quot;, wall=&quot;st-rock9&quot;, inf=&quot;fl-stone&quot;, outf=&quot;fl-swamp&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[113]={box=&quot;st-block&quot;, wall=&quot;st-rock10&quot;, inf=&quot;fl-bluegreen&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[114]={box=&quot;st-wood&quot;, wall=&quot;st-rock10&quot;, inf=&quot;fl-sand&quot;, outf={&quot;fl-sand&quot;, &quot;st-rock10&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[115]={box=&quot;st-glass2_move&quot;, wall=&quot;st-stone1&quot;, inf={&quot;fl-lightgray&quot;, &quot;fl-white&quot;}, outf={&quot;fl-space&quot;, &quot;fl-abyss&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[116]={box=&quot;st-rock1_move&quot;, wall=&quot;st-stone1&quot;, inf=&quot;fl-stwood&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[117]={box=&quot;st-glass_move&quot;, wall=&quot;st-stone1&quot;, inf=&quot;fl-black&quot;, outf=&quot;st-stone1&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[118]={box=&quot;st-glass_move&quot;, wall=&quot;st-stone2&quot;, inf=&quot;fl-black&quot;, outf=&quot;fl-gravel&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[119]={box=&quot;st-block&quot;, wall=&quot;st-stone2&quot;, inf=&quot;fl-rough-red&quot;, outf={&quot;fl-rough-blue&quot;, &quot;st-disco-light&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[120]={box=&quot;st-rock3_move&quot;, wall={&quot;st-marble&quot;, &quot;st-stone2&quot;}, inf=&quot;fl-black&quot;, outf={&quot;st-marble&quot;, &quot;st-stone2&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[121]={box=&quot;st-wood&quot;, wall=&quot;st-panel&quot;, inf=&quot;fl-wood&quot;, outf={&quot;fl-leavesd3&quot;, &quot;fl-leavesd2&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[122]={box=&quot;st-block&quot;, wall=&quot;st-panel&quot;, inf=&quot;fl-leaves&quot;, outf=&quot;fl-leavesb&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[123]={box=&quot;st-glass1_move&quot;, wall=&quot;st-woven&quot;, inf=&quot;fl-dunes&quot;, outf=&quot;fl-bluegreen&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[124]={box=&quot;st-marble_move&quot;, wall=&quot;st-woven&quot;, inf=&quot;fl-hay&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[125]={box=&quot;st-rock3_move&quot;, wall=&quot;st-yellow&quot;, inf=&quot;fl-leavesb&quot;, outf=&quot;fl-leaves&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[126]={box=&quot;st-glass_move&quot;, wall=&quot;st-yellow&quot;, inf=&quot;fl-rough-blue&quot;, outf=&quot;fl-abyss&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[127]={box=&quot;st-block&quot;, wall=&quot;st-yellow&quot;, inf=&quot;fl-lightgray&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[128]={box=&quot;st-glass1_move&quot;, wall=&quot;st-rock7&quot;, inf=&quot;fl-himalaya&quot;, outf={&quot;fl-himalaya&quot;, &quot;st-rock8&quot;, &quot;st-rock7&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[129]={box=&quot;st-camouflage_move&quot;, wall={&quot;st-rock9&quot;, &quot;fl-leavesb&quot;}, inf=&quot;fl-dunes&quot;,
+-       outf={&quot;fl-leavese1&quot;, &quot;fl-leavese2&quot;, &quot;fl-leavese3&quot;, &quot;fl-leavese4&quot;, &quot;al:waves&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[130]={box=&quot;st-glass1_move&quot;, wall=&quot;st-redrock&quot;, inf=&quot;fl-darkgray&quot;,
+-       outf={&quot;fl-black&quot;, &quot;st-redrock&quot;, &quot;st-invisible&quot;, &quot;st-invisible&quot;, &quot;st-invisible&quot;, &quot;al:waves&quot;},
+-       door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[131]={box=&quot;st-glass1_move&quot;, wall={&quot;st-yellow&quot;, &quot;st-yellow&quot;, &quot;st-redrock&quot;, &quot;st-redrock&quot;, &quot;al:waves&quot;}, inf=&quot;fl-wood&quot;,
+-       outf={&quot;st-yellow&quot;, &quot;st-yellow&quot;, &quot;st-redrock&quot;, &quot;st-redrock&quot;, &quot;al:waves&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[132]={box=&quot;st-wood&quot;, wall=&quot;st-camouflage&quot;, inf=&quot;fl-leavesb&quot;,
+-       outf={&quot;fl-water&quot;, &quot;fl-swamp&quot;, &quot;fl-water&quot;, &quot;fl-water&quot;, &quot;al:random&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[133]={box=&quot;st-glass2_move&quot;, wall=&quot;st-metal&quot;, inf=&quot;fl-metal&quot;,
+-       outf={&quot;fl-space&quot;, &quot;fl-abyss&quot;, &quot;fl-abyss&quot;, &quot;fl-abyss&quot;, &quot;al:random&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[134]={box=&quot;st-marble_move&quot;, wall=&quot;st-metal&quot;, inf=&quot;fl-white&quot;,
+-       outf={&quot;fl-abyss&quot;, &quot;st-grate1&quot;, &quot;st-invisible&quot;, &quot;st-invisible&quot;, &quot;st-invisible&quot;, &quot;al:waves&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[135]={box=&quot;st-glass_move&quot;, wall=&quot;st-likeoxydc&quot;, inf=&quot;fl-white&quot;,
+-       outf={&quot;fl-white&quot;, &quot;st-rock1&quot;, &quot;st-invisible&quot;, &quot;st-invisible&quot;, &quot;st-invisible&quot;, &quot;al:random&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;},
+-[136]={box=&quot;st-block&quot;, wall={&quot;st-oneway_white-n&quot;, &quot;st-oneway_white-s&quot;, &quot;st-oneway_white-e&quot;, &quot;st-oneway_white-w&quot;, &quot;al:random&quot;}, inf=&quot;fl-rough&quot;,
+-       outf={&quot;st-oneway_white-n&quot;, &quot;st-oneway_white-s&quot;, &quot;st-oneway_white-e&quot;, &quot;st-oneway_white-w&quot;, &quot;al:random&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[137]={box={&quot;st-mirror-p-m&quot;, &quot;st-mirror-p/m&quot;, &quot;st-mirror-p\\m&quot;, &quot;st-mirror-p|m&quot;, &quot;al:random&quot;},
+-       --wall={&quot;st-laser-n&quot;, &quot;st-laser-s&quot;, &quot;st-laser-e&quot;, &quot;laser-w&quot;, &quot;al:random&quot;},
+-       wall={&quot;st-glass3&quot;, &quot;fl-abyss&quot;}, inf=&quot;fl-metal&quot;,
+-       --wall={&quot;st-mirror-p-&quot;, &quot;st-mirror-p/&quot;, &quot;st-mirror-p\\&quot;, &quot;st-mirror-p|&quot;, &quot;al:random&quot;},
+-       outf={&quot;st-mirror-p-&quot;, &quot;st-mirror-p/&quot;, &quot;st-mirror-p|&quot;, &quot;st-mirror-p\\&quot;, &quot;al:random&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[138]={box=&quot;st-shogun-s&quot;, wall=&quot;st-panel&quot;, inf=&quot;fl-stwood&quot;, outf=&quot;fl-water&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[139]={box=&quot;st-shogun-s&quot;, wall={&quot;st-white4&quot;, &quot;fl-springboard&quot;, &quot;fl-abyss_fake&quot;}, inf={&quot;fl-springboard&quot;, &quot;fl-abyss_fake&quot;},
+-       outf={&quot;st-white1&quot;, &quot;st-black1&quot;, &quot;fl-springboard&quot;, &quot;fl-abyss_fake&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;b&quot;},
+-[140]={box=&quot;st-brownie&quot;, wall={&quot;st-stone1&quot;, &quot;fl-leavesb&quot;}, inf={&quot;fl-floor_001&quot;, &quot;fr:3.0&quot;},
+-       outf={&quot;fl-leavese4&quot;, &quot;fl-leavese2&quot;, &quot;fl-leavese1&quot;, &quot;fl-leavese3&quot;, &quot;al:waves&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[141]={box=&quot;st-brownie&quot;, wall={&quot;st-rock4&quot;, &quot;fl-leavesb&quot;}, inf={&quot;fl-bluegreenx&quot;, &quot;mf:1.0&quot;, &quot;fr:3.0&quot;},
+-       outf={&quot;fl-water&quot;, &quot;st-rock10&quot;, &quot;st-invisible&quot;, &quot;st-invisible&quot;, &quot;st-invisible&quot;, &quot;al:waves&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[142]={box=&quot;st-glass2_move&quot;, wall={&quot;st-glass1&quot;, &quot;fl-leavesb&quot;}, inf=&quot;fl-leavesb&quot;,
+-       outf={&quot;fl-leavesc4&quot;, &quot;fl-leavesd2&quot;, &quot;fl-leavesc2&quot;, &quot;fl-leavese3&quot;, &quot;al:waves&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[143]={box=&quot;st-block&quot;, wall={&quot;st-rock5&quot;, &quot;fl-stwood&quot;}, inf=&quot;fl-wood&quot;,
+-       outf={&quot;st-disco-light&quot;, &quot;fl-wood1&quot;, &quot;fl-wood1&quot;, &quot;fl-wood1&quot;, &quot;fl-wood2&quot;, &quot;al:waves&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[144]={box=&quot;st-wood&quot;, wall=&quot;st-rock6&quot;, inf=&quot;fl-bluegreen&quot;,
+-       outf={&quot;fl-space&quot;, &quot;it-squashed&quot;, &quot;it-sensor&quot;, &quot;it-sensor&quot;, &quot;it-sensor&quot;, &quot;al:random&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;d&quot;},
+-[145]={box=&quot;st-glass1_move&quot;, wall={&quot;st-greenbrown&quot;, &quot;fl-sand&quot;}, inf=&quot;fl-dunes&quot;,
+-       outf={&quot;fl-sand&quot;, &quot;it-landmine&quot;, &quot;it-booze-broken&quot;, &quot;it-none&quot;, &quot;it-none&quot;, &quot;it-none&quot;, &quot;it-none&quot;, &quot;it-none&quot;, &quot;it-none&quot;, &quot;al:random&quot;},
+-       door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[146]={box=&quot;st-wood&quot;, wall=&quot;st-rock1&quot;, inf=&quot;fl-black&quot;,
+-       outf={&quot;fl-abyss&quot;, &quot;st-grate1&quot;, &quot;st-none&quot;, &quot;st-none&quot;, &quot;st-none&quot;, &quot;st-none&quot;, &quot;st-none&quot;, &quot;st-none&quot;,
+-       &quot;st-none&quot;, &quot;st-none&quot;, &quot;st-none&quot;, &quot;st-none&quot;, &quot;al:random&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;, white = true},
+-[147]={box=&quot;st-wood&quot;, wall=&quot;st-whiteballs&quot;, inf=&quot;fl-gray&quot;, white = true,
+-       outf={&quot;fl-gradient5&quot;, &quot;fl-gradient6&quot;, &quot;fl-gradient7&quot;, &quot;fl-gradient8&quot;, &quot;al:waves&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[148]={box=&quot;st-shogun-s&quot;, wall=&quot;st-metal&quot;, inf=&quot;fl-rough-blue&quot;, white = true,
+-       outf={&quot;fl-rough-red&quot;, &quot;fl-rough-blue&quot;, &quot;st-disco-light&quot;}, door=&quot;st-door_a&quot;, oxyd=&quot;a&quot;},
+-[149]={box=&quot;st-shogun-s&quot;, wall=&quot;st-yellow&quot;, inf=&quot;fl-wood&quot;, outf=&quot;fl-swamp&quot;, door=&quot;st-door_a&quot;,
+-       oxyd=&quot;c&quot;, goal=&quot;it-shogun-s&quot;, white = true},
+-[150]={box=&quot;st-flrock&quot;, wall=&quot;st-redrock&quot;, inf=&quot;fl-brick&quot;, outf=&quot;fl-space&quot;, door=&quot;st-door_a&quot;, oxyd=&quot;c&quot;, white = true},
+-}
+-
+---
+--- Remaining walls:
+---  st-beads, st-brick, st-bumps, st-camouflage, st-fakeoxyd,
+---  st-glass1/2/3, st-likeoxyda/b/c/d[-open], [st-marble],
+---  st-redrock, st-rock2/7/8/9/10, st-stone1/2, st-panel,
+---  st-woven, st-yellow
+---
+--- Remaining boxes:
+---  st-camouflage_move, st-glass1/2_move, st-rock1_move, st-flhay,
+---  st-flrock
+---
+--- Remaining floors (inside):
+---  fl-abyss_fake, fl-black, fl-bluegreen[x], fl-brick, fl-bumps,
+---  fl-concrete, fl-darkgray, fl-dunes, [fl-floor_001], fl-gravel,
+---  fl-gray, fl-hay, fl-leavesb/c/d/e*, fl-lightgray, fl-marble,
+---  fl-metal, fl-mortar, [fl-normal[_x]], fl-plank, fl-red,
+---  fl-rock, fl-rough-blue, fl-sahara, fl-sand, fl-springboard,
+---  fl-stone, fl-stwood, [fl-trigger], fl-woven
+---
+--- have: fl-acblack, fl-bluegray, fl-himalaya, fl-leaves,
+---       fl-light, fl-rough, fl-rough-red, fl-samba, fl-tigris,
+---       fl-white, fl-wood
+---
+--- outside (have): fl-abyss, fl-leaves, fl-rough-blue, fl-sahara,
+---                 fl-space, fl-water
+---
+-
+ ------------------------------------------------------------------------
+--- Global variables
+-------------------------------------------------------------------------
+-
+-number_goals = 0
+-goals_filled = 0
+-endphase_started = false
+-levelw = 0
+-levelh = 0
+-level_array = {}
+-chosen_design = default_design
+-
+-------------------------------------------------------------------------
+ -- Tools
+ ------------------------------------------------------------------------
+ 
+@@ -315,12 +86,20 @@
+   error(st)
+ end
+ 
+-function is_floor(s)       return string.sub(s, 1, 3) == &quot;fl-&quot;  end
+-function is_stone(s)       return string.sub(s, 1, 3) == &quot;st-&quot;  end
+-function is_item(s)        return string.sub(s, 1, 3) == &quot;it-&quot;  end
+-function is_algorithm(s)   return string.sub(s, 1, 3) == &quot;al:&quot;  end
+-function is_friction(s)    return string.sub(s, 1, 3) == &quot;fr:&quot;  end
+-function is_mousefactor(s) return string.sub(s, 1, 3) == &quot;mf:&quot;  end
++function is_floor(s)        return string.sub(s, 1, 3) == &quot;fl-&quot;  end
++function is_stone(s)        return string.sub(s, 1, 3) == &quot;st-&quot;  end
++function is_item(s)         return string.sub(s, 1, 3) == &quot;it-&quot;  end
++function is_actor(s)        return string.sub(s, 1, 3) == &quot;ac-&quot;  end
++function is_algorithm(s)    return string.sub(s, 1, 3) == &quot;al:&quot;  end
++function is_friction(s)     return string.sub(s, 1, 3) == &quot;fr:&quot;  end
++function is_mousefactor(s)  return string.sub(s, 1, 3) == &quot;mf:&quot;  end
++function char_is_wall(ch)   return string.find(ch, &quot;[#]&quot;)       == 1  end
++function char_is_goal(ch)   return string.find(ch, &quot;[\.\*\+N]&quot;) == 1  end
++function char_is_box(ch)    return string.find(ch, &quot;[$\*]&quot;)     == 1  end
++function char_is_chess(ch)  return string.find(ch, &quot;[nN]&quot;)      == 1  end
++function char_is_player(ch) return string.find(ch, &quot;[@\+]&quot;)     == 1  end
++function char_is_outf(ch)   return string.find(ch, &quot;[ ]&quot;)       == 1  end
++function char_is_inf(ch)    return not char_is_outf(ch)               end
+ 
+ -- combine_tables returns a table consisting of all entries of the
+ -- entries of OVER_TABLE: OVER_TABLE is a table of tables, say
+@@ -357,10 +136,85 @@
+   end
+ end
+ 
+--- set_element sets element name EL_STR of design DESIGN at x, y.
+-function set_element(x, y, design, el_str)
+-  local el = design[el_str]
++-- no_way_near returns a boolean whether (x,y) is not
++-- reachable by the marble.
++function no_way_near(x, y, sokoarea_number)
++  local la = sokoarea[sokoarea_number].level_array
++  local char_n = (la[y-1] or {})[x] or &quot;-&quot;
++  local char_s = (la[y+1] or {})[x] or &quot;-&quot;
++  local char_w = (la[y] or {})[x-1] or &quot;-&quot;
++  local char_e = (la[y] or {})[x+1] or &quot;-&quot;
++  return     (char_is_outf(char_n) or char_is_wall(char_n))
++         and (char_is_outf(char_s) or char_is_wall(char_s))
++         and (char_is_outf(char_w) or char_is_wall(char_w))
++         and (char_is_outf(char_e) or char_is_wall(char_e))
++end
+ 
++-- one_tile_far_from_way checks whether (x,y) is reachable
++-- by the marble through exactly one stone. If not, it returns
++-- nil, else the position of this stone.
++function one_tile_far_from_way(x, y, sokoarea_number)
++  -- first of all, make sure there is no direct way 
++  --if not no_way_near(x, y, sokoarea_number) then
++  --  return nil
++  --end
++  -- now analyse the following positions relative to our
++  -- center C = (x,y), marked by stars:
++  --   *
++  --  *.*
++  -- *.C.*
++  --  *.*
++  --   *
++  local la = sokoarea[sokoarea_number].level_array
++  local neighborhood = {          {x= 0, y=-2},
++                    {x=-1, y=-1},               {x= 1, y=-1},
++      {x=-2, y= 0},                                           {x= 2, y= 0},
++                    {x=-1, y= 1},               {x= 1, y= 1},
++                                  {x= 0, y= 2},                            }
++  local char = {}
++  for j, k in pairs(neighborhood) do
++    char[j] = {ch = (la[y+k.y] or {})[x+k.x] or &quot;&quot;, nr = j}
++  end
++  -- from this list, remove all empty positions, walls and outf
++  local char_backup = char
++  for j, v in pairs(char_backup) do
++    if char_is_outf(v.ch) or char_is_wall(v.ch) or (v.ch == &quot;&quot;) then
++      table.remove(char, j)
++    end
++  end
++  -- return nil or a random element of char
++  if table.getn(char) == 0 then
++    return nil
++  else
++    local n = neighborhood[char[random(1, table.getn(char))].nr]
++    return {x=x+n.x, y=y+n.y}
++  end
++end
++
++-- check_chess returns a boolean whether a chess stone is used
++-- in the sokoarea SOKOAREA_NUMBER.
++function check_chess(sokoarea_number)
++  mydebug(sokoarea[1].level_array[3][3])
++  for y = 1, sokoarea[sokoarea_number].array_height do
++    for x = 1, sokoarea[sokoarea_number].array_width do
++      local ch = sokoarea[sokoarea_number].level_array[y][x]
++      if char_is_chess(ch) then
++        return true
++      end
++    end
++  end
++  return false
++end
++
++-- set_element sets element name EL_STR of area SOKOAREA_NUMBER at x, y.
++-- EL_DESIGN is optional and overrides the design of the given sokoarea.
++function set_element(x, y, sokoarea_number, el_str, el_design)
++  if type(sokoarea[sokoarea_number]) ~= &quot;table&quot; then
++    myerror(&quot;Sokoarea table number &quot;..sokoarea_number..&quot; broken or not existing.&quot;)
++  end
++  local el = el_design or sokoarea[sokoarea_number].design[el_str]
++  local in_endphase = sokoarea[sokoarea_number].endphase_started
++
+   if (type(x) ~= &quot;number&quot;) or (type(y) ~= &quot;number&quot;) then
+     myerror(&quot;libsoko.set_element: Coordinates are not numbers!&quot;)
+     return
+@@ -405,31 +259,44 @@
+   ----------- stone ---------------
+   if table.getn(st) &gt; 0 then
+     local stkind = st[choose_among_multiples(x, y, table.getn(st), multiple_alg)]
+-    if stkind ~= &quot;st-none&quot; then
+-      created_objects.st = set_stone(stkind, x, y)
++    local existing_stone = enigma.GetStone(x, y)
++    if (not existing_stone) or (enigma.GetKind(existing_stone) ~= &quot;st-oxyd&quot;) then
++      if stkind == &quot;st-none&quot; then
++        kill_stone(x, y)
++      else
++        created_objects.st = set_stone(stkind, x, y)
++      end
+     end
+   end
+ 
+   ----------- item ----------------
+   if table.getn(it) &gt; 0 then
+     local itkind = it[choose_among_multiples(x, y, table.getn(it), multiple_alg)]
+-    if itkind ~= &quot;it-none&quot; then
++    if sokoarea[sokoarea_number].uses_chess and not in_endphase then
++      itkind = &quot;it-trigger&quot;
++    end    
++    if itkind == &quot;it-none&quot; then
++      kill_item(x, y)
++    else
+       created_objects.it = set_item(itkind, x, y)
+     end
+-    if created_objects.it then
++    if created_objects.it and not in_endphase then
+       enigma.SetAttrib(created_objects.it, &quot;action&quot;, &quot;callback&quot;)
+       enigma.SetAttrib(created_objects.it, &quot;target&quot;, &quot;goal_trigger&quot;)
+       enigma.SetAttrib(created_objects.it, &quot;box&quot;, 0)
+-      number_goals = number_goals + 1
++      enigma.SetAttrib(created_objects.it, &quot;sokoarea&quot;, sokoarea_number)
+     end
++    if (el_str == &quot;goal&quot;) and not in_endphase then
++      sokoarea[sokoarea_number].number_goals = 
++          sokoarea[sokoarea_number].number_goals + 1
++    end
+   end
+   
+   return created_objects
+ end
+ 
+--- draw_level_array draws a sokoball level from global variable LEVEL_ARRAY
+--- with design CHOSEN_DESIGN (global var, a ready-for-use design table)
+--- at offset DX, DY. If OUTSIDE is true, the outside will be drawn as well.
++-- draw_level_array draws the sokoarea SOKOAREA_NUMBER at offset DX, DY.
++-- If OUTSIDE is true, the outside will be drawn as well.
+ -- DRAW_ACTOR determines whether the actor should be placed.
+ -- draw_level_array will NOT
+ --  - create the world
+@@ -438,14 +305,16 @@
+ --  - solve the level
+ -- This function is not intended to be used in level programming
+ -- directly, use &quot;draw_sokoball&quot; instead.
+-function draw_level_array(dx, dy, outside, draw_actor)
+-  local array_width = table.getn(level_array[1])
+-  local array_height = table.getn(level_array)
++function draw_level_array(sokoarea_number, outside, draw_actor)
++  local nr = sokoarea_number or 1
++  local design = sokoarea[nr].design
++  local dx = sokoarea[nr].offset.x
++  local dy = sokoarea[nr].offset.y
+ 
+   -- create level
+-  for y = 0, array_height - 1 do
+-    for x = 0, array_width - 1 do
+-      local ch = level_array[y+1][x+1]
++  for y = 0, sokoarea[nr].array_height - 1 do
++    for x = 0, sokoarea[nr].array_width - 1 do
++      local ch = sokoarea[nr].level_array[y+1][x+1]
+       local obj = {}
+       
+       -- set floor outside or floor inside
+@@ -453,35 +322,35 @@
+         if outside then
+           kill_stone(x+dx, y+dy)
+           kill_item(x+dx, y+dy)
+-          set_element(x+dx, y+dy, chosen_design, &quot;outf&quot;)
++          set_element(x+dx, y+dy, nr, &quot;outf&quot;)
+         end
+       else
+         kill_stone(x+dx, y+dy)
+         kill_item(x+dx, y+dy)
+-        obj = set_element(x+dx, y+dy, chosen_design, &quot;inf&quot;)
++        obj = set_element(x+dx, y+dy, nr, &quot;inf&quot;)
+         enigma.SetAttrib(obj.fl, &quot;freeze_check&quot;, true)
+       end
+       
+       -- Walls
+-      if (ch == &quot;#&quot;) then
+-        obj = set_element(x+dx, y+dy, chosen_design, &quot;wall&quot;)
++      if char_is_wall(ch) then
++        obj = set_element(x+dx, y+dy, nr, &quot;wall&quot;)
+       end
+       
+       -- Goals
+-      if (ch == &quot;+&quot;) or (ch == &quot;*&quot;) or (ch == &quot;.&quot;) or (ch == &quot;N&quot;) then
+-        obj = set_element(x+dx, y+dy, chosen_design, &quot;goal&quot;)
++      if char_is_goal(ch) then
++        obj = set_element(x+dx, y+dy, nr, &quot;goal&quot;)
+         enigma.SetAttrib(enigma.GetFloor(x+dx, y+dy), &quot;freeze_check&quot;, false)
+       end
+       
+       -- Boxes
+-      if (ch == &quot;$&quot;) or (ch == &quot;*&quot;) then
+-        obj = set_element(x+dx, y+dy, chosen_design, &quot;box&quot;)
++      if char_is_box(ch) then
++        obj = set_element(x+dx, y+dy, nr, &quot;box&quot;)
+         enigma.SetAttrib(obj.st, &quot;freeze_check&quot;, true)
+       end
+       
+       -- Chess-Stones
+-      if (ch == &quot;n&quot;) or (ch == &quot;N&quot;) then
+-        if chosen_design[&quot;white&quot;] then
++      if char_is_chess(ch) then
++        if design[&quot;white&quot;] then
+           set_stone(&quot;st-chess_white&quot;, x + dx, y + dy)
+         else
+           set_stone(&quot;st-chess_black&quot;, x + dx, y + dy)
+@@ -489,11 +358,15 @@
+       end
+       
+       -- Actors
+-      if ((ch == &quot;@&quot;) or (ch == &quot;+&quot;)) and draw_actor then
+-        if chosen_design[&quot;white&quot;] then
+-          set_actor(&quot;ac-whiteball&quot;, x + 0.5 + dx, y + 0.5 + dy, { name = &quot;marble&quot;, controllers = 1, player = 0 })
++      if char_is_player(ch) and draw_actor then
++        sokoarea[nr].actor_count = sokoarea[nr].actor_count + 1
++        local acname = &quot;marble_&quot;..nr..&quot;_&quot;..sokoarea[nr].actor_count
++        if design[&quot;white&quot;] then
++          set_actor(&quot;ac-whiteball&quot;, x + 0.5 + dx, y + 0.5 + dy,
++              { name = acname, controllers = 1, player = 0 })
+         else
+-          set_actor(&quot;ac-blackball&quot;, x + 0.5 + dx, y + 0.5 + dy, { name = &quot;marble&quot; })
++          set_actor(&quot;ac-blackball&quot;, x + 0.5 + dx, y + 0.5 + dy,
++              { name = acname })
+         end
+       end
+     end
+@@ -534,8 +407,8 @@
+     ..&quot;[ \-\#\_\$\.@\*0-9Nn\+]*&quot;  -- again all allowed characters except line ending
+   local in_level = false
+   for line in string.gfind(multilevel, &quot;([^\n\|]*)[\n\|]&quot;) do
+-    if string.match(line, level_line_match) == line then
+-      mydebug(&quot;Level &quot;..current_level..&quot; : |&quot;..line..&quot;|&quot;)
++    local start_match, end_match = string.find(line, level_line_match)
++    if (start_match == 1) and (end_match == string.len(line)) then
+       if in_level then
+         if current_level == (sublevel_number or 1) then
+           level = level..line..&quot;\n&quot;
+@@ -548,6 +421,7 @@
+           level = line..&quot;\n&quot;
+         end
+       end
++      mydebug(&quot;Level &quot;..current_level..&quot; : |&quot;..line..&quot;|&quot;)
+     else
+       in_level = false
+     end
+@@ -561,7 +435,7 @@
+   end
+ 
+   -- parse the string LEVEL
+-  level_array = {}
++  local level_array = {}
+   local line = 1
+   level_array[line] = {}
+   local count = 0   -- (a simple counter for runlength encoding)
+@@ -592,67 +466,113 @@
+     end    
+   end
+   
+-  -- normalize level height
+-  local lastline = nil
+-  for j = 0, line - 1 do
+-    if (not lastline) and (table.getn(level_array[line - j]) == 0) then
+-      table.remove(level_array, line - j)
+-    else
+-      if (not lastline) then 
+-        lastline = line - j
+-      end
+-    end
+-  end
+-  while table.getn(level_array[1]) == 0 do
+-    table.remove(level_array, 1)
+-    lastline = lastline - 1
+-  end
+-  if lastline ~= table.getn(level_array) then
+-    myerror(&quot;Length of sokoball level is corrupt: Last line is &quot;..lastline
+-            ..&quot;, but table has length &quot;..table.getn(level_array)..&quot;!&quot;)
+-  end
+-  if lastline &lt; 2 then
+-    myerror(&quot;Length of sokoball level is only &quot;..lastline..&quot;!&quot;)
+-  end
+-  mydebug(&quot;Sokoball level height: &quot;..lastline)
+-  
+   -- normalize level width
+   local maxwidth = 0
+-  for j = 1, lastline do
++  local maxheight = table.getn(level_array)
++  for j = 1, maxheight do
+     maxwidth = math.max(maxwidth, table.getn(level_array[j]))
+   end
+-  for j = 1, lastline do
++  for j = 1, maxheight do
+     while table.getn(level_array[j]) &lt; maxwidth do
+       table.insert(level_array[j], &quot;-&quot;)
+     end
+-  end
+-  
++  end  
++
+   -- mark outside floor fields from the border
+   function check_for_outside(x, y)
+     if level_array[y][x] == &quot;-&quot; then
+       level_array[y][x] = &quot; &quot;
+       if y &gt; 1         then  check_for_outside(x, y - 1)  end
+-      if y &lt; lastline  then  check_for_outside(x, y + 1)  end
++      if y &lt; maxheight then  check_for_outside(x, y + 1)  end
+       if x &gt; 1         then  check_for_outside(x - 1, y)  end
+       if x &lt; maxwidth  then  check_for_outside(x + 1, y)  end
+     end
+   end
+-  for y = 1, lastline do
++  for y = 1, maxheight do
+     check_for_outside(1, y)
+     check_for_outside(maxwidth, y)
+   end
+   for x = 1, maxwidth do
+     check_for_outside(x, 1)
+-    check_for_outside(x, lastline)
++    check_for_outside(x, maxheight)
+   end
+-  
+-  return level_array
+-end
+ 
++  -- replace redundant walls by outside
++  for x = 1, maxwidth do
++    for y = 1, maxheight do
++      if char_is_wall(level_array[y][x]) then
++        local redundant = true
++        for dx = -1, 1 do
++          for dy = -1, 1 do
++            local ch = (level_array[y+dy] or {})[x+dx] or &quot; &quot;
++            redundant = redundant
++                          and (char_is_wall(ch) or (ch == &quot; &quot;))
++          end
++        end
++        if redundant then
++          level_array[y][x] = &quot; &quot;
++        end
++      end
++    end
++  end
+ 
++  -- trim level
++  local border_n = maxheight
++  local border_s = 1
++  local border_w = maxwidth
++  local border_e = 1
++  for x = 1, maxwidth do
++    for y = 1, maxheight do
++      if not char_is_outf(level_array[y][x]) then
++        border_n = math.min(border_n, y)
++        border_s = math.max(border_s, y)
++        border_w = math.min(border_w, x)
++        border_e = math.max(border_e, x)        
++      end
++    end
++  end
++  if (border_n &gt;= border_s) or (border_w &gt;= border_e) then
++    myerror(&quot;libsoko: Level is empty or trimming code is corrupt.&quot;)
++  end
++  mydebug(&quot;N: &quot;..border_n..&quot;, S: &quot;..border_s
++      ..&quot;, W: &quot;..border_w..&quot;, E: &quot;..border_e)
++  local trimmed_array = {}
++  for y = border_n, border_s do
++    trimmed_array[y - border_n + 1] = {}
++    line = &quot;&quot;
++    for x = border_w, border_e do
++      trimmed_array[y - border_n + 1][x - border_w + 1] = level_array[y][x]
++      line = line .. level_array[y][x]
++    end
++    mydebug(&quot;|&quot;..line..&quot;|&quot;)
++  end
++  mydebug(table.getn(trimmed_array)..&quot; : &quot;..table.getn(trimmed_array[1]))
++  return trimmed_array
++end
+ 
++-- new_sokoarea initialises a new entry in the global
++-- sokoarea table and returns its number.
++function new_sokoarea()
++  sokoarea_number = table.getn(sokoarea) + 1
++  sokoarea[sokoarea_number] = {
++    level_array = {},
++    design = default_design,
++    number_goals = 0,
++    goals_filled = 0,
++    actor_count = 0,
++    endphase_started = false,
++    offset = {0, 0},
++    level_width = nil,
++    level_height = nil,
++    uses_chess = false,
++    goal_hook = nil,
++    endphase_hook = endphase
++  }
++  return sokoarea_number
++end
++
+ ------------------------------------------------------------------------
+--- Choosing the Designnumber
++-- Choosing the Designnumber, Random numbers
+ ------------------------------------------------------------------------
+ 
+ -- design_from_level determines a random design number, based on the
+@@ -660,7 +580,10 @@
+ -- is inspired by the horseshoe mapping and thereby deterministically
+ -- chaotic. To illustrate, why we don't use a simpler calculation
+ -- using random seeds pseudo-random number generators, we expose on
+--- this nice mathematical problem a bit deeper.
++-- this nice mathematical problem a bit deeper. And although the
++-- algorithm we use to determine design numbers is as well be used
++-- in other situations in this library, we stick to the design number
++-- as concrete example.
+ --
+ -- Main Problem:
+ --
+@@ -764,7 +687,7 @@
+     b = 0
+     for y = 1, lastline do
+       for x = 1, maxwidth do
+-        if level_array[y][x] == &quot;#&quot; then
++        if char_is_wall(level_array[y][x]) then
+           if 2*b + 1 &lt; j then
+             b = 2*b + 1
+           else
+@@ -778,14 +701,14 @@
+         end
+       end
+     end
+-    --mywarning(b)
+   until (b == 0) or (j == 1)
+-  mywarning(&quot;Calculation ended. Result: &quot;..j)
++  mydebug(&quot;Calculation ended. Result: &quot;..j)
+   return j
+ end
+ 
+-function design_from_level(level_array)
+-  return design_list[number_from_level(level_array, table.getn(design_list))]
++function design_from_level(level_array, list_length)
++  return design_list[number_from_level(level_array,
++            list_length or table.getn(design_list))]
+ end
+ 
+ -- design_from_description takes a description of the design as argument
+@@ -794,80 +717,23 @@
+ --  - a number specifying the number of the design in the design list
+ --  - &quot;nil&quot; plus a level_array from which a design from the design
+ --    list will be chosen.
+-function design_from_description(design, level_array)
++function design_from_description(design_description, level_array)
+   -- choose design
+-  local chosen_design = {}
+-  if type(design) == &quot;number&quot; then
+-    chosen_design = design_list[design]
+-  elseif type(design) == &quot;table&quot; then
+-    chosen_design = design
+-  elseif (type(design) == &quot;nil&quot;) and (type(level_array) == &quot;table&quot;) then
+-    chosen_design = design_from_level(level_array)
++  local design = {}
++  if type(design_description) == &quot;number&quot; then
++    design = design_list[design_description]
++  elseif type(design_description) == &quot;table&quot; then
++    design = design_description
++  elseif (type(design_description) == &quot;nil&quot;) and (type(level_array) == &quot;table&quot;) then
++    design = design_from_level(level_array)
+   else
+     myerror(&quot;Can't make sense of design type &quot;..type(design)..&quot;.&quot;)
+   end
+   -- fill chosen design with default values where neccessary, and return
+-  return combine_tables({chosen_design, default_design})
++  return combine_tables({design, default_design})
+ end
+ 
+-------------------------------------------------------------------------
+--- Goal Trigger and Oxyd Opening (Endphase)
+-------------------------------------------------------------------------
+ 
+-function goal_trigger(onoff, sender)
+-  local x, y = enigma.GetPos(sender)
+-  if(enigma.GetAttrib(sender, &quot;box&quot;) == 0) then
+-    if enigma.GetStone(x,y) then
+-      enigma.SetAttrib(sender, &quot;box&quot;, 1)
+-      goals_filled = goals_filled + 1
+-    end
+-  else
+-    enigma.SetAttrib(sender, &quot;box&quot;, 0)
+-    goals_filled = goals_filled - 1
+-  end
+-  if (goals_filled == number_goals) and not endphase_started then
+-    endphase_started = true
+-    endphase()
+-  end
+-end
+-
+-function prepare_oxyds(oxop)
+-end
+-
+-function endphase()
+-  local x, y = enigma.GetPos(enigma.GetNamedObject(&quot;marble&quot;))
+-  if x &gt; 10 then
+-    x = x - 2
+-  end
+-  if y &gt; 6 then
+-    y = y - 2
+-  end
+-  for j = 0, 2 do
+-    oxyd(x+j, y-1)
+-    oxyd(x-1, y+j)
+-    oxyd(x+j, y+3)
+-    oxyd(x+3, y+j)
+-    for k = 0, 2 do
+-      kill_stone(x+j, y+k)
+-      kill_item(x+j, y+k)
+-      set_element(x+j, y+k, chosen_design, &quot;inf&quot;)
+-    end
+-  end
+-  set_stone(&quot;st-fart&quot;, x+1, y+1)
+-  oxyd_shuffle()
+-end
+-
+--- The 75 first designs use the following boxes:
+---  st-block  -&gt;  st-black, st-blocker, st-brake, st-laser, fl-swamp
+---  st-brownie  -&gt;  st-coinslot, st-pull
+---  st-glass_move  -&gt;  cherry
+---  st-greenbrown_move  -&gt;  hole
+---  st-marble_move  -&gt;  hole
+---  st-rock3_move  -&gt;  *
+---  st-shogun  -&gt;  st-shogun-m (not completely!)
+---  st-wood[-growing]  -&gt;  fl-swamp
+-
+-
+ ------------------------------------------------------------------------
+ -- Interface functions
+ ------------------------------------------------------------------------
+@@ -882,121 +748,173 @@
+ -- number is created from LEVEL which uniquely* determines a design
+ -- from the design list. *Uniquely means: The design might change
+ -- when the design list is enlarged.
++-- Returns width and height of new level.
+ --
+ function create_sokoball(level, sublevel, design)
++  -- check that this is the first sokoarea, and initialise it.
++  if type(sokoarea) ~= &quot;table&quot; then
++    myerror(&quot;No sense in sokoarea of type &quot;..type(sokoarea)..&quot;.&quot;)
++  end
++  if table.getn(sokoarea) ~= 0 then
++    myerror(&quot;Tried to use create_sokoball twice. Use draw_sokoball instead.&quot;)
++  end
++  new_sokoarea()
++
+   -- unpack level
+-  level_array = unpack_level(level, sublevel)
++  sokoarea[1].level_array = unpack_level(level, sublevel)
+ 
+   -- calculate screen position
+   -- Important Note: level_array is reversely indexed, i.e.
+   --                 level_array[y-coordinate][x-coordinate]
+-  local array_width = table.getn(level_array[1])
+-  local array_height = table.getn(level_array)
+-  levelw = math.max(array_width, 20)
+-  levelh = math.max(array_height, 13)
++  sokoarea[1].array_width = table.getn(sokoarea[1].level_array[1])
++  sokoarea[1].array_height = table.getn(sokoarea[1].level_array)
++  mydebug(sokoarea[1].array_height..&quot; : &quot;..sokoarea[1].array_width)
++  sokoarea[1].uses_chess = check_chess(1)
++  local levelw = math.max(sokoarea[1].array_width, 20)
++  local levelh = math.max(sokoarea[1].array_height, 13)
++  sokoarea[1].level_width = levelw
++  sokoarea[1].level_height = levelh
+   create_world(levelw, levelh)
+   
+   -- Calculate padding
+   local dx = 0
+   local dy = 0
+-  if levelw &gt; array_width then
+-    dx = math.floor((levelw - array_width) / 2)
++  if levelw &gt; sokoarea[1].array_width then
++    dx = math.floor((levelw - sokoarea[1].array_width) / 2)
+   end
+-  if levelh &gt; array_height then
+-    dy = math.floor((levelh - array_height) / 2)
++  if levelh &gt; sokoarea[1].array_height then
++    dy = math.floor((levelh - sokoarea[1].array_height) / 2)
+   end
+-  
+-  chosen_design = design_from_description(design, level_array)
++  sokoarea[1].offset = {x = dx, y = dy}
+ 
++  sokoarea[1].design = 
++      design_from_description(design, sokoarea[1].level_array)
++
+   for x = 0, levelw - 1 do
+     for y = 0, levelh - 1 do
+-      set_element(x, y, chosen_design, &quot;outf&quot;)
++      set_element(x, y, 1, &quot;outf&quot;)
+     end
+   end
+-  
+-  draw_level_array(dx, dy, true, true)
+ 
+-  if number_goals &lt; 1 then
++  draw_level_array(1, true, true)
++
++  if sokoarea[1].number_goals &lt; 1 then
+     myerror(&quot;No goals defined!\n&quot;)
+   end
+ 
+-  -- determine oxop (way to open oxyds)
+-  local oxop = chosen_design.oxop
+-  prepare_oxyds(oxop)
++  -- prepare oxyds for end phase
++  prepare_endphase(1)
+ 
++  -- Enigma's global variables
++  enigma.ConserveLevel = FALSE
+   enigma.ShowMoves = TRUE
+   display.SetFollowMode(display.FOLLOW_SMOOTH)
+-  enigma.ConserveLevel = FALSE
++
++  -- return level width and height
++  return levelw, levelh
+ end
+ 
+ -- recreate_sokoball is used for design development only.
+--- It redraws the current level from scratch, but not the world
+--- and doesn't add another actor.
+-function recreate_sokoball(design)
+-  -- calculate screen position
+-  -- Important Note: level_array is reversely indexed, i.e.
+-  --                 level_array[y-coordinate][x-coordinate]
+-  local array_width = table.getn(level_array[1])
+-  local array_height = table.getn(level_array)
+-  levelw = math.max(array_width, 20)
+-  levelh = math.max(array_height, 13)
++-- It redraws the sokoarea with number sokoarea_number (or 1)
++-- from scratch, but not the world and doesn't add another
++-- actor.
++--
++function recreate_sokoball(design, sokoarea_number)
++  local nr = sokoarea_number or 1  
++  sokoarea[nr].design =
++      design_from_description(design, sokoarea[nr].level_array)
+   
+-  -- Calculate padding
+-  local dx = 0
+-  local dy = 0
+-  if levelw &gt; array_width then
+-    dx = math.floor((levelw - array_width) / 2)
+-  end
+-  if levelh &gt; array_height then
+-    dy = math.floor((levelh - array_height) / 2)
+-  end
+-  
+-  chosen_design = design_from_description(design, level_array)
+-
+-  for x = 0, levelw - 1 do
+-    for y = 0, levelh - 1 do
+-      kill_stone(x, y)
+-      kill_item(x, y)
+-      set_element(x, y, chosen_design, &quot;outf&quot;)
++  if sokoarea[nr].level_width and sokoarea[nr].level_height then
++    for x = 0, sokoarea[nr].level_width - 1 do
++      for y = 0, sokoarea[nr].level_height - 1 do
++        kill_stone(x, y)
++        kill_item(x, y)
++        set_element(x, y, nr, &quot;outf&quot;)
++      end
+     end
++  else
++    for x = 0, sokoarea[nr].array_width - 1 do
++      for y = 0, sokoarea[nr].array_height - 1 do
++        local rx = x + sokoarea[nr].offset.x
++        local ry = y + sokoarea[nr].offset.y
++        kill_stone(rx, ry)
++        kill_item(rx, ry)
++        set_element(rx, ry, nr, &quot;outf&quot;)
++      end
++    end
+   end
+-  
+-  draw_level_array(dx, dy, true, false)
+ 
+-  if number_goals &lt; 1 then
++  sokoarea[nr].number_goals = 0
++  sokoarea[nr].goals_filled = 0
++  sokoarea[nr].endphase_started = false
++
++  draw_level_array(nr, true, false)
++
++  if sokoarea[nr].number_goals &lt; 1 then
+     myerror(&quot;No goals defined!\n&quot;)
+   end
+ 
+-  -- determine oxop (way to open oxyds)
+-  local oxop = chosen_design.oxop
+-  prepare_oxyds(oxop)
+-
+-  enigma.ShowMoves = TRUE
+-  display.SetFollowMode(display.FOLLOW_SMOOTH)
+-  enigma.ConserveLevel = FALSE
++  -- prepare oxyds for end phase
++  prepare_endphase(nr)
++  mywarning(sokoarea[nr].design.endp.alg)
+ end
+ 
+--- draw_sokoball draws a sokoball level from argument LEVEL with design
+--- DESIGN (see create_sokoball) at offset DX, DY. It's arguments are
+--- identical to those of create_sokoball. Whereas create_sokoball should
+--- be used for sokoball-only levels, draw_sokoball can be used to add a
+--- sokoban type area to a larger level. The difference is as follows:
++-- draw_sokoball draws a sokoball level from argument LEVEL, sublevel
++-- number SUBLEVEL with design DESIGN (see create_sokoball) at offset
++-- DX, DY. It's arguments are identical to those of create_sokoball.
++-- Whereas create_sokoball should be used for sokoball-only levels,
++-- draw_sokoball can be used to add a sokoban type area to a larger
++-- level. The difference is as follows:
+ -- draw_sokoball will NOT:
+ --  - create the world before drawing to it
+ --  - draw the outside, such that it doesn't overwrite the rest of your
+ --    level
++--  - draw any oxyds
+ --  - solve the level when all triggers are activated.
+ -- DRAW_ACTOR determines if an actor should be placed.
+--- Note: Overwriting one sokoball part by another creates problems
++-- ENDPHASE_HOOK is the function to be called when all goals are filled.
++-- GOAL_HOOK is called when a single goal is triggered (see libsoko-endphase).
++-- (As a function, not as a string!) If it's nil, the standard
++-- function from this library will be called. This might be
++-- broken as no oxyds have been prepared.
++-- Note: Overwriting one sokoarea with another creates problems
+ --       with the triggers.
+ --
+-function draw_sokoball(dx, dy, level, sublevel, design, draw_actor)
++function draw_sokoball(dx, dy, level, sublevel, design, draw_actor,
++                       endphase_hook, goal_hook)
++  local nr = new_sokoarea()
+   -- unpack level
+-  level_array = unpack_level(level, sublevel)
+-  chosen_design = design_from_description(design, level_array)
+-  draw_level_array(dx, dy, false, draw_actor)
++  sokoarea[nr].level_array = unpack_level(level, sublevel)
++  sokoarea[nr].array_width = table.getn(sokoarea[nr].level_array[1])
++  sokoarea[nr].array_height = table.getn(sokoarea[nr].level_array)
++  sokoarea[nr].uses_chess = check_chess(nr)
++  sokoarea[nr].offset = {x = dx, y = dy}
++  sokoarea[nr].design = 
++      design_from_description(design, sokoarea[nr].level_array)
++  if hook ~= nil then
++    sokoarea[nr].endphase_hook = endphase_hook
++  end
++  sokoarea[nr].goal_hook = goal_hook
++  draw_level_array(nr, false, draw_actor)
+ end
+ 
++-- design_statistics uses mywarning to output statistics of
++-- the used algorithms
++function design_statistics()
++  alglist = {}
++  for k, v in pairs(design_list) do
++    if v.endp then
++      alg = v.endp.alg
++      if alg then
++        alglist[alg] = (alglist[alg] or 0) + 1
++      end
++    end
++  end
++  for k, v in pairs(alglist) do
++    mywarning(k..&quot;: &quot;..v)
++  end
++end
++
+     ]]&gt;&lt;/el:luamain&gt;
+     &lt;el:i18n&gt;
+     &lt;/el:i18n&gt;
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2007-10-11 22:59:06 UTC (rev 900)
++++ trunk/src/stones.cc	2007-10-11 23:48:36 UTC (rev 901)
+@@ -224,12 +224,12 @@
+ }
+ 
+ bool Stone::freeze_check() {
++    GridPos this_pos = this-&gt;get_pos();
+     // Check if stone and floor ask for freeze_check
+     if (!to_bool(this-&gt;getAttr(&quot;freeze_check&quot;)))
+         return false;
+     if (freeze_check_running)
+-        return true;
+-    GridPos this_pos = this-&gt;get_pos();
++        return false;
+     Floor *fl = GetFloor(this_pos);
+     if ((fl == NULL) || (!fl-&gt;is_freeze_check()))
+         return false;
+@@ -294,14 +294,14 @@
+         // avoid endless loop with bool freeze_check_running
+         if (Stone *st = GetStone(this_pos))
+             st-&gt;freeze_check_running = true;
+-        if (Stone *st = GetStone(move(this_pos, NORTH)))
+-            st-&gt;freeze_check();
+-        if (Stone *st = GetStone(move(this_pos, SOUTH)))
+-            st-&gt;freeze_check();
+-        if (Stone *st = GetStone(move(this_pos, EAST)))
+-            st-&gt;freeze_check();
+-        if (Stone *st = GetStone(move(this_pos, WEST)))
+-            st-&gt;freeze_check();
++        if (Stone *stn = GetStone(move(this_pos, NORTH)))
++            stn-&gt;freeze_check();
++        if (Stone *stn = GetStone(move(this_pos, SOUTH)))
++            stn-&gt;freeze_check();
++        if (Stone *stn = GetStone(move(this_pos, EAST)))
++            stn-&gt;freeze_check();
++        if (Stone *stn = GetStone(move(this_pos, WEST)))
++            stn-&gt;freeze_check();
+         if (Stone *st = GetStone(this_pos))
+             st-&gt;freeze_check_running = false;
+         return true;
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2007-10-11 22:59:06 UTC (rev 900)
++++ trunk/src/world.cc	2007-10-11 23:48:36 UTC (rev 901)
+@@ -1612,13 +1612,26 @@
+             st-&gt;freeze_check();
+             st = f-&gt;stone;
+         }
+-
++        
+         if (Item *it = f-&gt;item)
+             it-&gt;stone_change(st);
+ 
+         if (Floor *fl = f-&gt;floor)
+             fl-&gt;stone_change(st);
+ 
++        // Additional freeze checks of the surrounding stones.
++        // (Example: In a sokoball level, a stone has been pushed
++        //           onto a goal, thus it should not freeze. But
++        //           perhaps its neighbor is stuck!)
++        if (Stone *stn = GetStone(move(p, NORTH)))
++            stn-&gt;freeze_check();
++        if (Stone *stn = GetStone(move(p, SOUTH)))
++            stn-&gt;freeze_check();
++        if (Stone *stn = GetStone(move(p, EAST)))
++            stn-&gt;freeze_check();
++        if (Stone *stn = GetStone(move(p, WEST)))
++            stn-&gt;freeze_check();
++
+         lasers::MaybeRecalcLight(p);
+     }
+ }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000332.html">[Enigma-game-svn] r900 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="000334.html">[Enigma-game-svn] r902 - in trunk: lib-src/enigma-core src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#333">[ date ]</a>
+              <a href="thread.html#333">[ thread ]</a>
+              <a href="subject.html#333">[ subject ]</a>
+              <a href="author.html#333">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

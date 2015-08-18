@@ -1,0 +1,235 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1214 - in trunk/src: . others
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1214%20-%20in%20trunk/src%3A%20.%20others&In-Reply-To=%3C200807062016.m66KGNpL028208%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000647.html">
+   <LINK REL="Next"  HREF="000649.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1214 - in trunk/src: . others</H1>
+    <B>ral at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1214%20-%20in%20trunk/src%3A%20.%20others&In-Reply-To=%3C200807062016.m66KGNpL028208%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1214 - in trunk/src: . others">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Jul  6 22:16:23 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000647.html">[Enigma-game-svn] r1213 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="000649.html">[Enigma-game-svn] r1215 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#648">[ date ]</a>
+              <a href="thread.html#648">[ thread ]</a>
+              <a href="subject.html#648">[ subject ]</a>
+              <a href="author.html#648">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-07-06 22:16:16 +0200 (Sun, 06 Jul 2008)
+New Revision: 1214
+
+Modified:
+   trunk/src/others/Rubberband.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1: new API reengineering
+- Rubberband: min/max support
+  length limits that are handled in the physics engine
+
+
+Modified: trunk/src/others/Rubberband.cc
+===================================================================
+--- trunk/src/others/Rubberband.cc	2008-07-06 14:19:54 UTC (rev 1213)
++++ trunk/src/others/Rubberband.cc	2008-07-06 20:16:16 UTC (rev 1214)
+@@ -18,6 +18,7 @@
+  */
+ 
+ #include &quot;others/Rubberband.hh&quot;
++#include &quot;actors.hh&quot;
+ #include &quot;errors.hh&quot;
+ #include &quot;main.hh&quot;
+ #include &quot;world.hh&quot;
+@@ -61,10 +62,10 @@
+             ASSERT(innerThreshold &gt;= 0, XLevelRuntime, &quot;Rubberband: inner threshold is negative&quot;);
+         } else if (key == &quot;max&quot;) {
+             maxLength = val;
+-            ASSERT(minLength &gt;= 0, XLevelRuntime, &quot;Rubberband: max length is negative&quot;);
++            ASSERT(maxLength &gt;= 0, XLevelRuntime, &quot;Rubberband: max length is negative&quot;);
+         } else if (key == &quot;min&quot;) {
+             minLength = val;
+-            ASSERT(maxLength &gt;= 0, XLevelRuntime, &quot;Rubberband: min length is negative&quot;);
++            ASSERT(minLength &gt;= 0, XLevelRuntime, &quot;Rubberband: min length is negative&quot;);
+         }
+         Other::setAttr(key, val);
+     }
+@@ -104,34 +105,87 @@
+     }
+     
+     void Rubberband::applyForces(double dt) {
++        const double eps = 0.02;  // epsilon distant limit for contacts
+         ecl::V2 v = posAnchor2() - anchor1-&gt;get_pos();
+-        double vv = ecl::length(v);
++        double len = ecl::length(v);
+         ecl::V2 force;
+         
+-        if (vv == 0) {
+-            force = V2(0, 0);
+-        } else if (maxLength &gt; 0 &amp;&amp; vv &gt; maxLength) {
++        if (minLength + eps &lt;= len &amp;&amp; (len &lt;= maxLength -eps || maxLength == 0)) {
++            if (len == 0) {
++                force = V2(0, 0);
++            } else if (len &gt; outerThreshold) {
++                force = v * strength * (len - outerThreshold)/len;
++            } else if (len &lt; innerThreshold) {
++                force = v * strength * (len - innerThreshold)/len;
++            }
++        
+             ActorInfo *ai = anchor1-&gt;get_actorinfo();
++            ai-&gt;force += force;
++            if (!(objFlags &amp; OBJBIT_STONE)) {
++                ai = anchor2.ac-&gt;get_actorinfo();
++                ai-&gt;force -= force;
++            }
++                
++        } else if (objFlags &amp; OBJBIT_STONE) {
++            ActorInfo *ai = anchor1-&gt;get_actorinfo();
+             ecl::V2 vn = normalize(v);
+-            double av = ai-&gt;vel * vn;
+-            if (av &gt; -0.05) 
+-                av = -0.05;
+-                
+-            force = - 1 * av * vn / dt * ai-&gt;mass;
+-            force /= 6;
+-        } else if (minLength &gt; 0 &amp;&amp; vv &lt; minLength) {
++            bool isMax = (len &gt; maxLength - eps);
++            bool isMin = (len &lt; minLength + eps);
++
++            // neutralize other force componentes in rubber direction
++            double force1 = vn * ai-&gt;force;
++            if ((!isMin &amp;&amp; (force1 &gt; 0)) || (!isMax &amp;&amp; (force1 &lt; 0)))
++                force1 = 0;
++            ai-&gt;force -= force1 * vn;
+             
+-        } else if (vv &lt; innerThreshold) {
+-            force = v * strength * (vv - innerThreshold)/vv;
+-            force /= 6;
+-        } else if (vv &gt; outerThreshold) {
+-            force = v * strength * (vv - outerThreshold)/vv;
+-            force /= 6;
++            double relspeed = ai-&gt;vel * vn;   // positive for shrinking dist
++            if (!isMin &amp;&amp; (relspeed &gt; 0) || !isMax &amp;&amp; (relspeed &lt; 0))
++                relspeed = 0;
++            force = - 1.8 * relspeed * vn / dt * ai-&gt;mass;  // 0.9 factor as damping
++            ai-&gt;collforce += force;
++//            Log &lt;&lt; &quot;Rubber stone force &quot;&lt;&lt; force1 &lt;&lt; &quot;  &quot; &lt;&lt;relspeed&lt;&lt; &quot;\n&quot;;
++        } else {
++            // two actors bouncing on min/max limits
++            ActorInfo *ai1 = anchor1-&gt;get_actorinfo();
++            ActorInfo *ai2 = anchor2.ac-&gt;get_actorinfo();
++            ecl::V2 vn = normalize(v);
++            double mass = ai1-&gt;mass + ai2-&gt;mass;
++            bool isMax = (len &gt; maxLength - eps);
++            bool isMin = (len &lt; minLength + eps);
++            bool isBoth = isMax &amp;&amp; isMin;
++            if (isBoth) {
++                isMax = (len &gt; (maxLength - minLength)/2);
++                isMin = !isMax; 
++            }
++            
++            // redistribute other force components in rubber direction according 
++            // to the mass of actors to move the complex but to avoid length change
++            
++            // component of other forces in rubber direction
++            double force1 = vn * ai1-&gt;force;
++            double force2 = vn * ai2-&gt;force;
++            
++            // limit to min/max affected forces
++            if ((!isMin &amp;&amp; (force1 &gt; 0)) || (!isMax &amp;&amp; (force1 &lt; 0)))
++                force1 = 0;
++            if ((!isMin &amp;&amp; (force2 &lt; 0)) || (!isMax &amp;&amp; (force2 &gt; 0)))
++                force2 = 0;
++            ai1-&gt;force += (-force1 + (force1 + force2) * (ai1-&gt;mass)/mass) * vn;
++            ai2-&gt;force += (-force2 + (force1 + force2) * (ai2-&gt;mass)/mass) * vn;
++            
++            // bounce if min/max rules are violated
++            double relspeed = vn * (ai2-&gt;vel - ai1-&gt;vel);  // speed of band extension
++            double dmu = 2 * ai1-&gt;mass * ai2-&gt;mass / (ai1-&gt;mass + ai2-&gt;mass);
++
++            if (isMax &amp;&amp; (relspeed &lt; 0) || isMin &amp;&amp; (relspeed &gt;0))
++                relspeed = 0;
++            force = (dmu * relspeed / dt) * vn;
++            force = force * 0.9;   // damping for wrong friction calculation
++//            Log &lt;&lt; &quot;Rubber force &quot; &lt;&lt; force1 &lt;&lt;  &quot;  &quot; &lt;&lt; force2 &lt;&lt; &quot;  relspeed  &quot; &lt;&lt; relspeed  &lt;&lt; &quot; both &quot; &lt;&lt; isBoth &lt;&lt; &quot;\n&quot;;
++            ai1-&gt;collforce += force;
++            ai2-&gt;collforce -= force;
+         }
+-        
+-        anchor1-&gt;add_force(force);
+-        if (!(objFlags &amp; OBJBIT_STONE))
+-            anchor2.ac-&gt;add_force(-force);
++
+     }
+     
+     ecl::V2 Rubberband::posAnchor2() {
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-07-06 14:19:54 UTC (rev 1213)
++++ trunk/src/world.cc	2008-07-06 20:16:16 UTC (rev 1214)
+@@ -1248,6 +1248,10 @@
+             ai.contacts_count = 0;
+         }
+         
++        for (RubberbandList::iterator rit = rubberbands.begin(); rit != rubberbands.end(); ++rit) {
++            (*rit)-&gt;applyForces(dt);
++        }
++        
+         handle_actor_contacts();
+         for (unsigned i=0; i&lt;nactors; ++i) {
+             Actor     *a  = actorlist[i];
+@@ -1271,9 +1275,6 @@
+             a-&gt;move();         // 'move' nevertheless, to pick up items etc
+             a-&gt;think(dtime); 
+         }
+-        for (RubberbandList::iterator rit = rubberbands.begin(); rit != rubberbands.end(); ++rit) {
+-            (*rit)-&gt;applyForces(dt);
+-        }    
+ 
+         rest_time -= dt;
+     }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000647.html">[Enigma-game-svn] r1213 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="000649.html">[Enigma-game-svn] r1215 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#648">[ date ]</a>
+              <a href="thread.html#648">[ thread ]</a>
+              <a href="subject.html#648">[ subject ]</a>
+              <a href="author.html#648">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

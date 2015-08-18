@@ -1,0 +1,870 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1430 - in trunk: data data/schemas src src/items
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1430%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/items&In-Reply-To=%3C200901050007.n050791A018845%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000858.html">
+   <LINK REL="Next"  HREF="000860.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1430 - in trunk: data data/schemas src src/items</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1430%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/items&In-Reply-To=%3C200901050007.n050791A018845%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1430 - in trunk: data data/schemas src src/items">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon Jan  5 01:07:09 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000858.html">[Enigma-game-svn] r1429 - homepage/input
+</A></li>
+        <LI>Next message: <A HREF="000860.html">[Enigma-game-svn] r1431 - in trunk/data/levels: enigma_cross	enigma_esprit enigma_i enigma_iii enigma_oxyd	enigma_oxydmagnum enigma_tutorial enigma_vi
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#859">[ date ]</a>
+              <a href="thread.html#859">[ thread ]</a>
+              <a href="subject.html#859">[ subject ]</a>
+              <a href="author.html#859">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-01-05 01:06:57 +0100 (Mon, 05 Jan 2009)
+New Revision: 1430
+
+Added:
+   trunk/src/items/Crack.cc
+   trunk/src/items/Crack.hh
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/api2init.lua
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/WorldProxy.cc
+   trunk/src/items.cc
+   trunk/src/items.hh
+   trunk/src/ox_extra.cc
+   trunk/src/ox_magnum.cc
+   trunk/src/ox_oxyd1.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/server.cc
+   trunk/src/server.hh
+   trunk/src/world.cc
+Log:
+Trunk 1.1: new API reengineering
+- fix drop item
+- crack item reengineering:
+  - renamed to it_crack_i, it_crack_s, it_crack_m, it_crack_l
+  - state attribute with values INVISIBLE, SMALL, MEDIUM, LARGE
+  - attribute &quot;fragility&quot; as probability to crack, floor attribute &quot;fragility&quot;
+    as default, global attribute &quot;Fragility&quot; as backup which defaults itself
+    to 0.5
+  - message &quot;crack&quot; and and actor entering do crack with the given probability
+    in case the floor is destructable (water, abyss are not)
+  - message &quot;toggle&quot; cracks unconditional
+  - attribute &quot;spreading&quot; with default of global attribute &quot;CrackSpreading&quot;
+    (0.5) as probability that an actor entering a crack will cause direct
+    neighboring floors to start cracking with an it_crack_i, too.
+  - spreaded cracks do inherit fragility and spreading attributes
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2009-01-03 14:54:18 UTC (rev 1429)
++++ trunk/data/api1init.lua	2009-01-05 00:06:57 UTC (rev 1430)
+@@ -76,6 +76,10 @@
+     it_coin_s = &quot;it-coin1&quot;,
+     it_coin_m = &quot;it-coin2&quot;,
+     it_coin_l = &quot;it-coin4&quot;,
++    it_crack_i = &quot;it-crack0&quot;,
++    it_crack_s = &quot;it-crack1&quot;,
++    it_crack_m = &quot;it-crack2&quot;,
++    it_crack_l = &quot;it-crack3&quot;,
+     it_cross = &quot;it-cross&quot;,
+     it_extralife = &quot;it-extralife&quot;,
+     it_death = &quot;it-death&quot;,
+@@ -688,6 +692,16 @@
+      if key == &quot;gohome&quot; then
+          if val == 1 then _val = true else _val = false end
+      end
++     if key == &quot;fixed&quot; then
++         if val == 1 then
++             enigma._SetAttrib(obj, &quot;fragility&quot;, 0.0)
++             enigma._SetAttrib(obj, &quot;spreading&quot;, 0.0)
++         else 
++             enigma._SetAttrib(obj, &quot;fragility&quot;, nil)
++             enigma._SetAttrib(obj, &quot;spreading&quot;, nil)
++         end
++         return
++     end
+      enigma._SetAttrib(obj, _key, _val)
+ end
+ 
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2009-01-03 14:54:18 UTC (rev 1429)
++++ trunk/data/api2init.lua	2009-01-05 00:06:57 UTC (rev 1430)
+@@ -73,6 +73,9 @@
+ MEDIUM   = 1
+ DARK     = 2
+ FLOODING = 1
++INVISIBLE = -1
++SMALL     = 0
++LARGE     = 2
+ 
+ -- color
+ BLACK  = 0
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2009-01-03 14:54:18 UTC (rev 1429)
++++ trunk/data/models-2d.lua	2009-01-05 00:06:57 UTC (rev 1430)
+@@ -600,11 +600,8 @@
+     local frames = BuildFrames(images,50)
+     DefAnim(&quot;it-debris&quot;, frames)
+ 
+-    local frames = BuildFrames({&quot;it-crack4&quot;, &quot;it-crack5&quot;},120)
+-    DefAnim(&quot;it-crack_anim1&quot;, frames)
+-
+-    local frames = BuildFrames({&quot;it-crack6&quot;, &quot;it-crack7&quot;, &quot;it-crack8&quot;},120)
+-    DefAnim(&quot;it-crack_anim2&quot;, frames)
++    local frames = BuildFrames({&quot;it-crack4&quot;, &quot;it-crack5&quot;, &quot;it-crack6&quot;, &quot;it-crack7&quot;, &quot;it-crack8&quot;},120)
++    DefAnim(&quot;it-crack_anim&quot;, frames)
+ end
+ 
+ -- it-death --
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2009-01-03 14:54:18 UTC (rev 1429)
++++ trunk/data/schemas/objects.xml	2009-01-05 00:06:57 UTC (rev 1430)
+@@ -29,6 +29,7 @@
+     &lt;attr name=&quot;force_y&quot; type=&quot;double&quot; default=&quot;0&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;flavor&quot; type=&quot;string&quot; default=&quot;b&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;floodable&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;fragility&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;freeze_check&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;friction&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;gohome&quot; type=&quot;bool&quot; default=&quot;true&quot; rw=&quot;rw&quot;/&gt;
+@@ -70,6 +71,7 @@
+     &lt;attr name=&quot;secure&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;scissor&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;scratches&quot; type=&quot;string&quot; default=&quot;&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;spreading&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;state&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;static&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;steady&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+@@ -87,6 +89,7 @@
+   &lt;messages&gt;
+     &lt;msg name=&quot;close&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;closeall&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;crack&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;darken&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;disconnect&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;expl&quot; type=&quot;nil&quot;/&gt;
+@@ -256,6 +259,7 @@
+       &lt;attr name=&quot;floodable&quot;/&gt;
+       &lt;attr name=&quot;force_x&quot;/&gt;
+       &lt;attr name=&quot;force_y&quot;/&gt;
++      &lt;attr name=&quot;fragility&quot;/&gt;
+       &lt;attr name=&quot;freeze_check&quot;/&gt;
+       &lt;attr name=&quot;friction&quot;/&gt;
+       &lt;attr name=&quot;ignitable&quot;/&gt;
+@@ -375,7 +379,26 @@
+     &lt;object name=&quot;it_coin_l&quot;&gt;
+       &lt;attr name=&quot;state&quot; value=&quot;2&quot;/&gt;
+     &lt;/object&gt;
+-    &lt;object name=&quot;it_cross&quot;&gt;
++     &lt;object name=&quot;it_crack&quot;&gt;
++      &lt;attr name=&quot;state&quot; min=&quot;-1&quot; max=&quot;3&quot;/&gt;
++      &lt;attr name=&quot;fragility&quot;/&gt;
++      &lt;attr name=&quot;spreading&quot;/&gt;
++      &lt;msg name=&quot;crack&quot;/&gt;
++      &lt;msg name=&quot;heat&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_crack_i&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;-1&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_crack_s&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;0&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_crack_m&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;1&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_crack_l&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;2&quot;/&gt;
++    &lt;/object&gt;
++   &lt;object name=&quot;it_cross&quot;&gt;
+       &lt;attr name=&quot;interval&quot; default=&quot;10&quot;/&gt;
+       &lt;attr name=&quot;state&quot; rw=&quot;r&quot;/&gt;
+       &lt;msg name=&quot;_brush&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2009-01-03 14:54:18 UTC (rev 1429)
++++ trunk/src/Makefile.am	2009-01-05 00:06:57 UTC (rev 1430)
+@@ -206,6 +206,8 @@
+ 	items/BlockerItem.hh	\
+ 	items/Coin.cc		\
+ 	items/Coin.hh		\
++	items/Crack.cc		\
++	items/Crack.hh		\
+ 	items/ExtraLife.cc	\
+ 	items/ExtraLife.hh	\
+ 	items/GlassesItem.cc	\
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2009-01-03 14:54:18 UTC (rev 1429)
++++ trunk/src/WorldProxy.cc	2009-01-05 00:06:57 UTC (rev 1430)
+@@ -74,14 +74,16 @@
+             return server::SurviveFinish;
+         } else if (key == &quot;Width&quot;) {
+             return Width();
+-        } else if (key == &quot;Brittleness&quot;) {
+-            return server::Brittleness;
+         } else if (key == &quot;ActorimpulseStrength&quot;) {
+             return server::BumperForce;
++        } else if (key == &quot;CrackSpreading&quot;) {
++            return server::CrackSpreading;
+         } else if (key == &quot;ElectricStrength&quot;) {
+             return server::ElectricForce;
+         } else if (key == &quot;ExtralifeGlasses&quot;) {
+             return server::ExtralifeGlasses;
++        } else if (key == &quot;Fragility&quot;) {
++            return server::Fragility;
+         } else if (key == &quot;FrictionStrength&quot;) {
+             return server::FrictionFactor;
+         } else if (key == &quot;MeditationStrength&quot;) {
+@@ -158,14 +160,16 @@
+             STATUSBAR-&gt;show_move_counter (server::ShowMoves);
+         } else if (key == &quot;SurviveFinish&quot;) {
+             server::SurviveFinish = val.to_bool();
+-        } else if (key == &quot;Brittleness&quot;) {
+-            server::Brittleness = val;
++        } else if (key == &quot;CrackSpreading&quot;) {
++            server::CrackSpreading = val;
+         } else if (key == &quot;ActorimpulseStrength&quot;) {
+             server::BumperForce = val;
+         } else if (key == &quot;ElectricStrength&quot;) {
+             server::ElectricForce = val;
+         } else if (key == &quot;ExtralifeGlasses&quot;) {
+             server::ExtralifeGlasses = val;
++        } else if (key == &quot;Fragility&quot;) {
++            server::Fragility = val;
+         } else if (key == &quot;FrictionStrength&quot;) {
+             server::FrictionFactor = val;
+         } else if (key == &quot;MeditationStrength&quot;) {
+
+Added: trunk/src/items/Crack.cc
+===================================================================
+--- trunk/src/items/Crack.cc	2009-01-03 14:54:18 UTC (rev 1429)
++++ trunk/src/items/Crack.cc	2009-01-05 00:06:57 UTC (rev 1430)
+@@ -0,0 +1,142 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;items/Crack.hh&quot;
++//#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++
++    Crack::Crack(int type) {
++        state = type;
++    }
++    
++    std::string Crack::getClass() const {
++        return &quot;it_crack&quot;;
++    }
++    
++    Value Crack::message(const Message &amp;m) {
++        if (m.message == &quot;crack&quot;) {
++            crack();
++            return Value();
++        } else if (m.message == &quot;heat&quot;) {
++            sound_event(&quot;crack&quot;);
++            replace(&quot;it-debris&quot;);
++            return true;
++        }
++        return Item::message(m);
++    }
++    
++    int Crack::maxState() const {
++        return DISSOLVING;
++    }
++    
++    int Crack::minState() const {
++        return INVISIBLE;
++    }
++    
++    void Crack::toggleState() {
++        if (state &lt; DISSOLVING)
++            setState(state + 1);
++    }
++    
++    void Crack::init_model() {
++        switch (state) {
++            case INVISIBLE :
++                set_model(&quot;invisible&quot;); break;
++            case SMALL :
++            case MEDIUM :
++            case LARGE :
++                set_model(ecl::strf(&quot;it-crack%d&quot;, state + 1)); break;
++            case DISSOLVING :
++                sound_event (&quot;floordestroy&quot;);
++                set_anim(&quot;it-crack_anim&quot;);
++        }
++    }
++    
++    void Crack::animcb() {
++        GridPos p= get_pos();
++        SetFloor(p, MakeFloor(&quot;fl_abyss&quot;));
++        KillItem(p);
++    }
++    
++    void Crack::actor_enter(Actor *a) {
++        if (a-&gt;is_on_floor()) {
++            crack();
++            if (state &lt; DISSOLVING)
++                spread();
++        }
++    }
++    
++    void Crack::crack() {
++        Floor *fl = GetFloor(get_pos());
++        if (fl != NULL &amp;&amp; fl-&gt;is_destructible()) {
++            Value v = fl-&gt;getAttr(&quot;fragility&quot;);
++            double fragility = getDefaultedAttr(&quot;fragility&quot;, v ? v : Value(server::Fragility));
++            if (state &lt; DISSOLVING &amp;&amp; DoubleRand(0, 0.9999) &lt; fragility) {
++                toggleState();
++                sound_event(&quot;crack&quot;);
++            }
++        }
++    }
++    
++    void Crack::spread() {
++        for (Direction d = NORTH; d != NODIR; d = previous(d)) {
++            GridPos p = move(get_pos(), d);
++            if (Floor *fl = GetFloor(p)) {
++                if (fl-&gt;is_destructible()) {
++                    if (Item *it = GetItem(p))
++                        SendMessage(it, &quot;crack&quot;);
++                    else {
++                        double spreading = getDefaultedAttr(&quot;spreading&quot;, server::CrackSpreading); 
++                        if (DoubleRand(0, 0.9999) &lt; spreading) {
++                            Item *it = MakeItem(&quot;it_crack_i&quot;);
++                            if (Value v = getAttr(&quot;fragility&quot;))
++                                it-&gt;setAttr(&quot;fragility&quot;, v);
++                            if (Value v = getAttr(&quot;spreading&quot;))
++                                it-&gt;setAttr(&quot;spreading&quot;, v);
++                            SetItem(p, it);
++                        }
++                    }
++                }
++            }
++        }
++    }
++    
++    int Crack::traitsIdx() const {
++        return state &lt; DISSOLVING ? state + 1 : 3;
++    }
++    
++    ItemTraits Crack::traits[4] = {
++        {&quot;it_crack_i&quot;,  it_crack_i,  itf_static | itf_indestructible | itf_fireproof, 0.0},
++        {&quot;it_crack_s&quot;,  it_crack_s,  itf_static | itf_indestructible | itf_fireproof, 0.0},
++        {&quot;it_crack_m&quot;,  it_crack_m,  itf_static | itf_indestructible | itf_fireproof, 0.0},
++        {&quot;it_crack_l&quot;,  it_crack_l,  itf_static | itf_indestructible | itf_fireproof, 0.0},
++    };
++
++    BOOT_REGISTER_START
++        BootRegister(new Crack(-1), &quot;it_crack_i&quot;);
++        BootRegister(new Crack(0),  &quot;it_crack_s&quot;);
++        BootRegister(new Crack(1),  &quot;it_crack_m&quot;);
++        BootRegister(new Crack(2),  &quot;it_crack_l&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/items/Crack.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/Crack.hh
+===================================================================
+--- trunk/src/items/Crack.hh	2009-01-03 14:54:18 UTC (rev 1429)
++++ trunk/src/items/Crack.hh	2009-01-05 00:06:57 UTC (rev 1430)
+@@ -0,0 +1,73 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef CRACKITEM_HH
++#define CRACKITEM_HH
++
++#include &quot;items.hh&quot;
++
++//#include &quot;enigma.hh&quot;
++
++namespace enigma {
++    /**
++     */
++
++    class Crack : public Item {
++        CLONEOBJ(Crack);
++        DECL_ITEMTRAITS_ARRAY(4, traitsIdx());
++
++    private:
++        enum iState {
++            INVISIBLE  = -1,       ///&lt; 
++            SMALL      =  0,       ///&lt; 
++            MEDIUM     =  1,       ///&lt; 
++            LARGE      =  2,       ///&lt;
++            DISSOLVING =  3        ///&lt;  
++        };
++
++    public:
++        Crack(int type);
++        
++        // Object interface
++        virtual std::string getClass() const;
++        virtual Value message (const Message &amp;m);
++
++        // StateObject interface
++        virtual int maxState() const;
++        virtual int minState() const;
++        virtual void toggleState();
++//        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        
++        // ModelCallback interface
++        virtual void animcb();
++        
++        // Item interface
++        virtual void actor_enter(Actor *a);
++        
++    private:
++        void crack();
++        void spread();
++        int traitsIdx() const;
++    };
++   
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/items/Crack.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2009-01-03 14:54:18 UTC (rev 1429)
++++ trunk/src/items.cc	2009-01-05 00:06:57 UTC (rev 1430)
+@@ -525,7 +525,7 @@
+                 replace(&quot;it-hollow&quot;);
+             } else if (model == &quot;fl_ice&quot;) {
+                 // In ice, an it-dynamite explodes to an it-crack2:
+-                replace(&quot;it-crack2&quot;);
++                replace(&quot;it_crack_m&quot;);
+             } else {
+                 SetItem(p, MakeItem(&quot;it-explosion2&quot;));
+             }
+@@ -812,127 +812,6 @@
+     };
+ }
+ 
+-
+-/* -------------------- Cracks -------------------- */
+-namespace
+-{
+-    class Crack : public Item {
+-        CLONEOBJ(Crack);
+-        DECL_ITEMTRAITS_ARRAY(4, get_type());
+-
+-    public:
+-        static void setup() {
+-            RegisterItem (new Crack(0));
+-            RegisterItem (new Crack(1));
+-            RegisterItem (new Crack(2));
+-            RegisterItem (new Crack(3));
+-        }
+-
+-    private:
+-        Crack(int type=0)
+-        : state(IDLE), anim_end(false)
+-            {
+-                setAttr(&quot;type&quot;, type);
+-                setAttr(&quot;fixed&quot;, 0.0);
+-             }
+-
+-        enum State { IDLE, CRACKING1, CRACKING2 } state;
+-        bool anim_end;
+-
+-        int get_type() const {
+-            int t = getAttr(&quot;type&quot;);
+-            return ecl::Clamp(t, 0, 4);
+-        }
+-	    bool is_fixed() const { return getAttr(&quot;fixed&quot;) != 0; }
+-
+-        void init_model() {
+-            if (int t=get_type()) {
+-                if (t &gt; 3) {
+-                    state = CRACKING1;
+-                    sound_event (&quot;floordestroy&quot;);
+-                    set_anim(&quot;it-crack_anim1&quot;);
+-                //SetItem(get_pos(), MakeItem(&quot;it-debris&quot;));
+-                }else {
+-                    set_model(ecl::strf(&quot;it-crack%d&quot;, t));
+-                }
+-            }
+-            else
+-                set_model(&quot;invisible&quot;);
+-        }
+-        void animcb() {
+-            if (state == CRACKING2) {
+-                GridPos p= get_pos();
+-                SetFloor(p, MakeFloor(&quot;fl_abyss&quot;));
+-                KillItem(p);
+-            } else {
+-                state = CRACKING2;
+-                set_anim(&quot;it-crack_anim2&quot;);
+-            }
+-        }
+-
+-        void crack(const GridPos &amp;p) {
+-            if (Floor *fl = GetFloor(p)) {
+-                if (fl-&gt;is_destructible()) {
+-                    if (Item *it = GetItem(p))
+-                        SendMessage (it, &quot;crack&quot;);
+-                    else if (do_crack())
+-                        SetItem(p, MakeItem(&quot;it-crack0&quot;));
+-                }
+-            }
+-        }
+-
+-        void actor_enter(Actor *a) {
+-            if (a-&gt;is_on_floor()) {
+-                SendMessage(this, &quot;crack&quot;);
+-
+-                if (get_type() &lt;= 3) {
+-                    GridPos p = get_pos();
+-                    crack (move(p, NORTH));
+-                    crack (move(p, EAST));
+-                    crack (move(p, SOUTH));
+-                    crack (move(p, WEST));
+-                }
+-            }
+-        }
+-        bool actor_hit(Actor *a) {
+-            if (anim_end)
+-                SendMessage(a, &quot;_fall&quot;);
+-            return false;
+-        }
+-        virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;crack&quot; &amp;&amp; state==IDLE &amp;&amp; !is_fixed()) {
+-                int type = get_type();
+-                if ((type == 0 &amp;&amp; do_crack()) || (type &gt; 0)) {
+-                    setAttr(&quot;type&quot;, Value((int)getAttr(&quot;type&quot;) + 1));
+-                    sound_event (&quot;crack&quot;);
+-                    init_model();
+-                return Value();
+-                }
+-            } else if (m.message == &quot;heat&quot;) {
+-                sound_event (&quot;crack&quot;);
+-                replace(&quot;it-debris&quot;);
+-                return true;
+-            }
+-            return Item::message(m);
+-        }
+-
+-        bool do_crack() {
+-            if (!is_fixed()) {
+-                double brittleness = getDefaultedAttr(&quot;brittleness&quot;, server::Brittleness);
+-                double rnd = DoubleRand(0, 1);
+-                return rnd &lt; brittleness;
+-    	    } else
+-                return false;
+-        }
+-    };
+-    ItemTraits Crack::traits[4] = {
+-        {&quot;it-crack0&quot;, it_crack0, itf_static | itf_indestructible | itf_fireproof, 0.0},
+-        {&quot;it-crack1&quot;, it_crack1, itf_static | itf_indestructible | itf_fireproof, 0.0},
+-        {&quot;it-crack2&quot;, it_crack2, itf_static | itf_indestructible | itf_fireproof, 0.0},
+-        {&quot;it-crack3&quot;, it_crack3, itf_static | itf_indestructible | itf_fireproof, 0.0}
+-    };
+-}
+-
+ /* -------------------- Debris -------------------- */
+ namespace
+ {
+@@ -1651,7 +1530,7 @@
+                 if (model == &quot;fl_abyss&quot; || model == &quot;fl_water&quot; || model == &quot;fl_swamp&quot;) {
+                     return ITEM_KEEP;
+                 } else  if (model == &quot;fl_ice&quot;) {
+-                    SetItem (p, MakeItem(&quot;it-crack1&quot;));
++                    SetItem (p, MakeItem(&quot;it_crack_s&quot;));
+                 } else {
+                     SetItem (p, MakeItem(&quot;it-cross&quot;));
+                 }
+@@ -1781,11 +1660,11 @@
+             if (id == ac_marble_black || id == ac_marble_white) {
+                 // Kill ALL rubberbands connected with the actor:
+                 SendMessage(a, &quot;disconnect&quot;);
+-                Actor *rotor = MakeActor(&quot;ac-rotor&quot;);
++                Actor *rotor = MakeActor(&quot;ac_rotor&quot;);
+                 rotor-&gt;setAttr(&quot;adhesion&quot;, Value (1.0));
+                 rotor-&gt;setAttr(&quot;controllers&quot;, Value (iplayer+1));
+                 rotor-&gt;setAttr(&quot;player&quot;, Value (iplayer));
+-                rotor-&gt;setAttr(&quot;gohome&quot;, Value (0.0));
++                rotor-&gt;setAttr(&quot;gohome&quot;, Value (false));
+                 rotor-&gt;setAttr(&quot;essential&quot;, a-&gt;getAttr(&quot;essential&quot;));
+                 std::string essId;
+                 if (Value v = a-&gt;getAttr(&quot;essential_id&quot;)) {
+@@ -1822,7 +1701,6 @@
+     Burnable::setup();
+     RegisterItem (new ChangeFloorItem);
+     RegisterItem (new Coffee);
+-    Crack::setup();
+     RegisterItem (new Cross);
+     RegisterItem (new Debris);
+     RegisterItem (new Document);
+
+Modified: trunk/src/items.hh
+===================================================================
+--- trunk/src/items.hh	2009-01-03 14:54:18 UTC (rev 1429)
++++ trunk/src/items.hh	2009-01-05 00:06:57 UTC (rev 1430)
+@@ -53,10 +53,10 @@
+         it_coin1,
+         it_coin2, 
+         it_coin4,
+-        it_crack0,
+-        it_crack1,
+-        it_crack2,
+-        it_crack3,
++        it_crack_i,
++        it_crack_s,
++        it_crack_m,
++        it_crack_l,
+         it_cross,
+         it_death,
+         it_debris,
+
+Modified: trunk/src/ox_extra.cc
+===================================================================
+--- trunk/src/ox_extra.cc	2009-01-03 14:54:18 UTC (rev 1429)
++++ trunk/src/ox_extra.cc	2009-01-05 00:06:57 UTC (rev 1430)
+@@ -321,13 +321,13 @@
+     &quot;it-dynamite&quot;,                // OxydExtra item 0x0a
+     UNUSED,                  // OxydExtra item 0x0b
+     UNUSED,                  // OxydExtra item 0x0c
+-    &quot;it-crack0&quot;,                  // OxydExtra item 0x0d
+-    &quot;it-crack1&quot;,                  // OxydExtra item 0x0e
+-    &quot;it-crack2&quot;,                  // OxydExtra item 0x0f
+-    &quot;it-crack3&quot;,                  // OxydExtra item 0x10
+-    &quot;it_coin_s&quot;,                   // OxydExtra item 0x11
+-    &quot;it_coin_m&quot;,                   // OxydExtra item 0x12
+-    &quot;it_coin_l&quot;,                   // OxydExtra item 0x13
++    &quot;it_crack_i&quot;,                 // OxydExtra item 0x0d
++    &quot;it_crack_s&quot;,                 // OxydExtra item 0x0e
++    &quot;it_crack_m&quot;,                 // OxydExtra item 0x0f
++    &quot;it_crack_l&quot;,                 // OxydExtra item 0x10
++    &quot;it_coin_s&quot;,                  // OxydExtra item 0x11
++    &quot;it_coin_m&quot;,                  // OxydExtra item 0x12
++    &quot;it_coin_l&quot;,                  // OxydExtra item 0x13
+     &quot;it_key_a&quot;,                   // OxydExtra item 0x14
+     &quot;it_key_b&quot;,                   // OxydExtra item 0x15
+     &quot;it_key_c&quot;,                   // OxydExtra item 0x16
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2009-01-03 14:54:18 UTC (rev 1429)
++++ trunk/src/ox_magnum.cc	2009-01-05 00:06:57 UTC (rev 1430)
+@@ -303,10 +303,10 @@
+     &quot;it-dynamite&quot;,      // OxydMagnum item 0x0a
+     &quot;it-blackbomb&quot;,     // OxydMagnum item 0x0b
+     &quot;it-whitebomb&quot;,     // OxydMagnum item 0x0c
+-    &quot;it-crack0&quot;,        // OxydMagnum item 0x0d
+-    &quot;it-crack1&quot;,        // OxydMagnum item 0x0e
+-    &quot;it-crack2&quot;,        // OxydMagnum item 0x0f
+-    &quot;it-crack3&quot;,        // OxydMagnum item 0x10
++    &quot;it_crack_i&quot;,        // OxydMagnum item 0x0d
++    &quot;it_crack_s&quot;,        // OxydMagnum item 0x0e
++    &quot;it_crack_m&quot;,        // OxydMagnum item 0x0f
++    &quot;it_crack_l&quot;,        // OxydMagnum item 0x10
+     &quot;it_coin_s&quot;,         // OxydMagnum item 0x11
+     &quot;it_coin_m&quot;,         // OxydMagnum item 0x12
+     &quot;it_coin_l&quot;,         // OxydMagnum item 0x13
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2009-01-03 14:54:18 UTC (rev 1429)
++++ trunk/src/ox_oxyd1.cc	2009-01-05 00:06:57 UTC (rev 1430)
+@@ -319,10 +319,10 @@
+     &quot;it-dynamite&quot;,                // 0x0a
+     &quot;it-blackbomb&quot;,               // 0x0b
+     &quot;it-whitebomb&quot;,               // 0x0c
+-    &quot;it-crack0&quot;,                  // 0x0d
+-    &quot;it-crack1&quot;,                  // 0x0e
+-    &quot;it-crack2&quot;,                  // 0x0f
+-    &quot;it-crack3&quot;,                  // 0x10
++    &quot;it_crack_i&quot;,                 // 0x0d
++    &quot;it_crack_s&quot;,                 // 0x0e
++    &quot;it_crack_m&quot;,                 // 0x0f
++    &quot;it_crack_l&quot;,                 // 0x10
+     &quot;it_coin_s&quot;,                  // 0x11
+     &quot;it_coin_m&quot;,                  // 0x12
+     &quot;it_coin_l&quot;,                  // 0x13
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2009-01-03 14:54:18 UTC (rev 1429)
++++ trunk/src/ox_peroxyd.cc	2009-01-05 00:06:57 UTC (rev 1430)
+@@ -392,10 +392,10 @@
+     &quot;it-dynamite&quot;,                // 0x0a
+     &quot;it-blackbomb&quot;,               // 0x0b
+     &quot;it-whitebomb&quot;,               // 0x0c
+-    &quot;it-crack0&quot;,                  // 0x0d
+-    &quot;it-crack1&quot;,                  // 0x0e
+-    &quot;it-crack2&quot;,                  // 0x0f
+-    &quot;it-crack3&quot;,                  // 0x10
++    &quot;it_crack_i&quot;,                 // 0x0d
++    &quot;it_crack_s&quot;,                 // 0x0e
++    &quot;it_crack_m&quot;,                 // 0x0f
++    &quot;it_crack_l&quot;,                 // 0x10
+     &quot;it_coin_s&quot;,                  // 0x11
+     &quot;it_coin_m&quot;,                  // 0x12
+     &quot;it_coin_l&quot;,                  // 0x13
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2009-01-03 14:54:18 UTC (rev 1429)
++++ trunk/src/server.cc	2009-01-05 00:06:57 UTC (rev 1430)
+@@ -100,6 +100,8 @@
+ bool     server::WorldSized;                // no Lua access
+ bool     server::WorldInitialized;          // no Lua access
+ double   server::Brittleness;
++double   server::Fragility;
++double   server::CrackSpreading;
+ double   server::BumperForce;
+ double   server::ElectricForce;
+ double   server::EnigmaCompatibility;       // no Lua access
+@@ -260,6 +262,8 @@
+     server::FollowThreshold   = 0.5;
+     server::ShowMoves         = false;
+     server::Brittleness       = 0.5;
++    server::Fragility         = 0.5;
++    server::CrackSpreading    = 0.5;
+     server::SlopeForce        = 25.0;
+     server::FlatForce         = 0.0;
+     server::FrictionFactor    = 1.0;
+
+Modified: trunk/src/server.hh
+===================================================================
+--- trunk/src/server.hh	2009-01-03 14:54:18 UTC (rev 1429)
++++ trunk/src/server.hh	2009-01-05 00:06:57 UTC (rev 1430)
+@@ -91,8 +91,11 @@
+    
+     // Default brittleness of the floor: 0 = stable..1=unstable.
+     // Really: probability that a floor tile will crack when an actor
+-    // enters or leaves it.
++    // enters or leaves it. - used up to 1.01
+     extern double   Brittleness;
++    // 1.10 crack variables
++    extern double   Fragility;
++    extern double   CrackSpreading;
+     
+     extern int      MaxOxydColor;
+ 
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2009-01-03 14:54:18 UTC (rev 1429)
++++ trunk/src/world.cc	2009-01-05 00:06:57 UTC (rev 1430)
+@@ -1647,8 +1647,12 @@
+     LaserBeam::prepareLevel();   // clear lists of no longer existing objects
+ }
+ 
+-bool WorldInitLevel()
+-{
++bool WorldInitLevel() {
++    if (server::EnigmaCompatibility &lt; 1.10) {
++        server::Fragility = server::Brittleness;
++        server::CrackSpreading = server::Brittleness;
++    }
++    
+     level-&gt;scramble_puzzles();
+ 
+     RecalcLight();
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000858.html">[Enigma-game-svn] r1429 - homepage/input
+</A></li>
+	<LI>Next message: <A HREF="000860.html">[Enigma-game-svn] r1431 - in trunk/data/levels: enigma_cross	enigma_esprit enigma_i enigma_iii enigma_oxyd	enigma_oxydmagnum enigma_tutorial enigma_vi
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#859">[ date ]</a>
+              <a href="thread.html#859">[ thread ]</a>
+              <a href="subject.html#859">[ subject ]</a>
+              <a href="author.html#859">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

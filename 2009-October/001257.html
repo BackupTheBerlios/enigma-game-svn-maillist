@@ -1,0 +1,664 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1828 - in trunk/src: . items
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-October/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1828%20-%20in%20trunk/src%3A%20.%20items&In-Reply-To=%3C200910102149.n9ALnkDW020535%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001256.html">
+   <LINK REL="Next"  HREF="001258.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1828 - in trunk/src: . items</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1828%20-%20in%20trunk/src%3A%20.%20items&In-Reply-To=%3C200910102149.n9ALnkDW020535%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1828 - in trunk/src: . items">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Oct 10 23:49:46 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001256.html">[Enigma-game-svn] r1827 - trunk/attic/images-stones
+</A></li>
+        <LI>Next message: <A HREF="001258.html">[Enigma-game-svn] r1829 - in trunk/data/levels: enigma_cross	enigma_iii enigma_iv enigma_ix enigma_vii enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1257">[ date ]</a>
+              <a href="thread.html#1257">[ thread ]</a>
+              <a href="subject.html#1257">[ subject ]</a>
+              <a href="author.html#1257">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-10-10 23:49:44 +0200 (Sat, 10 Oct 2009)
+New Revision: 1828
+
+Modified:
+   trunk/src/client.cc
+   trunk/src/client.hh
+   trunk/src/client_internal.hh
+   trunk/src/display.cc
+   trunk/src/items/Bottle.cc
+   trunk/src/items/DocumentItem.cc
+   trunk/src/main.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1:
+- add history feature for documents
+- fix bogus command history by reengineering and replacement
+- new console with the following entries:
+    inventory -&gt; jump to start
+    oldest command #10
+    ...
+    last command #1
+    incomplete currently edited command
+    inventory &lt;-- start
+    last viewed document
+    previous viewed document
+    ...
+    first viewed document
+    level title, subtitle, author
+    inventory -&gt; jump to start
+  the command history is persistent, the document history not
+
+
+Modified: trunk/src/client.cc
+===================================================================
+--- trunk/src/client.cc	2009-10-10 20:25:31 UTC (rev 1827)
++++ trunk/src/client.cc	2009-10-10 21:49:44 UTC (rev 1828)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2004 Daniel Heck
+- * Copyright (C) 2006, 2007 Ronald Lamprecht
++ * Copyright (C) 2006,2007,2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -69,8 +69,7 @@
+     }
+ 
+     /*! Generate the message that is displayed when the level starts. */
+-    string displayedLevelInfo (lev::Proxy *level)
+-    {
++    std::string displayedLevelInfo (lev::Proxy *level) {
+         std::string text;
+         std::string tmp;
+ 
+@@ -122,6 +121,22 @@
+     network_stop();
+ }
+ 
++void Client::init() {
++    std::string command;
++    for (int i = 0; i &lt; 10; i++) {
++        command = app.state-&gt;getString(ecl::strf(&quot;CommandHistory#%d&quot;, i).c_str());
++        if (command.size() &gt; 0)
++            commandHistory.push_back(command);
++        else
++            break;
++    }
++}
++
++void Client::shutdown() {
++    for (int i = 0; i &lt; commandHistory.size(); i++)
++        app.state-&gt;setProperty(ecl::strf(&quot;CommandHistory#%d&quot;, i).c_str(), commandHistory[i].c_str());
++}
++
+ bool Client::network_start()
+ {
+     if (m_network_host)
+@@ -263,109 +278,119 @@
+ 
+ /* -------------------- Console related -------------------- */
+ 
+-class HistoryProxy {
+-    static int    instances;
+-public:
+-    static string content;
+-
+-    HistoryProxy();
+-    ~HistoryProxy() {
+-        if (!--instances) app.state-&gt;setProperty(&quot;CommandHistory&quot;, content);
++void Client::process_userinput() {
++    // no addition of existing commands to history
++    if (consoleIndex == 1) {
++        for (int i = 0; i &lt; commandHistory.size(); i++) {
++            if (newCommand == commandHistory[i]) {
++                // take existing history command instead of new command
++                consoleIndex = i + 2;
++                break;
++            }
++        }
+     }
+-};
+-
+-string HistoryProxy::content;
+-int    HistoryProxy::instances = 0;
+-
+-HistoryProxy::HistoryProxy() {
+-    if (!instances++) {
+-        content = app.state-&gt;getString(&quot;CommandHistory&quot;);
+-        if (content.find(HSEP) == string::npos) content = string(1, HSEP);
++    // resort history with selected command at bottom
++    if (consoleIndex == 1) {
++        if (commandHistory.size() &lt; 10)
++             commandHistory.push_back(std::string(&quot;&quot;));
++        for (int i = 8; i &gt;= 0; i--) {
++            if (i &lt; commandHistory.size() - 1)
++                commandHistory[i+1] = commandHistory[i];
++        }
++    } else if (consoleIndex &gt; 1) {
++        newCommand = commandHistory[consoleIndex - 2];
++        for (int i = consoleIndex - 3; i &gt;= 0; i--) {
++            if (i &lt; commandHistory.size())
++                commandHistory[i+1] = commandHistory[i];
++        }
++    } else { // document history or inventory
++        return;
+     }
++    commandHistory[0] = newCommand;
++    newCommand = &quot;&quot;;
++    consoleIndex = 0;
++    STATUSBAR-&gt;hide_text();
++    server::Msg_Command(commandHistory[0]);
+ }
+ 
+-static void user_input_history_append(const string&amp; text, bool at_end = true) {
+-    HistoryProxy history;
+-    size_t       old_pos = history.content.find(string(1, HSEP)+text+HSEP);
+-
+-    if (old_pos != string::npos)
+-        history.content.erase(old_pos, text.length()+1);
+-
+-    if (at_end)
+-        history.content += text+HSEP;
+-    else
+-        history.content = string(1, HSEP)+text+history.content;
++void Client::user_input_append(char c) {
++    if (consoleIndex &lt;= 0) {
++        consoleIndex = 1;
++        newCommand = c;
++    } else if (consoleIndex == 1) {
++        newCommand += c;
++    } else {
++        newCommand =  commandHistory[consoleIndex - 2] + c;
++        consoleIndex = 1;
++    }
++    Msg_ShowText(newCommand, false);
+ }
+ 
+-void Client::process_userinput()
+-{
+-    if (m_user_input != &quot;&quot;) {
+-        STATUSBAR-&gt;hide_text();
+-        string commands = m_user_input;
+-
+-        user_input_history_append(m_user_input);
+-        m_user_input = &quot;&quot;;
+-
+-        size_t sep_pos;
+-        while ((sep_pos = commands.find_first_of(';')) != string::npos) {
+-            string first_command = commands.substr(0, sep_pos);
+-            commands.erase(0, sep_pos+1);
+-            server::Msg_Command (first_command);
++void Client::user_input_backspace() {
++    if (consoleIndex == 1) {
++        newCommand.erase(newCommand.size() - 1, 1); 
++        if (!newCommand.empty())
++            Msg_ShowText(newCommand, false);
++        else {
++            consoleIndex = 0;
++            STATUSBAR-&gt;hide_text();
+         }
+-        server::Msg_Command (commands); // last command
+-    }
+-}
+-
+-void Client::user_input_append (char c) {
+-    m_user_input += c;
+-    Msg_ShowText (m_user_input, false);
+-}
+-
+-void Client::user_input_backspace ()
+-{
+-    if (!m_user_input.empty()) {
+-        m_user_input.erase (m_user_input.size()-1, 1);
+-        if (!m_user_input.empty()) {
+-            // still not empty
+-            Msg_ShowText (m_user_input, false);
++    } else if (consoleIndex &gt; 1) {
++        newCommand =  commandHistory[consoleIndex - 2];
++        newCommand.erase(newCommand.size() - 1, 1); 
++        if (!newCommand.empty()) {
++            consoleIndex = 1;
++            Msg_ShowText(newCommand, false);
+         } else {
+-            // empty
++            consoleIndex = 0;
+             STATUSBAR-&gt;hide_text();
+         }
+     }
+ }
+-void Client::user_input_previous ()
+-{
+-    HistoryProxy history;
+-    size_t       last_start = history.content.find_last_of(HSEP, history.content.length()-2);
+ 
+-    if (last_start != string::npos) {
+-        string prev_input = history.content.substr(last_start+1, history.content.length()-last_start-2);
+-        history.content.erase(last_start+1);
+-        user_input_history_append(m_user_input, false);
+-        m_user_input      = prev_input;
+-
+-        if (m_user_input.empty())
++void Client::user_input_previous() {
++    if (consoleIndex &lt; 0) {
++        ++consoleIndex;
++        int docIndex = documentHistory.size() + consoleIndex;
++        if (docIndex &lt; documentHistory.size()) {
++            Msg_ShowText(documentHistory[docIndex], true);
++        } else {
++            consoleIndex = 0;
+             STATUSBAR-&gt;hide_text();
+-        else
+-            Msg_ShowText (m_user_input, false);
++        }
++    } else if (consoleIndex == 0) {
++        if (newCommand.length() &gt; 0) {
++            consoleIndex = 1;
++            Msg_ShowText(newCommand, false);
++        } else if (commandHistory.size() &gt; 0) {
++            consoleIndex = 2;
++            Msg_ShowText(commandHistory[0], false);
++        }
++    } else if (consoleIndex &lt;= commandHistory.size()) {
++        ++consoleIndex;
++        Msg_ShowText(commandHistory[consoleIndex - 2], false);
++    } else {  // top of history or new command without history
++        consoleIndex = 0;
++        STATUSBAR-&gt;hide_text();
+     }
+ }
+-void Client::user_input_next ()
+-{
+-    HistoryProxy history;
+-    size_t       first_end = history.content.find_first_of(HSEP, 1);
+ 
+-    if (first_end != string::npos) {
+-        string next_input = history.content.substr(1, first_end-1);
+-        history.content.erase(0, first_end);
+-        user_input_history_append(m_user_input);
+-        m_user_input      = next_input;
+-
+-        if (m_user_input.empty())
++void Client::user_input_next() {
++    if (consoleIndex &lt;= 0) {
++        --consoleIndex;
++        int docIndex = documentHistory.size() + consoleIndex;
++        if (docIndex &gt;= 0) {
++            Msg_ShowText(documentHistory[docIndex], true);
++        } else {
++            consoleIndex = 0;
+             STATUSBAR-&gt;hide_text();
+-        else
+-            Msg_ShowText (m_user_input, false);
++        }
++    } else if (consoleIndex == 1 || (consoleIndex == 2 &amp;&amp; newCommand.size() == 0)) {
++        consoleIndex = 0;
++        STATUSBAR-&gt;hide_text();
++    } else if (consoleIndex &gt; 1) {
++        --consoleIndex;
++        Msg_ShowText(consoleIndex == 1 ? newCommand : commandHistory[consoleIndex - 2], false);
+     }
+ }
+ 
+@@ -832,26 +857,25 @@
+     video::SetCaption(ecl::strf(_(&quot;Enigma pack %s - level #%d: %s&quot;), ind-&gt;getName().c_str(),
+             ind-&gt;getCurrentLevel(), curProxy-&gt;getTitle().c_str()).c_str());
+ 
+-    string hunted = init_hunted_time();   // sets m_hunt_against_time (used below)
++    std::string hunted = init_hunted_time();   // sets m_hunt_against_time (used below)
++    documentHistory.clear();
++    consoleIndex = 0;
+ 
+     // show level information (name, author, etc.)
+-    {
+-        string displayed_info = &quot;&quot;;
+-        if (m_hunt_against_time&gt;0) {
+-            if (hunted == &quot;you&quot;)
+-                displayed_info = _(&quot;Your record: &quot;);
+-            else
+-                displayed_info = _(&quot;World record to beat: &quot;);
+-            displayed_info += ecl::strf(&quot;%d:%02d&quot;, (m_hunt_against_time/60)%100, 
+-                    m_hunt_against_time%60);
++    std::string displayed_info = &quot;&quot;;
++    if (m_hunt_against_time&gt;0) {
++        if (hunted == &quot;you&quot;)
++            displayed_info = _(&quot;Your record: &quot;);
++        else
++            displayed_info = _(&quot;World record to beat: &quot;);
++        displayed_info += ecl::strf(&quot;%d:%02d&quot;, (m_hunt_against_time/60)%100, 
++                m_hunt_against_time%60);
+ //+ _(&quot; by &quot;) +hunted;
+ // makes the string too long in many levels
+-            Msg_ShowText (displayed_info, true, 4.0);
+-        }
+-        else {
+-            displayed_info = displayedLevelInfo(curProxy);
+-            Msg_ShowText (displayed_info, true, 2.0);
+-        }
++        Msg_ShowDocument(displayed_info, true, 4.0);
++    } else {
++        displayed_info = displayedLevelInfo(curProxy);
++        Msg_ShowDocument(displayed_info, true, 2.0);
+     }
+ 
+     sound::StartLevelMusic();
+@@ -885,10 +909,25 @@
+     draw_screen();
+ }
+ 
+-
++void Client::registerDocument(std::string text) {
++    documentHistory.push_back(text);
++    consoleIndex = -1;
++}
++
++void Client::finishedText() {
++    consoleIndex = 0;
++}
++
+ /* -------------------- Functions -------------------- */
+ 
++void client::ClientInit() {
++    CLIENT.init();
++}
+ 
++void client::ClientShutdown() {
++    CLIENT.shutdown();
++}
++
+ bool client::NetworkStart() 
+ {
+     return CLIENT.network_start();
+@@ -976,12 +1015,19 @@
+ }
+ 
+ 
+-void client::Msg_ShowText
+-(const std::string &amp;text, bool scrolling, double duration)
+-{
++void client::Msg_ShowText(const std::string &amp;text, bool scrolling, double duration) {
+     STATUSBAR-&gt;show_text (text, scrolling, duration);
+ }
+ 
++void client::Msg_ShowDocument(const std::string &amp;text, bool scrolling, double duration) {
++    CLIENT.registerDocument(text);
++    Msg_ShowText(text, scrolling, duration);
++}
++
++void client::Msg_FinishedText() {
++    CLIENT.finishedText();
++}
++
+ void client::Msg_Error (const std::string &amp;text)
+ {
+     CLIENT.error (text);
+
+Modified: trunk/src/client.hh
+===================================================================
+--- trunk/src/client.hh	2009-10-10 20:25:31 UTC (rev 1827)
++++ trunk/src/client.hh	2009-10-10 21:49:44 UTC (rev 1828)
+@@ -27,10 +27,13 @@
+ 
+ /* -------------------- Functions -------------------- */
+ 
++    void ClientInit();
++    void ClientShutdown();
++
+     bool NetworkStart();
+ 
+ 
+-    void Tick (double dtime);
++    void Tick(double dtime);
+ 
+     bool AbortGameP();
+ 
+@@ -40,27 +43,29 @@
+ 
+     void Msg_Command(const std::string&amp; cmd);
+     
+-    void Msg_AdvanceLevel (lev::LevelAdvanceMode mode);
++    void Msg_AdvanceLevel(lev::LevelAdvanceMode mode);
+     void Msg_JumpBack();
+ 
+     void Msg_LevelLoaded(bool isRestart);
+ 
+-    void Msg_PlayerPosition (unsigned iplayer, const ecl::V2 &amp;pos);
++    void Msg_PlayerPosition(unsigned iplayer, const ecl::V2 &amp;pos);
+ 
+-    void Msg_Sparkle (const ecl::V2 &amp;pos);
++    void Msg_Sparkle(const ecl::V2 &amp;pos);
+ 
+-    void Msg_ShowText (const std::string &amp;text, bool scrolling, double duration=-1);
++    void Msg_ShowText(const std::string &amp;text, bool scrolling, double duration=-1);
++    void Msg_ShowDocument(const std::string &amp;text, bool scrolling, double duration=-1);
++    void Msg_FinishedText();
+ 
+     //! Play sound emanating from an absolute position in the world
+-    void Msg_PlaySound (const std::string &amp;soundname, 
++    void Msg_PlaySound(const std::string &amp;soundname, 
+                         const ecl::V2 &amp;pos,
+                         double relative_volume);
+ 
+     //! Play a  sound emanating from the player's current position
+-    void Msg_PlaySound (const std::string &amp;soundname, double relative_volume);
++    void Msg_PlaySound(const std::string &amp;soundname, double relative_volume);
+ 
+     //! Stop the game and display an error message instead
+-    void Msg_Error (const std::string &amp;text);
++    void Msg_Error(const std::string &amp;text);
+ }
+ 
+ namespace enigma
+
+Modified: trunk/src/client_internal.hh
+===================================================================
+--- trunk/src/client_internal.hh	2009-10-10 20:25:31 UTC (rev 1827)
++++ trunk/src/client_internal.hh	2009-10-10 21:49:44 UTC (rev 1828)
+@@ -1,6 +1,26 @@
++/*
++ * Copyright (C) 2003,2004,2005 Daniel Heck
++ * Copyright (C) 2009 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
+ #include &quot;gui/Menu.hh&quot;
+ #include &quot;video.hh&quot;
+ #include &quot;ecl_buffer.hh&quot;
++#include &lt;vector&gt;
+ 
+ namespace
+ {
+@@ -101,6 +121,9 @@
+         Client();
+         ~Client();
+ 
++        void init();
++        void shutdown();
++        
+         void tick (double dtime);
+         void stop() { m_state = cls_idle; }
+         bool network_start();
+@@ -119,8 +142,12 @@
+ 
+         void mark_cheater() { m_cheater = true; }
+         void easy_going() { m_hunt_against_time = false; }
++        void registerDocument(std::string text);
++        void finishedText();
++        
+     private:
+ 
++        
+         std::string init_hunted_time();
+ 
+ 
+@@ -157,8 +184,13 @@
+         int         m_hunt_against_time;
+         bool        m_cheater;
+ 
+-        string      m_user_input;
+-        string      m_error_message;
++        std::string newCommand;
++        std::vector&lt;std::string&gt; commandHistory;
++        std::vector&lt;std::string&gt; documentHistory;
++        int consoleIndex;
++        
++        std::string      m_user_input;
++        std::string      m_error_message;
+ 
+         std::auto_ptr&lt;video::TransitionEffect&gt; m_effect;
+         ENetHost   *m_network_host;
+
+Modified: trunk/src/display.cc
+===================================================================
+--- trunk/src/display.cc	2009-10-10 20:25:31 UTC (rev 1827)
++++ trunk/src/display.cc	2009-10-10 21:49:44 UTC (rev 1828)
+@@ -24,9 +24,10 @@
+  */
+ 
+ #include &quot;display_internal.hh&quot;
++#include &quot;client.hh&quot;
+ #include &quot;errors.hh&quot;
++#include &quot;main.hh&quot;
+ #include &quot;video.hh&quot;
+-#include &quot;main.hh&quot;
+ 
+ #include &quot;ecl_sdl.hh&quot;
+ #include &quot;ecl.hh&quot;
+@@ -240,6 +241,7 @@
+         m_textview.draw (gc, r);
+     }
+     else {
++        client::Msg_FinishedText();
+         int itemsize = static_cast&lt;int&gt;(vminfo-&gt;tile_size * 1.25);
+         int x = m_itemarea.x;
+         for (unsigned i=0; i&lt;m_models.size(); ++i) {
+
+Modified: trunk/src/items/Bottle.cc
+===================================================================
+--- trunk/src/items/Bottle.cc	2009-10-10 20:25:31 UTC (rev 1827)
++++ trunk/src/items/Bottle.cc	2009-10-10 21:49:44 UTC (rev 1828)
+@@ -71,7 +71,7 @@
+             std::string txt(v);
+             // translate text
+             txt = server::LoadedProxy-&gt;getLocalizedString(txt);
+-            client::Msg_ShowText(txt, true);
++            client::Msg_ShowDocument(txt, true);
+             return ITEM_KILL;          // remove from inventory
+         } else if (state == IDLE) {
+             if (!SendMessage(a, &quot;_booze&quot;, getAttr(&quot;interval&quot;)).to_bool())
+
+Modified: trunk/src/items/DocumentItem.cc
+===================================================================
+--- trunk/src/items/DocumentItem.cc	2009-10-10 20:25:31 UTC (rev 1827)
++++ trunk/src/items/DocumentItem.cc	2009-10-10 21:49:44 UTC (rev 1828)
+@@ -54,7 +54,7 @@
+             std::string txt(v);
+             // translate text
+             txt = server::LoadedProxy-&gt;getLocalizedString(txt);
+-            client::Msg_ShowText(txt, true);
++            client::Msg_ShowDocument(txt, true);
+         }
+         return ITEM_KILL;          // remove from inventory
+     }
+
+Modified: trunk/src/main.cc
+===================================================================
+--- trunk/src/main.cc	2009-10-10 20:25:31 UTC (rev 1827)
++++ trunk/src/main.cc	2009-10-10 21:49:44 UTC (rev 1828)
+@@ -318,6 +318,9 @@
+     // set message language
+     init_i18n();
+     
++    // initialize application state
++    state = StateManager::instance();
++
+     // ----- Object declarations
+     ObjectValidator::didInitXML();  // enable initialization
+     ObjectValidator::instance();    // force early initialization (an optional statement)
+@@ -376,9 +379,6 @@
+     // ----- Load models
+     display::Init(ap.show_fps);
+ 
+-    // initialize application state
+-    state = StateManager::instance();
+-
+     // ----- Load level packs -- needs state
+     lev::Index::initGroups();
+     oxyd::Init(!isMakePreviews);  // Load oxyd data files - must be first to create correct proxies
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2009-10-10 20:25:31 UTC (rev 1827)
++++ trunk/src/world.cc	2009-10-10 21:49:44 UTC (rev 1828)
+@@ -2389,6 +2389,7 @@
+     Object::bootFinished();
+     BootRegister(NULL, NULL, false);
+     InitLasers();
++    client::ClientInit();
+ }
+ 
+ void ShutdownWorld() {
+@@ -2396,6 +2397,7 @@
+     player::PlayerShutdown();
+     Repos_Shutdown();
+     WorldProxy::shutdown();
++    client::ClientShutdown();
+ }
+ 
+ /* -------------------- Object repository -------------------- */
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001256.html">[Enigma-game-svn] r1827 - trunk/attic/images-stones
+</A></li>
+	<LI>Next message: <A HREF="001258.html">[Enigma-game-svn] r1829 - in trunk/data/levels: enigma_cross	enigma_iii enigma_iv enigma_ix enigma_vii enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1257">[ date ]</a>
+              <a href="thread.html#1257">[ thread ]</a>
+              <a href="subject.html#1257">[ subject ]</a>
+              <a href="author.html#1257">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

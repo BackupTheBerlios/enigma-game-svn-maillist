@@ -1,0 +1,1096 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1120 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1120%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200805022211.m42MBIm6016504%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000552.html">
+   <LINK REL="Next"  HREF="000554.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1120 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1120%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200805022211.m42MBIm6016504%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1120 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat May  3 00:11:18 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000552.html">[Enigma-game-svn] r1119 - homepage/input
+</A></li>
+        <LI>Next message: <A HREF="000554.html">[Enigma-game-svn] r1121 - in trunk: data data/gfx16 data/gfx32	data/gfx40 data/gfx48 data/gfx64 src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#553">[ date ]</a>
+              <a href="thread.html#553">[ thread ]</a>
+              <a href="subject.html#553">[ subject ]</a>
+              <a href="author.html#553">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-05-03 00:11:15 +0200 (Sat, 03 May 2008)
+New Revision: 1120
+
+Added:
+   trunk/src/stones/LightPassengerStone.cc
+   trunk/src/stones/LightPassengerStone.hh
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/Object.cc
+   trunk/src/Object.hh
+   trunk/src/laser.cc
+   trunk/src/laser.hh
+   trunk/src/ox_magnum.cc
+   trunk/src/stones.cc
+   trunk/src/stones/BoulderStone.cc
+   trunk/src/stones/BoulderStone.hh
+   trunk/src/stones_complex.cc
+   trunk/src/world.cc
+   trunk/src/world.hh
+   trunk/src/world_internal.hh
+Log:
+Trunk 1.1: reengineering new API lightpassenger
+- renaming to st_lightpassenger with _on and _off variants
+- attribute renaming to &quot;friction&quot; and &quot;gradient&quot;
+- full state support for on/off
+- new laser support instead of PhotoStone
+- removed usage of delayed impulses
+- full swap support
+- BoulderStone fix: full swap support of enlighted boulders
+- remove obsolete PhotoStone
+- remove obsolete delayed impulses
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-05-01 18:13:35 UTC (rev 1119)
++++ trunk/data/api1init.lua	2008-05-02 22:11:15 UTC (rev 1120)
+@@ -115,6 +115,8 @@
+     st_laser_n = &quot;st-laser-n&quot;,
+     st_laserswitch = &quot;st-laserswitch&quot;,
+     st_laserflop = &quot;st-lasertimeswitch&quot;,
++    st_lightpassenger = &quot;st-lightpassenger&quot;,
++    st_lightpassenger_off = &quot;st-lightpassenger_off&quot;,
+     st_monoflop = &quot;st-timeswitch&quot;,
+     st_oxyd = &quot;st-oxyd&quot;,
+     st_panel = &quot;st-wood_001&quot;,
+@@ -310,6 +312,12 @@
+      if key == &quot;value&quot; then
+          _key = &quot;coin_value&quot;
+      end
++     if key == &quot;friction_factor&quot; then
++         _key = &quot;friction&quot;
++     end
++     if key == &quot;gradient_factor&quot; then
++         _key = &quot;gradient&quot;
++     end
+      if key == &quot;targetx&quot; then
+          local d = enigma._GetAttrib(obj, &quot;destination&quot;)
+          if (en.usertype(d) == &quot;position&quot;) then
+@@ -370,6 +378,12 @@
+      if key == &quot;value&quot; then
+          _key = &quot;coin_value&quot;
+      end
++     if key == &quot;friction_factor&quot; then
++         _key = &quot;friction&quot;
++     end
++     if key == &quot;gradient_factor&quot; then
++         _key = &quot;gradient&quot;
++     end
+      if key == &quot;blackball&quot; or key == &quot;whiteball&quot; then
+          _key = &quot;color&quot;
+      end
+@@ -478,8 +492,8 @@
+     [&quot;st-stoneimpulse__trigger&quot;] = &quot;signal&quot;,
+     [&quot;st-stoneimpulse-hollow__trigger&quot;] = &quot;signal&quot;,
+     [&quot;st-stoneimpulse_movable__trigger&quot;] = &quot;signal&quot;,
+-    [&quot;st-lightpassenger__trigger&quot;] = &quot;toggle&quot;,
+-    [&quot;st-lightpassenger__onoff&quot;] = &quot;toggle&quot;,
++    st_lightpassenger__trigger = &quot;toggle&quot;,
++    st_lightpassenger__onoff = &quot;toggle&quot;,
+     [&quot;st-mirror__trigger&quot;] = &quot;turn&quot;,
+     [&quot;st-oxyd__trigger&quot;] = &quot;toggle&quot;,
+     [&quot;st-plain__trigger&quot;] = &quot;signal&quot;,
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-05-01 18:13:35 UTC (rev 1119)
++++ trunk/data/schemas/objects.xml	2008-05-02 22:11:15 UTC (rev 1120)
+@@ -12,6 +12,8 @@
+     &lt;attr name=&quot;destination&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;faces&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;flavor&quot; type=&quot;string&quot; default=&quot;b&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;friction&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;gradient&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;instant&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;interval&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;interval_s&quot; type=&quot;double&quot; default=&quot;3&quot; rw=&quot;rw&quot;/&gt;
+@@ -352,6 +354,23 @@
+       &lt;msg name=&quot;on&quot;/&gt;
+       &lt;msg name=&quot;signal&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_lightpassenger&quot;&gt;
++      &lt;attr name=&quot;interval&quot; default=&quot;0.05&quot;/&gt;
++      &lt;attr name=&quot;friction&quot;/&gt;
++      &lt;attr name=&quot;gradient&quot;/&gt;
++      &lt;msg name=&quot;on&quot;/&gt;
++      &lt;msg name=&quot;off&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++      &lt;msg name=&quot;_init&quot;/&gt;
++      &lt;msg name=&quot;_model_reanimated&quot;/&gt;
++      &lt;msg name=&quot;_trigger&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_lightpassenger_on&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;1&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_lightpassenger_off&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;0&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_laserswitch&quot;&gt;
+       &lt;attr name=&quot;state&quot; rw=&quot;r&quot;/&gt;
+       &lt;msg name=&quot;_init&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-05-01 18:13:35 UTC (rev 1119)
++++ trunk/src/Makefile.am	2008-05-02 22:11:15 UTC (rev 1120)
+@@ -217,6 +217,8 @@
+ 	stones/LaserStone.hh	\
+ 	stones/LaserSwitch.cc	\
+ 	stones/LaserSwitch.hh	\
++	stones/LightPassengerStone.cc	\
++	stones/LightPassengerStone.hh	\
+ 	stones/MonoFlopStone.cc	\
+ 	stones/MonoFlopStone.hh	\
+ 	stones/OxydStone.cc	\
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2008-05-01 18:13:35 UTC (rev 1119)
++++ trunk/src/Object.cc	2008-05-02 22:11:15 UTC (rev 1120)
+@@ -323,12 +323,6 @@
+     /* Like variant above, but the _result_ of the impulse is delayed.
+      */
+     
+-    void Object::send_impulse(const GridPos&amp; dest, Direction dir, double delay)
+-    {
+-        if (Stone *st = GetStone(dest)) {
+-            addDelayedImpulse(Impulse(this, dest, dir), delay, st);
+-        }
+-    }
+     
+     bool Object::getDestinationByIndex(int idx, ecl::V2 &amp;dstpos) const {
+         int i = 0;  // counter for destination candidates
+
+Modified: trunk/src/Object.hh
+===================================================================
+--- trunk/src/Object.hh	2008-05-01 18:13:35 UTC (rev 1119)
++++ trunk/src/Object.hh	2008-05-02 22:11:15 UTC (rev 1120)
+@@ -106,7 +106,6 @@
+         /* ---------- Helper routines ---------- */
+ 
+         void send_impulse(const GridPos&amp; dest, Direction dir);
+-        void send_impulse(const GridPos&amp; dest, Direction dir, double delay);
+ 
+         /* ---------- Object interface ---------- */
+         
+
+Modified: trunk/src/laser.cc
+===================================================================
+--- trunk/src/laser.cc	2008-05-01 18:13:35 UTC (rev 1119)
++++ trunk/src/laser.cc	2008-05-02 22:11:15 UTC (rev 1120)
+@@ -96,35 +96,6 @@
+ }
+ 
+ 
+-/* -------------------- PhotoStone -------------------- */
+-
+-PhotoStone::PhotoStone(const char *kind) : Stone(kind) 
+-{
+-    illuminated = false;
+-}
+-
+-PhotoStone::PhotoStone()
+-{
+-    illuminated = false;
+-}
+-
+-void PhotoStone::on_recalc_start() 
+-{}
+-
+-void PhotoStone::on_recalc_finish() 
+-{ 
+-    GridPos p = get_pos();
+-    bool illu = (LightFrom(p, NORTH) || LightFrom(p, EAST)
+-                 || LightFrom(p, WEST) || LightFrom(p, SOUTH));
+-
+-    if (illu != illuminated) {
+-        if (illu) notify_laseron();
+-        else      notify_laseroff();
+-        illuminated = illu;
+-    }
+-}
+-
+-
+ /* -------------------- LaserBeam -------------------- */
+ 
+ // The implementation of laser beams is a little tricky because, in
+
+Modified: trunk/src/laser.hh
+===================================================================
+--- trunk/src/laser.hh	2008-05-01 18:13:35 UTC (rev 1119)
++++ trunk/src/laser.hh	2008-05-02 22:11:15 UTC (rev 1120)
+@@ -64,37 +64,6 @@
+         static std::vector&lt;void*&gt; instances;
+     };
+ 
+-/* -------------------- PhotoStone -------------------- */
+-
+-    /*! Most stones are indifferent to laser beams: They either block
+-      the light completely or they let it pass, but they do not change
+-      their internal state when they are hit by light.  Certain kinds
+-      of stones need to be notified whenever the `light' goes on or off
+-      -- these can be derived from this class.
+-    
+-      The most prominent example are Oxyd stones -- they open when
+-      they are hit by a laser beam.  See the remarks at the beginning
+-      of this file to understand why overriding `processLight' is not
+-      sufficient for a proper implementation of Oxyd stones.
+-    */
+-
+-    class PhotoStone : public Stone, public PhotoCell {
+-    protected:
+-        PhotoStone();
+-        PhotoStone(const char *kind);
+-
+-    private:
+-        bool illuminated;
+-
+-        // PhotoCell interface
+-        void on_recalc_start();
+-        void on_recalc_finish();
+-
+-        // PhotoStone interface
+-        virtual void notify_laseron() = 0;
+-        virtual void notify_laseroff() = 0;
+-    };
+-    
+ /* -------------------- LaserBeam -------------------- */
+ 
+     class LaserBeam : public Item {
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2008-05-01 18:13:35 UTC (rev 1119)
++++ trunk/src/ox_magnum.cc	2008-05-02 22:11:15 UTC (rev 1120)
+@@ -289,7 +289,7 @@
+     &quot;st-stoneimpulse-hollow&quot;,   // OxydMagnum stone 0xa4
+     UNUSED,                     // OxydMagnum stone 0xa5
+     UNUSED,                     // OxydMagnum stone 0xa6
+-    &quot;st-lightpassenger&quot;,        // OxydMagnum stone 0xa7
++    &quot;st_lightpassenger&quot;,        // OxydMagnum stone 0xa7
+     UNUSED,                     // OxydMagnum stone 0xa8
+     UNUSED,                     // OxydMagnum stone 0xa9
+     // codes &gt;= 0xaa are unused
+
+Modified: trunk/src/stones/BoulderStone.cc
+===================================================================
+--- trunk/src/stones/BoulderStone.cc	2008-05-01 18:13:35 UTC (rev 1119)
++++ trunk/src/stones/BoulderStone.cc	2008-05-02 22:11:15 UTC (rev 1120)
+@@ -19,6 +19,7 @@
+  */
+ 
+ #include &quot;stones/BoulderStone.hh&quot;
++#include &quot;laser.hh&quot;
+ #include &quot;player.hh&quot;
+ #include &quot;world.hh&quot;
+ //#include &quot;main.hh&quot;
+@@ -63,10 +64,20 @@
+     }
+     
+     void BoulderStone::on_creation(GridPos p) {
++        // just update light status, do not react for new stones
++        // swapped and moved once are handled by the on_move method
++        updateCurrentLightDirs();
+         activatePhoto();
+         Stone::on_creation(p);
+     }
+     
++    void BoulderStone::on_removal(GridPos p) {
++        // remember last enlightment for stone moves and swaps
++        objFlags &amp;= ~OBJBIT_LIGHT;
++        objFlags |= (objFlags &amp; OBJBIT_LIGHTNEWDIRS) &lt;&lt; 24;
++        Stone::on_removal(p);
++    }
++
+     void BoulderStone::init_model() {
+         std::string mname  = &quot;st-bolder&quot; + to_suffix(getDir());
+         if (state == FALLING)
+@@ -131,6 +142,11 @@
+     void BoulderStone::on_move() {
+         state = ACTIVE;
+         triggerObstacle(getDir(), true);
++        
++        objFlags &amp;= ~OBJBIT_LIGHTNEWDIRS;
++        objFlags |= (objFlags &amp; OBJBIT_LIGHT) &gt;&gt; 24;
++        RecalcLight();   // necessary for rotators swapped out of light
++        
+         Stone::on_move();
+     }
+     
+
+Modified: trunk/src/stones/BoulderStone.hh
+===================================================================
+--- trunk/src/stones/BoulderStone.hh	2008-05-01 18:13:35 UTC (rev 1119)
++++ trunk/src/stones/BoulderStone.hh	2008-05-02 22:11:15 UTC (rev 1120)
+@@ -40,6 +40,10 @@
+             IDLE,       ///&lt; already sent trigger w/o success
+             FALLING     ///&lt; falling into abyss
+         };
++        
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_LIGHT     =  15&lt;&lt;24   ///&lt; Light status kept for move, swap, pull operations 
++        };
+     public:
+         BoulderStone(Direction dir = NORTH);
+         
+@@ -53,6 +57,7 @@
+ 
+         // GridObject interface
+         virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
+         virtual void init_model();
+         virtual void lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs);
+         
+
+Added: trunk/src/stones/LightPassengerStone.cc
+===================================================================
+--- trunk/src/stones/LightPassengerStone.cc	2008-05-01 18:13:35 UTC (rev 1119)
++++ trunk/src/stones/LightPassengerStone.cc	2008-05-02 22:11:15 UTC (rev 1120)
+@@ -0,0 +1,236 @@
++/*
++ * Copyright (C) 2006 Andreas Lochmann
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/LightPassengerStone.hh&quot;
++#include &quot;errors.hh&quot;
++#include &quot;laser.hh&quot;
++#include &quot;main.hh&quot;
++#include &quot;player.hh&quot;
++
++#include &lt;algorithm&gt;
++
++namespace enigma {
++    LightPassengerStone::LightPassengerStone(bool isActive) : Stone () {
++        state =  isActive ? ON : OFF;
++    }
++
++    LightPassengerStone::~LightPassengerStone() {
++        GameTimer.remove_alarm (this);
++    }
++            
++    Value LightPassengerStone::message(const Message &amp;m) {
++        if (m.message == &quot;_trigger&quot;) {
++            setState(1 - state);
++            return Value();
++        } else if (m.message == &quot;_model_reanimated&quot;) {
++            objFlags &amp;= ~OBJBIT_SKATEDIR;  // NODIR
++            if (state != BREAK) {     // continue break animation
++                init_model();         // adjust possible changed model in other cases
++            }
++            return Value();            
++        } else if (m.message == &quot;_init&quot;) {
++            if (objFlags &amp; OBJBIT_LIGHTNEWDIRS)
++                lightDirChanged(NODIRBIT, (DirectionBits)(objFlags &amp; OBJBIT_LIGHTNEWDIRS));
++            return Value();            
++        }
++        return Stone::message(m);
++    }
++    
++    int LightPassengerStone::externalState() const {
++        return state == OFF ? 0 : 1;
++    }
++    
++    void LightPassengerStone::setState(int extState) {
++        if (state == OFF &amp;&amp; extState == 1) {
++            state = ON;
++            if (isDisplayable()) {
++                init_model();
++                if (objFlags &amp; OBJBIT_LIGHTNEWDIRS)  // currently enlighted?
++                    GameTimer.set_alarm(this, calcInterval(), false);
++            }
++        } else if ((state == ON || state == BLINK) &amp;&amp; state == 0) {
++            state = OFF;
++            objFlags &amp;= ~OBJBIT_SKATEDIR;  // NODIR
++            if (isDisplayable())
++                init_model();
++        }
++    }
++
++    void LightPassengerStone::init_model() {
++        switch(state) {
++            case OFF:
++                set_anim(&quot;st-lightpassenger_off&quot;); break;
++            case ON:
++                set_anim(&quot;st-lightpassenger&quot;); break;
++            case BLINK:
++                set_anim(&quot;st-lightpassenger-blink&quot;); break;
++            case BREAK:
++                bool NorthSouth = objFlags &amp; (NORTHBIT | SOUTHBIT);
++                bool EastWest = objFlags &amp; (WESTBIT | EASTBIT);
++                sound_event (&quot;stonedestroy&quot;);
++                if (NorthSouth &amp;&amp; !EastWest)
++                    set_anim(&quot;st-lightpassenger-break-v&quot;);
++                else if (!NorthSouth &amp;&amp; EastWest)
++                    set_anim(&quot;st-lightpassenger-break-h&quot;);
++                else // and this even in case the laser recently disappeared
++                    set_anim(&quot;st-lightpassenger-break-hv&quot;);
++                break;
++        }
++    }
++    
++    void LightPassengerStone::on_creation(GridPos p) {
++        activatePhoto();
++        Stone::on_creation(p);
++    }
++    
++    void LightPassengerStone::on_removal(GridPos p) {
++        GameTimer.remove_alarm(this);
++        objFlags &amp;= ~OBJBIT_BLOCKED;
++        if (state == BLINK)
++            state = ON;
++        Stone::on_removal(p);
++    }
++
++    void LightPassengerStone::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
++        if (state == OFF)
++           return;
++        
++        if (newDirs == 0) {
++            // all lights switched off
++            GameTimer.remove_alarm(this);
++            if(state == BLINK) {                
++                state = ON;
++                init_model();
++            }
++        } else if (oldDirs == 0) {
++            // enlighted
++            GameTimer.set_alarm(this, calcInterval(), false);
++        }
++    }
++
++    void LightPassengerStone::animcb() {
++        ASSERT(state == BREAK, XLevelRuntime,
++            &quot;LightPassengerStone: animcb called with inconsistent state&quot;);
++        KillStone(get_pos());
++    }
++    
++    void LightPassengerStone::actor_hit(const StoneContact &amp;sc) {
++        Actor *a = sc.actor;
++        if (a != NULL &amp;&amp; state == BLINK &amp;&amp; player::WieldedItemIs(a, &quot;it_hammer&quot;)) {
++            state = BREAK;
++            init_model();
++        }
++    }
++
++    void LightPassengerStone::on_impulse(const Impulse&amp; impulse) {
++        Actor *a = dynamic_cast&lt;Actor*&gt;(impulse.sender);
++        if (a == NULL &amp;&amp; ((objFlags &amp; OBJBIT_LIGHTNEWDIRS) == NODIRBIT || state == OFF))
++            move_stone(impulse.dir);
++    }
++    
++    void LightPassengerStone::alarm() {
++        Direction skateDir = (Direction)((int)((objFlags &amp; OBJBIT_SKATEDIR) &gt;&gt; 24) - 1);
++        if ((objFlags &amp; OBJBIT_LIGHTNEWDIRS) &amp;&amp; (state == ON || state == BLINK)) {
++            GridPos p = get_pos();
++            int toSouth = (objFlags &amp; NORTHBIT ? -1 : 0) + (objFlags &amp; SOUTHBIT ? +1 : 0);
++            int toWest =  (objFlags &amp; EASTBIT ? -1 : 0) + (objFlags &amp; WESTBIT ? +1 : 0);
++            if (toSouth * toWest != 0) {
++                // Light is coming from two directions. Choose the one you are
++                // *not* coming from (thus changing beams), in doubt: random.
++                if (skateDir == NORTH || skateDir == SOUTH)
++                    toSouth = 0;
++                if (skateDir == EAST || skateDir == WEST)
++                    toWest = 0;
++                if (skateDir == NODIR) {
++                    toSouth = IntegerRand(0,1) ? 0 : toSouth;
++                    toWest = toSouth ? 0 : toWest;
++                }
++            }
++            skateDir = (toSouth == 1) ? SOUTH : (toSouth == -1) ? NORTH :
++                (toWest == 1) ? WEST : (toWest == -1) ? EAST : NODIR;
++            objFlags &amp;= ~OBJBIT_SKATEDIR;
++            objFlags |= ((int)skateDir + 1 &lt;&lt; 24); // store new dir
++            if (skateDir == NODIR &amp;&amp; state != BLINK) {
++                // No direction but lighted? Seems to be lasers from
++                // two opposite directions. Be sure and then start blinking.
++                if (objFlags &amp; OBJBIT_LIGHTNEWDIRS) {
++                    state = BLINK;
++                    init_model();
++                }
++            } else if (skateDir != NODIR) {
++                if (state == BLINK) {
++                    state = ON;
++                    init_model();
++                }
++                if (GetStone(move(p, skateDir))) {
++                    // Skipping each second turn makes the passenger stone seem
++                    // slower when pushing another stone. This looks more
++                    // natural. That's why impulse is delayed:
++                    if (objFlags &amp; OBJBIT_BLOCKED) {
++                        send_impulse(move(p, skateDir), skateDir);
++                        objFlags &amp;= ~OBJBIT_BLOCKED;
++                    } else
++                        objFlags |= OBJBIT_BLOCKED;
++                } else {
++                    objFlags &amp;= ~OBJBIT_BLOCKED;
++                }
++                move_stone(skateDir);
++            }
++            GameTimer.set_alarm(this, calcInterval(), false);
++        }
++    }
++
++    double LightPassengerStone::calcInterval() {
++        /*  Interval is calculated from
++                    1 + friction_stone * friction_floor
++        interval = ------------------------------------ * baseinterval
++                    1 + gradient_stone * gradient_floor
++            and min-maxed to sensible values. &quot;gradient&quot; is just
++            the force resulting from floor-&gt;add_force. &quot;baseinterval&quot;
++            is 50 ms or the interval given in &quot;interval&quot;.
++        */
++        double base = getAttr(&quot;interval&quot;);
++        if (Value f = getAttr(&quot;friction&quot;))
++            base *= 1.0 + (double)f * GetFloor(get_pos())-&gt;get_friction();
++        if (Value g = getAttr(&quot;gradient&quot;)) {
++            Direction skateDir = (Direction)((int)((objFlags &amp; OBJBIT_SKATEDIR) &gt;&gt; 24) - 1);
++            if (skateDir != NODIR) {
++                V2 vec = V2(0.0,0.0);
++                double quot = 0;
++                GetFloor(get_pos())-&gt;add_force(0, vec);
++                quot = skateDir == NORTH ? -vec[1] : skateDir == SOUTH ? vec[1] :
++                    skateDir == EAST ? vec[0] : skateDir == WEST ? -vec[0] : 0;
++                base /= std::max(1.0 + (double)g * quot, 0.01);                    
++            }
++        }
++        return std::max(base, 0.02);
++    }
++
++    
++    DEF_TRAITSM(LightPassengerStone,&quot;st_lightpassenger&quot;, st_lightpassenger,
++                MOVABLE_IRREGULAR);
++    
++    BOOT_REGISTER_START
++        BootRegister(new LightPassengerStone(true), &quot;st_lightpassenger&quot;);
++        BootRegister(new LightPassengerStone(true), &quot;st_lightpassenger_on&quot;);
++        BootRegister(new LightPassengerStone(false), &quot;st_lightpassenger_off&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/LightPassengerStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/LightPassengerStone.hh
+===================================================================
+--- trunk/src/stones/LightPassengerStone.hh	2008-05-01 18:13:35 UTC (rev 1119)
++++ trunk/src/stones/LightPassengerStone.hh	2008-05-02 22:11:15 UTC (rev 1120)
+@@ -0,0 +1,80 @@
++/*
++ * Copyright (C) 2006 Andreas Lochmann
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef LIGHTPASSENGERSTONE_HH
++#define LIGHTPASSENGERSTONE_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class LightPassengerStone : public Stone, public TimeHandler {
++        CLONEOBJ(LightPassengerStone);
++        DECL_TRAITS;
++    private:
++        enum iState {
++            OFF,     ///&lt; inactive, does not react on laser 
++            ON,      ///&lt; active, does react on laser
++            BLINK,   ///&lt; active, double lasered, ready to break
++            BREAK    ///&lt; active, breaking and dissolving
++        };
++        
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_SKATEDIR =   7&lt;&lt;24,   ///&lt; current skate direction
++            OBJBIT_BLOCKED  =   1&lt;&lt;27    ///&lt; have been blocked by a stone on last move attempt 
++        };
++    public:
++        LightPassengerStone(bool isActive);
++        virtual ~LightPassengerStone();
++        
++        // Object interface
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual int externalState() const;
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
++        virtual void lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs);
++        
++        // ModelCallback interface
++        virtual void animcb();
++        
++        // Stone interface
++        virtual void actor_hit(const StoneContact &amp;sc);
++        virtual void on_impulse(const Impulse&amp; impulse);
++
++        // TimeHandler interface
++        virtual void alarm();
++        
++    private:
++        double calcInterval();
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/LightPassengerStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-05-01 18:13:35 UTC (rev 1119)
++++ trunk/src/stones.cc	2008-05-02 22:11:15 UTC (rev 1120)
+@@ -116,7 +116,7 @@
+ : GridObject (kind), freeze_check_running (false)
+ {}
+ 
+-Stone::~Stone() { revokeDelayedImpulses(this); }
++Stone::~Stone() {  }
+ 
+ const StoneTraits &amp;Stone::get_traits() const
+ {
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-05-01 18:13:35 UTC (rev 1119)
++++ trunk/src/stones_complex.cc	2008-05-02 22:11:15 UTC (rev 1120)
+@@ -2607,199 +2607,6 @@
+ }
+ 
+ 
+-/* -------------------- Light Passenger Stone -------------------- */
+-namespace
+-{
+-    class LightPassengerStone : public PhotoStone, public TimeHandler {
+-        CLONEOBJ(LightPassengerStone);
+-        DECL_TRAITS;
+-    public:
+-        LightPassengerStone(bool active_) : PhotoStone(&quot;st-lightpassenger&quot;),
+-            skateDir (NODIR), state(active_ ? ACTIVE : INACTIVE),
+-            isLighted (false) { }
+-
+-    virtual ~LightPassengerStone() {
+-        GameTimer.remove_alarm (this);
+-    }
+-
+-    private:
+-        Direction skateDir;
+-        //bool isActive;
+-        bool isLighted;
+-        enum State {INACTIVE, ACTIVE, BLINK, BREAK} state;
+-        //bool isBlinking;
+-
+-        void on_creation(GridPos p) {
+-            PhotoStone::on_creation(p);
+-            photo_activate();
+-        }
+-        void on_removal(GridPos p) {
+-            photo_deactivate();
+-            PhotoStone::on_removal(p);
+-        }
+-        void init_model() {
+-            switch(state) {
+-            case INACTIVE:
+-                set_anim(&quot;st-lightpassenger_off&quot;); break;
+-            case ACTIVE:
+-                set_anim(&quot;st-lightpassenger&quot;); break;
+-            case BLINK:
+-                set_anim(&quot;st-lightpassenger-blink&quot;); break;
+-            case BREAK:
+-                GridPos p = get_pos();
+-                bool NorthSouth = LightFrom(p,NORTH) &amp;&amp;
+-		    LightFrom(p,SOUTH);
+-                bool EastWest = LightFrom(p,EAST) &amp;&amp;
+-		    LightFrom(p,WEST);
+-                sound_event (&quot;stonedestroy&quot;);
+-                if(NorthSouth &amp;&amp; !EastWest)
+-                    set_anim(&quot;st-lightpassenger-break-v&quot;);
+-                else if(!NorthSouth &amp;&amp; EastWest)
+-                    set_anim(&quot;st-lightpassenger-break-h&quot;);
+-                else // and this even in case the laser recently disappeared
+-                    set_anim(&quot;st-lightpassenger-break-hv&quot;);
+-                break;
+-            }
+-        }
+-        void animcb() {
+-            ASSERT(state == BREAK, XLevelRuntime,
+-                &quot;LightPassengerStone: animcb called with inconsistent state&quot;);
+-            KillStone(get_pos());
+-        }
+-        void notify_laseroff() {
+-            if (isLighted) GameTimer.remove_alarm(this);
+-            isLighted = false;
+-            if(state == BLINK) {                
+-                state = ACTIVE;
+-                init_model();
+-            }
+-        }
+-        void notify_laseron() {
+-            if (!isLighted) GameTimer.set_alarm(this, get_interval(), false);
+-            isLighted = true;
+-        }        
+-
+-        double get_interval() {
+-            /*  Interval is calculated from
+-                        1 + friction_factor * friction
+-            interval = -------------------------------- * baseinterval
+-                        1 + gradient_factor * gradient
+-                and min-maxed to sensible values. &quot;gradient&quot; is just
+-                the force resulting from floor-&gt;add_force. &quot;baseinterval&quot;
+-                is 50 ms or the interval given in &quot;interval&quot;.
+-            */
+-            double base = getDefaultedAttr(&quot;interval&quot;, 0.05);
+-            if (Value f = getAttr(&quot;friction_factor&quot;))
+-                base *= 1.0 + (double)f * GetFloor(get_pos())-&gt;get_friction();
+-            if (Value g = getAttr(&quot;gradient_factor&quot;))
+-                if (skateDir != NODIR) {
+-                    V2 vec = V2(0.0,0.0);
+-                    double quot = 0;
+-                    GetFloor(get_pos())-&gt;add_force(0, vec);
+-                    quot = skateDir == NORTH ? -vec[1] : skateDir == SOUTH ? vec[1] :
+-                        skateDir == EAST ? vec[0] : skateDir == WEST ? -vec[0] : 0;
+-                    base /= max(1.0 + (double)g * quot, 0.01);                    
+-                }
+-            return max(base, 0.02);
+-        }
+-
+-        void set_on(bool newon){
+-            if(state == INACTIVE &amp;&amp; newon) {
+-                state = ACTIVE;
+-                init_model();
+-                if(isLighted)
+-                    GameTimer.set_alarm(this, get_interval(), false);
+-            } else if((state == ACTIVE || state == BLINK) &amp;&amp; !newon) {
+-                state = INACTIVE;
+-                init_model();
+-                skateDir = NODIR;
+-            }
+-        }
+-
+-        virtual Value message (const Message &amp;m) {
+-            if (m.message == &quot;toggle&quot;) {
+-                set_on(state == INACTIVE);
+-                return Value();
+-            } else if (m.message == &quot;signal&quot;) {
+-                set_on(to_int(m.value) != 0);
+-                return Value();
+-            } else if (m.message == &quot;on&quot;) {
+-                set_on(true);
+-                return Value();
+-            } else if (m.message == &quot;off&quot;) {
+-                set_on(false);
+-                return Value();
+-            } else if (m.message == &quot;_trigger&quot;) {
+-                set_on(state == INACTIVE);
+-                return Value();
+-            }
+-            return PhotoStone::message(m);
+-        }
+-
+-        void alarm() {
+-            if(isLighted &amp;&amp; (state == ACTIVE || state == BLINK)) {
+-                GridPos p = get_pos();
+-                int toSouth =    (LightFrom(p,NORTH)?1:0)
+-                               + (LightFrom(p,SOUTH)?-1:0);
+-                int toWest =   (LightFrom(p,EAST)?1:0)
+-                             + (LightFrom(p,WEST)?-1:0);
+-                if(toSouth * toWest != 0) {
+-                    // Light is coming from two directions. Choose the one you are
+-                    // *not* coming from (thus changing beams), in doubt: random.
+-                    if(skateDir == NORTH || skateDir == SOUTH)
+-                        toSouth = 0;
+-                    if(skateDir == EAST || skateDir == WEST)
+-                        toWest = 0;
+-                    if(skateDir == NODIR) {
+-                        toSouth = IntegerRand(0,1) ? 0 : toSouth;
+-                        toWest = toSouth ? 0 : toWest;
+-                    }
+-                }
+-                skateDir = (toSouth == 1) ? SOUTH : (toSouth == -1) ? NORTH :
+-                    (toWest == 1) ? WEST : (toWest == -1) ? EAST : NODIR;
+-                if(skateDir == NODIR &amp;&amp; state != BLINK) {
+-                    // No direction but lighted? Seems to be lasers from
+-                    // two opposite directions. Be sure and then start blinking.
+-                    if(LightFrom(p,EAST) || LightFrom(p,WEST) ||
+-                       LightFrom(p,NORTH) || LightFrom(p,SOUTH)) {
+-                        state = BLINK;
+-                        init_model();
+-                    }
+-                } else if(skateDir != NODIR) {
+-                    if(state == BLINK) {
+-                        state = ACTIVE;
+-                        init_model();
+-                    }
+-                    if(GetStone(move(p, skateDir))) {
+-                        // Skipping each second turn makes the passenger stone seem
+-                        // slower when pushing another stone. This looks more
+-                        // natural. That's why impulse is delayed:
+-                        send_impulse(move(p, skateDir), skateDir, get_interval());
+-                    }
+-                    move_stone(skateDir);
+-                }
+-                GameTimer.set_alarm(this, get_interval(), false);
+-            }
+-        }
+-        
+-        void on_impulse(const Impulse &amp;impulse) {
+-            Actor *a = dynamic_cast&lt;Actor*&gt;(impulse.sender);
+-            if(!a &amp;&amp; (!isLighted || state == INACTIVE))
+-                move_stone(impulse.dir);
+-        }
+-        void actor_hit(const StoneContact &amp;sc) {
+-            Actor *a = sc.actor;
+-            if(a &amp;&amp; state == BLINK &amp;&amp; player::WieldedItemIs(a, &quot;it_hammer&quot;)) {
+-                state = BREAK;
+-                init_model();
+-            }
+-        }
+-    };
+-    DEF_TRAITSM(LightPassengerStone,&quot;st-lightpassenger&quot;, st_lightpassenger,
+-                MOVABLE_IRREGULAR);
+-}
+-
+-
+ // --------------------------------------------------------------------------------
+ 
+ void Init_complex()
+@@ -2901,8 +2708,6 @@
+     Register(&quot;st-chess_black&quot;, new ChessStone(0));
+     Register(&quot;st-chess_white&quot;, new ChessStone(1));
+ 
+-    Register(&quot;st-lightpassenger&quot;, new LightPassengerStone(true));
+-    Register(&quot;st-lightpassenger_off&quot;, new LightPassengerStone(false));
+ }
+ 
+ } // namespace enigma
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-05-01 18:13:35 UTC (rev 1119)
++++ trunk/src/world.cc	2008-05-02 22:11:15 UTC (rev 1120)
+@@ -447,7 +447,6 @@
+     // dtime is always 0.01 (cf. server.cc)
+ 
+     move_actors (dtime);
+-    handle_delayed_impulses (dtime);
+     tick_sound_dampings();
+ 
+     // Tell floors and items about new stones.
+@@ -1456,42 +1455,7 @@
+     
+ }
+ 
+-void World::handle_delayed_impulses (double dtime)
+-{
+-    // Handle delayed impulses
+-    ImpulseList::iterator i = delayed_impulses.begin(),
+-        end = delayed_impulses.end();
+-    while (i != end) {
+-        // shall the impulse take effect now ?
+-        if (i-&gt;tick(dtime)) {
+-            i-&gt;mark_referenced(true);
+-            if (Stone *st = GetStone(i-&gt;destination()))
+-                i-&gt;send_impulse(st);  // may delete stones and revoke delayed impuleses!
+-            i = delayed_impulses.erase(i);
+-        }
+-        else
+-            ++i;
+-    }
+-}
+ 
+-void World::revoke_delayed_impulses(const Stone *target) {
+-    // Revokes delayed impulses to and from target
+-    ImpulseList::iterator i = delayed_impulses.begin(),
+-        end = delayed_impulses.end();
+-    while (i != end) {
+-        if (i-&gt;is_receiver(target) || i-&gt;is_sender(target)) {
+-            if (i-&gt;is_referenced()) {
+-                i-&gt;mark_obsolete();
+-                ++i;
+-            } else {
+-                i = delayed_impulses.erase(i);
+-            }
+-        } else {
+-            ++i;
+-        }
+-    }
+-}
+-
+ void World::tick_sound_dampings ()
+ {
+     if(sound::IsSoundMute())
+@@ -2287,22 +2251,7 @@
+     
+ }
+ 
+-void addDelayedImpulse (const Impulse&amp; impulse, double delay, 
+-                               const Stone *estimated_receiver) 
+-{
+-    // @@@ FIXME: is a special handling necessary if several impulses hit same destination ?
+ 
+-    level-&gt;delayed_impulses.push_back(DelayedImpulse(impulse, delay, estimated_receiver));
+-}
+-
+-void revokeDelayedImpulses(const Stone *target) {
+-    // Any stone may call this function on deletion.
+-    // When the repository shuts down no world is existing thus check
+-    // world first.
+-    if (level.get() != NULL) 
+-        level-&gt;revoke_delayed_impulses(target);
+-}
+-
+ float getVolume(const char *name, Object *obj, float def_volume)
+ {
+     if((def_volume == 0.0) || sound::IsSoundMute())
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2008-05-01 18:13:35 UTC (rev 1119)
++++ trunk/src/world.hh	2008-05-02 22:11:15 UTC (rev 1120)
+@@ -331,15 +331,7 @@
+     Floor *GetFloor (GridPos p);
+     void   KillFloor (GridPos p);
+ 
+-/* -------------------- Impulses -------------------- */
+ 
+-    void addDelayedImpulse(const Impulse&amp; impulse, double delay,
+-                           const Stone *estimated_receiver);
+-
+-    /*! Revoke all delayed impulses with TARGET as sender or receiver. */
+-    void revokeDelayedImpulses(const Stone *target);
+-
+-
+ /* -------------------- Explosions -------------------- */
+ 
+     enum ExplosionType { 
+
+Modified: trunk/src/world_internal.hh
+===================================================================
+--- trunk/src/world_internal.hh	2008-05-01 18:13:35 UTC (rev 1119)
++++ trunk/src/world_internal.hh	2008-05-02 22:11:15 UTC (rev 1120)
+@@ -293,8 +293,6 @@
+         void did_move_actor(Actor *a);
+         void tick_actor(Actor *a, double dtime);
+ 
+-        void revoke_delayed_impulses(const Stone *target);
+-
+     private:
+ 
+         /* ---------- Private methods ---------- */
+@@ -319,7 +317,6 @@
+         void handle_actor_contacts ();
+         void handle_actor_contact (Actor *actor1, Actor *actor2);
+         void handle_stone_contacts(unsigned actoridx);
+-        void handle_delayed_impulses (double dtime);
+         void stone_change (GridPos p);
+         void tick_sound_dampings ();
+ 
+@@ -347,7 +344,6 @@
+         //! True if game is not running yet
+         bool                 preparing_level;
+ 
+-        ImpulseList          delayed_impulses;
+         vector&lt;GridPos&gt;      changed_stones;
+ 
+         SoundDampingList     sound_dampings; // see SoundEffectManager for details
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000552.html">[Enigma-game-svn] r1119 - homepage/input
+</A></li>
+	<LI>Next message: <A HREF="000554.html">[Enigma-game-svn] r1121 - in trunk: data data/gfx16 data/gfx32	data/gfx40 data/gfx48 data/gfx64 src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#553">[ date ]</a>
+              <a href="thread.html#553">[ thread ]</a>
+              <a href="subject.html#553">[ subject ]</a>
+              <a href="author.html#553">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

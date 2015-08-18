@@ -1,0 +1,411 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r948 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-December/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r948%20-%20trunk/src&In-Reply-To=%3C200712212347.lBLNlelJ001939%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000379.html">
+   <LINK REL="Next"  HREF="000381.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r948 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r948%20-%20trunk/src&In-Reply-To=%3C200712212347.lBLNlelJ001939%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r948 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Dec 22 00:47:40 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000379.html">[Enigma-game-svn] r947 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="000381.html">[Enigma-game-svn] r949 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#380">[ date ]</a>
+              <a href="thread.html#380">[ thread ]</a>
+              <a href="subject.html#380">[ subject ]</a>
+              <a href="author.html#380">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-12-22 00:47:39 +0100 (Sat, 22 Dec 2007)
+New Revision: 948
+
+Modified:
+   trunk/src/actors.cc
+   trunk/src/items.cc
+   trunk/src/main.hh
+   trunk/src/stones_simple.cc
+Log:
+Trunk 1.1: it-vortex
+- fix object kill issues
+- add &quot;autoclose&quot; attribute: close after a warp
+- add &quot;scissor&quot; attribute, defaults to true on new API, false on old
+- perform action on actor passing - value false for source, true for dst.
+
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2007-12-21 16:38:13 UTC (rev 947)
++++ trunk/src/actors.cc	2007-12-21 23:47:39 UTC (rev 948)
+@@ -979,7 +979,7 @@
+         if (Item *it = GetItem(get_gridpos())) {
+             ItemID id = get_id(it);
+             if (id == it_vortex_open || id == it_vortex_closed) 
+-                SendMessage(it, &quot;arrival&quot;); // closes some vortex
++                SendMessage(it, &quot;_passed&quot;); // closes some vortex
+         }
+         change_state(JUMP_VORTEX);
+         break;
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2007-12-21 16:38:13 UTC (rev 947)
++++ trunk/src/items.cc	2007-12-21 23:47:39 UTC (rev 948)
+@@ -1795,16 +1795,7 @@
+ 
+ They may be opened or closed. Is a vortex is closed, the actor cannot enter.
+ 
+-\subsection vortexa Attributes
+-- \b targetx:       X coordinate of the destination
+-- \b targety:       Y coordinate of the destination
+ 
+-\subsection vortexe Example
+-\verbatim
+-set_item(&quot;it-vortex-open&quot;, 1,1, {targetx=5.5, targety=10.5})
+-set_item(&quot;it-vortex-closed&quot;, 3,1, {targetx=7.5, targety=10.5})
+-\endverbatim
+-
+ \subsection vortexm Messages
+ - \b open       opens the vortex
+ - \b close      closes the vortex
+@@ -1847,7 +1838,7 @@
+         void openclose();
+ 
+         void prepare_for_warp (Actor *actor);
+-        void emit_actor();
++        void emit_actor(Vortex *destVortex);
+ 
+         bool get_target_by_index (int idx, V2 &amp;target);
+         void perform_warp();    // warp swallowed actor(s)
+@@ -1869,10 +1860,6 @@
+         };
+ 
+         State  state;
+-        bool   close_after_warp;
+-        Actor *m_actor_being_warped;
+-        int    m_target_index;
+-        Vortex *m_target_vortex;
+     };
+ 
+     ItemTraits Vortex::traits[2] = {
+@@ -1883,17 +1870,20 @@
+     const double Vortex::RANGE = 0.5/2;
+ }
+ 
+-Vortex::Vortex(bool opened)
+-: state(opened ? OPEN : CLOSED),
+-  close_after_warp(!opened),
+-  m_actor_being_warped (0),
+-  m_target_index (0),
+-  m_target_vortex(0)
+-{
++Vortex::Vortex(bool open) : state(open ? OPEN : CLOSED) {
++    set_attrib(&quot;autoclose&quot;, !open);
++    set_attrib(&quot;$dest_idx&quot;, 0);
++    set_attrib(&quot;$dest_vortex&quot;, (Object *)NULL);
++    set_attrib(&quot;$grabbed_actor&quot;, (Object *)NULL);
+ }
+ 
+ Vortex::~Vortex() {
+     GameTimer.remove_alarm(this);
++    if (Actor *actor = dynamic_cast&lt;Actor *&gt;((Object *)getAttr(&quot;$grabbed_actor&quot;))) {
++        // release an actor that is grabbed on behalf of this vortex - actor state FALLING_VORTEX
++        SendMessage(actor, &quot;rise&quot;);
++    }
++    
+ }
+ 
+ void Vortex::on_removal(GridPos p) {
+@@ -1902,19 +1892,17 @@
+         XLevelRuntime, &quot;Tried to kill a busy vortex. Please use another way.&quot;);
+ }
+ 
+-void Vortex::prepare_for_warp (Actor *actor)
+-{
++void Vortex::prepare_for_warp (Actor *actor) {
+     SendMessage(actor, &quot;fallvortex&quot;);
+-    m_target_index = 0;
+-    m_actor_being_warped = actor;
++    set_attrib(&quot;$dest_idx&quot;, 0);
++    set_attrib(&quot;$grabbed_actor&quot;, actor);
+     state = SWALLOWING;
+ 
+     GameTimer.set_alarm(this, 0.4, false);
+ }
+ 
+ 
+-bool Vortex::actor_hit (Actor *actor)
+-{
++bool Vortex::actor_hit (Actor *actor) {
+     if (state == OPEN &amp;&amp; near_center_p(actor) &amp;&amp; actor-&gt;can_be_warped())
+         prepare_for_warp (actor);
+     return false;
+@@ -1933,23 +1921,29 @@
+         openclose();
+     else if (msg == &quot;open&quot;)
+         open();
+-    else if (msg == &quot;close&quot; || (msg == &quot;arrival&quot; &amp;&amp; close_after_warp)) {
++    else if (msg == &quot;close&quot; || (msg == &quot;_passed&quot; &amp;&amp; getAttr(&quot;autoclose&quot;).to_bool())) {
+         close();
+     }
++    
++    if (msg == &quot;_passed&quot;)
++        PerformAction(this, true);
+     return Value();
+ }
+ 
+ void Vortex::init_model() {
+     switch(state) {
+-    case WARPING:
+-    case OPEN:
+-    case EMITTING:
+-    case SWALLOWING:
+-        set_model(&quot;it-vortex-open&quot;);
+-        break;
+-    case CLOSED: set_model(&quot;it-vortex-closed&quot;); break;
+-    case OPENING: set_anim(&quot;it-vortex-opening&quot;); break;
+-    case CLOSING: set_anim(&quot;it-vortex-closing&quot;); break;
++        case WARPING:
++        case OPEN:
++        case EMITTING:
++        case SWALLOWING:
++            set_model(&quot;it-vortex-open&quot;);
++            break;
++        case CLOSED: 
++            set_model(&quot;it-vortex-closed&quot;); break;
++        case OPENING: 
++            set_anim(&quot;it-vortex-opening&quot;); break;
++        case CLOSING: 
++            set_anim(&quot;it-vortex-closing&quot;); break;
+     }
+ }
+ 
+@@ -2028,7 +2022,7 @@
+     if (state == WARPING) {
+         perform_warp();
+     } else if (state == EMITTING) {
+-        emit_actor();
++        emit_actor(dynamic_cast&lt;Vortex *&gt;((Object *)getAttr(&quot;$dest_vortex&quot;)));
+     } else if (state == SWALLOWING) {
+         state = WARPING;
+         sound_event (&quot;hitfloor&quot;);
+@@ -2037,39 +2031,59 @@
+         ASSERT (0, XLevelRuntime, &quot;Vortex: alarm called with inconsistent state&quot;);
+ }
+ 
+-void Vortex::emit_actor () {
+-    V2 v(m_target_vortex-&gt;get_pos().center());
+-    WarpActor (m_actor_being_warped, v[0], v[1], false);
+-    SendMessage (m_actor_being_warped, &quot;rise&quot;);
+-    m_actor_being_warped = 0;
++void Vortex::emit_actor(Vortex *destVortex) {
++    if (destVortex == NULL)   // destination vortex got killed in meantime
++        destVortex = this;    // reemit from source vortex 
++    V2 v(destVortex-&gt;get_pos().center());
++    if (Actor *actor = dynamic_cast&lt;Actor *&gt;((Object *)getAttr(&quot;$grabbed_actor&quot;))) {
++        WarpActor(actor, v[0], v[1], false);
++        SendMessage(actor, &quot;rise&quot;);
++        if (destVortex != this) {
++            bool isScissor = to_bool(getDefaultedAttr(&quot;scissor&quot;, 
++                    (server::EnigmaCompatibility &gt;= 1.10) || server::GameCompatibility != GAMET_ENIGMA));
++            if (isScissor)
++                KillRubberBands(actor);
++        }
++    }
++    set_attrib(&quot;$grabbed_actor&quot;, (Object *)NULL);
+ 
+     state = OPEN;
+-    if (this != m_target_vortex &amp;&amp; close_after_warp)
++    if (this != destVortex &amp;&amp; getAttr(&quot;autoclose&quot;).to_bool())  // do not close source vortex if destination is currently blocked
+         close();
++    if (this != destVortex)
++        PerformAction(this, false);
+ }
+ 
+ void Vortex::warp_to(const V2 &amp;target) {
+     client::Msg_Sparkle (target);
+-    WarpActor (m_actor_being_warped, target[0], target[1], false);
+-    SendMessage (m_actor_being_warped, &quot;appear&quot;);
+-    m_actor_being_warped = 0;
++    if (Actor *actor = dynamic_cast&lt;Actor *&gt;((Object *)getAttr(&quot;$grabbed_actor&quot;))) {
++        WarpActor(actor, target[0], target[1], false);
++        SendMessage(actor, &quot;appear&quot;);
++        bool isScissor = to_bool(getDefaultedAttr(&quot;scissor&quot;, 
++                (server::EnigmaCompatibility &gt;= 1.10) || server::GameCompatibility != GAMET_ENIGMA));
++        if (isScissor)
++            KillRubberBands(actor);
++    }
++    set_attrib(&quot;$grabbed_actor&quot;, (Object *)NULL);
++
+     state = OPEN;
+-    if (close_after_warp)
++    if (getAttr(&quot;autoclose&quot;).to_bool())
+         close();
++    PerformAction(this, false);
+ }
+ 
+-void Vortex::perform_warp()
+-{
+-    if (!m_actor_being_warped)
++void Vortex::perform_warp() {
++    Actor *actor = dynamic_cast&lt;Actor *&gt;((Object *)getAttr(&quot;$grabbed_actor&quot;));
++    if (actor == NULL)
+         return;
+ 
+-    ASSERT (state == WARPING, XLevelRuntime,
+-        &quot;Vortex: perform_warp called with inconsistent state&quot;);
++    ASSERT (state == WARPING, XLevelRuntime, &quot;Vortex: perform_warp called with inconsistent state&quot;);
+ 
+     V2 v_target;
+ 
+     // is another target position defined?
+-    if (get_target_by_index (m_target_index, v_target)) {
++    int dest_idx = getAttr(&quot;$dest_idx&quot;);
++    if (get_target_by_index(dest_idx, v_target)) {
+         GridPos  p_target(v_target);
+ 
+         Vortex *v = dynamic_cast&lt;Vortex*&gt;(GetItem(p_target));
+@@ -2079,46 +2093,42 @@
+ 
+             if (st &amp;&amp; !st-&gt;is_floating()) {
+                 // is destination vortex blocked? redirect
+-                m_target_index += 1;
+-                client::Msg_Sparkle (v_target);
+-                WarpActor (m_actor_being_warped,
+-                                  v_target[0], v_target[1], false);
++                set_attrib(&quot;$dest_idx&quot;, dest_idx + 1);
++                client::Msg_Sparkle(v_target);
++                WarpActor(actor, v_target[0], v_target[1], false);
+                 GameTimer.set_alarm(this, 0.4, false);
+             }
+             else {
+-                m_target_vortex = v;
+-
+                 switch (v-&gt;state) {
+-                case OPEN:
+-                case OPENING:
+-                    // destination is open
+-                    emit_actor();
+-                    break;
+-
+-                case CLOSED:
+-                case CLOSING:
+-                    // destination is closed
+-                    SendMessage(v, &quot;open&quot;);
+-                    state = EMITTING;
+-                    GameTimer.set_alarm(this, 0.4, false);
+-                    break;
+-                case SWALLOWING:
+-                case WARPING:
+-                case EMITTING:
+-                    // destination is busy -&gt; don't warp actor, emit
+-                    // it where it has started
+-                    m_target_vortex = this;
+-                    emit_actor();
++                    case OPEN:
++                    case OPENING:
++                        // destination is open
++                        emit_actor(v);
++                        break;
++    
++                    case CLOSED:
++                    case CLOSING:
++                        // destination is closed
++                        SendMessage(v, &quot;open&quot;);
++                        set_attrib(&quot;$dest_vortex&quot;, v);
++                        state = EMITTING;
++                        GameTimer.set_alarm(this, 0.4, false);
++                        break;
++                    case SWALLOWING:
++                    case WARPING:
++                    case EMITTING:
++                        // destination is busy -&gt; don't warp actor, emit
++                        // it where it has started
++                        emit_actor(this);
+                 }
+             }
+         } else {
+-            warp_to (v_target);
++            warp_to(v_target);
+         }
+     }
+     else {
+         // if no target defined, don't warp actor
+-        m_target_vortex = this;
+-        emit_actor();
++        emit_actor(this);
+     }
+ }
+ 
+
+Modified: trunk/src/main.hh
+===================================================================
+--- trunk/src/main.hh	2007-12-21 16:38:13 UTC (rev 947)
++++ trunk/src/main.hh	2007-12-21 23:47:39 UTC (rev 948)
+@@ -236,7 +236,7 @@
+     /**
+      * Flag to use in expensive asserts as first operand in a logical or
+      * statement to allow the assertion to be blocked in favour of speed.
+-     * F.e. &lt;code&gt;ASSERT(noAssert || long_lasting_check(), XLevelRuntime, &quot;&quot;);&lt;code&gt;
++     * F.e. &lt;code&gt;ASSERT(noAssert || long_lasting_check(), XLevelRuntime, &quot;&quot;);&lt;/code&gt;
+      */
+     extern bool noAssert;
+ 
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2007-12-21 16:38:13 UTC (rev 947)
++++ trunk/src/stones_simple.cc	2007-12-21 23:47:39 UTC (rev 948)
+@@ -1176,7 +1176,7 @@
+ 
+             // The mode attribute &quot;scissor&quot; defines, if when touching an st-rubberband,
+             // other rubberbands to the actor will be cut of or not, true means they will. true is default.
+-            bool isScissor = to_bool(getDefaultedAttr(&quot;scissor&quot;,&quot;true&quot;));
++            bool isScissor = to_bool(getDefaultedAttr(&quot;scissor&quot;, true));
+ 
+             if (!HasRubberBand (sc.actor, this)) {
+                 sound_event (&quot;rubberband&quot;);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000379.html">[Enigma-game-svn] r947 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="000381.html">[Enigma-game-svn] r949 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#380">[ date ]</a>
+              <a href="thread.html#380">[ thread ]</a>
+              <a href="subject.html#380">[ subject ]</a>
+              <a href="author.html#380">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

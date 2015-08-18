@@ -1,0 +1,552 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1702 - in trunk: data data/levels/lib src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1702%20-%20in%20trunk%3A%20data%20data/levels/lib%20src&In-Reply-To=%3C200906022303.n52N3hO0018942%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001130.html">
+   <LINK REL="Next"  HREF="001132.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1702 - in trunk: data data/levels/lib src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1702%20-%20in%20trunk%3A%20data%20data/levels/lib%20src&In-Reply-To=%3C200906022303.n52N3hO0018942%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1702 - in trunk: data data/levels/lib src">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Jun  3 01:03:43 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001130.html">[Enigma-game-svn] r1701 - in trunk/data/levels: enigma_iii	enigma_viii
+</A></li>
+        <LI>Next message: <A HREF="001132.html">[Enigma-game-svn] r1703 - in trunk: data src src/items
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1131">[ date ]</a>
+              <a href="thread.html#1131">[ thread ]</a>
+              <a href="subject.html#1131">[ subject ]</a>
+              <a href="author.html#1131">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-06-03 01:03:33 +0200 (Wed, 03 Jun 2009)
+New Revision: 1702
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/data/levels/lib/libmaze_2.xml
+   trunk/data/levels/lib/libpento_1.xml
+   trunk/data/levels/lib/libpuzzle_3.xml
+   trunk/src/lua.cc
+Log:
+Trunk 1.1:
+- resolver finalization: revert call sequence - from bottom to top
+- add Lua type &quot;resolver&quot; for general resolvers without own identity
+- make resolver argument check independent of resolver listing by adding
+    a mandatory entry &quot;_resolver&quot;=true to metatable of resolvers
+- drawBorder, drawRectangle: allow arguments &quot;key&quot;+&quot;resolver&quot; instead of
+    &quot;tile&quot; for full usage of these methods in resolvers
+- res.maze:
+  - avoid multiple initialization and finalization
+  - evaluate all keys by the complete subresolver chain by all renderers
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2009-06-02 13:17:23 UTC (rev 1701)
++++ trunk/data/api2init.lua	2009-06-02 23:03:33 UTC (rev 1702)
+@@ -161,7 +161,7 @@
+ NEIGHBORS_8     = NEIGHBORS_4 .. NW .. SW ..SE .. NE
+ NEIGHBORS_CHESS = NNE .. ENE .. ESE .. SSE .. SSW .. WSW .. WNW .. NNW
+ 
+--- convertion direction numbers to offset vectors
++-- convertion orientation numbers to direction vectors
+ ORI2DIR = {[WEST]=W, [SOUTH]=S, [EAST]=E, [NORTH]=N, [NODIR]=po(0,0)}
+ 
+ -- essential
+@@ -218,7 +218,7 @@
+         -- world, resolver, (position|object|table), string, (table|map), [int]
+         -- world, resolver, (position|object|table), map, [int]
+         assert_type(world, &quot;wo:drawMap self (world)&quot;, 2, &quot;world&quot;)
+-        assert_type(resolver, &quot;wo:drawMap first argument (resolver)&quot;, 2, &quot;tiles&quot;, &quot;function&quot;, &quot;table&quot;, &quot;maze&quot;)
++        assert_bool(is_resolver(resolver), &quot;wo:drawMap first argument is no valid resolver&quot;, 2)
+         assert_type(anchor, &quot;wo:drawMap second argument (anchor)&quot;, 2, &quot;position&quot;, &quot;valid object&quot;, &quot;table&quot;)
+         assert_type(arg3, &quot;wo:drawMap third argument (ignorekey or map)&quot;, 2, &quot;string&quot;, &quot;map&quot;)
+         local origin = po(anchor)   -- either convert or make a working position copy
+@@ -286,74 +286,101 @@
+                 end
+             end
+         end
+-        -- Call resolver finalizers
+-        local context = resolver
+-        while type(context) == &quot;table&quot; do
+-            local finalizer = context[2]
+-            if type(finalizer) == &quot;function&quot; then
+-                 finalizer(context) 
++        -- Call resolver finalizers from bottom to top
++        local function finalizeResolvers(context)
++            if type(context) == &quot;table&quot; then
++                finalizeResolvers(context[3])
++                local finalizer = context[2]
++                if type(finalizer) == &quot;function&quot; then
++                     finalizer(context) 
++                end
+             end
+-            context = context[3]
+         end
++        finalizeResolvers(resolver)
+     end
+ )
+ 
+ wo:_register(&quot;drawBorder&quot;, 
+     function (world, arg1, arg2, arg3, arg4)
+-        -- world, (position|object|table), width, height, (tile|table)
+-        -- world, (position|object|table), (position|object|table), (tile|table)
++        -- world, (position|object|table), width, height, (tile|table|key, resolver)
++        -- world, (position|object|table), (position|object|table), (tile|table|key, resolver)
+         assert_type(world, &quot;wo:drawBorder self (world)&quot;, 2, &quot;world&quot;)
+         assert_type(arg1, &quot;wo:drawBorder first argument (upperleft edge)&quot;, 2, &quot;position&quot;, &quot;valid object&quot;, &quot;table&quot;)
+         assert_type(arg2, &quot;wo:drawBorder second argument (width or lowerright edge)&quot;, 2, &quot;position&quot;, &quot;valid object&quot;, &quot;table&quot;, &quot;positive integer&quot;)
+         local origin = po(arg1)
+-        local dest, tile
++        local dest, tile, resolver
++        local isTile = true
+         if etype(arg2) == &quot;number&quot; then
+             assert_type(arg3, &quot;wo:drawBorder third argument (height)&quot;, 2, &quot;positive integer&quot;)
+-            assert_type(arg4, &quot;wo:drawBorder fourth argument (tile)&quot;, 2, &quot;tile&quot;, &quot;table&quot;)
+             dest = po(origin.x + arg2 - 1, origin.y + arg3 - 1)
+             tile = arg4            
++            resolver = arg5
+         else
+-            assert_type(arg3, &quot;wo:drawBorder third argument (tile)&quot;, 2, &quot;tile&quot;, &quot;table&quot;)
+             dest = po(arg2)
+             tile = arg3
++            resolver = arg4
+         end
++        assert_type(tile, &quot;wo:drawBorder tile/key argument error&quot;, 2, &quot;tile&quot;, &quot;table&quot;, &quot;string&quot;)
++        if etype(tile) == &quot;string&quot; then
++            assert_bool(is_resolver(resolver), &quot;wo:drawBorder resolver argument error&quot;, 2)
++            isTile = false
++        end
+         for x = origin.x, dest.x do
+             wo[{x, origin.y}] = tile
+             if origin.y ~= dest.y then
+-                wo[{x, dest.y}] = tile
++                if isTile then
++                    wo[{x, dest.y}] = tile
++                else
++                    wo[{x, dest.y}] = world:_evaluate(resolver, tile, x, dest.y)
++                end
+             end
+         end
+         for y = origin.y + 1, dest.y -1 do
+             wo[{origin.x, y}] = tile
+             if origin.x ~= dest.x then
+-                wo[{dest.x, y}] = tile
++                if isTile then
++                    wo[{dest.x, y}] = tile
++                else
++                    wo[{dest.x, y}] = world:_evaluate(resolver, tile, dest.x, y)
++                end
+             end
+         end
+     end
+ )
+ 
+ wo:_register(&quot;drawRect&quot;, 
+-    function (world, arg1, arg2, arg3, arg4)
+-        -- world, (position|object|table), width, height, (tile|table)
+-        -- world, (position|object|table), (position|object|table), (tile|table)
++    function (world, arg1, arg2, arg3, arg4, arg5)
++        -- world, (position|object|table), width, height, (tile|table|key, resolver)
++        -- world, (position|object|table), (position|object|table), (tile|table|key, resolver)
+         assert_type(world, &quot;wo:drawRect self (world)&quot;, 2, &quot;world&quot;)
+         assert_type(arg1, &quot;wo:drawRect first argument (upperleft edge)&quot;, 2, &quot;position&quot;, &quot;valid object&quot;, &quot;table&quot;)
+         assert_type(arg2, &quot;wo:drawRect second argument (width or lowerright edge)&quot;, 2, &quot;position&quot;, &quot;valid object&quot;, &quot;table&quot;, &quot;positive integer&quot;)
+         local origin = po(arg1)
+-        local dest, tile
++        local dest, tile, resolver
++        local isTile = true
+         if etype(arg2) == &quot;number&quot; then
+             assert_type(arg3, &quot;wo:drawRect third argument (height)&quot;, 2, &quot;positive integer&quot;)
+-            assert_type(arg4, &quot;wo:drawRect fourth argument (tile)&quot;, 2, &quot;tile&quot;, &quot;table&quot;)
+             dest = po(origin.x + arg2 - 1, origin.y + arg3 - 1)
+-            tile = arg4            
++            tile = arg4
++            resolver = arg5
+         else
+-            assert_type(arg3, &quot;wo:drawRect third argument (tile)&quot;, 2, &quot;tile&quot;, &quot;table&quot;)
+             dest = po(arg2)
+             tile = arg3
++            resolver = arg4
+         end
++        assert_type(tile, &quot;wo:drawRect tile/key argument error&quot;, 2, &quot;tile&quot;, &quot;table&quot;, &quot;string&quot;)
++        if etype(tile) == &quot;string&quot; then
++            assert_bool(is_resolver(resolver), &quot;wo:drawRect resolver argument error&quot;, 2)
++            isTile = false
++        end
++
+         for x = origin.x, dest.x do
+             for y = origin.y, dest.y do
+-                wo[{x, y}] = tile
++                if isTile then
++                    wo[{x, y}] = tile
++                else
++                    wo[{x, y}] = world:_evaluate(resolver, tile, x, y)
++                end
+             end
+         end
+     end
+@@ -405,6 +432,7 @@
+         end
+     end 
+ })
++res.metatable = {_type=&quot;resolver&quot;, _resolver=true}
+ 
+ function res.random_implementation(context, evaluator, key, x, y)
+     for hit_itr, hit_pair in ipairs(context[4]) do
+@@ -439,7 +467,7 @@
+ function res.random(subresolver, hits, replacements)
+     -- syntax: hits = key | {key, [key]*, [{key, superkey}]*}
+     --         replacements = {key, [key]*, [{key, frequency}]*}
+-    assert_type(subresolver, &quot;res.random first argument (subresolver)&quot;, 2, &quot;tiles&quot;, &quot;function&quot;, &quot;table&quot;, &quot;maze&quot;)
++    assert_bool(is_resolver(subresolver), &quot;res.random first argument (subresolver)&quot;, 2)
+     assert_type(hits, &quot;res.random second argument (hits)&quot;, 2, &quot;non-empty string&quot;, &quot;table&quot;)
+     assert_type(hits, &quot;res.random third argument (replacements)&quot;, 2, &quot;string&quot;, &quot;table&quot;)
+     local hit_table = {}
+@@ -478,6 +506,7 @@
+     end
+     local context = {res.random_implementation, nil, subresolver, hit_table, 
+                      repl_table, repl_sum}
++    setmetatable(context, res.metatable)
+     return context
+ end
+ 
+@@ -561,7 +590,7 @@
+ function res.autotile(subresolver, ...)
+     -- syntax: ... = &lt;{prefixkey, template} | {firstkey, lastkey, template[, offset]}&gt;
+     -- context: [4] = table with unmodified rule tables
+-    assert_type(subresolver, &quot;res.autotile first argument (subresolver)&quot;, 2, &quot;tiles&quot;, &quot;function&quot;, &quot;table&quot;, &quot;maze&quot;)
++    assert_bool(is_resolver(subresolver), &quot;res.autotile first argument (subresolver)&quot;, 2)
+     local args = {...}
+     for i, rule in ipairs(args) do
+         assert_type(rule, &quot;res.autotile argument &quot; .. (i+1) .. &quot; (rule &quot; .. i .. &quot;)&quot;, 2, &quot;table&quot;)
+@@ -588,6 +617,7 @@
+         assert_bool(ti[rule[template_pos]], &quot;res.autotile: Missing template tile '&quot; .. rule[template_pos] .. &quot;'&quot;, 2)
+     end
+     local context = {res.autotile_implementation, nil, subresolver, args}
++    setmetatable(context, res.metatable)
+     return context
+ end
+ 
+@@ -627,7 +657,7 @@
+ end
+ 
+ function res.composer(subresolver, ...)
+-    assert_type(subresolver, &quot;res.composer first argument (subresolver)&quot;, 2, &quot;tiles&quot;, &quot;function&quot;, &quot;table&quot;, &quot;maze&quot;)
++    assert_bool(is_resolver(subresolver), &quot;res.composer first argument (subresolver)&quot;, 2)
+     local args = {...}
+     local sequence = nil
+     assert_bool(#args &lt;= 1, &quot;res.composer: Too many arguments (must be 1 or 2).&quot; ,2)
+@@ -636,6 +666,7 @@
+         sequence = args[1]
+     end
+     local context = {res.composer_implementation, nil, subresolver, sequence}
++    setmetatable(context, res.metatable)
+     return context
+ end
+ 
+@@ -653,6 +684,12 @@
+     return t
+ end
+ 
++function is_resolver(resolver)
++    local t = etype(resolver)
++    return (t == &quot;tiles&quot;) or (t == &quot;function&quot;) or (t == &quot;resolver&quot;) or 
++        ((type(resolver) == &quot;table&quot;) and getmetatable(resolver) and getmetatable(resolver)[&quot;_resolver&quot;])
++end
++
+ assert_type = function (object, objname, level, ...)
+     -- assert_type throws an error if object does not fulfill one of the
+     -- conditions in &quot;...&quot;. Possible conditions are the lua- and usertype
+
+Modified: trunk/data/levels/lib/libmaze_2.xml
+===================================================================
+--- trunk/data/levels/lib/libmaze_2.xml	2009-06-02 13:17:23 UTC (rev 1701)
++++ trunk/data/levels/lib/libmaze_2.xml	2009-06-02 23:03:33 UTC (rev 1702)
+@@ -29,6 +29,7 @@
+     local context = {res.maze_implementation, res.maze_finalization, subresolver}
+     
+     -- default settings
++    context.finalizing = false
+     context.encode = function (maze, i, j)
+             return lib.maze.MAX_WIDTH_IN_ENCODE*j + i + 100
+         end
+@@ -77,6 +78,7 @@
+         end
+     setmetatable(context,{
+           _type = &quot;maze&quot;,
++          _resolver = true,
+           __index = function (context, key)
+                   if type(key) == &quot;number&quot; and key &gt;= 99 then
+                       return rawget(context, &quot;cells&quot;)[key]
+@@ -156,7 +158,7 @@
+         }
+         
+     -- argument evaluation
+-    assert_type(subresolver, &quot;res.maze first argument (subresolver)&quot;, 2, &quot;tiles&quot;, &quot;function&quot;, &quot;table&quot;, &quot;maze&quot;)
++    assert_bool(is_resolver(subresolver), &quot;res.maze first argument (subresolver)&quot;, 2)
+     assert_bool(#args == 1, &quot;res.maze: wrong number of arguments - expected subresolver and a table of configuration data.&quot;, 2)
+     assert_type(args[1], &quot;res.maze second argument (libmaze configuration data)&quot;, 2, &quot;table&quot;)
+     context.area = args[1].area
+@@ -202,7 +204,7 @@
+ end
+ 
+ function res.maze_implementation(context, evaluator, key, x, y)
+-    if not context.rectangular then
++    if (not context.finalizing) and (not context.rectangular) then
+         if not context.area_args_separated then 
+             for k,v in pairs(context.area) do
+                 if #v == #key then
+@@ -231,6 +233,8 @@
+ end
+ 
+ function res.maze_finalization(context)
++    if context.finalizing then return end
++    context.finalizing = true
+     local maze = context
+     if maze.rectangular then
+         for i = 0, maze.area[2] - 1 do
+@@ -414,53 +418,53 @@
+     for cell in maze do
+         local anchor = cell:pos()
+         if map then
+-            wo:drawMap(ti, anchor, map_kernel)
++            wo:drawMap(maze[3], anchor, map_kernel)
+             if cell[EAST] ~= nil then
+-                wo:drawMap(ti, anchor + {maze.kernel[1], 0}, map_spacing_y)
++                wo:drawMap(maze[3], anchor + {maze.kernel[1], 0}, map_spacing_y)
+             end
+             if cell[SOUTH] ~= nil then
+-                wo:drawMap(ti, anchor + {0, maze.kernel[2]}, map_spacing_x)
++                wo:drawMap(maze[3], anchor + {0, maze.kernel[2]}, map_spacing_x)
+                 if cell[EAST] ~= nil and (cell:neighbor(EAST))[SOUTH] ~= nil
+                                 and (cell:neighbor(SOUTH))[EAST] ~= nil then
+-                    wo:drawMap(ti, anchor + {maze.kernel[1], maze.kernel[2]}, map_spacing_z)
++                    wo:drawMap(maze[3], anchor + {maze.kernel[1], maze.kernel[2]}, map_spacing_z)
+                 end
+             end
+         else
+             if args[3] then
+-                wo:drawRect(anchor, maze.kernel[1], maze.kernel[2], ti[args[3]])
++                wo:drawRect(anchor, maze.kernel[1], maze.kernel[2], args[3], maze[3])
+             end
+             if args[2] then
+                 if cell[EAST] ~= nil then
+                     wo:drawRect(anchor + {maze.kernel[1], 0}, maze.spacing[1], 
+-                        maze.kernel[2], ti[args[2]])
++                        maze.kernel[2], args[2], maze[3])
+                 end
+                 if cell[SOUTH] ~= nil then
+                     wo:drawRect(anchor + {0, maze.kernel[2]}, 
+-                        maze.kernel[1], maze.spacing[2], ti[args[2]])
++                        maze.kernel[1], maze.spacing[2], args[2], maze[3])
+                     if cell[EAST] ~= nil and (cell:neighbor(EAST))[SOUTH] ~= nil
+                             and (cell:neighbor(SOUTH))[EAST] ~= nil then
+                         wo:drawRect(anchor + {maze.kernel[1], maze.kernel[2]}, maze.spacing[1], 
+-                            maze.spacing[2], ti[args[2]])
++                            maze.spacing[2], args[2], maze[3])
+                     end
+                 end
+             end
+         end
+         if cell[EAST] == true then
+             wo:drawRect(anchor + {maze.kernel[1], maze.kernel[2]/2}, 
+-                    maze.spacing[1], 1, ti[passage_open])
++                    maze.spacing[1], 1, passage_open, maze[3])
+         end
+         if cell[SOUTH] == true then
+             wo:drawRect(anchor + {maze.kernel[1]/2, maze.kernel[2]}, 
+-                    1, maze.spacing[2], ti[passage_open])
++                    1, maze.spacing[2], passage_open, maze[3])
+         end
+         if passage_closed then
+             if cell[EAST] == false then
+                 wo:drawRect(anchor + {maze.kernel[1], maze.kernel[2]/2}, 
+-                        maze.spacing[1], 1, ti[passage_closed])
++                        maze.spacing[1], 1, passage_closed, maze[3])
+             end
+             if cell[SOUTH] == false then
+                 wo:drawRect(anchor + {maze.kernel[1]/2, maze.kernel[2]}, 
+-                        1, maze.spacing[2], ti[passage_closed])
++                        1, maze.spacing[2], passage_closed, maze[3])
+             end
+         end
+     end
+@@ -478,10 +482,10 @@
+     for cell in maze do
+         local anchor = cell:pos()
+         if map then
+-            wo:drawMap(ti, anchor, map_kernel)
++            wo:drawMap(maze[3], anchor, map_kernel)
+         else
+             if args[1] then
+-                wo:drawRect(anchor, maze.kernel[1], maze.kernel[2], ti[args[1]])
++                wo:drawRect(anchor, maze.kernel[1], maze.kernel[2], args[1], maze[3])
+             end
+         end
+         -- TODO extend logic to arbitrary kernel size in the following lines
+@@ -515,10 +519,10 @@
+     for cell in maze do
+         local anchor = cell:pos()
+         if map then
+-            wo:drawMap(ti, anchor, map_spacing)
++            wo:drawMap(maze[3], anchor, map_spacing)
+         else
+             if args[1] then
+-                wo:drawRect(anchor, maze.spacing[1], maze.spacing[2], ti[args[1]])
++                wo:drawRect(anchor, maze.spacing[1], maze.spacing[2], args[1], maze[3])
+             end
+         end
+         local connections = &quot;&quot;
+
+Modified: trunk/data/levels/lib/libpento_1.xml
+===================================================================
+--- trunk/data/levels/lib/libpento_1.xml	2009-06-02 13:17:23 UTC (rev 1701)
++++ trunk/data/levels/lib/libpento_1.xml	2009-06-02 23:03:33 UTC (rev 1702)
+@@ -107,7 +107,7 @@
+     -- syntax: ... = &lt;sourcebasename&gt;, &lt;targetbasename&gt;
+     -- context: 
+     local args = {...}
+-    assert_type(subresolver, &quot;res.pento first argument (subresolver)&quot;, 2, &quot;tiles&quot;, &quot;function&quot;, &quot;table&quot;, &quot;maze&quot;)
++    assert_bool(is_resolver(subresolver), &quot;res.pento first argument (subresolver)&quot;, 2)
+     assert_type(args[1], &quot;res.pento second argument (source basename)&quot;, 2, &quot;string&quot;)
+     assert_type(args[2], &quot;res.pento third argument (target basename)&quot;, 2, &quot;string&quot;)
+     local autotile = res.autotile(subresolver, {&quot;O&quot;,&quot;Z&quot;, &quot;pentopuzzle&quot;})
+@@ -122,6 +122,7 @@
+         MAP_MIRROR_SLASH}
+     context.mirrors = {MAP_MIRROR_HORIZONTAL, MAP_MIRROR_SLASH, MAP_MIRROR_VERTICAL,
+         MAP_MIRROR_BACKSLASH, MAP_ROT_CCW, MAP_IDENT, MAP_ROT_CW, MAP_ROT_180}
++    setmetatable(context, res.metatable)
+     return context
+ end
+ 
+
+Modified: trunk/data/levels/lib/libpuzzle_3.xml
+===================================================================
+--- trunk/data/levels/lib/libpuzzle_3.xml	2009-06-02 13:17:23 UTC (rev 1701)
++++ trunk/data/levels/lib/libpuzzle_3.xml	2009-06-02 23:03:33 UTC (rev 1702)
+@@ -180,7 +180,7 @@
+ function res.puzzle(subresolver, ...)
+     -- syntax: ... = &lt;prefixkey&gt;
+     -- context: [4] = table with unmodified rule tables
+-    assert_type(subresolver, &quot;res.puzzle first argument (subresolver)&quot;, 2, &quot;tiles&quot;, &quot;function&quot;, &quot;table&quot;, &quot;maze&quot;)
++    assert_bool(is_resolver(subresolver), &quot;res.puzzle first argument (subresolver)&quot;, 2)
+     local args = {...}
+     local length = 0
+     for i, prefix in ipairs(args) do
+@@ -192,6 +192,7 @@
+         end
+     end
+     local context = {res.puzzle_implementation, res.puzzle_finalization, subresolver, args, {}}
++    setmetatable(context, res.metatable)
+     return context
+ end
+ 
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2009-06-02 13:17:23 UTC (rev 1701)
++++ trunk/src/lua.cc	2009-06-02 23:03:33 UTC (rev 1702)
+@@ -2419,6 +2419,33 @@
+     return 0;
+ }
+ 
++static int finalizeResolvers(lua_State *L) {
++    // next resolver on top of stack
++    
++    // this is a recursive function - ensure enough space on the stack
++    if (lua_gettop(L) &gt;  LUA_MINSTACK - 5)
++        lua_checkstack(L, 10);         // guarantee another 10 free slots
++    
++    if (is_table(L, -1)) {
++        lua_rawgeti(L, -1, 3);      // get subresolver at index 3
++        finalizeResolvers(L);       // finalize subresolver first 
++        lua_pop(L, 1);              // subresolver
++        
++        lua_rawgeti(L, -1, 2);      // get resolver finalization at index 2
++        if (!lua_isnil(L, -1)) {
++            lua_pushvalue(L, -2);       // duplicate table as resolver context
++            int retval=lua_pcall(L, 1, 0, 0);     // resolver(context,evaluator,key,x,y) -&gt;  tile
++            if (retval!=0) {
++                throwLuaError(L, ecl::strf(&quot;Error within tile key resolver finalization:\n %s&quot;, 
++                        lua_tostring(L, -1)).c_str());
++                return 0;
++            }
++        } else {
++            lua_pop(L, 1);  // nil
++        }
++    }
++}
++
+ static int createWorld(lua_State *L) {
+     // world, resolver, default key, map
+     // world, (ti|function|table), string, table
+@@ -2518,23 +2545,8 @@
+     }
+     
+     lua_getfield(L, LUA_REGISTRYINDEX, LUA_ID_RESOLVER);
+-    while (is_table(L, -1)) {
+-        lua_rawgeti(L, -1, 2);      // get resolver finalization at index 2
+-        if (!lua_isnil(L, -1)) {
+-            lua_pushvalue(L, -2);       // duplicate table as resolver context
+-            int retval=lua_pcall(L, 1, 0, 0);     // resolver(context,evaluator,key,x,y) -&gt;  tile
+-            if (retval!=0) {
+-                throwLuaError(L, ecl::strf(&quot;Error within tile key resolver finalization:\n %s&quot;, 
+-                        lua_tostring(L, -1)).c_str());
+-                return 0;
+-            }
+-        } else {
+-            lua_pop(L, 1);  // nil
+-        }
+-        lua_rawgeti(L, -1, 3);      // get subresolver at index 3
+-        lua_remove(L, -2);          // substitute current resolver table by subresolver
+-    }
+-    lua_pop(L, 1);   // final resolver
++    finalizeResolvers(L);
++    lua_pop(L, 1);           // top resolver
+     
+     lua_pushinteger(L, width);
+     lua_pushinteger(L, height);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001130.html">[Enigma-game-svn] r1701 - in trunk/data/levels: enigma_iii	enigma_viii
+</A></li>
+	<LI>Next message: <A HREF="001132.html">[Enigma-game-svn] r1703 - in trunk: data src src/items
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1131">[ date ]</a>
+              <a href="thread.html#1131">[ thread ]</a>
+              <a href="subject.html#1131">[ subject ]</a>
+              <a href="author.html#1131">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,215 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1521 - in trunk/src: . items stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1521%20-%20in%20trunk/src%3A%20.%20items%20stones&In-Reply-To=%3C200902070035.n170ZBEU005482%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000950.html">
+   <LINK REL="Next"  HREF="000952.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1521 - in trunk/src: . items stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1521%20-%20in%20trunk/src%3A%20.%20items%20stones&In-Reply-To=%3C200902070035.n170ZBEU005482%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1521 - in trunk/src: . items stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Feb  7 01:35:11 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000950.html">[Enigma-game-svn] r1520 - in trunk/data: gfx40 gfx48	levels/enigma_tutorial
+</A></li>
+        <LI>Next message: <A HREF="000952.html">[Enigma-game-svn] r1522 - in homepage/input: . news
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#951">[ date ]</a>
+              <a href="thread.html#951">[ thread ]</a>
+              <a href="subject.html#951">[ subject ]</a>
+              <a href="author.html#951">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-02-07 01:35:10 +0100 (Sat, 07 Feb 2009)
+New Revision: 1521
+
+Modified:
+   trunk/src/items/CompatibilityItems.cc
+   trunk/src/items/CompatibilityItems.hh
+   trunk/src/items/Trigger.cc
+   trunk/src/lua.cc
+   trunk/src/stones/VolcanoStone.cc
+Log:
+Trunk 1.1: new API reengineering
+- fix trigger: 
+  - update image in case a trigger was set below a stone which
+      gets deleted before level initializtion-
+  - hollow puzzles should press trigger
+- fix odometer: missing template object
+- fix dummy item: typo in template object
+- fix group - objects occuring twice in a group did cause false result groups,
+    especially the join group operator has been affected
+- fix volcano: broken images due to fart -&gt; quake renaming
+- fix crash on grp:nearest(obj) in case obj is no longer existing - now an
+    assetion is thrown
+
+
+Modified: trunk/src/items/CompatibilityItems.cc
+===================================================================
+--- trunk/src/items/CompatibilityItems.cc	2009-02-06 21:31:26 UTC (rev 1520)
++++ trunk/src/items/CompatibilityItems.cc	2009-02-07 00:35:10 UTC (rev 1521)
+@@ -122,19 +122,19 @@
+ 
+ /* -------------------- DummyItem -------------------- */
+ 
+-    Dummyitem::Dummyitem() {
++    DummyItem::DummyItem() {
+     }
+ 
+-    void Dummyitem::on_pickup(Actor *) {
++    void DummyItem::on_pickup(Actor *) {
+         int code = getAttr(&quot;code&quot;);
+         Log &lt;&lt; ecl::strf(&quot;Picked up item 0x%x\n&quot;, code);
+     }
+-    void Dummyitem::on_drop(Actor *) {
++    void DummyItem::on_drop(Actor *) {
+         int code = getAttr(&quot;code&quot;);
+         Log &lt;&lt; ecl::strf(&quot;Dropped up item 0x%x\n&quot;, code);
+     }
+     
+-    DEF_ITEMTRAITSF(Dummyitem, &quot;it_dummy&quot;, it_dummy, itf_fireproof);
++    DEF_ITEMTRAITSF(DummyItem, &quot;it_dummy&quot;, it_dummy, itf_fireproof);
+ 
+ //----------------------------------------
+ // Bridge item (for Oxyd compatibility)
+@@ -181,7 +181,8 @@
+         BootRegister(new EasyKillStone(), &quot;it-easykillstone&quot;);
+         BootRegister(new OnePKillStone(), &quot;it-1pkillstone&quot;);
+         BootRegister(new TwoPKillStone(), &quot;it-2pkillstone&quot;);
+-        BootRegister(new OxydBridge(), &quot;it_dummy&quot;);
++        BootRegister(new DummyItem(), &quot;it_dummy&quot;);
++        BootRegister(new Odometer(), &quot;it_odometer&quot;);
+         BootRegister(new OxydBridge(), &quot;it-bridge-oxyd&quot;);
+         BootRegister(new OxydBridgeActive(), &quot;it-bridge-oxyd_active&quot;);
+     BOOT_REGISTER_END
+
+Modified: trunk/src/items/CompatibilityItems.hh
+===================================================================
+--- trunk/src/items/CompatibilityItems.hh	2009-02-06 21:31:26 UTC (rev 1520)
++++ trunk/src/items/CompatibilityItems.hh	2009-02-07 00:35:10 UTC (rev 1521)
+@@ -79,11 +79,11 @@
+     /**
+      * DummyItem
+      */
+-    class Dummyitem : public Item {
+-        CLONEOBJ(Dummyitem);
++    class DummyItem : public Item {
++        CLONEOBJ(DummyItem);
+         DECL_ITEMTRAITS;
+     public:
+-        Dummyitem();
++        DummyItem();
+         
+         // Item interface
+        virtual void on_drop(Actor *a);
+
+Modified: trunk/src/items/Trigger.cc
+===================================================================
+--- trunk/src/items/Trigger.cc	2009-02-06 21:31:26 UTC (rev 1520)
++++ trunk/src/items/Trigger.cc	2009-02-07 00:35:10 UTC (rev 1521)
+@@ -47,6 +47,7 @@
+             // old Enigma versions did issue performAction what is incompatible
+             updateIState(countActors(),
+                     server::EnigmaCompatibility &gt;= 1.10 || server::GameCompatibility != GAMET_ENIGMA); 
++            init_model();
+             return Value();
+         } else if (m.message == &quot;_jumping&quot; ) {
+             updateIState(m.value.to_bool() ? -1 : +1);
+@@ -107,7 +108,7 @@
+         
+         Stone *st = GetStone(get_pos());
+         state &amp;= ~1;  // delete stone pressure bit
+-        if (st != NULL &amp;&amp; (!st-&gt;is_floating() || st-&gt;is_kind(&quot;st-puzzle*&quot;))) {
++        if (st != NULL &amp;&amp; (!st-&gt;is_floating() || st-&gt;getClass() == &quot;st_puzzle&quot;)) {
+             // Hack to make hollow puzzle stones press triggers
+             state |= 1;   // add stone pressure bit
+         }
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2009-02-06 21:31:26 UTC (rev 1520)
++++ trunk/src/lua.cc	2009-02-07 00:35:10 UTC (rev 1521)
+@@ -275,7 +275,7 @@
+ 
+     std::set&lt;Object *&gt; unique;
+     std::list&lt;Object *&gt;::iterator it = objects.begin();
+-    for (int i = 1; it != objects.end(); ++it, ++i) {
++    for (int i = 1; it != objects.end(); ++it) {
+         if (*it) {  // existing object not NULL
+             if (unique.find(*it) == unique.end()) {
+                 unique.insert(*it);
+@@ -284,6 +284,7 @@
+                 lua_rawseti(L, -3, i);   // group[i] = obj
+                 lua_pushinteger(L, i);
+                 lua_rawset(L, -3);       // group[obj] = i
++                i++;
+             }
+         }
+     }
+@@ -3142,6 +3143,9 @@
+ 
+     ObjectList oldList = toObjectList(L, 1);
+     Object *center = to_object(L, 2);
++    if (center == NULL) {
++        throwLuaError(L, &quot;Error: reference object is no longer existing&quot;);
++    }
+     double mindist = -1;
+     Object *candidate = NULL;
+     
+
+Modified: trunk/src/stones/VolcanoStone.cc
+===================================================================
+--- trunk/src/stones/VolcanoStone.cc	2009-02-06 21:31:26 UTC (rev 1520)
++++ trunk/src/stones/VolcanoStone.cc	2009-02-07 00:35:10 UTC (rev 1521)
+@@ -77,8 +77,8 @@
+         switch (state) {
+             case FINISHED:
+             case INACTIVE: set_model(&quot;st_flat&quot;); break;
+-            case ACTIVE:   set_anim(&quot;st-farting&quot;); break;
+-            case BREAKING: set_anim(&quot;st-fartbreak-anim&quot;); break;
++            case ACTIVE:   set_anim(&quot;st_quaking&quot;); break;
++            case BREAKING: set_anim(&quot;st_quakebreak_anim&quot;); break;
+             case NEW:      set_anim(&quot;it-seed-growing&quot;); break;
+             case GROWING:  set_anim(&quot;st-volcano-growing&quot;); break;
+         }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000950.html">[Enigma-game-svn] r1520 - in trunk/data: gfx40 gfx48	levels/enigma_tutorial
+</A></li>
+	<LI>Next message: <A HREF="000952.html">[Enigma-game-svn] r1522 - in homepage/input: . news
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#951">[ date ]</a>
+              <a href="thread.html#951">[ thread ]</a>
+              <a href="subject.html#951">[ subject ]</a>
+              <a href="author.html#951">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

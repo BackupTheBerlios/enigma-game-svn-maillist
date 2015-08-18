@@ -1,0 +1,327 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r703 - in branches/1.0: lib-src/enigma-core	src/lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r703%20-%20in%20branches/1.0%3A%20lib-src/enigma-core%0A%09src/lev&In-Reply-To=%3C200704291312.l3TDCUNL023702%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000139.html">
+   <LINK REL="Next"  HREF="000141.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r703 - in branches/1.0: lib-src/enigma-core	src/lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r703%20-%20in%20branches/1.0%3A%20lib-src/enigma-core%0A%09src/lev&In-Reply-To=%3C200704291312.l3TDCUNL023702%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r703 - in branches/1.0: lib-src/enigma-core	src/lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Apr 29 15:12:30 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000139.html">[Enigma-game-svn] r702 - branches/1.0/src
+</A></li>
+        <LI>Next message: <A HREF="000141.html">[Enigma-game-svn] r704 - in branches/1.0/src: gui lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#140">[ date ]</a>
+              <a href="thread.html#140">[ thread ]</a>
+              <a href="subject.html#140">[ subject ]</a>
+              <a href="author.html#140">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-04-29 15:12:28 +0200 (Sun, 29 Apr 2007)
+New Revision: 703
+
+Modified:
+   branches/1.0/lib-src/enigma-core/ecl_system.hh
+   branches/1.0/lib-src/enigma-core/ecl_system_unix.cc
+   branches/1.0/src/lev/Index.cc
+   branches/1.0/src/lev/PersistentIndex.cc
+   branches/1.0/src/lev/PersistentIndex.hh
+Log:
+Branch 1.0: 
+- fix double LP menu entry on same pack on system and user path
+- fix double LP menu entry on Windows on &quot;Pack\&quot;+&quot;pack.zip&quot; like cases
+- evaluate index compatibility, release and revision: allow updates of
+  system LPs on user data path.
+
+
+Modified: branches/1.0/lib-src/enigma-core/ecl_system.hh
+===================================================================
+--- branches/1.0/lib-src/enigma-core/ecl_system.hh	2007-04-29 11:58:22 UTC (rev 702)
++++ branches/1.0/lib-src/enigma-core/ecl_system.hh	2007-04-29 13:12:28 UTC (rev 703)
+@@ -21,6 +21,7 @@
+ 
+ #include &lt;string&gt;
+ #include &lt;ctime&gt;
++#include &lt;set&gt;
+ 
+ namespace ecl
+ {
+@@ -38,6 +39,8 @@
+ 
+ #ifdef __MINGW32__
+     std::string ApplicationDataPath();
++    void ToLowerCase(std::string &amp;filename);
++    std::set&lt;std::string&gt; UniqueFilenameSet(std::set&lt;std::string&gt; inSet);
+ #endif
+ 
+ /* -------------------- Locales -------------------- */
+
+Modified: branches/1.0/lib-src/enigma-core/ecl_system_unix.cc
+===================================================================
+--- branches/1.0/lib-src/enigma-core/ecl_system_unix.cc	2007-04-29 11:58:22 UTC (rev 702)
++++ branches/1.0/lib-src/enigma-core/ecl_system_unix.cc	2007-04-29 13:12:28 UTC (rev 703)
+@@ -142,6 +142,29 @@
+     return result;
+ }
+ 
++void ecl::ToLowerCase(std::string &amp;filename) {
++    for (int i = 0; i &lt; filename.length(); i++) {
++	char c = filename[i];
++	if (c &gt;= 'A' &amp;&amp; c &lt;= 'Z')
++	    filename.replace(i, 1, 1, c - 'A' + 'a');
++    }
++}
++
++std::set&lt;std::string&gt; ecl::UniqueFilenameSet(std::set&lt;std::string&gt; inSet) {
++    std::set&lt;std::string&gt;::iterator it = inSet.begin();
++    std::set&lt;std::string&gt; outSet;
++    std::set&lt;std::string&gt; lowerSet;
++    for (; it != inSet.end(); it++) {
++	std::string name = *it;
++	ecl::ToLowerCase(name);
++	if (lowerSet.find(name) == lowerSet.end()) {
++	    outSet.insert(*it);
++	    lowerSet.insert(name);
++	}
++    }
++    return outSet;
++}
++
+ #endif
+ 
+ 
+
+Modified: branches/1.0/src/lev/Index.cc
+===================================================================
+--- branches/1.0/src/lev/Index.cc	2007-04-29 11:58:22 UTC (rev 702)
++++ branches/1.0/src/lev/Index.cc	2007-04-29 13:12:28 UTC (rev 703)
+@@ -52,7 +52,8 @@
+             return;
+         
+         // check for uniqueness of index name
+-        
++	if (findIndex(anIndex-&gt;getName()) != NULL)
++	    return;
+             
+         indices.insert(std::make_pair(anIndex-&gt;getName(), anIndex));
+         
+@@ -111,6 +112,7 @@
+             for (itg = indexGroups.begin(); itg != indexGroups.end(); itg++)
+                 addIndexToGroup(anIndex, (*itg).second);
+         }
++	return;
+     }
+     
+     void Index::addIndexToGroup(Index *anIndex, std::vector&lt;Index *&gt; * aGroup) {
+
+Modified: branches/1.0/src/lev/PersistentIndex.cc
+===================================================================
+--- branches/1.0/src/lev/PersistentIndex.cc	2007-04-29 11:58:22 UTC (rev 702)
++++ branches/1.0/src/lev/PersistentIndex.cc	2007-04-29 13:12:28 UTC (rev 703)
+@@ -63,7 +63,32 @@
+     }
+     
+     PersistentIndex * PersistentIndex::historyIndex = NULL;
++    std::vector&lt;PersistentIndex *&gt; PersistentIndex::indexCandidates;
+     
++    void PersistentIndex::checkCandidate(PersistentIndex * candidate) {
++	if (candidate-&gt;getName().empty() ||
++		candidate-&gt;getCompatibility() &gt; ENIGMACOMPATIBITLITY) {
++	    delete candidate;
++	} else {
++	    // check if new Index is an update of another
++	    for (int i = 0; i &lt; indexCandidates.size(); i++) {
++		if (indexCandidates[i]-&gt;getName() != candidate-&gt;getName()) {
++		    continue;
++		} else if (indexCandidates[i]-&gt;getRelease() != candidate-&gt;getRelease() ||
++			indexCandidates[i]-&gt;getRevision() &gt;= candidate-&gt;getRevision()) {
++		    delete candidate;
++		    return;
++		} else {
++		    // it is an update
++		    delete indexCandidates[i];
++		    indexCandidates[i] = candidate;
++		    return;
++		}
++	    }
++	    indexCandidates.push_back(candidate);
++	}
++    }
++    
+     void PersistentIndex::registerPersistentIndices(bool onlySystemIndices) {
+         DirIter * dirIter;
+         DirEntry dirEntry;
+@@ -72,7 +97,6 @@
+         std::vector&lt;std::string&gt; sysPaths = app.systemFS-&gt;getPaths();
+         std::set&lt;std::string&gt; candidates;
+         std::set&lt;std::string&gt; candidates2;
+-        std::set&lt;std::string&gt; registered;
+         for (int i = 0; i &lt; sysPaths.size(); i++) {
+             dirIter = DirIter::instance(sysPaths[i] + &quot;/levels&quot;);
+             while (dirIter-&gt;get_next(dirEntry)) {
+@@ -92,15 +116,13 @@
+ 
+         for (std::set&lt;std::string&gt;::iterator i = candidates.begin(); 
+                 i != candidates.end(); i++) {
+-//            Log &lt;&lt; &quot;PersistentIndexCandidate1 &quot; &lt;&lt; *i &lt;&lt;&quot;\n&quot;;
+-            PersistentIndex * anIndex = new PersistentIndex(*i, true);
++            // register the index just on the system path even if the
++	    // user has an update on his path. We need to know the release to
++	    // decide if a user copy is an update
++	    PersistentIndex * anIndex = new PersistentIndex(*i, true);
+             anIndex-&gt;isUserOwned = false;
+-            if (!(anIndex-&gt;getName().empty())) {
+-                Index::registerIndex(anIndex);
+-                registered.insert(*i);
+-            } else {
+-                delete anIndex;
+-            }
++	    Log &lt;&lt; &quot;precheck: &quot; &lt;&lt; *i &lt;&lt; &quot;\n&quot;;
++	    checkCandidate(anIndex);
+         }
+ 
+         //add system cross indices
+@@ -109,16 +131,10 @@
+             while (dirIter-&gt;get_next(dirEntry)) {
+                 if (!dirEntry.is_dir &amp;&amp; dirEntry.name.size() &gt; 4 &amp;&amp; 
+                         (dirEntry.name.rfind(&quot;.xml&quot;) == dirEntry.name.size() - 4)) {
+-//                    Log &lt;&lt; &quot;PersistentIndexCandidate scorss &quot; &lt;&lt; dirEntry.name &lt;&lt;&quot;\n&quot;;
+                     PersistentIndex * anIndex = new PersistentIndex(&quot;enigma_cross&quot;, true,
+                             INDEX_DEFAULT_PACK_LOCATION, &quot;&quot;, dirEntry.name);
+                     anIndex-&gt;isUserOwned = false;
+-                    if (!(anIndex-&gt;getName().empty()) &amp;&amp; 
+-                            Index::findIndex(anIndex-&gt;getName()) == NULL) {
+-                        Index::registerIndex(anIndex);
+-                    } else {
+-                        delete anIndex;
+-                    }
++		    checkCandidate(anIndex);
+                 }
+             }
+         }
+@@ -134,13 +150,11 @@
+                     dirEntry.name != &quot;.svn&quot; &amp;&amp; dirEntry.name != &quot;auto&quot; &amp;&amp;
+                     dirEntry.name != &quot;cross&quot; &amp;&amp; dirEntry.name != &quot;enigma_cross&quot; &amp;&amp; 
+                     dirEntry.name != &quot;legacy_dat&quot;) {
+-                if (registered.find(dirEntry.name) == registered.end())
+                     candidates2.insert(dirEntry.name);
+             }
+             else {
+                 std::string::size_type zipPos = dirEntry.name.rfind(&quot;.zip&quot;);
+                 if (zipPos != std::string::npos &amp;&amp; zipPos == dirEntry.name.size() - 4) {
+-                    if (registered.find(dirEntry.name) == registered.end()) 
+                         candidates2.insert(dirEntry.name.substr(0, dirEntry.name.size() - 4));
+                 }
+             }
+@@ -148,36 +162,34 @@
+         delete dirIter;
+ 
+         candidates2.insert(&quot;&quot;);
++#ifdef __MINGW32__
++	// eliminate logical duplicates as Windows does not distinguish
++	// upper and lower case filenames but we can have e.g. an uppercase zip
++	// and a lower case dir
++	candidates2 = ecl::UniqueFilenameSet(candidates2);
++#endif
+         for (std::set&lt;std::string&gt;::iterator i = candidates2.begin(); 
+                 i != candidates2.end(); i++) {
+-//            Log &lt;&lt; &quot;PersistentIndexCandidate2 &quot; &lt;&lt; *i &lt;&lt;&quot;\n&quot;;
+             PersistentIndex * anIndex = new PersistentIndex(*i, false);
+-            if (!(anIndex-&gt;getName().empty())) {
+-                Index::registerIndex(anIndex);
+-                registered.insert(*i);
+-            } else {
+-                delete anIndex;
+-            }
++	    checkCandidate(anIndex);
+         }
+-        
+        
+         //add user cross indices
+         dirIter = DirIter::instance(app.userPath + &quot;/levels/cross&quot;);
+         while (dirIter-&gt;get_next(dirEntry)) {
+             if (!dirEntry.is_dir &amp;&amp; dirEntry.name.size() &gt; 4 &amp;&amp; 
+                     (dirEntry.name.rfind(&quot;.xml&quot;) == dirEntry.name.size() - 4)) {
+-//                Log &lt;&lt; &quot;PersistentIndexCandidate4 &quot; &lt;&lt; dirEntry.name &lt;&lt;&quot;\n&quot;;
+                 PersistentIndex * anIndex = new PersistentIndex(&quot;cross&quot;, false, 
+                         INDEX_DEFAULT_PACK_LOCATION, &quot;&quot;, dirEntry.name);
+-                if (!(anIndex-&gt;getName().empty())) {
+-                    Index::registerIndex(anIndex);
+-                } else {
+-                    delete anIndex;
+-                }
++                checkCandidate(anIndex);
+             }
+         }
+         delete dirIter;
+         
++	for (int i = 0; i &lt; indexCandidates.size(); i++) {
++	    Index::registerIndex(indexCandidates[i]);
++	}
++	
+         // register auto not yet registered new files
+         PersistentIndex * autoIndex = new PersistentIndex(&quot;auto&quot;, false, 
+                 INDEX_AUTO_PACK_LOCATION, INDEX_AUTO_PACK_NAME);
+
+Modified: branches/1.0/src/lev/PersistentIndex.hh
+===================================================================
+--- branches/1.0/src/lev/PersistentIndex.hh	2007-04-29 11:58:22 UTC (rev 702)
++++ branches/1.0/src/lev/PersistentIndex.hh	2007-04-29 13:12:28 UTC (rev 703)
+@@ -112,11 +112,13 @@
+         bool isUserOwned;
+         bool isEditable;
+     private:
++	static std::vector&lt;PersistentIndex *&gt; indexCandidates;
+         std::string absIndexPath;
+         XERCES_CPP_NAMESPACE_QUALIFIER DOMDocument *doc;
+         XERCES_CPP_NAMESPACE_QUALIFIER DOMElement *infoElem;
+         XERCES_CPP_NAMESPACE_QUALIFIER DOMElement *levelsElem;
+         
++	static void checkCandidate(PersistentIndex * candidate);
+         // legacy 0.92
+         void parsePar(const string&amp; par, int&amp; par_value, std::string&amp; par_text);
+     };
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000139.html">[Enigma-game-svn] r702 - branches/1.0/src
+</A></li>
+	<LI>Next message: <A HREF="000141.html">[Enigma-game-svn] r704 - in branches/1.0/src: gui lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#140">[ date ]</a>
+              <a href="thread.html#140">[ thread ]</a>
+              <a href="subject.html#140">[ subject ]</a>
+              <a href="author.html#140">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

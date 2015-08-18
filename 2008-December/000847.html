@@ -1,0 +1,155 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1418 - in trunk: data/schemas src src/others
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-December/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1418%20-%20in%20trunk%3A%20data/schemas%20src%20src/others&In-Reply-To=%3C200812281739.mBSHdO3v005576%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000846.html">
+   <LINK REL="Next"  HREF="000848.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1418 - in trunk: data/schemas src src/others</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1418%20-%20in%20trunk%3A%20data/schemas%20src%20src/others&In-Reply-To=%3C200812281739.mBSHdO3v005576%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1418 - in trunk: data/schemas src src/others">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Dec 28 18:39:24 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000846.html">[Enigma-game-svn] r1417 - in trunk: data data/schemas src	src/actors src/stones
+</A></li>
+        <LI>Next message: <A HREF="000848.html">[Enigma-game-svn] r1419 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#847">[ date ]</a>
+              <a href="thread.html#847">[ thread ]</a>
+              <a href="subject.html#847">[ subject ]</a>
+              <a href="author.html#847">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-12-28 18:39:22 +0100 (Sun, 28 Dec 2008)
+New Revision: 1418
+
+Modified:
+   trunk/data/schemas/objects.xml
+   trunk/src/actors.cc
+   trunk/src/others/Rubberband.cc
+Log:
+Trunk 1.1: new API reengineering
+- actors
+  - add attributes &quot;velocity_x&quot;, &quot;velocity_y&quot; - actor speed on creation for
+    initial moving actors (does not reflect current velocity on runtime)
+- rubberband:
+  - another correction now for actor-stone rubbers for strong forces
+
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-12-28 15:31:18 UTC (rev 1417)
++++ trunk/data/schemas/objects.xml	2008-12-28 17:39:22 UTC (rev 1418)
+@@ -77,6 +77,8 @@
+     &lt;attr name=&quot;target&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;transparent&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;threshold&quot; type=&quot;double&quot; default=&quot;0&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;velocity_x&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;velocity_y&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;wires&quot; type=&quot;group&quot; default=&quot;nil&quot; rw=&quot;r&quot;/&gt;
+     &lt;attr name=&quot;$chargesign&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;-1&quot; max=&quot;1&quot; rw=&quot;&quot;/&gt;
+     &lt;attr name=&quot;$firetransform&quot; type=&quot;string&quot; default=&quot;&quot; rw=&quot;&quot;/&gt;
+@@ -173,6 +175,8 @@
+       &lt;attr name=&quot;essential&quot;/&gt;
+       &lt;attr name=&quot;essential_id&quot;/&gt;
+       &lt;attr name=&quot;charge&quot;/&gt;
++      &lt;attr name=&quot;velocity_x&quot;/&gt;
++      &lt;attr name=&quot;velocity_y&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;ac_bug&quot;&gt;
+     &lt;/object&gt;
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2008-12-28 15:31:18 UTC (rev 1417)
++++ trunk/src/actors.cc	2008-12-28 17:39:22 UTC (rev 1418)
+@@ -211,11 +211,16 @@
+     m_sprite = display::AddSprite(get_pos());
+ }
+ 
+-void Actor::on_creation(const ecl::V2 &amp;p) 
+-{
++void Actor::on_creation(const ecl::V2 &amp;p)  {
++    if (Value vx = getAttr(&quot;velocity_x&quot;)) {
++        m_actorinfo.vel = V2(vx,  m_actorinfo.vel[1]);
++    }
++    if (Value vy = getAttr(&quot;velocity_y&quot;)) {
++        m_actorinfo.vel = V2(m_actorinfo.vel[0], vy);
++    }
+     set_model(get_kind());
+-    m_sprite.move (p);
+-    move ();
++    m_sprite.move(p);
++    move();
+ }
+ 
+ void Actor::on_respawn (const ecl::V2 &amp;/*pos*/) {
+
+Modified: trunk/src/others/Rubberband.cc
+===================================================================
+--- trunk/src/others/Rubberband.cc	2008-12-28 15:31:18 UTC (rev 1417)
++++ trunk/src/others/Rubberband.cc	2008-12-28 17:39:22 UTC (rev 1418)
+@@ -181,6 +181,22 @@
+             force = - (1 + 0.8 / numRubbers) * relspeed * vn / dt * ai-&gt;mass;  // damping for inverse friction and multiconnections
+ //            Log &lt;&lt; &quot;Rubber stone force &quot;&lt;&lt; force1 &lt;&lt; &quot;  &quot; &lt;&lt;relspeed&lt;&lt; &quot;\n&quot;;
+             
++            // in case one actor is blocked the length can exceed the limits due to later force corrections
++            // in the last timestep - we need to correct possible small errors before they sum up
++            if (isMax &amp;&amp; (len &gt; maxLength) &amp;&amp; (relspeed &lt;= 0) &amp;&amp; !(objFlags &amp; OBJBIT_MAXVIOLATION)) {
++                double dlen = ecl::Min(len - maxLength, len - (minLength + eps));
++                dlen = ecl::Max(0.0, dlen);
++                force = (ai-&gt;mass * dlen / dt / dt) * vn;
++            }
++            if (isMin &amp;&amp; (len &lt; minLength) &amp;&amp; (relspeed &gt;= 0) &amp;&amp; !(objFlags &amp; OBJBIT_MINVIOLATION)) {
++                double dlen = len - minLength;
++                if (maxLength &gt; 0) {
++                    dlen = ecl::Max(len - minLength, len - (maxLength - eps));
++                    dlen = ecl::Min(0.0, dlen);
++                }
++                force = (ai-&gt;mass * dlen / dt / dt) * vn;
++            }
++            
+             // eliminate limit violations by moderate forces
+             if (isMax &amp;&amp; (objFlags &amp; OBJBIT_MAXVIOLATION)) {
+                 force += server::RubberViolationStrength * vn;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000846.html">[Enigma-game-svn] r1417 - in trunk: data data/schemas src	src/actors src/stones
+</A></li>
+	<LI>Next message: <A HREF="000848.html">[Enigma-game-svn] r1419 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#847">[ date ]</a>
+              <a href="thread.html#847">[ thread ]</a>
+              <a href="subject.html#847">[ subject ]</a>
+              <a href="author.html#847">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

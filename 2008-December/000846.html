@@ -1,0 +1,1507 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1417 - in trunk: data data/schemas src	src/actors src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-December/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1417%20-%20in%20trunk%3A%20data%20data/schemas%20src%0A%09src/actors%20src/stones&In-Reply-To=%3C200812281531.mBSFVLoO015396%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000845.html">
+   <LINK REL="Next"  HREF="000847.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1417 - in trunk: data data/schemas src	src/actors src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1417%20-%20in%20trunk%3A%20data%20data/schemas%20src%0A%09src/actors%20src/stones&In-Reply-To=%3C200812281531.mBSFVLoO015396%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1417 - in trunk: data data/schemas src	src/actors src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Dec 28 16:31:21 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000845.html">[Enigma-game-svn] r1416 - homepage/input/lotm
+</A></li>
+        <LI>Next message: <A HREF="000847.html">[Enigma-game-svn] r1418 - in trunk: data/schemas src src/others
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#846">[ date ]</a>
+              <a href="thread.html#846">[ thread ]</a>
+              <a href="subject.html#846">[ subject ]</a>
+              <a href="author.html#846">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-12-28 16:31:18 +0100 (Sun, 28 Dec 2008)
+New Revision: 1417
+
+Added:
+   trunk/src/actors/BugActor.cc
+   trunk/src/actors/BugActor.hh
+   trunk/src/actors/HorseActor.cc
+   trunk/src/actors/HorseActor.hh
+   trunk/src/actors/KillerActor.cc
+   trunk/src/actors/KillerActor.hh
+   trunk/src/actors/Rotors.cc
+   trunk/src/actors/Rotors.hh
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/Object.cc
+   trunk/src/actors.cc
+   trunk/src/actors.hh
+   trunk/src/actors/Balls.hh
+   trunk/src/ox_extra.cc
+   trunk/src/oxyd.cc
+   trunk/src/stones/FakeStone.cc
+   trunk/src/stones_simple.cc
+Log:
+Trunk 1.1: new API reengineering
+- actors rotor and top
+  - renamed to ac_rotor, ac_top
+  - attribute &quot;gohome&quot; switched to bool
+  - attribute &quot;attacknearest&quot; switched to bool
+  - attribute &quot;force&quot; renamed to &quot;strength&quot;
+- actor horse:
+  - renaming to ac_horse
+  - attribute &quot;force&quot; renamed to &quot;strength&quot;
+  - attribute &quot;target1&quot; to &quot;target4&quot; eliminated 
+  - support of attribute destination to define arbitrary move targets
+- actor bug
+  - renamed to ac_bug
+- actor killer(ball)
+  - renamed to ac_killer
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/data/api1init.lua	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -45,9 +45,14 @@
+ }
+ 
+ RenamingObjectsNew2Old = {
++    ac_bug = &quot;ac-bug&quot;,
++    ac_horse = &quot;ac-horse&quot;,
++    ac_killer = &quot;ac-killerball&quot;,
+     ac_marble_black = &quot;ac-blackball&quot;,
+     ac_marble_white = &quot;ac-whiteball&quot;,
+     ac_pearl_white = &quot;ac-whiteball-small&quot;,
++    ac_rotor = &quot;ac-rotor&quot;,
++    ac_top = &quot;ac-top&quot;,
+     fl_abyss = &quot;fl-abyss&quot;,
+     fl_bridge = &quot;fl-bridge&quot;,
+     fl_hay = &quot;fl-hay&quot;,
+@@ -587,7 +592,8 @@
+          _key = &quot;coin_value&quot;
+      end
+      if key == &quot;force&quot; and (_obj_name == &quot;st-actorimpulse&quot; or
+-             _obj_name == &quot;st-actorimpulse_invisible&quot;)  then
++             _obj_name == &quot;st-actorimpulse_invisible&quot; or _obj_name == &quot;ac-horse&quot; or
++             _obj_name == &quot;ac-rotor&quot; or _obj_name == &quot;ac-top&quot;)  then
+          _key = &quot;strength&quot;
+      end
+      if key == &quot;friction_factor&quot; then
+@@ -676,6 +682,12 @@
+      if key == &quot;blinking&quot; then
+          _key = &quot;state&quot;
+      end
++     if key == &quot;attacknearest&quot; then
++         if val == 1 then _val = true else _val = false end
++     end
++     if key == &quot;gohome&quot; then
++         if val == 1 then _val = true else _val = false end
++     end
+      enigma._SetAttrib(obj, _key, _val)
+ end
+ 
+@@ -692,7 +704,8 @@
+          _key = &quot;coin_value&quot;
+      end
+      if key == &quot;force&quot; and (_obj_name == &quot;st-actorimpulse&quot; or
+-             _obj_name == &quot;st-actorimpulse_invisible&quot;)  then
++             _obj_name == &quot;st-actorimpulse_invisible&quot; or _obj_name == &quot;ac-horse&quot; or
++             _obj_name == &quot;ac-rotor&quot; or _obj_name == &quot;ac-top&quot;)  then
+          _key = &quot;strength&quot;
+      end
+      if key == &quot;friction_factor&quot; then
+@@ -799,6 +812,12 @@
+      if key == &quot;movable&quot; then
+          if val == false then val = 0 else val = 1 end
+      end
++     if key == &quot;attacknearest&quot; then
++         if val == false then val = 0 else val = 1 end
++     end
++     if key == &quot;gohome&quot; then
++         if val == false then val = 0 else val = 1 end
++     end
+      return val
+ end
+ 
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/data/models-2d.lua	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -168,7 +168,7 @@
+ 
+ -- ac-killerball --
+ do
+-    DefAlias(&quot;ac-killerball&quot;, &quot;ac_pearl_white&quot;)
++    DefAlias(&quot;ac_killer&quot;, &quot;ac_pearl_white&quot;)
+ end
+ 
+ -- Marbles in inventory  --
+@@ -184,7 +184,7 @@
+ -- ac-bug --
+ do
+     SpriteImage(&quot;fg-bug&quot;,0.5,0.44)
+-    DefShModel(&quot;ac-bug&quot;, &quot;fg-bug&quot;, &quot;sh-whiteball-small&quot;)
++    DefShModel(&quot;ac_bug&quot;, &quot;fg-bug&quot;, &quot;sh-whiteball-small&quot;)
+ end
+ 
+ -- ac-cannonball --
+@@ -196,7 +196,7 @@
+ do
+     SpriteImage(&quot;fg-horse&quot;,0.5,0.18)
+     SpriteImage(&quot;sh-horse&quot;, 0.4)
+-    DefShModel(&quot;ac-horse&quot;, &quot;fg-horse&quot;, &quot;sh-horse&quot;)
++    DefShModel(&quot;ac_horse&quot;, &quot;fg-horse&quot;, &quot;sh-horse&quot;)
+ end
+ 
+ -- ac-rotor --
+@@ -209,7 +209,7 @@
+         DefShModel(&quot;ac-rotor&quot;..i, fg[i], bg[i])
+         table.insert(frames, &quot;ac-rotor&quot;..i)
+     end
+-    DefAnim(&quot;ac-rotor&quot;, BuildFrames(frames, 30), true)
++    DefAnim(&quot;ac_rotor&quot;, BuildFrames(frames, 30), true)
+ end
+ 
+ -- ac-top --
+@@ -222,7 +222,7 @@
+         DefShModel(&quot;ac-top&quot;..i, fg[i], bg)
+         table.insert(frames, &quot;ac-top&quot;..i)
+     end
+-    DefAnim(&quot;ac-top&quot;, BuildFrames(frames, 25), true)
++    DefAnim(&quot;ac_top&quot;, BuildFrames(frames, 25), true)
+ end
+ 
+ --------------------------------------------------------------------------------
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/data/schemas/objects.xml	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -6,6 +6,7 @@
+     &lt;attr name=&quot;algorithm&quot; type=&quot;string&quot; default=&quot;std&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;anchor1&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;anchor2&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;attacknearest&quot; type=&quot;bool&quot; default=&quot;true&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;autoclose&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;burnable&quot; type=&quot;bool&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;charge&quot; type=&quot;double&quot; default=&quot;0&quot; rw=&quot;rw&quot;/&gt;
+@@ -30,6 +31,7 @@
+     &lt;attr name=&quot;floodable&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;freeze_check&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;friction&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;gohome&quot; type=&quot;bool&quot; default=&quot;true&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;gradient&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;hit_factor&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;hit_distortion_xx&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+@@ -61,6 +63,7 @@
+     &lt;attr name=&quot;orientation&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;3&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;oxydcolor&quot; type=&quot;int&quot; default=&quot;-1&quot; min=&quot;-4&quot; max=&quot;7&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;player&quot; type=&quot;int&quot; default=&quot;nil&quot; min=&quot;0&quot; max=&quot;1&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;prefercurrent&quot; type=&quot;double&quot; default=&quot;0.0&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;push_directions&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;range&quot; type=&quot;double&quot; default=&quot;1.0&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;rubbers&quot; type=&quot;group&quot; default=&quot;nil&quot; rw=&quot;r&quot;/&gt;
+@@ -171,6 +174,16 @@
+       &lt;attr name=&quot;essential_id&quot;/&gt;
+       &lt;attr name=&quot;charge&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;ac_bug&quot;&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;ac_horse&quot;&gt;
++      &lt;attr name=&quot;destination&quot;/&gt;
++      &lt;attr name=&quot;strength&quot; default=&quot;10.0&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;ac_killer&quot;&gt;
++      &lt;attr name=&quot;destination&quot;/&gt;
++      &lt;attr name=&quot;strength&quot; default=&quot;10.0&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;ac_marble&quot;&gt;
+       &lt;attr name=&quot;color&quot; default=&quot;0&quot;/&gt;
+       &lt;msg name=&quot;_appear&quot;/&gt;
+@@ -216,6 +229,20 @@
+     &lt;object name=&quot;ac_pearl_white&quot;&gt;
+       &lt;attr name=&quot;color&quot; value=&quot;1&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;ac_rotor&quot;&gt;
++      &lt;attr name=&quot;range&quot; default=&quot;5.0&quot;/&gt;
++      &lt;attr name=&quot;strength&quot; default=&quot;10.0&quot;/&gt;
++      &lt;attr name=&quot;gohome&quot;/&gt;
++      &lt;attr name=&quot;attacknearest&quot;/&gt;
++      &lt;attr name=&quot;prefercurrent&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;ac_top&quot;&gt;
++      &lt;attr name=&quot;range&quot; default=&quot;5.0&quot;/&gt;
++      &lt;attr name=&quot;strength&quot; default=&quot;10.0&quot;/&gt;
++      &lt;attr name=&quot;gohome&quot;/&gt;
++      &lt;attr name=&quot;attacknearest&quot;/&gt;
++      &lt;attr name=&quot;prefercurrent&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;fl&quot; abstract=&quot;true&quot;&gt;
+       &lt;attr name=&quot;adhesion&quot;/&gt;
+       &lt;attr name=&quot;burnable&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/src/Makefile.am	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -146,6 +146,14 @@
+ 	XMLtoUtf8.hh		\
+ 	actors/Balls.cc		\
+ 	actors/Balls.hh		\
++	actors/BugActor.cc	\
++	actors/BugActor.hh	\
++	actors/HorseActor.cc	\
++	actors/HorseActor.hh	\
++	actors/KillerActor.cc	\
++	actors/KillerActor.hh	\
++	actors/Rotors.cc	\
++	actors/Rotors.hh	\
+ 	floors/BridgeFloor.cc	\
+ 	floors/BridgeFloor.hh	\
+ 	floors/FloodStream.cc	\
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/src/Object.cc	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -374,7 +374,7 @@
+                 ObjectList ol = (*tit).getObjectList(this);  // convert next token to an objectlist
+                 for (ObjectList::iterator oit = ol.begin(); oit != ol.end(); ++oit) {
+                     GridObject *go = dynamic_cast&lt;GridObject *&gt;(*oit);  // get the object
+-                    if (go != NULL) {   // no actors as destination!
++                    if (go != NULL) {   // no actors and deleted objects as destination!
+                         GridPos p = go-&gt;get_pos();
+                         if (IsInsideLevel(p)) {   // no objects in inventory,...
+                             if (i == idx) {
+
+Modified: trunk/src/actors/Balls.hh
+===================================================================
+--- trunk/src/actors/Balls.hh	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/src/actors/Balls.hh	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -75,7 +75,7 @@
+         
+         virtual void on_creation(const ecl::V2 &amp;pos);
+         virtual void think (double dtime);
+-        virtual void on_respawn (const ecl::V2 &amp;pos);
++        virtual void on_respawn(const ecl::V2 &amp;pos);
+ 
+         virtual void move_screen();
+         virtual void hide();
+
+Added: trunk/src/actors/BugActor.cc
+===================================================================
+--- trunk/src/actors/BugActor.cc	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/src/actors/BugActor.cc	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -0,0 +1,52 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;actors/BugActor.hh&quot;
++//#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++
++/* -------------------- Bug  -------------------- */
++
++    Bug::Bug() : Actor (traits) {
++    }
++
++    std::string Bug::getClass() const {
++        return &quot;ac_bug&quot;;
++    }
++
++    const char *Bug::get_kind() const {
++        return &quot;ac_bug&quot;;
++    }
++
++    bool Bug::is_dead() const {
++        return false;
++    }
++        
++    ActorTraits Bug::traits = {&quot;ac_bug&quot;, ac_bug, 1&lt;&lt;ac_bug, 12.0/64, 0.7};
++    
++    BOOT_REGISTER_START
++        BootRegister(new Bug(), &quot;ac_bug&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
++
+
+
+Property changes on: trunk/src/actors/BugActor.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/actors/BugActor.hh
+===================================================================
+--- trunk/src/actors/BugActor.hh	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/src/actors/BugActor.hh	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -0,0 +1,48 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef BUGACTOR_HH
++#define BUGACTOR_HH
++
++#include &quot;actors.hh&quot;
++#include &quot;ecl_math.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * Bug
++     */
++    class Bug : public Actor {
++        CLONEACTOR(Bug);
++        DECL_ACTORTRAITS;
++ 
++   public:
++        Bug();
++        
++        // Object interface.
++        virtual std::string getClass() const;
++        virtual const char *get_kind() const;
++
++        // Actor interface
++        virtual bool is_dead() const;
++    };
++
++} // namespace enigma
++
++#endif /*BUGACTOR_HH*/
+
+
+Property changes on: trunk/src/actors/BugActor.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/actors/HorseActor.cc
+===================================================================
+--- trunk/src/actors/HorseActor.cc	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/src/actors/HorseActor.cc	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -0,0 +1,79 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;actors/HorseActor.hh&quot;
++//#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++
++/* -------------------- Horse  -------------------- */
++
++    Horse::Horse() : Actor (traits), m_targetidx(-1), m_target() {
++        setAttr(&quot;strength&quot;, 10.0);
++    }
++
++    std::string Horse::getClass() const {
++        return &quot;ac_horse&quot;;
++    }
++
++    const char *Horse::get_kind() const {
++        return &quot;ac_horse&quot;;
++    }
++
++    bool Horse::is_dead() const {
++        return false;
++    }
++    
++    void Horse::think(double dtime)  {
++        double force = getAttr(&quot;strength&quot;);
++        update_target ();
++        if (m_targetidx != -1) {
++            add_force(normalize(m_target - get_pos()) * force);
++        }
++        Actor::think(dtime);
++    }
++
++    void Horse::update_target() {
++        ecl::V2 newPos;
++        if (m_targetidx == -1) {
++            // no target defined so far
++            if (getDestinationByIndex(0, newPos)) {
++                m_target = newPos;
++                m_targetidx = 0;
++            }
++        } else if (length(m_target - get_pos()) &lt; 0.2) {
++            // target reached or? try next one
++            if (getDestinationByIndex(++m_targetidx, newPos)) {
++                m_target = newPos;
++            } else
++                m_targetidx = -1;     // failed -&gt; start anew
++        } 
++    }
++    
++    ActorTraits Horse::traits = {&quot;ac_horse&quot;, ac_horse, 1&lt;&lt;ac_horse, 24.0/64, 1.2};
++    
++    BOOT_REGISTER_START
++        BootRegister(new Horse(), &quot;ac_horse&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
++
+
+
+Property changes on: trunk/src/actors/HorseActor.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/actors/HorseActor.hh
+===================================================================
+--- trunk/src/actors/HorseActor.hh	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/src/actors/HorseActor.hh	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -0,0 +1,58 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef HORSEACTOR_HH
++#define HORSEACTOR_HH
++
++#include &quot;actors.hh&quot;
++#include &quot;ecl_math.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * Horse
++     */
++    class Horse : public Actor {
++        CLONEACTOR(Horse);
++        DECL_ACTORTRAITS;
++ 
++   public:
++        Horse();
++        
++        // Object interface.
++        virtual std::string getClass() const;
++        virtual const char *get_kind() const;
++//        virtual void setAttr(const string&amp; key, const Value &amp;val);
++
++        // Actor interface
++        virtual bool is_dead() const;
++        virtual void think (double dtime);
++
++    private:
++        // Variables
++        int m_targetidx;
++        ecl::V2 m_target;
++        
++        // Private methods
++        void update_target();
++    };
++
++} // namespace enigma
++
++#endif /*HORSEACTOR_HH*/
+
+
+Property changes on: trunk/src/actors/HorseActor.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/actors/KillerActor.cc
+===================================================================
+--- trunk/src/actors/KillerActor.cc	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/src/actors/KillerActor.cc	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -0,0 +1,59 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;actors/KillerActor.hh&quot;
++//#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++
++/* -------------------- Killer  -------------------- */
++
++    Killer::Killer() : Actor (traits) {
++        setAttr(&quot;adhesion&quot;, Value(2.0));
++        setAttr(&quot;color&quot;, Value(WHITE));
++        setAttr(&quot;controllers&quot;, Value(3));
++    }
++
++    std::string Killer::getClass() const {
++        return &quot;ac_killer&quot;;
++    }
++
++    const char *Killer::get_kind() const {
++        return &quot;ac_killer&quot;;
++    }
++
++    bool Killer::is_dead() const {
++        return false;
++    }
++
++    void Killer::on_collision(Actor *a) {
++        SendMessage(a, &quot;_shatter&quot;);
++    }
++    
++    ActorTraits Killer::traits = {&quot;ac_killer&quot;, ac_killer, 1&lt;&lt;ac_killer, 13.0/64, 0.7};
++    
++    BOOT_REGISTER_START
++        BootRegister(new Killer(), &quot;ac_killer&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
++
+
+
+Property changes on: trunk/src/actors/KillerActor.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/actors/KillerActor.hh
+===================================================================
+--- trunk/src/actors/KillerActor.hh	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/src/actors/KillerActor.hh	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -0,0 +1,49 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef KILLERACTOR_HH
++#define KILLERACTOR_HH
++
++#include &quot;actors.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * Killer
++     */
++    class Killer : public Actor {
++        CLONEACTOR(Killer);
++        DECL_ACTORTRAITS;
++ 
++   public:
++        Killer();
++        
++        // Object interface.
++        virtual std::string getClass() const;
++        virtual const char *get_kind() const;
++//        virtual void setAttr(const string&amp; key, const Value &amp;val);
++
++        // Actor interface
++        virtual bool is_dead() const;
++        virtual void on_collision(Actor *a);
++    };
++
++} // namespace enigma
++
++#endif /*KILLERACTOR_HH*/
+
+
+Property changes on: trunk/src/actors/KillerActor.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/actors/Rotors.cc
+===================================================================
+--- trunk/src/actors/Rotors.cc	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/src/actors/Rotors.cc	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -0,0 +1,140 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;actors/Rotors.hh&quot;
++#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;player.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++
++/* -------------------- RotorBase  -------------------- */
++
++    RotorBase::RotorBase(const ActorTraits &amp;tr) : Actor (tr),  attackCurrentOnly(false), timeKeepAttackStrategy(0) {
++        setAttr(&quot;range&quot;, 5.0);
++        setAttr(&quot;strength&quot;, 10.0);
++        setAttr(&quot;gohome&quot;, true);
++        setAttr(&quot;attacknearest&quot;, true);
++        setAttr(&quot;prefercurrent&quot;, 0.0);
++    }
++
++    void RotorBase::setAttr(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;range&quot;)
++            range = val;
++        else if (key == &quot;strength&quot;) 
++            force = val;
++        else if (key == &quot;gohome&quot;) 
++            gohome = val;
++        else if (key == &quot;attacknearest&quot;) 
++            attacknearest = val;
++        else if (key == &quot;prefercurrent&quot;) 
++            prefercurrent = val;
++        Actor::setAttr(key, val);
++    }
++
++    bool RotorBase::is_dead() const {
++        return false;
++    }
++    
++    void RotorBase::think(double dtime)  {
++        double cforce = force/6;
++    
++        Actor *target = 0;
++        V2     target_vec;
++        timeKeepAttackStrategy  -= dtime;
++        if (timeKeepAttackStrategy &lt; 0) {
++            timeKeepAttackStrategy = enigma::DoubleRand(0.8, 1.6);
++            attackCurrentOnly = (enigma::DoubleRand(0.0, 1.0) &lt; prefercurrent);
++        }
++    
++        ActorsInRangeIterator air_it = ActorsInRangeIterator(this, range,
++                1&lt;&lt;ac_marble_white | 1&lt;&lt;ac_marble_black | 1&lt;&lt;ac_marble_white);
++        Actor *a;
++        while((a = air_it.next()) != NULL) {
++            if (a-&gt;is_movable() &amp;&amp; !a-&gt;is_invisible()) {
++                V2 v = a-&gt;get_pos() - get_pos();
++                if (attacknearest &amp;&amp; !attackCurrentOnly ||
++                        attackCurrentOnly &amp;&amp; a == player::GetMainActor(
++                        player::CurrentPlayer())) {
++                    if (!target || (length(v) &lt; length(target_vec))) {
++                        target = a;
++                        target_vec = v;
++                    }
++                } else if (!attackCurrentOnly) {            
++                    target = a;
++                    target_vec += normalize(v);
++                }
++            }
++        }
++    
++        if (!target &amp;&amp; gohome) { 
++            // no actors focussed -&gt; return to start position
++            target_vec = get_respawnpos()-get_pos();
++        }
++    
++        double target_dist = length(target_vec);
++    
++        if (target_dist &gt; 0.2)
++            target_vec.normalize();
++        add_force(target_vec * cforce);
++    
++        Actor::think(dtime);
++    }
++    
++    void RotorBase::on_collision (Actor *a) {
++        SendMessage(a, &quot;_shatter&quot;);
++    }
++
++/* -------------------- Rotor  -------------------- */
++    Rotor::Rotor() : RotorBase(traits) {
++    }
++    
++    std::string Rotor::getClass() const {
++        return &quot;ac_rotor&quot;;
++    }
++
++    const char *Rotor::get_kind() const {
++        return &quot;ac_rotor&quot;;
++    }
++
++    ActorTraits Rotor::traits = {&quot;ac_rotor&quot;, ac_rotor, 1&lt;&lt;ac_rotor, 22.0/64, 0.8};
++
++/* -------------------- Top  -------------------- */
++    Top::Top() : RotorBase(traits) {
++    }
++
++    std::string Top::getClass() const {
++        return &quot;ac_top&quot;;
++    }
++
++    const char *Top::get_kind() const {
++        return &quot;ac_top&quot;;
++    }
++
++    ActorTraits Top::traits = {&quot;ac_top&quot;, ac_top, 1&lt;&lt;ac_top, 16.0/64, 0.8};
++    
++    BOOT_REGISTER_START
++        BootRegister(new Rotor(), &quot;ac_rotor&quot;);
++        BootRegister(new Top(), &quot;ac_top&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
++
+
+
+Property changes on: trunk/src/actors/Rotors.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/actors/Rotors.hh
+===================================================================
+--- trunk/src/actors/Rotors.hh	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/src/actors/Rotors.hh	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -0,0 +1,84 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef ROTORACTORS_HH
++#define ROTORACTORS_HH
++
++#include &quot;actors.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * The base class for rotors and spinning tops
++     */
++    class RotorBase : public Actor {
++        
++    public:
++        RotorBase(const ActorTraits &amp;tr);
++
++        // Object interface.
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++//        virtual Value getAttr(const std::string &amp;key) const;
++        
++        // Actor interface
++        virtual bool is_dead() const;
++        virtual void think (double dtime);
++        virtual void on_collision(Actor *a);
++
++    private:
++        // Variables
++        double range;
++        double force;
++        bool   gohome;
++        bool   attacknearest;
++        double prefercurrent;
++        bool   attackCurrentOnly;
++        double timeKeepAttackStrategy;
++    };
++    
++/* -------------------- Rotor  -------------------- */
++    class Rotor : public RotorBase {
++        CLONEACTOR(Rotor);
++        DECL_ACTORTRAITS;
++        
++    public:
++        Rotor();
++        
++        // Object interface.
++        virtual std::string getClass() const;
++        virtual const char *get_kind() const;
++    };
++    
++/* -------------------- Top  -------------------- */
++    class Top : public RotorBase {
++        CLONEACTOR(Top);
++        DECL_ACTORTRAITS;
++        
++    public:
++        Top();
++        
++        // Object interface.
++        virtual std::string getClass() const;
++        virtual const char *get_kind() const;
++    };
++    
++
++} // namespace enigma
++
++#endif /*ROTORACTORS_HH*/
+
+
+Property changes on: trunk/src/actors/Rotors.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/src/actors.cc	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -316,247 +316,7 @@
+             return !(other-&gt;isSouthOrEastOf(this));
+     }
+ 
+-/* -------------------- RotorBase -------------------- */
+ 
+-namespace
+-{
+-    /*! The base class for rotors and spinning tops. */
+-    class RotorBase : public Actor {
+-    public:
+-        void   setAttr (const string&amp; key, const Value &amp;val);
+-    protected:
+-        RotorBase(const ActorTraits &amp;tr);
+-    private:
+-        // Actor interface.
+-        void think (double dtime);
+-        bool is_dead() const { return false; }
+-//         bool is_flying() const { return true; }
+-        bool is_flying() const { return false; }
+-//        bool is_on_floor() const { return false; } we need friction!
+-
+-	void on_collision (Actor *a) {
+-	    SendMessage(a, &quot;_shatter&quot;);
+-	}
+-
+-        double range;
+-        double force;
+-        bool   gohome;
+-        bool   attacknearest;
+-        double prefercurrent;
+-        bool   attackCurrentOnly;
+-        double timeKeepAttackStrategy;
+-    };
+-}
+-
+-RotorBase::RotorBase(const ActorTraits &amp;tr)
+-: Actor(tr), attackCurrentOnly(false), timeKeepAttackStrategy(0)
+-{
+-    setAttr(&quot;range&quot;, 5.0);
+-    setAttr(&quot;force&quot;, 10.0);
+-    setAttr(&quot;gohome&quot;, 1.0);
+-    setAttr(&quot;attacknearest&quot;, 1.0);
+-    setAttr(&quot;prefercurrent&quot;, 0.0);
+-}
+-
+-void RotorBase::setAttr(const string&amp; key, const Value &amp;val)
+-{
+-    if (key == &quot;range&quot;)
+-        range = to_double(val);
+-    else if (key == &quot;force&quot;) 
+-        force = to_double(val);
+-    else if (key == &quot;gohome&quot;) 
+-        gohome = (to_int(val) != 0);
+-    else if (key == &quot;attacknearest&quot;) 
+-        attacknearest = (to_int(val) != 0);
+-    else if (key == &quot;prefercurrent&quot;) 
+-        prefercurrent = to_double(val);
+-    Actor::setAttr(key, val);
+-}
+-
+-void RotorBase::think (double dtime)
+-{
+-    double cforce = force/6;
+-
+-    Actor *target = 0;
+-    V2     target_vec;
+-    timeKeepAttackStrategy  -= dtime;
+-    if (timeKeepAttackStrategy &lt; 0) {
+-        timeKeepAttackStrategy = enigma::DoubleRand(0.8, 1.6);
+-        attackCurrentOnly = (enigma::DoubleRand(0.0, 1.0) &lt; prefercurrent);
+-    }
+-
+-    ActorsInRangeIterator air_it = ActorsInRangeIterator(this, range,
+-            1&lt;&lt;ac_marble_white | 1&lt;&lt;ac_marble_black | 1&lt;&lt;ac_marble_white);
+-    Actor *a;
+-    while((a = air_it.next()) != NULL) {
+-        if (a-&gt;is_movable() &amp;&amp; !a-&gt;is_invisible()) {
+-            V2 v = a-&gt;get_pos() - get_pos();
+-            if (attacknearest &amp;&amp; !attackCurrentOnly ||
+-                    attackCurrentOnly &amp;&amp; a == player::GetMainActor(
+-                    player::CurrentPlayer())) {
+-                if (!target || (length(v) &lt; length(target_vec))) {
+-                    target = a;
+-                    target_vec = v;
+-                }
+-            } else if (!attackCurrentOnly) {            
+-                target = a;
+-                target_vec += normalize(v);
+-            }
+-        }
+-    }
+-
+-    if (!target &amp;&amp; gohome) { 
+-        // no actors focussed -&gt; return to start position
+-        target_vec = get_respawnpos()-get_pos();
+-    }
+-
+-    double target_dist = length(target_vec);
+-
+-    if (target_dist &gt; 0.2)
+-        target_vec.normalize();
+-    add_force (target_vec * cforce);
+-
+-    Actor::think(dtime);
+-}
+-
+-
+-/* -------------------- Rotor -------------------- */
+-namespace
+-{
+-    class Rotor : public RotorBase {
+-        CLONEACTOR(Rotor);
+-        DECL_ACTORTRAITS;
+-   public:
+-        Rotor() : RotorBase (traits)
+-        {
+-        }
+-    };
+-}
+-
+-ActorTraits Rotor::traits = {
+-    &quot;ac-rotor&quot;,                 // name
+-    ac_rotor,                   // id
+-    1&lt;&lt;ac_rotor,                // id_mask
+-    22.0f/64,                   // radius
+-    0.8f                        // mass
+-};
+-
+-
+-/* -------------------- Spinning top -------------------- */
+-namespace
+-{
+-    class Top : public RotorBase {
+-        CLONEACTOR(Top);
+-        DECL_ACTORTRAITS;
+-    public:
+-        Top() : RotorBase (traits)
+-        {
+-        }
+-    };
+-}
+-
+-ActorTraits Top::traits = {
+-    &quot;ac-top&quot;,                   // name
+-    ac_top,                     // id
+-    1&lt;&lt;ac_top,                  // id_mask
+-    16.0f/64,                   // radius
+-    0.8f                        // mass
+-};
+-
+-/* -------------------- Bug -------------------- */
+-
+-namespace
+-{
+-    class Bug : public Actor {
+-        CLONEACTOR(Bug);
+-        DECL_ACTORTRAITS;
+-    public:
+-        Bug() : Actor(traits) {}
+-        bool is_flying() const { return false; }
+-        bool is_dead() const { return false; }
+-        int get_id() const { return ac_bug; }
+-    };
+-}
+-
+-ActorTraits Bug::traits = {
+-    &quot;ac-bug&quot;,                   // name
+-    ac_bug,                     // id
+-    1&lt;&lt;ac_bug,                  // id_mask
+-    12.0f/64,                   // radius
+-    0.7f                        // mass
+-};
+-
+-
+-/* -------------------- Horse -------------------- */
+-
+-namespace
+-{
+-    class Horse : public Actor {
+-        CLONEACTOR(Horse);
+-        DECL_ACTORTRAITS;
+- 
+-        int get_id() const { return ac_horse; }
+-        bool is_flying() const { return false; }
+-        bool is_dead() const { return false; }
+-
+-        void think (double dtime);
+-
+-        // Private methods
+-        void update_target ();
+-
+-        // Variables
+-        int m_targetidx;
+-        V2 m_target;
+-   public:
+-        Horse();
+-    };
+-}
+-
+-ActorTraits Horse::traits = {
+-    &quot;ac-horse&quot;,                 // name
+-    ac_horse,                   // id
+-    1&lt;&lt;ac_horse,                // id_mask
+-    24.0f/64,                   // radius
+-    1.2f                        // mass
+-};
+-
+-Horse::Horse() 
+-: Actor(traits),
+-  m_targetidx(-1),
+-  m_target()
+-{
+-    setAttr(&quot;force&quot;, Value(10.0));
+-}
+- 
+-void Horse::think (double /* dtime */) 
+-{
+-    double force = getAttr(&quot;force&quot;);
+-    update_target ();
+-    if (m_targetidx != -1) {
+-        add_force (normalize(m_target - get_pos()) * force);
+-    }
+-}
+-
+-void Horse::update_target () {
+-    V2 newPos;
+-    if (m_targetidx == -1) {
+-        // no target defined so far
+-        if (getDestinationByIndex(0, newPos)) {
+-            m_target = newPos;
+-            m_targetidx = 0;
+-        }
+-    } 
+-    else if (length(m_target - get_pos()) &lt; 0.2) {
+-        // target reached or? try next one
+-        if (getDestinationByIndex(++m_targetidx, newPos)) {
+-            m_target = newPos;
+-        } else
+-            m_targetidx = -1;     // failed -&gt; start anew
+-    } 
+-}
+-
+-
+-
+ /* -------------------- CannonBall -------------------- */
+ 
+ namespace
+@@ -619,50 +379,11 @@
+ }
+ 
+     
+-//----------------------------------------
+-// Balls of different sorts
+-//----------------------------------------
+ 
+-namespace
+-{
+-
+-    class Killerball : public Actor {
+-        CLONEACTOR(Killerball);
+-        DECL_ACTORTRAITS;
+-    public:
+-
+-        Killerball() : Actor (traits)
+-        {
+-            setAttr(&quot;adhesion&quot;, Value(2.0));
+-            setAttr(&quot;color&quot;, Value(1.0));
+-            setAttr(&quot;controllers&quot;, Value(3.0));
+-        }
+-        bool is_dead() const { return false; }
+-
+-	void on_collision(Actor *a) {
+-	    SendMessage(a, &quot;_shatter&quot;);
+-	}
+-    };
+-}
+-
+-ActorTraits Killerball::traits = {
+-    &quot;ac-killerball&quot;,            // name
+-    ac_killerball,              // id
+-    1&lt;&lt;ac_killerball,           // id_mask
+-    13.0f/64,                   // radius
+-    0.7f                        // mass
+-};
+-
+-
+ /* -------------------- Functions -------------------- */
+ 
+ void InitActors () 
+ {
+-    RegisterActor (new Bug);
+-    RegisterActor (new Horse);
+-    RegisterActor (new Rotor);
+-    RegisterActor (new Top);
+-    RegisterActor (new Killerball);
+     RegisterActor (new CannonBall);
+ }
+ 
+
+Modified: trunk/src/actors.hh
+===================================================================
+--- trunk/src/actors.hh	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/src/actors.hh	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -30,7 +30,7 @@
+         ac_marble_white  = 1,
+         ac_pearl_black   = 2,
+         ac_pearl_white   = 3,
+-        ac_killerball = 4,
++        ac_killer     = 4,
+         ac_rotor      = 5,
+         ac_top        = 6,
+         ac_horse      = 7,
+
+Modified: trunk/src/ox_extra.cc
+===================================================================
+--- trunk/src/ox_extra.cc	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/src/ox_extra.cc	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -133,7 +133,7 @@
+     0,                   // no stone
+     0, 0, 0, 0, 0, 0, 0, 0,     // oxyd stones
+     0, 0, 0, 0, 0, 0, 0, 0,     // oxyd stones
+-    &quot;st-fakeoxyd&quot;,       // OxydExtra stone 0x11
++    &quot;st_fake_quake&quot;,     // OxydExtra stone 0x11
+     &quot;st-plain&quot;,          // OxydExtra stone 0x12
+     &quot;st-rock4&quot;,          // OxydExtra stone 0x13
+     UNUSED,              // OxydExtra stone 0x14
+
+Modified: trunk/src/oxyd.cc
+===================================================================
+--- trunk/src/oxyd.cc	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/src/oxyd.cc	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -502,99 +502,95 @@
+         switch (marble.getMarbleType()) {
+         case MarbleType_Black:
+             ac = MakeActor(&quot;ac_marble_black&quot;);
+-            ac-&gt;setAttr (&quot;player&quot;, Value(0.0));
++            ac-&gt;setAttr(&quot;player&quot;, 0);
+             break;
+         case MarbleType_White:
+-            ac = MakeActor (&quot;ac_marble_white&quot;);
+-            ac-&gt;setAttr (&quot;player&quot;, Value(1.0));
++            ac = MakeActor(&quot;ac_marble_white&quot;);
++            ac-&gt;setAttr(&quot;player&quot;, 1);
+             break;
+         case MarbleType_Meditation:
+             if (have_black_marble &amp;&amp; !level.getHarmlessMeditationMarbles()) {
+                 // # example: Oxyd Extra #28
+-                ac = MakeActor (&quot;ac-killerball&quot;);
++                ac = MakeActor (&quot;ac_killer&quot;);
+ //                ac-&gt;setAttr (&quot;player&quot;, Value(0.0));
+-                ac-&gt;setAttr (&quot;mouseforce&quot;, Value (1.0));
+-                ac-&gt;setAttr (&quot;controllers&quot;, Value (3.0));
++                ac-&gt;setAttr(&quot;adhesion&quot;, 1.0);
++                ac-&gt;setAttr(&quot;controllers&quot;, 3);
+             }
+             else {
+                 ac = MakeActor(&quot;ac_pearl_white&quot;);
+                 nmeditationmarbles += 1;
+ 
+                 if (config.twoplayers &amp;&amp; (nmeditationmarbles % 2) == 0)
+-                    ac-&gt;setAttr(&quot;player&quot;, Value(1.0));
++                    ac-&gt;setAttr(&quot;player&quot;, 1);
+                 else
+-                    ac-&gt;setAttr (&quot;player&quot;, Value(0.0));
++                    ac-&gt;setAttr(&quot;player&quot;, 0);
+             }
+ 
+             if (minfo.is_default(MI_FORCE)) {
+-                ac-&gt;setAttr(&quot;mouseforce&quot;, Value(1.0));
++                ac-&gt;setAttr(&quot;adhesion&quot;, 1.0);
+             }
+             else {
+-                ac-&gt;setAttr(&quot;mouseforce&quot;, Value(minfo.get_value(MI_FORCE) / 32.0)); // just a guess
++                ac-&gt;setAttr(&quot;adhesion&quot;, (minfo.get_value(MI_FORCE) / 32.0)); // just a guess
+             }
+             break;
+         case MarbleType_Jack:
+-            ac = MakeActor (&quot;ac-top&quot;);
++            ac = MakeActor(&quot;ac_top&quot;);
+             if (!minfo.is_default(MI_FORCE)) {
+                 double force = minfo.get_value(MI_FORCE) / 4; // just a guess
+-                ac-&gt;setAttr(&quot;force&quot;, Value(force) );
+-                enigma::Log &lt;&lt; &quot;Set jack force to &quot; &lt;&lt; force &lt;&lt; endl;
++                ac-&gt;setAttr(&quot;strength&quot;, force);
++                enigma::Log &lt;&lt; &quot;Set jack strength to &quot; &lt;&lt; force &lt;&lt; endl;
+             }
+             if (!minfo.is_default(MI_RANGE)) {
+                 double range = minfo.get_value(MI_RANGE) / 32.0; // value seems to contain distance in pixels
+-                ac-&gt;setAttr(&quot;range&quot;, Value(range) );
++                ac-&gt;setAttr(&quot;range&quot;, range);
+                 enigma::Log &lt;&lt; &quot;Set jack range to &quot; &lt;&lt; range &lt;&lt; endl;
+             }
+             break;
+ 
+         case MarbleType_Rotor: {
+-            ac = MakeActor (&quot;ac-rotor&quot;);
++            ac = MakeActor(&quot;ac_rotor&quot;);
+ 
+-            double force = minfo.get_value (MI_FORCE, 30) * 0.3;
+-            double range = minfo.get_value (MI_RANGE, 100) / 32.0;
+-            int gohome = minfo.get_value (MI_GOHOME, 1);
++            double force = minfo.get_value(MI_FORCE, 30) * 0.3;
++            double range = minfo.get_value(MI_RANGE, 100) / 32.0;
++            int gohome = minfo.get_value(MI_GOHOME, 1);
+ 
+-            ac-&gt;setAttr (&quot;force&quot;, force);
+-            ac-&gt;setAttr (&quot;range&quot;, range);
+-            ac-&gt;setAttr (&quot;gohome&quot;, Value (gohome));
++            ac-&gt;setAttr(&quot;strength&quot;, force);
++            ac-&gt;setAttr(&quot;range&quot;, range);
++            ac-&gt;setAttr(&quot;gohome&quot;, Value(gohome == 1));
+ 
+-            enigma::Log &lt;&lt; &quot;rotor force &quot; &lt;&lt; force &lt;&lt; endl;
++            enigma::Log &lt;&lt; &quot;rotor strength &quot; &lt;&lt; force &lt;&lt; endl;
+             enigma::Log &lt;&lt; &quot;rotor range &quot; &lt;&lt; range &lt;&lt; endl;
+             
+             break;
+         }
+ 
+         case MarbleType_Horse: {
+-            ac = MakeActor (&quot;ac-horse&quot;);
++            ac = MakeActor(&quot;ac_horse&quot;);
+             int levelw = level.getWidth();
++            ObjectList ol;
+             if (!minfo.is_default(MI_HORSETARGET1)) {
+                 int targetpos = minfo.get_value(MI_HORSETARGET1);
+-                ac-&gt;setAttr(&quot;target1&quot;, ecl::strf(&quot;%d %d&quot;, 
+-                                                   targetpos % levelw, 
+-                                                   int(targetpos / levelw)));
++                ol.push_back(GetFloor(GridPos(targetpos % levelw, int(targetpos / levelw))));
+             }
+             if (!minfo.is_default(MI_HORSETARGET2)) {
+                 int targetpos = minfo.get_value(MI_HORSETARGET2);
+-                ac-&gt;setAttr(&quot;target2&quot;, ecl::strf(&quot;%d %d&quot;, 
+-                                                   targetpos % levelw, 
+-                                                   int(targetpos / levelw)));
++                ol.push_back(GetFloor(GridPos(targetpos % levelw, int(targetpos / levelw))));
+             }
+             if (!minfo.is_default(MI_HORSETARGET3)) {
+                 int targetpos = minfo.get_value(MI_HORSETARGET3);
+-                ac-&gt;setAttr(&quot;target3&quot;, ecl::strf(&quot;%d %d&quot;, 
+-                                                   targetpos % levelw, 
+-                                                   int(targetpos / levelw)));
++                ol.push_back(GetFloor(GridPos(targetpos % levelw, int(targetpos / levelw))));
+             }
+             if (!minfo.is_default(MI_HORSETARGET4)) {
+                 int targetpos = minfo.get_value(MI_HORSETARGET4);
+-                ac-&gt;setAttr(&quot;target4&quot;, ecl::strf(&quot;%d %d&quot;, 
+-                                                   targetpos % levelw, 
+-                                                   int(targetpos / levelw)));
++                ol.push_back(GetFloor(GridPos(targetpos % levelw, int(targetpos / levelw))));
+             }
++            if (ol.size() &gt; 0) {
++                ac-&gt;setAttr(&quot;destination&quot;, ol);
++            }
+             break;
+         }
+         case MarbleType_Bug:
+-            ac = MakeActor (&quot;ac-bug&quot;);
++            ac = MakeActor(&quot;ac_bug&quot;);
+             break;
+         default:
+             enigma::Log &lt;&lt; &quot;Unhandled actor type &quot; &lt;&lt; int(marble.getMarbleType()) &lt;&lt; endl;
+@@ -605,7 +601,7 @@
+         }
+ 
+         if (ac) 
+-            AddActor (x, y, ac);
++            AddActor(x, y, ac);
+ 
+         m_actors.push_back (ac);
+     }
+
+Modified: trunk/src/stones/FakeStone.cc
+===================================================================
+--- trunk/src/stones/FakeStone.cc	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/src/stones/FakeStone.cc	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -102,7 +102,7 @@
+     
+     void FakeStone::actor_hit(const StoneContact &amp;sc) {
+         if (((objFlags &amp; OBJBIT_SUBTYP) &gt;&gt; 24) == QUAKE &amp;&amp; state == IDLE) {
+-            sound_event (&quot;fakeoxyd&quot;);
++            sound_event(&quot;fakeoxyd&quot;);
+             state = ACTIVE;
+             init_model();
+         } else
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-12-28 12:35:17 UTC (rev 1416)
++++ trunk/src/stones_simple.cc	2008-12-28 15:31:18 UTC (rev 1417)
+@@ -330,7 +330,7 @@
+ 
+         StoneResponse collision_response(const StoneContact &amp;sc) {
+             ActorID id = get_id(sc.actor);
+-            if (id == ac_horse || id == ac_pearl_white || id == ac_killerball)
++            if (id == ac_horse || id == ac_pearl_white || id == ac_killer)
+                 return STONE_PASS;
+             else
+                 return STONE_REBOUND;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000845.html">[Enigma-game-svn] r1416 - homepage/input/lotm
+</A></li>
+	<LI>Next message: <A HREF="000847.html">[Enigma-game-svn] r1418 - in trunk: data/schemas src src/others
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#846">[ date ]</a>
+              <a href="thread.html#846">[ thread ]</a>
+              <a href="subject.html#846">[ subject ]</a>
+              <a href="author.html#846">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

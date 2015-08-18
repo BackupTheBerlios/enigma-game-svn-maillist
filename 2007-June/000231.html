@@ -1,0 +1,191 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r796 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r796%20-%20trunk/src&In-Reply-To=%3C200706252211.l5PMBpBN025745%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000230.html">
+   <LINK REL="Next"  HREF="000232.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r796 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r796%20-%20trunk/src&In-Reply-To=%3C200706252211.l5PMBpBN025745%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r796 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Jun 26 00:11:51 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000230.html">[Enigma-game-svn] r795 - in homepage/input: . lotm
+</A></li>
+        <LI>Next message: <A HREF="000232.html">[Enigma-game-svn] r797 - /
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#231">[ date ]</a>
+              <a href="thread.html#231">[ thread ]</a>
+              <a href="subject.html#231">[ subject ]</a>
+              <a href="author.html#231">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-06-26 00:11:51 +0200 (Tue, 26 Jun 2007)
+New Revision: 796
+
+Modified:
+   trunk/src/items.cc
+   trunk/src/stones_complex.cc
+Log:
+Trunk 1.1: 
+- window: push faces with wrench from outside
+- window: pull faces with puller from inside
+
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2007-06-25 17:11:02 UTC (rev 795)
++++ trunk/src/items.cc	2007-06-25 22:11:51 UTC (rev 796)
+@@ -2233,10 +2233,20 @@
+             sound_event (&quot;puller&quot;);
+         }
+         void animcb() {
+-            Direction dir      = get_orientation();
+-            GridPos   stonepos = move(get_pos(), reverse(dir));
+-
+-            send_impulse(stonepos, dir);
++            Direction dir = get_orientation();
++            
++            // usage within a st-window
++            Stone *stone = world::GetStone(get_pos());
++            if (stone &amp;&amp; (stone-&gt;get_traits().id == st_window) &amp;&amp;
++                    to_bool(SendMessage(stone, &quot;inner_pull&quot;, dir))) {
++            }
++            
++            // usage in front of a stone
++            else {
++                GridPos   stonepos = move(get_pos(), reverse(dir));
++                send_impulse(stonepos, dir);
++            }
++            
+             sound_event (&quot;dynamite&quot;);
+             replace (it_explosion1);
+         }
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2007-06-25 17:11:02 UTC (rev 795)
++++ trunk/src/stones_complex.cc	2007-06-25 22:11:51 UTC (rev 796)
+@@ -837,13 +837,26 @@
+                     SendMessage(a, &quot;shatter&quot;);
+                 }
+     
+-                if (impulse &gt; 25) {
++                else if (impulse &gt; 25) {
+                     breakingFaces = sc.faces;
+                     set_attrib(&quot;connections&quot;, (get_connections() &amp; ~breakingFaces) +1);
+                     sound_event (&quot;shatter&quot;);
+                     state = BREAK;
+-                    set_anim(&quot;st-window-anim&quot;);  // TODO anim with remainig unbroken faces
++                    set_anim(&quot;st-window-anim&quot;);  // TODO anim with remaining unbroken faces
+                 }
++                
++                else if (player::WieldedItemIs (sc.actor, &quot;it-wrench&quot;)) {
++                    DirectionBits faces = get_connections();
++                    if (sc.faces == WESTBIT &amp;&amp; sc.normal[0] &lt; 0){
++                        tryInnerPull(EAST);
++                    } else if (sc.faces == EASTBIT &amp;&amp; sc.normal[0] &gt; 0) {
++                        tryInnerPull(WEST);
++                    } else if (sc.faces == SOUTHBIT &amp;&amp; sc.normal[1] &gt; 0) {
++                        tryInnerPull(NORTH);
++                    } else if (sc.faces == NORTHBIT &amp;&amp; sc.normal[1] &lt; 0) {
++                        tryInnerPull(SOUTH);
++                    }
++                }
+             }
+         }
+         void animcb() {
+@@ -855,10 +868,6 @@
+                 ReplaceStone(get_pos(), new Window(newFaces+1));
+             }
+         }
+-        
+-        //void init_model() {   // temp - delete when the images are ready
+-        //    set_model(&quot;st-window&quot;);
+-        //}
+ 
+     public:
+         Window(int connections) : ConnectiveStone(&quot;st-window&quot;, connections),
+@@ -866,8 +875,10 @@
+         }
+         virtual bool is_sticky(const Actor *a) const;
+         StoneResponse collision_response(const StoneContact &amp;sc);
++        virtual Value message(const string &amp;msg, const Value &amp;val);
+     private:
+         DirectionBits breakingFaces;
++        bool tryInnerPull(Direction dir);
+     };
+     DEF_TRAITS(Window, &quot;st-window&quot;, st_window);
+ 
+@@ -888,9 +899,29 @@
+             return STONE_PASS;
+         }
+     }
++    
++    Value Window::message(const string &amp;msg, const Value &amp;val) {
++        if (msg == &quot;inner_pull&quot; ) {
++            return Value(tryInnerPull(to_direction(val)));
++        }
++        return Value();
++    }
++    
++    bool Window::tryInnerPull(Direction dir) {
++        DirectionBits faces = get_connections();
++        if (!has_dir(faces, dir) &amp;&amp; has_dir(faces, reverse(dir))){
++            Stone *stone = world::GetStone(move(get_pos(), dir));
++            if (!stone || ((stone-&gt;get_traits().id == st_window) &amp;&amp;  
++                    !has_dir(dynamic_cast&lt;stones::ConnectiveStone *&gt;(stone)-&gt;get_connections(), reverse(dir)))) {
++                ReplaceStone(get_pos(), new Window((faces&amp;(~to_bits(reverse(dir)))|to_bits(dir))+1));
++                return true;
++            }
++        }
++        return has_dir(faces, dir);
++    }
+ }
+ 
+-
++
+ /* -------------------- Puzzle stones -------------------- */ 
+ 
+ /** \page st-puzzle Puzzle Stone
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000230.html">[Enigma-game-svn] r795 - in homepage/input: . lotm
+</A></li>
+	<LI>Next message: <A HREF="000232.html">[Enigma-game-svn] r797 - /
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#231">[ date ]</a>
+              <a href="thread.html#231">[ thread ]</a>
+              <a href="subject.html#231">[ subject ]</a>
+              <a href="author.html#231">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

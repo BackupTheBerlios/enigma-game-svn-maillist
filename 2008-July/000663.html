@@ -1,0 +1,179 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1229 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1229%20-%20trunk/src&In-Reply-To=%3C200807101207.m6AC78Fe010267%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000662.html">
+   <LINK REL="Next"  HREF="000664.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1229 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1229%20-%20trunk/src&In-Reply-To=%3C200807101207.m6AC78Fe010267%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1229 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Jul 10 14:07:08 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000662.html">[Enigma-game-svn] r1228 - feature_branches/hp_lotm/input/lotm
+</A></li>
+        <LI>Next message: <A HREF="000664.html">[Enigma-game-svn] r1230 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#663">[ date ]</a>
+              <a href="thread.html#663">[ thread ]</a>
+              <a href="subject.html#663">[ subject ]</a>
+              <a href="author.html#663">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-07-10 14:07:07 +0200 (Thu, 10 Jul 2008)
+New Revision: 1229
+
+Modified:
+   trunk/src/world.cc
+Log:
+Trunk 1.1: new API reengineering
+- Window Stone:
+  - fix possibility for actors to tunnel windows in 3 edges
+  - fix no collision mode skipping of Boarderstone collisions.
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-07-10 00:24:09 UTC (rev 1228)
++++ trunk/src/world.cc	2008-07-10 12:07:07 UTC (rev 1229)
+@@ -862,7 +862,7 @@
+ void World::find_contact_with_window(Actor *a, GridPos p, StoneContact &amp;c0, StoneContact &amp;c1,
+         DirectionBits winFacesActorStone) {
+     if (winFacesActorStone != NODIRBIT) {
+-        // as the actor cannot contact opposite face at the same time
++        // as the actor cannot contact two opposite faces at the same time
+         // we reuse the contact structure for optimization
+         if (winFacesActorStone&amp;WESTBIT) 
+             find_contact_with_stone(a, p, c0, WESTBIT);
+@@ -899,6 +899,8 @@
+     GridPos g = GridPos(round_down&lt;int&gt;(ai.pos[0]), round_down&lt;int&gt;(ai.pos[1]));
+     double x = ai.pos[0];
+     double y = ai.pos[1];
++    bool noCollisions = server::NoCollisions  &amp;&amp; 
++                (a-&gt;get_traits().id_mask &amp; (1&lt;&lt;ac_whiteball | 1&lt;&lt;ac_blackball | 1&lt;&lt;ac_meditation));
+     
+     // info about a Window stone on the Gridpos of the actor that may cause
+     // contacts within the grid
+@@ -917,6 +919,8 @@
+         // upper grid part
+         if (x - g.x &lt; re) {
+             // upper left edge
++            if (!noCollisions)   // just Borderstone collisions are needed for no collisions!
++                find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
+             if (c1.is_contact)
+                 // inner west window contact - just look for north adjacent stone contact 
+                 find_contact_with_stone(a, GridPos(g.x, g.y - 1), c0, winFacesActorStone);
+@@ -933,7 +937,8 @@
+             }
+         } else if (-x + (g.x + 1) &lt; re) {
+             // upper right edge
+-            find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
++            if (!noCollisions)
++                find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
+             if (c1.is_contact)
+                 // inner east window contact - just look for north adjacent stone contact 
+                 find_contact_with_stone(a, GridPos(g.x, g.y - 1), c0, winFacesActorStone);
+@@ -950,7 +955,8 @@
+             }
+         } else {
+             // upper middle part
+-            find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
++            if (!noCollisions)
++                find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
+             if (!c2.is_contact)
+                 // only hit adjacent stone if no inner window is in front
+                 find_contact_with_stone(a, GridPos(g.x, g.y - 1), c0, winFacesActorStone);
+@@ -958,6 +964,8 @@
+     } else if (-y + (g.y +1) &lt; re) {
+         // lower grid part
+         if (x - g.x &lt; re) {
++            if (!noCollisions)
++                find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
+             // lower left edge
+             if (c1.is_contact)
+                 // inner west window contact - just look for south adjacent stone contact 
+@@ -975,6 +983,8 @@
+             }
+         } else if (-x + (g.x + 1) &lt; re) {
+             // lower right edge
++            if (!noCollisions)
++                find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
+             if (c1.is_contact)
+                 // inner east window contact - just look for south adjacent stone contact 
+                 find_contact_with_stone(a, GridPos(g.x, g.y + 1), c0, winFacesActorStone);
+@@ -991,7 +1001,8 @@
+             }
+         } else {
+             // lower middle part
+-            find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
++            if (!noCollisions)
++                find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
+             if (!c2.is_contact)
+                 // only hit adjacent stone if no inner window is in front
+                 find_contact_with_stone(a, GridPos(g.x, g.y + 1), c0, winFacesActorStone);
+@@ -1000,19 +1011,22 @@
+         // middle grid part
+         if (x - g.x &lt; re) {
+             // left middle part
+-            find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
++            if (!noCollisions)
++                find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
+             if (!c1.is_contact)
+                 // only hit adjacent stone if no inner window is in front
+                 find_contact_with_stone(a, GridPos(g.x - 1, g.y), c0, winFacesActorStone);
+         } else if (-x + (g.x + 1) &lt; re) {
+             // right middle part
+-            find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
++            if (!noCollisions)
++                find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
+             if (!c1.is_contact)
+                 // only hit adjacent stone if no inner window is in front
+                 find_contact_with_stone(a, GridPos(g.x + 1, g.y), c0, winFacesActorStone);
+         } else {
+             // actor in center of grid - just inner window contacts
+-            find_contact_with_window(a, GridPos(g.x, g.y), c0, c1, winFacesActorStone);
++            if (!noCollisions)
++                find_contact_with_window(a, GridPos(g.x, g.y), c0, c1, winFacesActorStone);
+         }
+     }
+ }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000662.html">[Enigma-game-svn] r1228 - feature_branches/hp_lotm/input/lotm
+</A></li>
+	<LI>Next message: <A HREF="000664.html">[Enigma-game-svn] r1230 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#663">[ date ]</a>
+              <a href="thread.html#663">[ thread ]</a>
+              <a href="subject.html#663">[ subject ]</a>
+              <a href="author.html#663">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

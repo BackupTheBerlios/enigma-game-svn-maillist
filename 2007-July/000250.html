@@ -1,0 +1,997 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r815 - in branches/eval/java/src/org/enigma_game:	. lev util
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r815%20-%20in%20branches/eval/java/src/org/enigma_game%3A%0A%09.%20lev%20util&In-Reply-To=%3C200707262326.l6QNQde8020937%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000249.html">
+   <LINK REL="Next"  HREF="000251.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r815 - in branches/eval/java/src/org/enigma_game:	. lev util</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r815%20-%20in%20branches/eval/java/src/org/enigma_game%3A%0A%09.%20lev%20util&In-Reply-To=%3C200707262326.l6QNQde8020937%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r815 - in branches/eval/java/src/org/enigma_game:	. lev util">ral at mail.berlios.de
+       </A><BR>
+    <I>Fri Jul 27 01:26:39 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000249.html">[Enigma-game-svn] r814 - in branches/1.0/data/levels: enigma_cross	enigma_vii
+</A></li>
+        <LI>Next message: <A HREF="000251.html">[Enigma-game-svn] r816 - homepage
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#250">[ date ]</a>
+              <a href="thread.html#250">[ thread ]</a>
+              <a href="subject.html#250">[ subject ]</a>
+              <a href="author.html#250">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-07-27 01:26:38 +0200 (Fri, 27 Jul 2007)
+New Revision: 815
+
+Modified:
+   branches/eval/java/src/org/enigma_game/EnigmaUtil.java
+   branches/eval/java/src/org/enigma_game/lev/LevelScore.java
+   branches/eval/java/src/org/enigma_game/lev/RatingManager.java
+   branches/eval/java/src/org/enigma_game/util/RatingDiff.java
+Log:
+Evaluation:
+- recalibration of hcp:
+  - prof threshold raised from 20% to 30% solved
+  - just count 1/9 of unsolved profs with 5*WR
+    (instead all unsolved with 10*WR)
+- fix problems with 2 digit incremental rating numbers
+- fix output of ratings average from local format to US
+
+Modified: branches/eval/java/src/org/enigma_game/EnigmaUtil.java
+===================================================================
+--- branches/eval/java/src/org/enigma_game/EnigmaUtil.java	2007-07-19 19:16:46 UTC (rev 814)
++++ branches/eval/java/src/org/enigma_game/EnigmaUtil.java	2007-07-26 23:26:38 UTC (rev 815)
+@@ -16,6 +16,12 @@
+  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+  *
+  */
++
++// EnigmaUtil requires Java 1.5++ and Xerces-J 2.9.0
++//   as JDK 1.5 and 1.6 bundle outdated Xerces-J 2.6.2 the 2.9.0 paser jars have
++//   to be added to the JRE in subdir &quot;lib/endorsed&quot;
++//   we keep outcommented the code for usage of the internal parser for future JDK versions
++
+ // Xerces-J problems:
+ //   pretty printing  needs 2.8.0
+ //   class resource urls work on parser but not on Resolver, LSInput?
+@@ -42,6 +48,7 @@
+ import org.w3c.dom.ls.*;
+ import org.apache.xerces.dom.DOMImplementationImpl;
+ 
++
+ import org.enigma_game.util.LevelEvaluation;
+ import org.enigma_game.util.RatingDiff;
+ import org.enigma_game.util.ScoreRegistration;
+@@ -57,7 +64,7 @@
+     public LSParser domParser;
+     public LSSerializer domWriter;
+     public DOMImplementationLS domImpl;
+-    
++
+     private DOMConfiguration parserConfig;
+ 
+     Document doc;
+@@ -82,34 +89,35 @@
+               &quot;org.apache.xerces.dom.DOMXSImplementationSourceImpl&quot;);
+             DOMImplementationRegistry registry = DOMImplementationRegistry.newInstance();
+             domImpl = (DOMImplementationLS)registry.getDOMImplementation(&quot;LS&quot;);
+-    
++
+             if (domImpl == null)
+                 System.out.println(&quot;LS domImpl is null&quot;);
+             else
+-                System.out.println(&quot;LS domImpl is valid&quot;);
+-            
++                //System.out.println(&quot;LS domImpl is valid: &quot; + com.sun.org.apache.xerces.internal.impl.Version.getVersion());  // causes a compiler warning that can be ignored
++                System.out.println(&quot;LS domImpl is valid: &quot; + org.apache.xerces.impl.Version.getVersion());
++
+             // create DOMBuilder
+             domParser = domImpl.createLSParser(DOMImplementationLS.MODE_SYNCHRONOUS, null);
+-            
++
+             parserConfig = domParser.getDomConfig();
+ 
+             // set error handler
+             parserConfig.setParameter(&quot;error-handler&quot;, this);
+-            
++
+             // set resource-resolver
+             parserConfig.setParameter(&quot;resource-resolver&quot;, this);
+-            
++
+             // set validation feature
+             parserConfig.setParameter(&quot;validate&quot;,Boolean.TRUE);
+-            
++
+             // namespace by default, datatypenormalization ?
+-            
++
+             // set schema language
+             parserConfig.setParameter(&quot;schema-type&quot;, &quot;<A HREF="http://www.w3.org/2001/XMLSchema">http://www.w3.org/2001/XMLSchema</A>&quot;);
+-                        
++
+             // create DOMWriter
+             domWriter = domImpl.createLSSerializer();
+-            
++
+             DOMConfiguration  config = domWriter.getDomConfig();
+             config.setParameter(&quot;error-handler&quot;, this);
+             //config.setParameter(&quot;discard-default-content&quot;, Boolean.FALSE);
+@@ -145,7 +153,7 @@
+         return true;
+ 
+     }
+-    
++
+     public LSInput resolveResource(String type, String namespaceURI, String publicId,
+             String systemId, String baseURI) {
+         LSInput input = domImpl.createLSInput();
+@@ -156,7 +164,7 @@
+         input.setByteStream(bStream);
+         return input;
+     }
+-    
++
+     public static void main(String[] args) {
+         new EnigmaUtil(args);
+     }
+
+Modified: branches/eval/java/src/org/enigma_game/lev/LevelScore.java
+===================================================================
+--- branches/eval/java/src/org/enigma_game/lev/LevelScore.java	2007-07-19 19:16:46 UTC (rev 814)
++++ branches/eval/java/src/org/enigma_game/lev/LevelScore.java	2007-07-26 23:26:38 UTC (rev 815)
+@@ -18,7 +18,7 @@
+  */
+ package org.enigma_game.lev;
+ 
+-import java.util.*; 
++import java.util.*;
+ import org.w3c.dom.*;
+ import org.enigma_game.lev.UserManager;
+ 
+@@ -67,7 +67,7 @@
+     Map&lt;Integer, String&gt; scoresDiff = new TreeMap&lt;Integer, String&gt;();
+     Map&lt;Integer, String&gt; scoresEasy = new TreeMap&lt;Integer, String&gt;();
+     Map&lt;Integer, String&gt; userRat = new TreeMap&lt;Integer, String&gt;();
+-    
++
+     static void printWRStatistics(UserManager userMgr) {
+         Map&lt;String, Integer&gt; wrHoldersTotal = new HashMap&lt;String, Integer&gt;(wrHolders);
+         System.out.println(&quot;Unique Worldrecords:&quot;);
+@@ -78,11 +78,11 @@
+         for (Map.Entry&lt;String, Integer&gt; entry : wrSharers.entrySet()) {
+             System.out.println(&quot;  &quot; + entry.getValue() + &quot; &quot;+ entry.getKey());
+             Integer numUniqueWr = wrHoldersTotal.get(entry.getKey());
+-            wrHoldersTotal.put(entry.getKey(), (numUniqueWr == null 
++            wrHoldersTotal.put(entry.getKey(), (numUniqueWr == null
+                         ? entry.getValue()
+                         : numUniqueWr + entry.getValue()));
+         }
+-        
++
+         Map&lt;Integer, String&gt; wrRanking = new TreeMap&lt;Integer, String&gt;();
+         for (Map.Entry&lt;String, Integer&gt; entry : wrHoldersTotal.entrySet()) {
+             String wrHolders = wrRanking.get(entry.getValue());
+@@ -94,24 +94,24 @@
+             if (!entry.getValue().equals(&quot;&quot;))
+                 System.out.println(&quot;  &quot; + entry.getKey() + &quot; &quot;+ entry.getValue());
+         }
+-        
++
+         for (String userId : userMgr.getUserIds()) {
+             String name = userMgr.getValue(userId, &quot;name&quot;);
+             Integer wrUnique = wrHolders.get(name);
+             Integer wrShared = wrSharers.get(name);
+             int sharedWRcount = ((wrShared != null) ? wrShared : 0);
+             int totalWRrcount = ((wrUnique != null) ? wrUnique : 0) + sharedWRcount;
+-            
++
+             Formatter formatterWRtotal = new Formatter(Locale.US);
+             formatterWRtotal.format(&quot;%3d&quot;,  totalWRrcount);
+             userMgr.setValue(userId, &quot;wrtotal&quot;, formatterWRtotal.toString());
+-            
++
+             Formatter formatterWRshared = new Formatter(Locale.US);
+             formatterWRshared.format(&quot;%3d&quot;,  sharedWRcount);
+             userMgr.setValue(userId, &quot;wrshared&quot;, formatterWRshared.toString());
+         }
+     }
+-    
++
+     public LevelScore(Element e, String bestScoreDiff, String bestScoreDiffHolder,
+             String bestScoreEasy, String bestScoreEasyHolder) {
+         elem = e;
+@@ -124,11 +124,11 @@
+         bseh = bestScoreEasyHolder;
+         oldBseh.addAll(Arrays.asList(bseh.split(&quot;\\x2B&quot;))); // &quot;+&quot;
+     }
+-    
++
+     public void setParentScore(LevelScore parent) {
+         parentScore = parent;
+     }
+-    
++
+     public void renameUser(String oldname, String newname) {
+         if (oldBsdh.remove(oldname)) {
+             oldBsdh.add(newname);
+@@ -151,8 +151,8 @@
+             elem.setAttributeNS(null, &quot;bseh&quot;, holders);
+         }
+     }
+-    
+-    public void addIndexInfo(String levelTitle, String levelAuthor, 
++
++    public void addIndexInfo(String levelTitle, String levelAuthor,
+             String rPath,  String hasEasyMode) {
+         partOfCurDist = true;
+         title = levelTitle;
+@@ -161,7 +161,7 @@
+         if (hasEasyMode.length() &gt; 0)
+             hasEasy = Boolean.parseBoolean(hasEasyMode);
+     }
+-    
++
+     public void setFullEvaluation(String pattern) {
+         if (elem.getAttribute(&quot;id&quot;).contains(pattern) ||
+                 author.contains(pattern) || title.contains(pattern) ||
+@@ -169,27 +169,27 @@
+             fullEval = true;
+         }
+     }
+-    
++
+     public boolean isPartOfCurDist() {
+         return partOfCurDist;
+     }
+-    
++
+     public String getTitle() {
+         return title;
+     }
+-    
++
+     public boolean hasEasyMode() {
+         return hasEasy;
+     }
+-    
++
+     public boolean isDiffSolved() {
+         return isDiffSolved;
+     }
+-    
++
+     public boolean isEasySolved() {
+         return isEasySolved;
+     }
+-    
++
+     public double getParDiff() {
+         String parStr = elem.getAttribute(&quot;pard&quot;);
+         double par = -1;
+@@ -197,7 +197,7 @@
+             par = Double.parseDouble(parStr);
+         return par;
+     }
+-    
++
+     public double getParEasy() {
+         String parStr = elem.getAttribute(&quot;pare&quot;);
+         double par = -1;
+@@ -205,18 +205,18 @@
+             par = Double.parseDouble(parStr);
+         return par;
+     }
+-    
++
+     public int getRatingNum() {
+         return avgurNum;
+     }
+-    
++
+     public int getInheritedRatingNum() {
+         return (parentScore != null) ? parentScore.getRatingNum() : 0;
+     }
+-    
++
+     public double getRatingAvg() {
+         double avgur = -1;
+-        if (avgurNum &gt;  0 || (parentScore != null &amp;&amp; parentScore.getRatingNum() &gt; 0)) { 
++        if (avgurNum &gt;  0 || (parentScore != null &amp;&amp; parentScore.getRatingNum() &gt; 0)) {
+             int parentAddNum = 0;
+             double parentAddSum = 0;
+             if (parentScore != null &amp;&amp; avgurNum &lt; 10) {
+@@ -232,71 +232,71 @@
+         }
+         return avgur;
+     }
+-    
++
+     public String getAuthor() {
+         return author;
+     }
+-    
++
+     public String getId() {
+         return elem.getAttribute(&quot;id&quot;);
+     }
+-    
++
+     public String getScoreVersion() {
+         return elem.getAttribute(&quot;sv&quot;);
+     }
+-    
++
+     public boolean hasUserDiffSolved() {
+         return userDiffSolved;
+     }
+-    
++
+     public boolean hasUserEasySolved() {
+         return userEasySolved;
+     }
+-    
++
+     public int getUserScoreDiff() {
+         return userScoreDiff;
+     }
+-    
++
+     public int getUserScoreEasy() {
+         return userScoreEasy;
+     }
+-    
++
+     public boolean isUserWRHolderDiff() {
+         return userScoreDiff &gt;= 0 &amp;&amp; userScoreDiff == bsd;
+     }
+-    
++
+     public boolean isUserWRHolderEasy() {
+         return userScoreEasy &gt;= 0 &amp;&amp; userScoreEasy == bse;
+     }
+-    
++
+     public boolean isUniqueWRDiff() {
+         return oldBsdh.size() + oldConfBsdh.size() + newConfBsdh.size() == 1;
+     }
+-    
++
+     public boolean isUniqueWREasy() {
+         return oldBseh.size() + oldConfBseh.size() + newConfBseh.size() == 1;
+     }
+-    
++
+     public void resetUserSolved() {
+         userScoreDiff = -1;
+         userScoreEasy = -1;
+         userDiffSolved = false;
+         userEasySolved = false;
+     }
+-    
++
+     public void registerSolvage(String userName, String diffStr, String easyStr, int urat) {
+         if (diffStr.length() &gt; 0)
+             userScoreDiff = Integer.parseInt(diffStr);
+         if (easyStr.length() &gt; 0)
+             userScoreEasy = Integer.parseInt(easyStr);
+-        
++
+         // user solved ?
+         if (userScoreDiff &gt;= 0) {
+             userDiffSolved = true;
+             if (fullEval) {
+                 String tieUsers = scoresDiff.get(userScoreDiff);
+                 scoresDiff.put(userScoreDiff, tieUsers == null ? userName :
+-                        tieUsers + &quot;+&quot; + userName); 
++                        tieUsers + &quot;+&quot; + userName);
+             }
+         }
+         if (userScoreEasy &gt;= 0) {
+@@ -304,19 +304,19 @@
+             if (fullEval) {
+                 String tieUsers = scoresEasy.get(userScoreEasy);
+                 scoresEasy.put(userScoreEasy, tieUsers == null ? userName :
+-                        tieUsers + &quot;+&quot; + userName); 
++                        tieUsers + &quot;+&quot; + userName);
+             }
+         }
+         if (urat &gt;= 0) {
+             if (fullEval) {
+                 String tieUsers = userRat.get(urat);
+                 userRat.put(urat, tieUsers == null ? userName :
+-                        tieUsers + &quot;+&quot; + userName); 
++                        tieUsers + &quot;+&quot; + userName);
+             }
+         }
+-        
++
+     }
+-    
++
+     public void printLevelEvaluation() {
+         if( fullEval) {
+             System.out.println(&quot;&quot;);
+@@ -339,8 +339,8 @@
+             }
+         }
+     }
+-    
+-    public void registerScore(String user, boolean isProfessional, String rating, 
++
++    public void registerScore(String user, boolean isProfessional, String rating,
+             String diffStr, String diffRel, String easyStr, String easyRel,
+             String diff2Str, String diff2Rel, String easy2Str, String easy2Rel) {
+         int usd = -1;
+@@ -358,9 +358,9 @@
+             use2 = Integer.parseInt(easy2Str);
+         if (rating.length() &gt; 0)
+             urat = Integer.parseInt(rating);
+-        
++
+         // solved with current release?
+-        if ((usd &gt;= 0 &amp;&amp; diffRel.equals(currentRel)) 
++        if ((usd &gt;= 0 &amp;&amp; diffRel.equals(currentRel))
+                 || (usd2 &gt;= 0 &amp;&amp; diff2Rel.equals(currentRel))) {
+             isDiffSolved = true;
+         }
+@@ -368,7 +368,7 @@
+                 || (use2 &gt;= 0 &amp;&amp; easy2Rel.equals(currentRel))) {
+             isEasySolved = true;
+         }
+-        
++
+         if (usd &gt;= 0) {
+             if (usd &lt; bsd || bsd == -1) {
+                 // new world record
+@@ -429,10 +429,10 @@
+             ratingsDist[urat]++;
+         }
+     }
+-    
++
+     public void finish(int numUsers, int numProf) {
+         elem.setAttributeNS(null, &quot;bsd&quot;, Integer.toString(bsd));
+-        
++
+         String holders = &quot;&quot;;
+         if (oldBsdh.isEmpty() &amp;&amp; oldConfBsdh.isEmpty()) {
+             for(String name : newConfBsdh)
+@@ -441,16 +441,16 @@
+             for(String name : oldConfBsdh)
+                 holders += name + &quot;+&quot;;
+             for(String name : newConfBsdh)   // we may omit new record holders
+-                holders += name + &quot;+&quot;;       // if there are too many 
++                holders += name + &quot;+&quot;;       // if there are too many
+             for(String name : oldBsdh)
+                 holders += name + &quot;+&quot;;
+         }
+         if (holders.endsWith(&quot;+&quot;))
+             holders = holders.substring(0, holders.length() -1);
+         elem.setAttributeNS(null, &quot;bsdh&quot;, holders);
+-        
++
+         elem.setAttributeNS(null, &quot;bse&quot;, Integer.toString(bse));
+-        
++
+         holders = &quot;&quot;;
+         if (oldBseh.isEmpty() &amp;&amp; oldConfBseh.isEmpty()) {
+             for(String name : newConfBseh)
+@@ -459,20 +459,21 @@
+             for(String name : oldConfBseh)
+                 holders += name + &quot;+&quot;;
+             for(String name : newConfBseh)   // we may omit new record holders
+-                holders += name + &quot;+&quot;;       // if there are too many 
++                holders += name + &quot;+&quot;;       // if there are too many
+             for(String name : oldBseh)
+                 holders += name + &quot;+&quot;;
+         }
+         if (holders.endsWith(&quot;+&quot;))
+             holders = holders.substring(0, holders.length() -1);
+         elem.setAttributeNS(null, &quot;bseh&quot;, holders);
+-        
++
+         if (solvne == 0) {
+             pareSum = -1;
+         } else {
+-            // rate profs that did not solve level as 10 * world record
+-            double subScore = 10.0 * Math.max(bse, 1.0);
+-            pareSum = (double)numProf / (pareSum + (numProf - numProfE)/subScore) + 0.5;
++            // rate 11% of profs that did not solve level as 5 * world record
++            double subScore = 5.0 * Math.max(bse, 1.0);
++            double numProfUnsolved = (double)(numProf - numProfE)/9.0;
++            pareSum = (double)(numProfE + numProfUnsolved) / (pareSum + numProfUnsolved/subScore) + 0.5;
+             if (pareSum &gt;= (99*60+59.5))
+                 pareSum =  -1;
+         }
+@@ -481,9 +482,10 @@
+         if (solvnd == 0) {
+             pardSum = -1;
+         } else {
+-            // rate profs that did not solve level as 10 * world record
+-            double subScore = 10.0 * Math.max(bsd, 1.0);
+-            pardSum = (double)numProf / (pardSum + (numProf - numProfD)/subScore) + 0.5;
++            // rate 11% of profs that did not solve level as 5 * world record
++            double subScore = 5.0 * Math.max(bsd, 1.0);
++            double numProfUnsolved = (double)(numProf - numProfD)/9.0;
++            pardSum = (double)(numProfD + numProfUnsolved) / (pardSum + numProfUnsolved/subScore) + 0.5;
+             if (pardSum &gt;= (99*60+59.5))
+                 pardSum =  -1;
+         }
+@@ -492,34 +494,18 @@
+         elem.setAttributeNS(null, &quot;solvne&quot;, Integer.toString(solvne));
+         solvpe = solvne * 10000 / numUsers;
+         elem.setAttributeNS(null, &quot;solvpe&quot;, Integer.toString(solvpe));
+-        
++
+         elem.setAttributeNS(null, &quot;solvnd&quot;, Integer.toString(solvnd));
+         solvpd = solvnd * 10000 / numUsers;
+         elem.setAttributeNS(null, &quot;solvpd&quot;, Integer.toString(solvpd));
+-        
+-//         int avgur = -1;
+-//         if (avgurNum &gt;  0 || (parentScore != null &amp;&amp; parentScore.getRatingNum() &gt; 0)) { 
+-//             int parentAddNum = 0;
+-//             double parentAddSum = 0;
+-//             if (parentScore != null &amp;&amp; avgurNum &lt; 10) {
+-//                 if (parentScore.getRatingNum() &gt; 10 - avgurNum) {
+-//                     parentAddNum = 10 - avgurNum;
+-//                     parentAddSum = parentAddNum * parentScore.getRatingAvg();
+-//                 } else if (parentScore.getRatingNum() &gt; 0) {
+-//                     parentAddNum = parentScore.getRatingNum();
+-//                     parentAddSum = parentAddNum * parentScore.getRatingAvg();
+-//                 }
+-//             }
+-//             parentAddSum = 10 * parentAddSum;
+-//             avgur = (avgurSum * 10 + (int)parentAddSum) / (avgurNum + parentAddNum);
+-//         }
++
+         int avgurInt = -1;
+         double avgur = getRatingAvg();
+         if (avgur &gt;=0) {
+             avgurInt = (int)(avgur * 10.0);
+         }
+         elem.setAttributeNS(null, &quot;avgur&quot;, Integer.toString(avgurInt));
+-        
++
+         // worldrecord holder statistics
+         if (partOfCurDist) {
+             int numWRHolder = oldBsdh.size() + oldConfBsdh.size() + newConfBsdh.size();
+@@ -582,11 +568,11 @@
+             }
+         }
+     }
+-    
++
+     public static class ComparatorRating implements Comparator&lt;LevelScore&gt; {
+         public ComparatorRating() {
+         }
+-        
++
+         public int compare(LevelScore ls1, LevelScore ls2) {
+             if (ls1.getRatingAvg() &gt; ls2.getRatingAvg())
+                 return -1;
+
+Modified: branches/eval/java/src/org/enigma_game/lev/RatingManager.java
+===================================================================
+--- branches/eval/java/src/org/enigma_game/lev/RatingManager.java	2007-07-19 19:16:46 UTC (rev 814)
++++ branches/eval/java/src/org/enigma_game/lev/RatingManager.java	2007-07-26 23:26:38 UTC (rev 815)
+@@ -20,7 +20,7 @@
+ 
+ import java.io.*;
+ import java.text.*;
+-import java.util.*; 
++import java.util.*;
+ import javax.xml.datatype.*;
+ import org.w3c.dom.*;
+ import org.w3c.dom.ls.*;
+@@ -42,22 +42,22 @@
+     int numEasy;
+     int numProf = 0;
+     static double log_2 = Math.log(2.0);
+-    
++
+     public RatingManager(String url) {
+         doc = theApp.domParser.parseURI(url);
+-        
++
+         DOMConfiguration config = doc.getDomConfig();
+         config.setParameter(&quot;error-handler&quot;, theApp);
+         // set validation feature
+         config.setParameter(&quot;validate&quot;, Boolean.FALSE);
+         config.setParameter(&quot;schema-type&quot;, &quot;<A HREF="http://www.w3.org/2001/XMLSchema">http://www.w3.org/2001/XMLSchema</A>&quot;);
+         //config.setParameter(&quot;schema-location&quot;,&quot;data/personal.xsd&quot;);
+-        
++
+         updateElem = (Element) doc.getElementsByTagName(&quot;update&quot;).item(0);
+         levelsElem = (Element) doc.getElementsByTagName(&quot;levels&quot;).item(0);
+         levelElems = doc.getElementsByTagName(&quot;level&quot;);
+     }
+-    
++
+     public void setUpLevelScores(String levelPattern) {
+         for (int i = 0; i &lt; levelElems.getLength(); i++) {
+             Element e = (Element) levelElems.item(i);
+@@ -127,7 +127,7 @@
+         lpmgr = new LevelpackManager(&quot;enigma_mas_microban&quot;);
+         lpmgr.registerLevels(this);
+         levelPacks.add(lpmgr);
+-        
++
+         for(Map.Entry&lt;String, LevelScore&gt; entry : levelScores.entrySet()) {
+             LevelScore lev = entry.getValue();
+             int sv = Integer.parseInt(lev.getScoreVersion());
+@@ -148,26 +148,26 @@
+             }
+         }
+     }
+-    
++
+     public LevelScore getLevelScore(String id, String scoreVersion) {
+         return levelScores.get(id + &quot;_&quot; + scoreVersion);
+     }
+-    
++
+     public LevelScore newLevelScore(String id, String scoreVersion) {
+         Element level = doc.createElementNS(null, &quot;level&quot;);
+         level.setAttributeNS(null, &quot;id&quot;, id);
+         level.setAttributeNS(null, &quot;sv&quot;, scoreVersion);
+         levelsElem.appendChild(level);
+-        
++
+         LevelScore ls = new LevelScore(level, &quot;&quot;, &quot;&quot;, &quot;&quot;, &quot;&quot;);
+         String key = id + &quot;_&quot; + scoreVersion;
+         levelScores.put(key, ls);
+-        
++
+         System.out.println(&quot;Missing Rating: id '&quot; + id + &quot;' score version &quot;
+                 + scoreVersion);
+         return ls;
+     }
+-    
++
+     public void clearUserScores() {
+         for(Map.Entry&lt;String, LevelScore&gt; entry : levelScores.entrySet()) {
+             if (entry.getValue().isPartOfCurDist()) {
+@@ -175,7 +175,7 @@
+             }
+         }
+     }
+-    
++
+     public boolean isUserProfessional(UserManager userMgr, String userId, boolean print) {
+         boolean isProfessional = false;
+         int userDiffCount = 0;
+@@ -202,30 +202,30 @@
+         if (print) {
+             System.out.println(formatter.toString());
+         }
+-        if (solvedPercent &gt; 20.0) {
++        if (solvedPercent &gt; 30.0) {
+             isProfessional = true;
+             numProf++;
+         }
+         Formatter formatterTotal = new Formatter(Locale.US);
+         formatterTotal.format(&quot;%6.2f&quot;,  solvedPercent);
+         userMgr.setValue(userId, &quot;solvedtotal&quot;, formatterTotal.toString());
+-        
++
+         Formatter formatterEasy = new Formatter(Locale.US);
+         formatterEasy.format(&quot;%3d/%3d&quot;, userEasyCount, numEasy);
+         userMgr.setValue(userId, &quot;solvede&quot;, formatterEasy.toString());
+-        
++
+         Formatter formatterDiff = new Formatter(Locale.US);
+         formatterDiff.format(&quot;%4d/%4d&quot;, userDiffCount, numDifficult);
+         userMgr.setValue(userId, &quot;solvedd&quot;, formatterDiff.toString());
+-        
++
+         return isProfessional;
+     }
+-    
++
+     public void evaluateUser(UserManager userMgr, String userId) {
+ //        System.out.println(&quot;Par Evalutation&quot;);
+         StringBuilder sb = new StringBuilder();
+         Formatter formatter = new Formatter(sb, Locale.US);
+-        
++
+         for (LevelpackManager lpm : levelPacks) {
+             double hcpe = 0;
+             double hcpd = 0;
+@@ -273,7 +273,7 @@
+                         totalWRrcount++;
+                         if (!ls.isUniqueWREasy())
+                             sharedWRcount++;
+-                    }                    
++                    }
+                 }
+             }
+         }
+@@ -285,25 +285,25 @@
+         formatter.format(&quot;Enigma Total Hcp = %6.1f, Solved Hcp = %6.1f at %d levels&quot;,
+                 hcpsum, hcpsumsolved, levelsum);
+ //        System.out.println(sb.toString());
+-        
++
+         Formatter formatterHcpTotal = new Formatter(Locale.US);
+         formatterHcpTotal.format(&quot;%6.1f&quot;,  hcpsum);
+         userMgr.setValue(userId, &quot;hcptotal&quot;, formatterHcpTotal.toString());
+-        
++
+         Formatter formatterHcpSolved = new Formatter(Locale.US);
+         formatterHcpSolved.format(&quot;%6.1f&quot;,  hcpsumsolved);
+         userMgr.setValue(userId, &quot;hcpsolved&quot;, formatterHcpSolved.toString());
+-        
++
+         // future direct output of WR based only on registerd scores
+ //         Formatter formatterWRtotal = new Formatter(Locale.US);
+ //         formatterWRtotal.format(&quot;%3d&quot;,  totalWRrcount);
+ //         userMgr.setValue(userId, &quot;wrtotal&quot;, formatterWRtotal.toString());
+-//         
++//
+ //         Formatter formatterWRshared = new Formatter(Locale.US);
+ //         formatterWRshared.format(&quot;%3d&quot;,  sharedWRcount);
+ //         userMgr.setValue(userId, &quot;wrshared&quot;, formatterWRshared.toString());
+     }
+-    
++
+     private double levelHcp(int score, double par) {
+         double dhcp = 0;
+         if (score == -1) {
+@@ -323,7 +323,7 @@
+         }
+         return dhcp;
+     }
+-    
++
+     public void finishLevelScores(int numUsers, UserManager userMgr) {
+         int diffSolved = 0;
+         int diffUnsolved = 0;
+@@ -356,8 +356,8 @@
+         System.out.println(&quot;Easy Solved &quot; + easySolved + &quot; / Unsolved &quot; + easyUnsolved);
+         System.out.println(&quot;Total Solved &quot; + LevelScore.solvedTotal);
+         LevelScore.printWRStatistics(userMgr);
+-        
+-        
++
++
+         try {
+             PrintWriter output = new PrintWriter(new FileWriter(new File(&quot;top_rated_levels.txt&quot;)), true);
+             output.println(&quot;Top Rated Levels (with more than one rating)&quot;);
+@@ -376,57 +376,61 @@
+                         break;
+                 }
+             }
+-            
++
+             output = new PrintWriter(new FileWriter(new File(&quot;stat-other.html&quot;)), true);
+-            output.println(&quot;  &lt;div class=\&quot;stat-help\&quot;&gt;&quot;);
+-            output.println(&quot;    &lt;h3&gt;Other Statistics&lt;/h3&gt;&quot;);
+-            output.println(&quot;    &lt;h4&gt;Scores&lt;/h4&gt;&quot;);
+-            output.println(&quot;      &quot; + LevelScore.solvedTotal + &quot; single level scores have been registered.&quot;);
+-            output.println(&quot;    &lt;h4&gt;Ratings&lt;/h4&gt;&quot;);
+-            output.printf(&quot;      %s single level ratings have been registered with an average of &quot;
+-                    + &quot;%4.2f and the following distribution: &quot;, LevelScore.ratingsTotal, ((double)LevelScore.ratingsTotalSum)/LevelScore.ratingsTotal);
+-            output.println(&quot;      &lt;table&gt;&quot;);
+-            output.println(&quot;        &lt;colgroup&gt;&lt;col width=\&quot;80\&quot;&gt;&lt;col width=\&quot;80\&quot;&gt;&lt;/colgroup&gt;&quot;);
+-            output.println(&quot;        &lt;tr&gt;&lt;th&gt;rating&lt;/th&gt;&lt;th&gt;count&lt;/th&gt;&lt;/tr&gt;&quot;);
++            StringBuilder sb = new StringBuilder();
++            Formatter formatter = new Formatter(sb, Locale.US);
++            formatter.format(&quot;  &lt;div class=\&quot;stat-help\&quot;&gt;\n&quot;);
++            formatter.format(&quot;    &lt;h3&gt;Other Statistics&lt;/h3&gt;\n&quot;);
++            formatter.format(&quot;    &lt;h4&gt;Scores&lt;/h4&gt;\n&quot;);
++            formatter.format(&quot;      %d single level scores have been registered.\n&quot;, LevelScore.solvedTotal);
++            formatter.format(&quot;    &lt;h4&gt;Ratings&lt;/h4&gt;\n&quot;);
++            formatter.format(&quot;      %s single level ratings have been registered with an average of &quot;
++                    + &quot;%4.2f and the following distribution: \n&quot;, LevelScore.ratingsTotal,
++                    ((double)LevelScore.ratingsTotalSum)/LevelScore.ratingsTotal);
++            formatter.format(&quot;      &lt;table&gt;\n&quot;);
++            formatter.format(&quot;        &lt;colgroup&gt;&lt;col width=\&quot;80\&quot;&gt;&lt;col width=\&quot;80\&quot;&gt;&lt;/colgroup&gt;\n&quot;);
++            formatter.format(&quot;        &lt;tr&gt;&lt;th&gt;rating&lt;/th&gt;&lt;th&gt;count&lt;/th&gt;&lt;/tr&gt;\n&quot;);
+             for (int i=0; i&lt;=10; i++) {
+-                output.println(&quot;        &lt;tr&gt;&lt;td class=\&quot;num\&quot;&gt;&quot; + i + &quot;&lt;/td&gt;&lt;td class=\&quot;num\&quot;&gt;&quot; + LevelScore.ratingsDist[i] + &quot;&lt;/td&gt;&lt;/tr&gt;&quot;);
++                formatter.format(&quot;        &lt;tr&gt;&lt;td class=\&quot;num\&quot;&gt;%d&lt;/td&gt;&lt;td class=\&quot;num\&quot;&gt;%d&lt;/td&gt;&lt;/tr&gt;\n&quot;, i, LevelScore.ratingsDist[i]);
+             }
+-            output.println(&quot;      &lt;/table&gt;&quot;);
+-            output.println(&quot;  &lt;/div&gt;&quot;);
++            formatter.format(&quot;      &lt;/table&gt;\n&quot;);
++            formatter.format(&quot;  &lt;/div&gt;\n&quot;);
++            output.print(sb.toString());
+             output.flush();
+         } catch (Exception e) {
+         }
+-        
++
+         System.out.println(&quot;Total Ratings &quot; + LevelScore.ratingsTotal + &quot;  Average &quot; +
+                 ((double)LevelScore.ratingsTotalSum)/LevelScore.ratingsTotal);
+         for (int i=0; i&lt;=10; i++) {
+             System.out.println(&quot;   &quot; + i + &quot; - &quot; + LevelScore.ratingsDist[i]);
+         }
+     }
+-    
++
+     public void evaluateLevels() {
+         for (Map.Entry&lt;String, LevelScore&gt; entry : levelScores.entrySet()) {
+             LevelScore ls = entry.getValue();
+             ls.printLevelEvaluation();
+         }
+     }
+-    
++
+     public void renameUser(String oldname, String newname) {
+         for(Map.Entry&lt;String, LevelScore&gt; entry : levelScores.entrySet()) {
+             entry.getValue().renameUser(oldname, newname);
+         }
+     }
+-    
++
+     public void save(String url) {
+         //doc.normalizeDocument();
+         System.out.println(&quot;save &quot; + url + &quot; - &quot;+ levelElems.getLength());
+         theApp.domWriter.writeToURI(doc, url);
+     }
+-    
++
+     public String getDate() {
+         return updateElem.getAttribute(&quot;date&quot;);
+     }
+-    
++
+     public void setDate(String date) {
+         if (date.equals(&quot;&quot;)) {
+             GregorianCalendar calendar = new GregorianCalendar(TimeZone.getTimeZone(&quot;GMT&quot;));
+@@ -443,23 +447,23 @@
+         }
+         updateElem.setAttribute(&quot;date&quot;, date);
+     }
+-    
++
+     public String getUrlFull() {
+         return updateElem.getAttribute(&quot;urlFull&quot;);
+     }
+-    
++
+     public void setUrlFull(String url) {
+         updateElem.setAttribute(&quot;urlFull&quot;, url);
+     }
+-    
++
+     public String getUrlIncremental() {
+         return updateElem.getAttribute(&quot;urlIncremental&quot;);
+     }
+-    
++
+     public void setUrlIncremental(String url) {
+         updateElem.setAttribute(&quot;urlIncremental&quot;, url);
+     }
+-    
++
+     public Set&lt;Map&lt;String,String&gt;&gt; getRatingData() {
+         Map&lt;String, String&gt; level;
+         Set&lt;Map&lt;String,String&gt;&gt; allData = new HashSet&lt;Map&lt;String,String&gt;&gt;();
+@@ -474,7 +478,7 @@
+         }
+         return allData;
+     }
+-    
++
+     public void addRatingData(Set&lt;Map&lt;String,String&gt;&gt; additions) {
+         for (Map&lt;String,String&gt; rating : additions) {
+             Element level = doc.createElementNS(null, &quot;level&quot;);
+
+Modified: branches/eval/java/src/org/enigma_game/util/RatingDiff.java
+===================================================================
+--- branches/eval/java/src/org/enigma_game/util/RatingDiff.java	2007-07-19 19:16:46 UTC (rev 814)
++++ branches/eval/java/src/org/enigma_game/util/RatingDiff.java	2007-07-26 23:26:38 UTC (rev 815)
+@@ -18,13 +18,13 @@
+  */
+ package org.enigma_game.util;
+ 
+-import java.util.*; 
++import java.util.*;
+ import org.enigma_game.EnigmaUtil;
+ import org.enigma_game.lev.RatingManager;
+ 
+ public class RatingDiff {
+     EnigmaUtil theApp = org.enigma_game.EnigmaUtil.theApp;
+-    
++
+     public RatingDiff(String oldRatingUrl, String newRatingUrl) {
+         try {
+             System.out.println(&quot;Start building ratings diff.&quot;);
+@@ -39,41 +39,40 @@
+             System.out.println(&quot;parse template for dummy incremental ratings&quot;);
+             RatingManager incDummyRating = new RatingManager(
+                     RatingDiff.class.getResource(theApp.RESOURCES + &quot;schemas/ratings.xml&quot;).toString());
+-            
++
+             incRating.setDate(newRating.getDate());
+             incDummyRating.setDate(newRating.getDate());
+-            
++
+             newRating.setUrlFull(oldRating.getUrlFull());
+             incRating.setUrlFull(oldRating.getUrlFull());
+             incDummyRating.setUrlFull(oldRating.getUrlFull());
+-            
++
+             String oldUrlIncr = oldRating.getUrlIncremental();
+             String incVersionString = oldUrlIncr.substring(oldUrlIncr.length() - 7,
+                     oldUrlIncr.length() - 4);
+             int incVersion = Integer.parseInt(incVersionString);
+-            
++
+             int incNewVersion = incVersion + 1;
+-            String incNewVersionString = Integer.toString(incNewVersion);
+-            if (incNewVersionString.length() == 1)
+-                incNewVersionString = &quot;00&quot; + incNewVersionString;
+-            else if (incVersionString.length() == 2)
+-                incNewVersionString = &quot;0&quot; + incNewVersionString;
+-            
++            StringBuilder sb = new StringBuilder();
++            Formatter formatter = new Formatter(sb, Locale.US);
++            formatter.format(&quot;%03d&quot;, incNewVersion);
++            String incNewVersionString = sb.toString();
++
+             String newUrlIncr = oldUrlIncr.substring(0, oldUrlIncr.length() - 7)
+                     + incNewVersionString + &quot;.xml&quot;;
+-            
++
+             newRating.setUrlIncremental(newUrlIncr);
+             incRating.setUrlIncremental(newUrlIncr);
+             incDummyRating.setUrlIncremental(newUrlIncr);
+-            
++
+             Set&lt;Map&lt;String,String&gt;&gt; oldLevels = oldRating.getRatingData();
+             Set&lt;Map&lt;String,String&gt;&gt; newLevels = newRating.getRatingData();
+             System.out.println(&quot;Level count old &quot; + oldLevels.size() + &quot; - new &quot; + newLevels.size());
+-            
++
+             newLevels.removeAll(oldLevels);
+             System.out.println(&quot;Level count diff &quot; + newLevels.size());
+             incRating.addRatingData(newLevels);
+-            
++
+             newRating.save(&quot;ratings.xml&quot;);
+             incRating.save(&quot;ratings_i&quot; + incVersionString + &quot;.xml&quot;);
+             incDummyRating.save(&quot;ratings_i&quot; + incNewVersionString + &quot;.xml&quot;);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000249.html">[Enigma-game-svn] r814 - in branches/1.0/data/levels: enigma_cross	enigma_vii
+</A></li>
+	<LI>Next message: <A HREF="000251.html">[Enigma-game-svn] r816 - homepage
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#250">[ date ]</a>
+              <a href="thread.html#250">[ thread ]</a>
+              <a href="subject.html#250">[ subject ]</a>
+              <a href="author.html#250">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,297 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1549 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1549%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200902221304.n1MD4apI012106%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000978.html">
+   <LINK REL="Next"  HREF="000980.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1549 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1549%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200902221304.n1MD4apI012106%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1549 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Feb 22 14:04:36 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000978.html">[Enigma-game-svn] r1548 - trunk/doc/reference
+</A></li>
+        <LI>Next message: <A HREF="000980.html">[Enigma-game-svn] r1550 - in trunk/data: gfx16 gfx32 gfx40 gfx48	gfx64 levels/lib
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#979">[ date ]</a>
+              <a href="thread.html#979">[ thread ]</a>
+              <a href="subject.html#979">[ subject ]</a>
+              <a href="author.html#979">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-02-22 14:04:35 +0100 (Sun, 22 Feb 2009)
+New Revision: 1549
+
+Modified:
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/ox_magnum.cc
+   trunk/src/ox_oxyd1.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/stones/StoneImpulse.cc
+   trunk/src/stones/StoneImpulse.hh
+   trunk/src/world.cc
+Log:
+Trunk 1.1: new API reengineering
+- fix six missed renamings in DAT compatibility
+- fix st_actorimpulse missing &quot;signal&quot; message declaration for compatibility
+- st_stoneimpulse: add support for new break animation
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2009-02-22 00:57:04 UTC (rev 1548)
++++ trunk/data/models-2d.lua	2009-02-22 13:04:35 UTC (rev 1549)
+@@ -1204,6 +1204,11 @@
+    DefShModel(&quot;st-stoneimpulse-hollow-anim2&quot;, &quot;stoneimpulse-hollow-anim2&quot;, &quot;sh-floating&quot;)
+ end
+ 
++do
++    local images = DefSubimages(&quot;st_stoneimpulse_break&quot;, {h=8})
++    DefAnim(&quot;st_stoneimpulse_breaking&quot;, BuildFrames(images,50))
++end
++
+ -- st-switch, st-switch_black, st-switch_white --
+ do
+     function mkswitch(modelname, basename)
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2009-02-22 00:57:04 UTC (rev 1548)
++++ trunk/data/schemas/objects.xml	2009-02-22 13:04:35 UTC (rev 1549)
+@@ -915,6 +915,7 @@
+       &lt;attr name=&quot;hit_distortion_xy&quot;/&gt;
+       &lt;attr name=&quot;hit_distortion_yx&quot;/&gt;
+       &lt;attr name=&quot;hit_distortion_yy&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
+       &lt;msg name=&quot;_init&quot;/&gt;
+       &lt;msg name=&quot;_model_reanimated&quot;/&gt;
+       &lt;msg name=&quot;_trigger&quot;/&gt;
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2009-02-22 00:57:04 UTC (rev 1548)
++++ trunk/src/ox_magnum.cc	2009-02-22 13:04:35 UTC (rev 1549)
+@@ -98,7 +98,7 @@
+     UNUSED,                     // OxydMagnum floor 0x3d
+     UNUSED,                     // OxydMagnum floor 0x3e
+     0,                          // OxydMagnum floor 0x3f (Level 121 ?)(in normal Oxyd Magnum Levels unused!)
+-    &quot;fl-wood_framed_h&quot;,         // OxydMagnum floor 0x40
++    &quot;fl_wood_framed_h&quot;,         // OxydMagnum floor 0x40
+     &quot;fl_wood&quot;,                  // OxydMagnum floor 0x41
+     &quot;fl_wood_h&quot;,                // OxydMagnum floor 0x42
+     UNUSED,                     // OxydMagnum floor 0x43
+@@ -332,7 +332,7 @@
+     &quot;it_spring_keep&quot;,   // OxydMagnum item 0x27
+     &quot;it_bag&quot;,           // OxydMagnum item 0x28
+     &quot;it_magnet_off&quot;,    // OxydMagnum item 0x29
+-    &quot;it_inversesensor&quot;, // OxydMagnum item 0x2a
++    &quot;it_sensor_inverse&quot;, // OxydMagnum item 0x2a
+     &quot;it_sensor&quot;,        // OxydMagnum item 0x2b
+     &quot;it_shogun_s&quot;,      // OxydMagnum item 0x2c
+     &quot;it_vortex_open&quot;,   // OxydMagnum item 0x2d
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2009-02-22 00:57:04 UTC (rev 1548)
++++ trunk/src/ox_oxyd1.cc	2009-02-22 13:04:35 UTC (rev 1549)
+@@ -348,7 +348,7 @@
+     &quot;it_spring_keep&quot;,             // 0x27
+     &quot;it_bag&quot;,                     // 0x28
+     &quot;it_magnet_off&quot;,              // 0x29
+-    &quot;it_inversesensor&quot;,           // 0x2a
++    &quot;it_sensor_inverse&quot;,          // 0x2a
+     &quot;it_sensor&quot;,                  // 0x2b
+     &quot;it_shogun_s&quot;,                // 0x2c
+     &quot;it_vortex_open&quot;,             // 0x2d
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2009-02-22 00:57:04 UTC (rev 1548)
++++ trunk/src/ox_peroxyd.cc	2009-02-22 13:04:35 UTC (rev 1549)
+@@ -182,7 +182,7 @@
+     &quot;fl_bridge&quot;,                // PerOxyd floor 0x4c
+     UNUSED,                     // PerOxyd floor 0x4d
+     &quot;fl_gray&quot;,                  // PerOxyd floor 0x4e
+-    &quot;fl-gradient13&quot;,            // PerOxyd floor 0x4f (flat force up, beige)        (maybe gradient22?)
++    &quot;fl_slope_ts&quot;,              // PerOxyd floor 0x4f (flat force up, beige)        (maybe gradient22?)
+     &quot;fl_dark&quot;,                  // PerOxyd floor 0x50 (flat force down, dark olive) (maybe gradient21?)
+     &quot;fl_bright&quot;,                // PerOxyd floor 0x51 (flat force left, beige)      (maybe gradient24?)
+     &quot;fl_dark&quot;,                  // PerOxyd floor 0x52 (flat force right, dark olive)(maybe gradient23?)
+@@ -211,7 +211,7 @@
+     &quot;st_beads&quot;,                 // PerOxyd stone 0x14
+     &quot;st_tigris&quot;,                // PerOxyd stone 0x15
+     &quot;st_greengray&quot;,             // PerOxyd stone 0x16
+-    &quot;st-white1&quot;,                // PerOxyd stone 0x17 (Looks a little bit different, but function should be the same.)
++    &quot;st_passage_white_square&quot;,  // PerOxyd stone 0x17 (Looks a little bit different, but function should be the same.)
+     &quot;st_grate_cross&quot;,           // PerOxyd stone 0x18
+     UNUSED,                     // PerOxyd stone 0x19
+     &quot;st_surprise&quot;,              // PerOxyd stone 0x1a
+@@ -416,7 +416,7 @@
+     &quot;it_surprise&quot;,                // 0x22
+     &quot;it_pin&quot;,                     // 0x23
+     &quot;it_seed&quot;,                    // 0x24
+-    &quot;it_spring_board&quot;,            // 0x25
++    &quot;it_spring_drop&quot;,             // 0x25
+     &quot;it_spring_keep&quot;,             // 0x26
+     &quot;it_bag&quot;,                     // 0x27
+     &quot;it_magnet_off&quot;,              // 0x28
+
+Modified: trunk/src/stones/StoneImpulse.cc
+===================================================================
+--- trunk/src/stones/StoneImpulse.cc	2009-02-22 00:57:04 UTC (rev 1548)
++++ trunk/src/stones/StoneImpulse.cc	2009-02-22 13:04:35 UTC (rev 1549)
+@@ -94,7 +94,7 @@
+                 (server::EnigmaCompatibility &lt; 1.10 /*&amp;&amp; m.value.getType() == Value::NIL*/))) { // hack for old trigger without value
+             setIState(EXPANDING);
+             return Value();
+-        } else if (m.message == &quot;_model_reanimated&quot;) {
++        } else if (m.message == &quot;_model_reanimated&quot; &amp;&amp; state != BREAKING) {
+             // we are swapped in or out of a laser beam
+             if ((objFlags &amp; OBJBIT_STEADY) &amp;&amp; (objFlags &amp; OBJBIT_LIGHTNEWDIRS))
+                 init_model();     // replace potential bogus model
+@@ -108,8 +108,10 @@
+                setIState(EXPANDING);     // replace potential bogus model
+             return Value();
+         } else if (m.message == &quot;ignite&quot;) {
+-            if (server::GameCompatibility != GAMET_ENIGMA || (objFlags &amp; OBJBIT_LIGHTNEWDIRS))
+-                KillStone(get_pos());
++            if (server::GameCompatibility != GAMET_ENIGMA || (objFlags &amp; OBJBIT_LIGHTNEWDIRS)) {
++                state = BREAKING;
++                init_model();
++            }
+             return Value();
+         } else
+             return Stone::message(m);
+@@ -123,6 +125,8 @@
+     void StoneImpulse::init_model() {
+         if (state == IDLE)
+             set_model(ecl::strf(&quot;st-stoneimpulse%s&quot;, isHollow() ? &quot;-hollow&quot; : ((objFlags &amp; OBJBIT_STEADY) ? &quot;-steady&quot; : &quot;&quot;)));
++        else if (state == BREAKING)
++            set_anim(&quot;st_stoneimpulse_breaking&quot;);
+         else
+             set_anim(ecl::strf(&quot;st-stoneimpulse%s-anim%d&quot;, isHollow() ? &quot;-hollow&quot; : &quot;&quot;,
+                     state == EXPANDING ? 1 : 2));
+@@ -149,7 +153,9 @@
+     }
+ 
+     void StoneImpulse::animcb() {
+-        if (state == EXPANDING)
++        if (state == BREAKING)
++            KillStone(get_pos());
++        else if (state == EXPANDING)
+             setIState(SHRINKING);
+         else {
+             setIState(IDLE);
+@@ -174,13 +180,18 @@
+     }
+     
+     void StoneImpulse::actor_hit(const StoneContact &amp;sc) {
+-        if ((objFlags &amp; OBJBIT_MOVABLE) &amp;&amp; maybe_push_stone(sc))
+-            return;                                      // stone did move on impulse
+-        else if (!isHollow()) 
+-            sc.actor-&gt;send_impulse(sc.stonepos, NODIR);  // impulse on the slightest touch
++        if (state != BREAKING) {
++            if ((objFlags &amp; OBJBIT_MOVABLE) &amp;&amp; maybe_push_stone(sc))
++                return;                                      // stone did move on impulse
++            else if (!isHollow()) 
++                sc.actor-&gt;send_impulse(sc.stonepos, NODIR);  // impulse on the slightest touch
++        }
+     }
+ 
+     void StoneImpulse::on_impulse(const Impulse&amp; impulse) {
++        if (state == BREAKING)
++            return;
++            
+         Actor *hitman = NULL;
+         if ((objFlags &amp; OBJBIT_MOVABLE) &amp;&amp; (impulse.dir != NODIR)) {
+             // move stone without disturbing a running animation
+@@ -223,7 +234,7 @@
+     }
+     
+     void StoneImpulse::setIState(int newState, Direction incoming) {
+-        if (newState != state &amp;&amp; isDisplayable()) {
++        if (newState != state &amp;&amp; isDisplayable() &amp;&amp; state != BREAKING) {
+             switch (newState) {
+                 case IDLE:
+                     state = newState;
+
+Modified: trunk/src/stones/StoneImpulse.hh
+===================================================================
+--- trunk/src/stones/StoneImpulse.hh	2009-02-22 00:57:04 UTC (rev 1548)
++++ trunk/src/stones/StoneImpulse.hh	2009-02-22 13:04:35 UTC (rev 1549)
+@@ -41,7 +41,8 @@
+         enum iState {
+             IDLE,        ///&lt;  
+             EXPANDING,   ///&lt;  
+-            SHRINKING    ///&lt;
++            SHRINKING,   ///&lt;
++            BREAKING
+         };
+         
+         enum ObjectPrivatFlagsBits {
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2009-02-22 00:57:04 UTC (rev 1548)
++++ trunk/src/world.cc	2009-02-22 13:04:35 UTC (rev 1549)
+@@ -1872,7 +1872,6 @@
+     }
+     
+     if (src-&gt;is_kind(&quot;st_actorimpulse&quot;)) {
+-        Log &lt;&lt; &quot;AddSignal for st-actorimpulse\n&quot;;
+         ObjectList ol = src-&gt;getDefaultedAttr(&quot;$!oxyd!destinations&quot;, Value(Value::GROUP));
+         ol.push_back(dstValue);
+         src-&gt;setAttr(&quot;$!oxyd!destinations&quot;, ol);
+@@ -1911,8 +1910,8 @@
+     src-&gt;setAttr(target_key, Value(targets));
+     TokenList actions = src-&gt;getDefaultedAttr(action_key, Value(Value::TOKENS));    
+     actions.push_back(Value(&quot;signal&quot;));   // add this target to existing ones
+-    src-&gt;setAttr(action_key, Value(actions));
+-}
++    src-&gt;setAttr(action_key, actions);
++ }
+ 
+ 
+ Value SendMessage(Object *obj, const std::string &amp;msg, const Value&amp; value, Object *sender)
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000978.html">[Enigma-game-svn] r1548 - trunk/doc/reference
+</A></li>
+	<LI>Next message: <A HREF="000980.html">[Enigma-game-svn] r1550 - in trunk/data: gfx16 gfx32 gfx40 gfx48	gfx64 levels/lib
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#979">[ date ]</a>
+              <a href="thread.html#979">[ thread ]</a>
+              <a href="subject.html#979">[ subject ]</a>
+              <a href="author.html#979">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

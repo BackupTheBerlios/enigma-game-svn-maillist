@@ -1,0 +1,155 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r934 - in trunk: data src src/gui
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-December/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r934%20-%20in%20trunk%3A%20data%20src%20src/gui&In-Reply-To=%3C200712081315.lB8DFk01019469%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000365.html">
+   <LINK REL="Next"  HREF="000367.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r934 - in trunk: data src src/gui</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r934%20-%20in%20trunk%3A%20data%20src%20src/gui&In-Reply-To=%3C200712081315.lB8DFk01019469%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r934 - in trunk: data src src/gui">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Dec  8 14:15:46 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000365.html">[Enigma-game-svn] r933 - in trunk/src: . gui
+</A></li>
+        <LI>Next message: <A HREF="000367.html">[Enigma-game-svn] r935 - in homepage: images/lotm input/lotm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#366">[ date ]</a>
+              <a href="thread.html#366">[ thread ]</a>
+              <a href="subject.html#366">[ subject ]</a>
+              <a href="author.html#366">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-12-08 14:15:45 +0100 (Sat, 08 Dec 2007)
+New Revision: 934
+
+Modified:
+   trunk/data/sound-defaults.lua
+   trunk/src/client.cc
+   trunk/src/gui/Menu.cc
+Log:
+Trunk 1.1:
+- fix r933: change boss key to Shift+ESC for Windows
+- fix r933: on level error message do not quit app on any key
+- r932: change sound for shuffle to &quot;switch&quot; 
+
+Modified: trunk/data/sound-defaults.lua
+===================================================================
+--- trunk/data/sound-defaults.lua	2007-12-07 23:46:31 UTC (rev 933)
++++ trunk/data/sound-defaults.lua	2007-12-08 13:15:45 UTC (rev 934)
+@@ -167,7 +167,7 @@
+     shattersmall   = &quot;enigma/shatter&quot;,   -- replace, &quot;shattersmall&quot; is missing
+     shogunoff      = &quot;&quot;,
+     shogunon       = &quot;&quot;,
+-    shuffle        = &quot;enigma/st-magic&quot;,
++    shuffle        = &quot;enigma/switch&quot;,
+     skull          = &quot;&quot;,
+     spade          = &quot;&quot;,
+     squish         = &quot;&quot;,
+
+Modified: trunk/src/client.cc
+===================================================================
+--- trunk/src/client.cc	2007-12-07 23:46:31 UTC (rev 933)
++++ trunk/src/client.cc	2007-12-08 13:15:45 UTC (rev 934)
+@@ -391,9 +391,6 @@
+     }
+     else if (keymod &amp; KMOD_ALT) {
+         switch (keysym) {
+-        case SDLK_ESCAPE:
+-            app.bossKeyPressed = true;
+-            // fall through
+         case SDLK_x: 
+             abort(); break;
+         case SDLK_t:
+@@ -422,7 +419,14 @@
+     }
+     else {
+         switch (keysym) {
+-        case SDLK_ESCAPE: show_menu(); break;
++        case SDLK_ESCAPE:
++            if (keymod &amp; KMOD_SHIFT) {
++                app.bossKeyPressed = true;
++                abort();
++            } else {
++                show_menu();
++            }
++            break;
+         case SDLK_LEFT:   set_mousespeed(options::GetMouseSpeed() - 1); break;
+         case SDLK_RIGHT:  set_mousespeed(options::GetMouseSpeed() + 1); break;
+         case SDLK_TAB:    rotate_inventory(+1); break;
+@@ -697,11 +701,12 @@
+             SDL_Event e;
+             while (SDL_PollEvent(&amp;e)) {
+                 switch (e.type) {
+-                case SDL_KEYDOWN:
+-                case SDL_QUIT:
+-                    client::Msg_Command(&quot;abort&quot;);
+-                    app.bossKeyPressed = true;
+-                    break;
++                    case SDL_QUIT:
++                        app.bossKeyPressed = true;
++                        // fall through
++                    case SDL_KEYDOWN:
++                        client::Msg_Command(&quot;abort&quot;);
++                        break;
+                 }
+             }
+         }
+
+Modified: trunk/src/gui/Menu.cc
+===================================================================
+--- trunk/src/gui/Menu.cc	2007-12-07 23:46:31 UTC (rev 933)
++++ trunk/src/gui/Menu.cc	2007-12-08 13:15:45 UTC (rev 934)
+@@ -133,9 +133,9 @@
+             return;
+         }
+         
+-        // Boss quit key Alt &amp;&amp; ESC
++        // Boss quit key Shift &amp;&amp; ESC
+         if (e.type == SDL_KEYDOWN &amp;&amp;  e.key.keysym.sym == SDLK_ESCAPE &amp;&amp; 
+-                e.key.keysym.mod &amp; KMOD_ALT) {
++                e.key.keysym.mod &amp; KMOD_SHIFT) {
+             abort();
+             app.bossKeyPressed = true;
+             return;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000365.html">[Enigma-game-svn] r933 - in trunk/src: . gui
+</A></li>
+	<LI>Next message: <A HREF="000367.html">[Enigma-game-svn] r935 - in homepage: images/lotm input/lotm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#366">[ date ]</a>
+              <a href="thread.html#366">[ thread ]</a>
+              <a href="subject.html#366">[ subject ]</a>
+              <a href="author.html#366">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

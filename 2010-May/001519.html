@@ -1,0 +1,206 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r2095 - in trunk: data/schemas src/floors	src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2010-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2095%20-%20in%20trunk%3A%20data/schemas%20src/floors%0A%09src/stones&In-Reply-To=%3C201005161555.o4GFtvBu027218%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001518.html">
+   <LINK REL="Next"  HREF="001520.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r2095 - in trunk: data/schemas src/floors	src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2095%20-%20in%20trunk%3A%20data/schemas%20src/floors%0A%09src/stones&In-Reply-To=%3C201005161555.o4GFtvBu027218%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r2095 - in trunk: data/schemas src/floors	src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun May 16 17:55:57 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001518.html">[Enigma-game-svn] r2094 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="001520.html">[Enigma-game-svn] r2096 - in trunk: data doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1519">[ date ]</a>
+              <a href="thread.html#1519">[ thread ]</a>
+              <a href="subject.html#1519">[ subject ]</a>
+              <a href="author.html#1519">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2010-05-16 17:55:56 +0200 (Sun, 16 May 2010)
+New Revision: 2095
+
+Modified:
+   trunk/data/schemas/objects.xml
+   trunk/src/floors/FloodStream.cc
+   trunk/src/stones/IceBlock.cc
+   trunk/src/stones/IceBlock.hh
+Log:
+improve ice, flood spreading and transformations
+
+- transform water, swamp beneath fire position
+- breaking st_ice destroys neighboring meditation hollow-dent-caldera, ash, crack
+- spreading water destroys same items
+- no ash on burning water
+
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2010-05-14 21:06:35 UTC (rev 2094)
++++ trunk/data/schemas/objects.xml	2010-05-16 15:55:56 UTC (rev 2095)
+@@ -492,6 +492,7 @@
+       &lt;attr name=&quot;friction&quot; default=&quot;0.1&quot;/&gt;
+       &lt;attr name=&quot;adhesion&quot; default=&quot;0.1&quot;/&gt;
+       &lt;attr name=&quot;$heattransform&quot; default=&quot;fl_water&quot;/&gt;
++      &lt;attr name=&quot;$firetransform&quot; default=&quot;fl_water&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;fl_inverse&quot;&gt;
+       &lt;attr name=&quot;flavor&quot; default=&quot;white&quot;/&gt;
+@@ -784,6 +785,7 @@
+       &lt;attr name=&quot;friction&quot; default=&quot;13.0&quot;/&gt;
+       &lt;attr name=&quot;adhesion&quot; default=&quot;1.0&quot;/&gt;
+       &lt;attr name=&quot;$heattransform&quot; default=&quot;fl_dunes&quot;/&gt;
++      &lt;attr name=&quot;$firetransform&quot; default=&quot;fl_dunes&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;fl_thief&quot;&gt;
+       &lt;attr name=&quot;friction&quot; default=&quot;4.5&quot;/&gt;
+@@ -802,6 +804,7 @@
+     &lt;object name=&quot;fl_water&quot; super=&quot;fl_floodstream&quot;&gt;
+       &lt;attr name=&quot;friction&quot; default=&quot;5.0&quot;/&gt;
+       &lt;attr name=&quot;adhesion&quot; default=&quot;1.0&quot;/&gt;
++      &lt;attr name=&quot;noash&quot; default=&quot;true&quot;/&gt;
+       &lt;attr name=&quot;$heattransform&quot; default=&quot;fl_swamp&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;fl_white&quot; super=&quot;fl_standard&quot;&gt;
+
+Modified: trunk/src/floors/FloodStream.cc
+===================================================================
+--- trunk/src/floors/FloodStream.cc	2010-05-14 21:06:35 UTC (rev 2094)
++++ trunk/src/floors/FloodStream.cc	2010-05-16 15:55:56 UTC (rev 2095)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2008 Ronald Lamprecht
++ * Copyright (C) 2008,2009,2010 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -81,6 +81,15 @@
+     
+     void FloodStream::on_creation(GridPos p) {
+         Floor::on_creation(p);
++
++        if (getTyp() == WATER) {   // do flood some items
++            Item *it = GetItem(p);
++            if (it != NULL &amp;&amp; (it-&gt;isKind(&quot;it_meditation_hollow&quot;) || it-&gt;isKind(&quot;it_meditation_dent&quot;)
++                    || it-&gt;isKind(&quot;it_meditation_caldera&quot;) || it-&gt;isKind(&quot;it_crack&quot;)
++                    || it-&gt;isKind(&quot;it_burnable_ash&quot;)))
++                KillItem(p);
++        }
++
+         if (state == FLOODING)
+             GameTimer.set_alarm(this, (double)getAttr(&quot;interval&quot;), false);
+     }
+
+Modified: trunk/src/stones/IceBlock.cc
+===================================================================
+--- trunk/src/stones/IceBlock.cc	2010-05-14 21:06:35 UTC (rev 2094)
++++ trunk/src/stones/IceBlock.cc	2010-05-16 15:55:56 UTC (rev 2095)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2009 Ronald Lamprecht
++ * Copyright (C) 2009,2010 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -59,13 +59,13 @@
+     void IceBlock::animcb() {
+         GridPos p = get_pos();
+         if (state == BREAKING) {
+-            setNoAbyssFloor(p, &quot;fl_ice&quot;);
+-            setNoAbyssFloor(move(p, NORTH), &quot;fl_ice&quot;);
+-            setNoAbyssFloor(move(p, EAST), &quot;fl_ice&quot;);
+-            setNoAbyssFloor(move(p, SOUTH), &quot;fl_ice&quot;);
+-            setNoAbyssFloor(move(p, WEST), &quot;fl_ice&quot;);
++            setCheckedFloor(p, &quot;fl_ice&quot;);
++            setCheckedFloor(move(p, NORTH), &quot;fl_ice&quot;);
++            setCheckedFloor(move(p, EAST), &quot;fl_ice&quot;);
++            setCheckedFloor(move(p, SOUTH), &quot;fl_ice&quot;);
++            setCheckedFloor(move(p, WEST), &quot;fl_ice&quot;);
+         } else {  // MELTING
+-            setNoAbyssFloor(p, &quot;fl_water&quot;);
++            setCheckedFloor(p, &quot;fl_water&quot;);
+         }
+         KillStone(p);
+     }
+@@ -108,10 +108,15 @@
+         return (itd != NULL &amp;&amp; itd-&gt;isKind(&quot;it_bomb&quot;) &amp;&amp; !isFrozenBomb);
+     }
+     
+-    void IceBlock::setNoAbyssFloor(const GridPos &amp;p, std::string kind) const {
++    void IceBlock::setCheckedFloor(const GridPos &amp;p, std::string kind) const {
+         Floor *fl = GetFloor(p);
++        Item *it = GetItem(p);
+         if (fl == NULL || !fl-&gt;isKind(&quot;fl_abyss&quot;))
+             SetFloor(p, MakeFloor(kind.c_str()));
++        if (it != NULL &amp;&amp; (it-&gt;isKind(&quot;it_meditation_hollow&quot;) || it-&gt;isKind(&quot;it_meditation_dent&quot;)
++                || it-&gt;isKind(&quot;it_meditation_caldera&quot;) || it-&gt;isKind(&quot;it_crack&quot;)
++                || it-&gt;isKind(&quot;it_burnable_ash&quot;)))
++            KillItem(p);
+     }
+     
+     DEF_TRAITSM(IceBlock, &quot;st_ice&quot;, st_ice, MOVABLE_STANDARD);
+
+Modified: trunk/src/stones/IceBlock.hh
+===================================================================
+--- trunk/src/stones/IceBlock.hh	2010-05-14 21:06:35 UTC (rev 2094)
++++ trunk/src/stones/IceBlock.hh	2010-05-16 15:55:56 UTC (rev 2095)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2009 Ronald Lamprecht
++ * Copyright (C) 2009,2010 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -61,7 +61,7 @@
+         virtual bool on_move(const GridPos &amp;origin);
+         
+     private:
+-        void setNoAbyssFloor(const GridPos &amp;p, std::string kind) const;
++        void setCheckedFloor(const GridPos &amp;p, std::string kind) const;
+     };
+ 
+ } // namespace enigma
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001518.html">[Enigma-game-svn] r2094 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="001520.html">[Enigma-game-svn] r2096 - in trunk: data doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1519">[ date ]</a>
+              <a href="thread.html#1519">[ thread ]</a>
+              <a href="subject.html#1519">[ subject ]</a>
+              <a href="author.html#1519">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

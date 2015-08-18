@@ -1,0 +1,3089 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r889 - in trunk: lib-src/enigma-core src src/lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r889%20-%20in%20trunk%3A%20lib-src/enigma-core%20src%20src/lev&In-Reply-To=%3C200709292135.l8TLZIax002227%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000320.html">
+   
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r889 - in trunk: lib-src/enigma-core src src/lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r889%20-%20in%20trunk%3A%20lib-src/enigma-core%20src%20src/lev&In-Reply-To=%3C200709292135.l8TLZIax002227%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r889 - in trunk: lib-src/enigma-core src src/lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Sep 29 23:35:18 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000320.html">[Enigma-game-svn] r888 - in trunk/data/levels: enigma_experimental	lib
+</A></li>
+        
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#321">[ date ]</a>
+              <a href="thread.html#321">[ thread ]</a>
+              <a href="subject.html#321">[ subject ]</a>
+              <a href="author.html#321">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-09-29 23:35:15 +0200 (Sat, 29 Sep 2007)
+New Revision: 889
+
+Added:
+   trunk/src/WorldProxy.cc
+   trunk/src/WorldProxy.hh
+Modified:
+   trunk/lib-src/enigma-core/ecl_util.cc
+   trunk/lib-src/enigma-core/ecl_util.hh
+   trunk/src/Inventory.cc
+   trunk/src/Makefile.am
+   trunk/src/actors.hh
+   trunk/src/floors.hh
+   trunk/src/items.cc
+   trunk/src/items.hh
+   trunk/src/lev/Proxy.cc
+   trunk/src/lua.cc
+   trunk/src/lua.hh
+   trunk/src/objects.cc
+   trunk/src/objects_decl.hh
+   trunk/src/player.cc
+   trunk/src/player.hh
+   trunk/src/server.cc
+   trunk/src/server.hh
+   trunk/src/stones.hh
+   trunk/src/stones_complex.cc
+   trunk/src/world.cc
+   trunk/src/world.hh
+   trunk/src/world_internal.hh
+Log:
+Trunk 1.1: Lua API Reengineering part I
+- new API as of draft 0.4
+- Lua object references made crash safe and persitence capable 
+- namespace lua shifted to enigma::lua
+- object naming extended to autonaming of groups - limited to 1.10++
+- named object search with wildcards - limited to 1.10++
+- oxyd autocoloring - limited to 1.10++
+Note:
+- the new API is only fully available for levels with compatibility &gt;= 1.10
+- all levels with compatibility &lt; 1.10 can have 100% compatibility in
+  using the old API
+- both API are currently available in parallel for testing purposes
+  but mixed usage can cause unwanted sideeffects and will be switched off
+  lateron
+
+
+Modified: trunk/lib-src/enigma-core/ecl_util.cc
+===================================================================
+--- trunk/lib-src/enigma-core/ecl_util.cc	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/lib-src/enigma-core/ecl_util.cc	2007-09-29 21:35:15 UTC (rev 889)
+@@ -89,8 +89,7 @@
+     }
+ }
+ 
+-string ecl::strf(const char *format, ...)
+-{
++string ecl::strf(const char *format, ...) {
+     va_list argPtr;
+     va_start(argPtr, format);
+     string result = vstrf(format, argPtr);
+@@ -99,3 +98,38 @@
+     return result;
+ }
+ 
++    // string_match accepts simple wildcards
++    // '?' means 'any character'
++    // '*' means '0 or more characters'
++bool ecl::string_match(const char *str, const char *templ) {
++    while (true) {
++        char t = *templ++;
++        char s = *str++;
++
++        if (t == s) {
++            if (!t) return true;
++            continue;
++        }
++        else { // mismatch
++            if (t == '?') continue;
++            if (t != '*') break;
++
++            t = *templ++;
++            if (!t) return true; // '*' at EOS
++
++            while (1) {
++                if (!s) break;
++                if (s == t) {
++                    if (string_match(str, templ))
++                        return true;
++                }
++                s = *str++;
++            }
++        }
++    }
++    return false;
++}
++
++bool ecl::string_match(std::string str, std::string templ) {
++    return string_match(str.c_str(), templ.c_str());
++}
+
+Modified: trunk/lib-src/enigma-core/ecl_util.hh
+===================================================================
+--- trunk/lib-src/enigma-core/ecl_util.hh	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/lib-src/enigma-core/ecl_util.hh	2007-09-29 21:35:15 UTC (rev 889)
+@@ -263,7 +263,26 @@
+      *                       path separator was found just false will be returned
+      *                       without modification of the return strings.
+      */
+-    bool        split_path(const std::string&amp; path, std::string* dir_part, std::string* filename_part);
++    bool split_path(const std::string&amp; path, std::string* dir_part, std::string* filename_part);
++    
++    
++    /**
++     * Check a string against a given template that may contain wildcards of '*' and
++     * '?'. A '?' in the template means 'any single character'. A '*' means '0 or more characters'.
++     * @param str     string to be analysed
++     * @param templ   template with wildcards
++     * @return        true if string matches template, false otherwise
++     */
++    bool string_match(const char *str, const char *templ);
++    
++    /**
++     * Check a string against a given template that may contain wildcards of '*' and
++     * '?'. A '?' in the template means 'any single character'. A '*' means '0 or more characters'.
++     * @param str     string to be analysed
++     * @param templ   template with wildcards
++     * @return        true if string matches template, false otherwise
++     */
++    bool string_match(std::string str, std::string templ);
+ 
+ }
+ 
+
+Modified: trunk/src/Inventory.cc
+===================================================================
+--- trunk/src/Inventory.cc	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/Inventory.cc	2007-09-29 21:35:15 UTC (rev 889)
+@@ -36,7 +36,7 @@
+ 
+ Inventory::~Inventory() 
+ {
+-    clear();
++    ecl::delete_sequence (m_items.begin(), m_items.end());
+ }
+ 
+ 
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/Makefile.am	2007-09-29 21:35:15 UTC (rev 889)
+@@ -122,6 +122,8 @@
+ 	utilXML.hh		\
+ 	video.cc 		\
+ 	video.hh		\
++	WorldProxy.cc	\
++	WorldProxy.hh	\
+ 	world.cc 		\
+ 	world.hh 		\
+ 	world_internal.hh	\
+
+Added: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/WorldProxy.cc	2007-09-29 21:35:15 UTC (rev 889)
+@@ -0,0 +1,127 @@
++/*
++ * Copyright (C) 2007 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;WorldProxy.hh&quot;
++#include &quot;server.hh&quot;
++
++using namespace enigma;
++
++namespace world {
++ 
++    WorldProxy *WorldProxy::theSingleton = 0;
++    
++    WorldProxy* WorldProxy::instance() {
++        if (theSingleton == 0) {
++            theSingleton = new WorldProxy();
++        }
++        return theSingleton;
++    }
++    
++    void WorldProxy::shutdown() {
++        delete theSingleton;
++    }
++    
++    WorldProxy::WorldProxy() {
++    }
++
++    Value WorldProxy::getAttr(const string&amp; key) const {
++        if (key == &quot;AllowTogglePlayer&quot;) {
++            return server::AllowTogglePlayer;
++        } else if (key == &quot;CreatingPreview&quot;) {
++            return server::CreatingPreview;  // read only
++        } else if (key == &quot;IsDifficult&quot;) {
++            return (server::GetDifficulty() == DIFFICULTY_HARD);  // read only
++        } else if (key == &quot;LevelTime&quot;) {   
++            return server::LevelTime;    // read only
++        } else if (key == &quot;ShowMoves&quot;) {
++            return server::ShowMoves;
++        } else if (key == &quot;ShowMoves&quot;) {
++            return server::ShowMoves;
++        } else if (key == &quot;Brittleness&quot;) {
++            return server::Brittleness;
++        } else if (key == &quot;BumperForce&quot;) {
++            return server::BumperForce;
++        } else if (key == &quot;ElectricForce&quot;) {
++            return server::ElectricForce;
++        } else if (key == &quot;FlatForce&quot;) {
++            return server::FlatForce;
++        } else if (key == &quot;FrictionFactor&quot;) {
++            return server::FrictionFactor;
++        } else if (key == &quot;HoleForce&quot;) {
++            return server::HoleForce;
++        } else if (key == &quot;IceFriction&quot;) {
++            return server::IceFriction;
++        } else if (key == &quot;MagnetForce&quot;) {
++            return server::MagnetForce;
++        } else if (key == &quot;MagnetRange&quot;) {
++            return server::MagnetRange;
++        } else if (key == &quot;SlopeForce&quot;) {
++            return server::SlopeForce;
++        } else if (key == &quot;SwampSinkSpeed&quot;) {
++            return server::SwampSinkSpeed;
++        } else if (key == &quot;WaterSinkSpeed&quot;) {
++            return server::WaterSinkSpeed;
++        } else if (key == &quot;WormholeForce&quot;) {
++            return server::WormholeForce;
++        } else if (key == &quot;WormholeRange&quot;) {
++            return server::WormholeRange;
++        }
++        return Value(Value::DEFAULT);
++    }  
++
++    void WorldProxy::set_attrib(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;AllowTogglePlayer&quot;) {
++            server::AllowTogglePlayer = val;
++        } else if (key == &quot;ConserveLevel&quot;) {
++            server::ConserveLevel = val.to_bool();
++        } else if (key == &quot;ShowMoves&quot;) {
++            server::ShowMoves = val.to_bool();
++            STATUSBAR-&gt;show_move_counter (server::ShowMoves);
++        } else if (key == &quot;Brittleness&quot;) {
++            server::Brittleness = val;
++        } else if (key == &quot;BumperForce&quot;) {
++            server::BumperForce = val;
++        } else if (key == &quot;ElectricForce&quot;) {
++            server::ElectricForce = val;
++        } else if (key == &quot;FlatForce&quot;) {
++            server::FlatForce = val;
++        } else if (key == &quot;FrictionFactor&quot;) {
++            server::FrictionFactor = val;
++        } else if (key == &quot;HoleForce&quot;) {
++            server::HoleForce = val;
++        } else if (key == &quot;IceFriction&quot;) {
++            server::IceFriction = val;
++        } else if (key == &quot;MagnetForce&quot;) {
++            server::MagnetForce = val;
++        } else if (key == &quot;MagnetRange&quot;) {
++            server::MagnetRange = val;
++        } else if (key == &quot;SlopeForce&quot;) {
++            server::SlopeForce = val;
++        } else if (key == &quot;SwampSinkSpeed&quot;) {
++            server::SwampSinkSpeed = val;
++        } else if (key == &quot;WaterSinkSpeed&quot;) {
++            server::WaterSinkSpeed = val;
++        } else if (key == &quot;WormholeForce&quot;) {
++            server::WormholeForce = val;
++        } else if (key == &quot;WormholeRange&quot;) {
++            server::WormholeRange = val;
++        }
++    }
++
++} // namespace world
+
+
+Property changes on: trunk/src/WorldProxy.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/WorldProxy.hh
+===================================================================
+--- trunk/src/WorldProxy.hh	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/WorldProxy.hh	2007-09-29 21:35:15 UTC (rev 889)
+@@ -0,0 +1,42 @@
++/*
++ * Copyright (C) 2007 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef WORLDPROXY_HH_INCLUDED
++#define WORLDPROXY_HH_INCLUDED
++
++#include &quot;objects_decl.hh&quot;
++
++namespace world {
++
++    class WorldProxy : public Object {
++    public:
++        static WorldProxy *instance();
++        static void shutdown();
++        virtual Value getAttr(const string&amp; key) const;
++        virtual void set_attrib(const string&amp; key, const Value &amp;val);
++        
++    protected:
++        WorldProxy();
++        virtual Object *clone() {return this;}; // dummy implementation
++        virtual void dispose() {};             // dummy implementation
++    private:
++        static WorldProxy *theSingleton;
++    };
++} // namespace world
++
++#endif
+
+
+Property changes on: trunk/src/WorldProxy.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/actors.hh
+===================================================================
+--- trunk/src/actors.hh	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/actors.hh	2007-09-29 21:35:15 UTC (rev 889)
+@@ -184,6 +184,8 @@
+         const GridPos &amp;get_gridpos() const { return m_actorinfo.gridpos; }
+ 
+     protected:
++        virtual Object::ObjectType getObjectType() const {return Object::ACTOR;}
++        
+         Actor(const ActorTraits &amp;tr);
+         void set_model (const string &amp;modelname);
+         void set_anim (const string &amp;modelname);
+
+Modified: trunk/src/floors.hh
+===================================================================
+--- trunk/src/floors.hh	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/floors.hh	2007-09-29 21:35:15 UTC (rev 889)
+@@ -113,6 +113,8 @@
+         void on_burnable_animcb(bool justIgnited);  // Called by burnable-items on it.
+ 
+     protected:
++         virtual Object::ObjectType getObjectType() const {return Object::FLOOR;}
++        
+         // GridObject interface
+         void set_model (const std::string &amp;mname);
+         display::Model *get_model ();
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/items.cc	2007-09-29 21:35:15 UTC (rev 889)
+@@ -3231,8 +3231,8 @@
+ 	virtual void dispose() {
+ 	    Item * it = yield_first();
+ 	    while (it != NULL) {
+-		DisposeObject(it);
+-		it = yield_first();
++            DisposeObject(it);
++            it = yield_first();
+ 	    }
+ 	    delete this;
+ 	}
+@@ -3263,7 +3263,9 @@
+         {}
+ 
+         ~Bag() {
+-//            ecl::delete_sequence (m_contents.begin(), m_contents.end());
++            // Bags on the grid are disposed, but bags in the inventory need to be
++            // delete their contents on the destructor
++            ecl::delete_sequence (m_contents.begin(), m_contents.end());
+         }
+     };
+     DEF_TRAITS(Bag, &quot;it-bag&quot;, it_bag);
+
+Modified: trunk/src/items.hh
+===================================================================
+--- trunk/src/items.hh	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/items.hh	2007-09-29 21:35:15 UTC (rev 889)
+@@ -222,6 +222,8 @@
+         /* Called when item is activated by the owner of `a'. */
+         virtual ItemAction activate(Actor* a, GridPos p);
+     protected:
++        virtual Object::ObjectType getObjectType() const {return Object::ITEM;}
++        
+         // GridObject interface
+         virtual void set_model (const std::string &amp;mname) {
+             display::SetModel(GridLoc(GRID_ITEMS, get_pos()), mname);
+
+Modified: trunk/src/lev/Proxy.cc
+===================================================================
+--- trunk/src/lev/Proxy.cc	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/lev/Proxy.cc	2007-09-29 21:35:15 UTC (rev 889)
+@@ -614,9 +614,10 @@
+         if (getEnigmaCompatibility() &gt; ENIGMACOMPATIBITLITY)
+             throw XLevelLoading(ecl::strf(&quot;Level is incompatible: %s requires Enigma %.2f or above&quot;, 
+                     absLevelPath.c_str(), getEnigmaCompatibility()));
+-	if (this == currentLevel) {
+-	    server::SetCompatibility(this);
+-	}
++        if (this == currentLevel) {    // just level - no libs
++            server::SetCompatibility(this);
++            server::EnigmaCompatibility = getEnigmaCompatibility();
++        }
+         processDependencies();
+         loadLuaCode();
+     }
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/lua.cc	2007-09-29 21:35:15 UTC (rev 889)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -27,6 +28,8 @@
+ #include &quot;options.hh&quot;
+ #include &quot;lev/Index.hh&quot;
+ #include &quot;lev/Proxy.hh&quot;
++#include &quot;WorldProxy.hh&quot;
++#include &lt;list&gt;
+ 
+ #ifndef CXXLUA
+ extern &quot;C&quot; {
+@@ -48,9 +51,16 @@
+ 
+ #include &quot;nls.hh&quot;
+ 
++// Lua Registry keys of metatables for user objects
++#define LUA_ID_OBJECT   &quot;_ENIGMAOBJECT&quot;
++#define LUA_ID_POSITION &quot;_POSITION&quot;
++#define LUA_ID_WORLD    &quot;_WORLDOBJECT&quot;
++#define LUA_ID_NAMEOBJ  &quot;_NAMEDOBJECTS&quot;
++#define LUA_ID_GROUP    &quot;_GROUP&quot;
++#define LUA_ID_TILES    &quot;_TILES&quot;
++#define LUA_ID_TILE     &quot;_TILE&quot;
++
+ using namespace std;
+-using namespace enigma;
+-using namespace lua;
+ 
+ using ecl::round_down;
+ using ecl::strf;
+@@ -59,16 +69,10 @@
+ using world::Object;
+ using world::GridObject;
+ using world::ForceField;
++using world::WorldProxy;
+ 
+-namespace lua
+-{
+-    int EmitSound (lua_State *L);
+-    int EmitSoundGlobal (lua_State *L);
+-    int MakeObject (lua_State *L);
+-}
+-
+-namespace 
+-{
++namespace enigma { namespace lua {
++     
+     lua_State *level_state = 0;  // level-local state
+     lua_State *global_state = 0; // global Lua state
+ 
+@@ -118,13 +122,13 @@
+         luaL_error(L, backtrace.c_str());
+         
+     }
+-}
+ 
++
+ /* -------------------- Helper routines -------------------- */
+ 
+ using enigma::Value;
+ 
+-void lua::SetTableVar (lua_State *L,
++void SetTableVar (lua_State *L,
+                        const char *tablename, 
+                        const char *name, 
+                        double value)
+@@ -136,9 +140,7 @@
+     lua_pop (L, 1);
+ }
+ 
+-static void
+-push_value(lua_State *L, const Value &amp;val)
+-{
++static void push_value(lua_State *L, const Value &amp;val) {
+     switch (val.getType()) {
+         case Value::NIL:
+         case Value::DEFAULT :
+@@ -153,59 +155,101 @@
+     }
+ }
+ 
+-static Value
+-to_value(lua_State *L, int idx)
+-{
++static Value to_value(lua_State *L, int idx) {
+     switch (lua_type(L, idx)) {
+-    case LUA_TNIL: return Value();
+-    case LUA_TNUMBER: return Value(lua_tonumber(L,idx));
+-    case LUA_TSTRING: return Value(lua_tostring(L,idx));
+-    case LUA_TBOOLEAN: return (lua_toboolean(L,idx)) ? Value(1) : Value();
+-    default: throwLuaError(L,&quot;Cannot convert type to Value.&quot;);
++        case LUA_TNIL: return Value();
++        case LUA_TNUMBER: return Value(lua_tonumber(L,idx));
++        case LUA_TSTRING: return Value(lua_tostring(L,idx));
++        case LUA_TBOOLEAN: return (lua_toboolean(L,idx)) ? Value(1) : Value();
++        default: throwLuaError(L,&quot;Cannot convert type to Value.&quot;);
+     }
+     return Value();
+ }
+ 
+-static bool
+-is_object(lua_State *L, int idx)
+-{
+-    return lua_isuserdata(L,idx) &amp;&amp; luaL_checkudata(L,idx,&quot;_ENIGMAOBJECT&quot;);
++static bool checkMetadata (lua_State *L, int idx, const char *name) {
++    bool result = false;
++    if (lua_getmetatable(L, idx)) {  // does it have a metatable?
++        lua_getfield(L, LUA_REGISTRYINDEX, name);  // get correct metatable
++        if (lua_rawequal(L, -1, -2)) {  // does it have the correct mt?
++            result = true;
++        } else {  // check if it is dynamic metatable
++            lua_getfield(L, -2, &quot;_id&quot;);
++            if (lua_isstring(L, -1) &amp;&amp; (strcmp(lua_tostring(L, -1), name) == 0))
++                result = true;
++            lua_pop(L, 1);
++        }
++        lua_pop(L, 2);  // remove both metatables
++    }
++    return result;
+ }
+ 
+-static Object *
+-to_object(lua_State *L, int idx)
+-{
+-    if (lua_isnil(L,idx))
+-        return 0;
++static bool is_table(lua_State *L, int idx) {
++    return lua_istable(L,idx);
++}
+ 
++static bool is_object(lua_State *L, int idx) {
++    return lua_isuserdata(L,idx) &amp;&amp; checkMetadata(L, idx, LUA_ID_OBJECT);
++}
++
++static bool is_position(lua_State *L, int idx) {
++    return lua_isuserdata(L,idx) &amp;&amp; checkMetadata(L, idx, LUA_ID_POSITION);
++}
++
++static bool is_tile(lua_State *L, int idx) {
++    return lua_isuserdata(L,idx) &amp;&amp; checkMetadata(L, idx, LUA_ID_TILE);
++}
++
++static bool is_tiles(lua_State *L, int idx) {
++    return lua_isuserdata(L,idx) &amp;&amp; checkMetadata(L, idx, LUA_ID_TILES);
++}
++
++static bool is_group(lua_State *L, int idx) {
++    return lua_isuserdata(L,idx) &amp;&amp; checkMetadata(L, idx, LUA_ID_GROUP);
++}
++
++static bool is_world(lua_State *L, int idx) {
++    return lua_isuserdata(L,idx) &amp;&amp; checkMetadata(L, idx, LUA_ID_WORLD);
++}
++
++static Object *to_object(lua_State *L, int idx) {
++    
++    if (lua_isnil(L,idx) &amp;&amp; server::EnigmaCompatibility &lt; 1.10)
++        return NULL;
++
+     if (!is_object(L,idx)) {
+         throwLuaError(L, &quot;Cannot convert type to an Object&quot;);
+-        return 0;
++        return NULL;
+     }
+-    return static_cast&lt;Object*&gt;(*(static_cast&lt;void**&gt;(lua_touserdata(L,idx))));
++    int id = *(static_cast&lt;int *&gt;(lua_touserdata(L,idx)));
++    Object *obj = NULL;
++    if (id != -1)
++       obj = world::Object::getObject(id);
++
++    return obj;  // NULL if object does no longer exist
+ }
+ 
+-static void
+-pushobject (lua_State *L, Object *obj)
+-{
+-    Object **udata;
++static void pushobject (lua_State *L, Object *obj) {
++    int *udata;
+     /* Lua does not allow NULL pointers in userdata variables, so
+        convert them manually to `nil' values. */
+-    if (obj == 0)
+-        lua_pushnil(L);
+-    else
+-      {
+-        udata=(Object**)lua_newuserdata(L,sizeof(int));
+-	*udata=obj;
+-        luaL_getmetatable(L, &quot;_ENIGMAOBJECT&quot;);
++    if (obj == NULL &amp;&amp; server::EnigmaCompatibility &lt; 1.10) {
++        lua_pushnil(L);   // nil as not existing object
++    } else {
++        udata=(int *)lua_newuserdata(L,sizeof(int));
++        if (obj != NULL)
++            *udata = obj-&gt;getId();
++        else
++            *udata = -1;  // object with id 0 as not existing object
++        luaL_getmetatable(L, LUA_ID_OBJECT);
+         lua_setmetatable(L, -2);
+-      }
++    }
+ }
+ 
+-
++
+ /* -------------------- Interface routines -------------------- */
+ 
+-int lua::MakeObject (lua_State *L)
++
++int MakeObject (lua_State *L)
+ {
+     const char *name = lua_tostring(L, 1);
+     if (!name) {
+@@ -238,24 +282,19 @@
+     return 0;
+ }
+ 
+-static int
+-en_get_attrib(lua_State *L)
+-{
++static int en_get_attrib(lua_State *L) {
+     Object *obj = to_object(L,1);
+     const char *key = lua_tostring(L,2);
+ 
+     if (!obj) {
+         throwLuaError(L, &quot;GetAttrib: invalid object&quot;);
+         return 0;
+-    }
+-    if (!key) {
++    } else if (!key) {
+         throwLuaError(L, &quot;GetAttrib: invalid key&quot;);
+         return 0;
+-    }
+-
+-    if (0 == strcmp(key, &quot;kind&quot;)) {
++    } else if (0 == strcmp(key, &quot;kind&quot;)) {
+         throwLuaError(L, &quot;GetAttrib: illegal attribute, use GetKind()&quot;);
+-        return 0;
++        return 0;        
+     }
+ 
+     push_value(L, obj-&gt;getAttr(key));
+@@ -385,7 +424,7 @@
+     return 0;
+ }
+ 
+-int lua::EmitSound (lua_State *L)
++int EmitSound (lua_State *L)
+ {
+     Object     *obj       = to_object(L, 1);
+     const char *soundname = lua_tostring(L, 2);
+@@ -414,7 +453,7 @@
+     return 0;
+ }
+ 
+-int lua::EmitSoundGlobal (lua_State *L)
++int EmitSoundGlobal (lua_State *L)
+ {
+     const char *soundname = lua_tostring(L, 1);
+     double vol = 1.0;
+@@ -624,6 +663,1284 @@
+     return 1;
+ }
+ 
++
++/* -------------------- new functions -------------------- */
++
++static int pushNewPosition(lua_State *L) {
++    // x at -2, y at -1
++    int *udata;
++    udata=(int *)lua_newuserdata(L,sizeof(int));   // position user object
++    *udata = 1;
++    
++    lua_newtable(L);  // individual metatable copy
++    luaL_getmetatable(L, LUA_ID_POSITION);
++    // copy metatable template
++    lua_pushnil(L);  // first key
++    while (lua_next(L, -2) != 0) {
++         // key is at index -2 and value at index -1
++         lua_pushvalue(L, -2);   // copy key
++         lua_insert(L, -2);      // insert key copy below value
++         lua_settable(L, -5);    // individual metatable
++    }    
++    lua_pop(L, 1);  // remove metatable template
++
++    lua_pushvalue(L, -4);
++    lua_rawseti(L, -2, 1);
++    lua_pushvalue(L, -3);
++    lua_rawseti(L, -2, 2);
++
++    lua_setmetatable(L, -2);    
++    return 1;
++}
++
++static int newPosition(lua_State *L) {
++    // (pos|obj|table|(num,num))
++    if (is_table(L, 1)) {  // table 
++        lua_rawgeti(L, 1, 1);
++        lua_rawgeti(L, 1, 2);
++    } else if (is_position(L, 1)) {
++        lua_getmetatable(L, 1);
++        lua_rawgeti(L, 2, 1);
++        lua_rawgeti(L, 2, 2);
++    } else if (is_object(L, 1)) {
++        lua_pushstring(L, &quot;x&quot;);
++        lua_gettable(L, 1); 
++        lua_pushstring(L, &quot;y&quot;);
++        lua_gettable(L, 1); 
++    }
++    
++    if ((lua_type(L, -2) != LUA_TNUMBER) || (lua_type(L, -1) != LUA_TNUMBER)) {
++        throwLuaError(L, &quot;Invalid new position value type&quot;);
++        return 0;
++    }    
++
++    return pushNewPosition(L);
++}
++
++static int addPositionsBase(lua_State *L, int factorArg2) {
++    // (pos|obj|table) +|- (pos|obj|table)
++    double x = 0;
++    double y = 0;
++    for (int i = 1; i&lt;=2; i++) {
++        if (is_table(L, i)) {  // table
++            lua_rawgeti(L, i, 1);
++            lua_rawgeti(L, i, 2);
++        } else if (is_position(L, i)) {
++            lua_getmetatable(L, i);
++            lua_rawgeti(L, -1, 1);
++            lua_rawgeti(L, -2, 2);
++            lua_remove(L, -3);
++        } else if (is_object(L, i)) {
++            lua_pushstring(L, &quot;x&quot;);
++            lua_gettable(L, i); 
++            lua_pushstring(L, &quot;y&quot;);
++            lua_gettable(L, i); 
++        } else {
++            throwLuaError(L, &quot;Invalid add position value type&quot;);
++        }
++        if ((lua_type(L, -2) != LUA_TNUMBER) || (lua_type(L, -1) != LUA_TNUMBER)) {
++            throwLuaError(L, &quot;Invalid add position value type&quot;);
++            return 0;
++        }            
++        x += (i == 1 ? 1 : factorArg2) *  lua_tonumber(L, -2);
++        y += (i == 1 ? 1 : factorArg2) *  lua_tonumber(L, -1);
++        lua_pop(L, 2);
++    }
++
++    lua_pushnumber(L, x);
++    lua_pushnumber(L, y);
++    return pushNewPosition(L);
++}
++
++static int addPositions(lua_State *L) {
++    // (pos|obj|table) + (pos|obj|table)
++    return addPositionsBase(L, 1);
++}
++    
++static int subPositions(lua_State *L) {
++    // (pos|obj|table) - (pos|obj|table)
++    return addPositionsBase(L, -1);
++}
++
++static int centerPosition(lua_State *L) {
++    // #(pos|obj)
++    if (is_position(L, 1)) {  // position
++        lua_getmetatable(L, 1);
++        lua_rawgeti(L, -1, 1);
++        lua_rawgeti(L, -2, 2);
++        lua_remove(L, -3);
++    } else if (is_object(L, 1)) {
++        lua_pushstring(L, &quot;x&quot;);
++        lua_gettable(L, 1); 
++        lua_pushstring(L, &quot;y&quot;);
++        lua_gettable(L, 1); 
++    } else {
++        throwLuaError(L, &quot;Invalid center position value type&quot;);
++    }
++    if ((lua_type(L, -2) != LUA_TNUMBER) || (lua_type(L, -1) != LUA_TNUMBER)) {
++        throwLuaError(L, &quot;Invalid center position value type&quot;);
++        return 0;
++    }            
++    double x = round_down&lt;int&gt;(lua_tonumber(L, -2)) + 0.5;
++    double y = round_down&lt;int&gt;(lua_tonumber(L, -1)) + 0.5;
++    lua_pop(L, 2);
++    
++    lua_pushnumber(L, x);
++    lua_pushnumber(L, y);
++    return pushNewPosition(L);
++}
++
++static int multiplyPositionsBase(lua_State *L, bool isDiv = false) {
++    // (pos|num) (*|/) (pos|num)
++    double x = 0;
++    double y = 0;
++    double f = 1;
++    for (int i = 1; i&lt;=2; i++) {
++        if (is_position(L, i)) {
++            lua_getmetatable(L, i);
++            lua_rawgeti(L, -1, 1);
++            x = lua_tonumber(L, -1);
++            lua_rawgeti(L, -2, 2);
++            y = lua_tonumber(L, -1);
++            lua_pop(L, 3);
++        } else if (lua_isnumber(L, i)) {
++            f = lua_tonumber(L, i);
++        } else {
++            throwLuaError(L, &quot;Invalid multiplication position value type&quot;);
++            return 0;
++        }
++    }
++
++    if (isDiv) {
++        x /= f;
++        y /= f;
++    } else {
++        x *= f;
++        y *= f;
++    }
++    lua_pushnumber(L, x);
++    lua_pushnumber(L, y);
++    return pushNewPosition(L);
++}
++
++static int multiplyPositions(lua_State *L) {
++    // (pos|num) * (pos|num)
++    if (is_position(L, 1) &amp;&amp; is_position(L, 2)) {
++        throwLuaError(L, &quot;Multiplication of two positions not allowed&quot;);
++        return 0;        
++    }
++    return multiplyPositionsBase(L);
++}
++ 
++static int dividePositions(lua_State *L) {
++    // (pos|num) * (pos|num)
++    if (!is_position(L, 1) || !lua_isnumber(L, 2)) {
++        throwLuaError(L, &quot;Division of position with wrong types&quot;);
++        return 0;        
++    }
++    return multiplyPositionsBase(L, true);
++}
++
++static int gridAlignPosition(lua_State *L) {
++    // position guaranteed
++    lua_getmetatable(L, 1);
++    lua_rawgeti(L, -1, 1);
++    lua_rawgeti(L, -2, 2);
++    double x = round_down&lt;int&gt;(lua_tonumber(L, -2));
++    double y = round_down&lt;int&gt;(lua_tonumber(L, -1));
++    lua_pushnumber(L, x);
++    lua_pushnumber(L, y);
++    pushNewPosition(L);
++    return 1;
++}
++
++static int pushNewTile(lua_State *L, int numArgs) {
++    // numArgs 1 or 2 of type (table|tile)
++    int *udata;
++    udata=(int *)lua_newuserdata(L,sizeof(int));   // position user object
++    *udata = 1;
++    
++    lua_newtable(L);  // individual metatable copy
++    luaL_getmetatable(L, LUA_ID_TILE);
++    // copy metatable template
++    lua_pushnil(L);  // first key
++    while (lua_next(L, -2) != 0) {
++         // key is at index -2 and value at index -1
++         lua_pushvalue(L, -2);   // copy key
++         lua_insert(L, -2);      // insert key copy below value
++         lua_settable(L, -5);    // individual metatable
++    }    
++    lua_pop(L, 1);  // remove metatable template
++
++    lua_pushvalue(L, -2 - numArgs);
++    lua_rawseti(L, -2, 1);
++    if (numArgs == 2) {
++        lua_pushvalue(L, -3);
++        lua_rawseti(L, -2, 2);
++    }
++    lua_setmetatable(L, -2);    
++    return 1;
++}
++
++
++
++static void setObjectAttributes(Object *obj, lua_State *L) {
++    // L, -1 is table with key, values
++    if (obj == NULL || !lua_istable(L, -1)) 
++        return;
++    // process all table entries
++    lua_pushnil(L);  // first key
++    while (lua_next(L, -2) != 0) {
++         // key is at index -2 and value at index -1
++         // ignore all keys besides strings - ignore key 1, the object type
++         lua_pushvalue(L, -2); // a copy of key for work
++         if (!lua_isnumber(L, -1) &amp;&amp; lua_isstring(L, -1)) {
++            std::string key = lua_tostring(L, -1);
++            if (key == &quot;name&quot;) {
++                if (lua_isstring(L, -2))
++                    world::NameObject(obj, lua_tostring(L, -2));
++            } else {
++                obj-&gt;set_attrib(key, to_value(L, -2));
++            }
++         }
++         lua_pop(L, 2);  // remove copy key + value, leave original key for loop
++    }    
++}
++
++static int setAttributes(lua_State *L) {
++    // 
++    Object *obj = to_object(L, 1);
++    setObjectAttributes(obj, L);
++    return 0;
++}
++
++static int getFloor(lua_State *L) {
++    // position|table|obj|(num,num)
++    if (is_world(L, 1))      // world method?
++        lua_remove(L, 1);    // no need of context
++    newPosition(L);          // unify all arg types to a position
++    lua_getmetatable(L, -1);            
++    lua_rawgeti(L, -1, 1);
++    int x = round_down&lt;int&gt;(lua_tonumber(L, -1));
++    lua_rawgeti(L, -2, 2);
++    int y = round_down&lt;int&gt;(lua_tonumber(L, -1));
++    Object *o = world::GetFloor(GridPos(x, y));
++    pushobject(L, o);
++    return 1;
++}
++
++static int getItem(lua_State *L) {
++    // position|table|obj|(num,num)
++    if (is_world(L, 1))      // world method?
++        lua_remove(L, 1);    // no need of context
++    newPosition(L);          // unify all arg types to a position
++    lua_getmetatable(L, -1);            
++    lua_rawgeti(L, -1, 1);
++    int x = round_down&lt;int&gt;(lua_tonumber(L, -1));
++    lua_rawgeti(L, -2, 2);
++    int y = round_down&lt;int&gt;(lua_tonumber(L, -1));
++    Object *o = world::GetItem(GridPos(x, y));
++    pushobject(L, o);
++    return 1;
++}
++
++static int getStone(lua_State *L) {
++    // position|table|obj|(num,num)
++    if (is_world(L, 1))      // world method?
++        lua_remove(L, 1);    // no need of context
++    newPosition(L);          // unify all arg types to a position
++    lua_getmetatable(L, -1);            
++    lua_rawgeti(L, -1, 1);
++    int x = round_down&lt;int&gt;(lua_tonumber(L, -1));
++    lua_rawgeti(L, -2, 2);
++    int y = round_down&lt;int&gt;(lua_tonumber(L, -1));
++    Object *o = world::GetStone(GridPos(x, y));
++    pushobject(L, o);
++    return 1;
++}
++
++static int killObjectBase(lua_State *L) {
++    Object *obj = to_object(L, -1);
++    if (obj) {   // ignore not existing object
++        GridObject *gobj;
++        switch (obj-&gt;getObjectType()) {
++            case Object::FLOOR :
++                gobj = dynamic_cast&lt;GridObject*&gt;(obj);
++                world::KillFloor(gobj-&gt;get_pos());
++                break;
++            case Object::STONE :
++                gobj = dynamic_cast&lt;GridObject*&gt;(obj);
++                world::KillStone(gobj-&gt;get_pos());
++                break;
++            case Object::ITEM  :
++                gobj = dynamic_cast&lt;GridObject*&gt;(obj);
++                world::KillItem(gobj-&gt;get_pos());
++                break;
++            case Object::ACTOR :
++            default :
++                throwLuaError(L, &quot;Kill of object type not allowed&quot;);
++        }
++    }
++    return 0;
++}
++
++static int killObject(lua_State *L) {
++    if (lua_gettop(L) != 1) {
++         throwLuaError(L, &quot;Kill of object allows no arguments&quot;);
++         return 0;
++    }
++    if (is_group(L, 1)) {
++        lua_getmetatable(L, 1);
++        int numObjects = lua_objlen(L, -1);
++        for (int i = 1; i &lt;= numObjects; ++i) {
++            lua_rawgeti(L, -1, i);  // the object
++            killObjectBase(L);
++            lua_pop(L, 1);  // the object
++        }
++    } else {
++        killObjectBase(L);
++    }
++    return 0;
++}
++
++static int xyObject(lua_State *L) {
++    // object guaranteed
++    Object *obj = to_object(L,1);
++    GridPos  p;
++    if (GridObject *gobj = dynamic_cast&lt;GridObject*&gt;(obj)) {
++        p = gobj-&gt;get_pos();
++    } else if (Actor *a = dynamic_cast&lt;Actor*&gt;(obj)) {
++        p = GridPos(a-&gt;get_pos());
++    } else {
++        throwLuaError(L, &quot;xy access to not existing object&quot;);
++        return 0;
++    }
++    lua_pushnumber(L, double(p.x));
++    lua_pushnumber(L, double(p.y));
++    return 2;    
++}
++
++static int objectEquality(lua_State *L) {
++    Object *obj1 = to_object(L,1);
++    Object *obj2 = to_object(L,2);
++
++    lua_pushboolean(L, (obj1 == obj2) &amp;&amp; obj1);
++    return 1;
++}
++
++static int objectExistance(lua_State *L) { 
++    // object type is guaranteed
++    Object * obj = to_object(L, 1);
++    lua_pushboolean(L, (obj != NULL));
++    return 1;
++}
++
++static int objectMessageBase(lua_State *L) {
++    // (object, string , value)
++    Object     *obj = to_object(L, -3);
++    if (!lua_isstring(L, -2)) {
++        throwLuaError(L,&quot;Illegal message - no string&quot;);
++        return 0;
++    }
++    std::string msg = lua_tostring(L, -2);
++    
++    Value answer;
++    Value val = to_value(L, -1);
++    
++    if (obj) {   // ignore not existing objects
++        try {
++            answer = world::SendMessage (obj, msg, val);
++        }
++        catch (const XLevelRuntime &amp;e) {
++            throwLuaError (L, e.what());
++        }
++        catch (...) {
++            throwLuaError (L, &quot;uncaught exception&quot;);
++        }
++    }
++    push_value(L, answer);
++    return 1;
++}
++
++static int objectMessage(lua_State *L) {
++    if (lua_gettop(L) &lt; 2) {
++        throwLuaError (L, &quot;Message missing&quot;);
++        return 0;
++    } else if (lua_gettop(L) == 2) {
++        lua_pushnil(L);
++    }
++    return objectMessageBase(L);
++}
++
++static int groupMessage(lua_State *L) {
++    if (lua_gettop(L) &lt; 2) {
++        throwLuaError (L, &quot;Message missing&quot;);
++        return 0;
++    } else if (lua_gettop(L) == 2) {
++        lua_pushnil(L);
++    }
++    
++    lua_getmetatable(L, 1);
++    int numObjects = lua_objlen(L, -1);
++    lua_settop(L, 8);   // add 4 nil - simulate previous loop run
++    for (int i = 1; i &lt;= numObjects; ++i) {
++        lua_pop(L, 4);          // pop args and return value from last loop
++        lua_rawgeti(L, -1, i);  // the object
++        lua_pushvalue(L, 2);    // copy the message
++        lua_pushvalue(L, 3);    // copy message value
++        objectMessageBase(L);   // end up with return value on top
++    }
++    return numObjects &gt;= 1 ? 1 : 0;  // return last message value if group was not empty
++}
++
++std::vector&lt;std::string&gt; messageLIFO;
++
++static int objectDirectMessage(lua_State *L) {
++    std::string message = messageLIFO.back();
++    messageLIFO.pop_back();
++    lua_pushstring(L, message.c_str());
++    lua_insert(L, 2);    // message below optional value
++    return objectMessage(L);
++}
++
++static int groupDirectMessage(lua_State *L) {
++    std::string message = messageLIFO.back();
++    messageLIFO.pop_back();
++    lua_pushstring(L, message.c_str());
++    lua_insert(L, 2);    // message below optional value
++    return groupMessage(L);
++}
++
++static int pushNewGroup(lua_State *L, std::list&lt;Object *&gt; objects) {
++    // NULL objects and duplicates entries in the list will be eliminated
++    int *udata;
++    udata=(int *)lua_newuserdata(L,sizeof(int));   // group user object
++    *udata = 1;
++    
++    lua_newtable(L);  // individual metatable copy
++    luaL_getmetatable(L, LUA_ID_GROUP);
++    // copy metatable template
++    lua_pushnil(L);  // first key
++    while (lua_next(L, -2) != 0) {
++         // key is at index -2 and value at index -1
++         lua_pushvalue(L, -2);   // copy key
++         lua_insert(L, -2);      // insert key copy below value
++         lua_settable(L, -5);    // individual metatable
++    }    
++    lua_pop(L, 1);  // remove metatable template
++
++    std::set&lt;Object *&gt; unique;
++    std::list&lt;Object *&gt;::iterator it = objects.begin();
++    for (int i = 1; it != objects.end(); ++it, ++i) {
++        if (*it) {  // existing object not NULL
++            if (unique.find(*it) == unique.end()) {
++                unique.insert(*it);
++                pushobject(L, *it);
++                lua_rawseti(L, -2, i);
++            }
++        }
++    }
++
++    lua_setmetatable(L, -2);    
++    return 1;
++}
++
++static int newGroup(lua_State *L) {
++    // (table | (obj[,obj]))
++    std::list&lt;Object *&gt; objects;
++    if (is_table(L, 1)) {
++       if (lua_gettop(L) &gt; 1) {
++            throwLuaError(L, &quot;New Group - more arguments than table of objects&quot;);
++            return 0;
++       }
++       lua_pushnil(L);  // first key
++       while (lua_next(L, 1) != 0) {
++           // key at -2, value at -1
++           objects.push_back(to_object(L, -1));
++           lua_pop(L, 1);  // remove value; keep key for next iteration
++       }
++    } else if (is_object(L, 1)) {
++        for (int i = 1; i &lt;= lua_gettop(L); i++) {
++            objects.push_back(to_object(L, i));
++        }
++    } else {
++        throwLuaError(L, &quot;New Group - argument is no object&quot;);
++        return 0;
++    }
++    return pushNewGroup(L, objects);
++}
++
++static int joinGroup(lua_State *L) {
++    // (grp|obj) + (grp|obj)
++    if (!((is_group(L, 1) || is_object(L, 1)) &amp;&amp;  (is_group(L, 2) || is_object(L, 2)))) {
++        throwLuaError(L, &quot;Join Group - argument is no object or group&quot;);
++        return 0;
++    }
++    std::list&lt;Object *&gt; objects;
++    for (int j = 1; j &lt;= 2; j++) {
++        if (is_group(L, j)) {
++            lua_getmetatable(L, j);
++            int numObjects = lua_objlen(L, -1);
++            for (int i = 1; i &lt;= numObjects; ++i) {
++                lua_rawgeti(L, -1, i);  // the object
++                objects.push_back(to_object(L, -1));
++                lua_pop(L, 1);          // the object        
++            }
++            lua_pop(L, 1);          // the metatable        
++        } else {
++            objects.push_back(to_object(L, j));
++        }
++    }
++    return pushNewGroup(L, objects);    
++}
++
++static int intersectGroupBase(lua_State *L, bool isIntersect) {
++    // (grp|obj) (*|-) (grp|obj)
++    if (!((is_group(L, 1) || is_object(L, 1)) &amp;&amp;  (is_group(L, 2) || is_object(L, 2)))) {
++        throwLuaError(L, &quot;Intersect or Diff Group - argument is no object or group&quot;);
++        return 0;
++    }
++    std::list&lt;Object *&gt; objects;
++    std::set&lt;Object *&gt; objSet;
++    
++    if (is_group(L, 2)) {
++        lua_getmetatable(L, 2);
++        int numObjects = lua_objlen(L, -1);
++        for (int i = 1; i &lt;= numObjects; ++i) {
++            lua_rawgeti(L, -1, i);  // the object
++            objSet.insert(to_object(L, -1));
++            lua_pop(L, 1);          // the object        
++        }
++        lua_pop(L, 1);          // the metatable        
++    } else {
++        objSet.insert(to_object(L, 2));
++    }
++    
++    if (is_group(L, 1)) {
++        lua_getmetatable(L, 1);
++        int numObjects = lua_objlen(L, -1);
++        for (int i = 1; i &lt;= numObjects; ++i) {
++            lua_rawgeti(L, -1, i);  // the object
++            Object * obj = to_object(L, -1);
++            if ((isIntersect &amp;&amp; objSet.find(obj) != objSet.end()) ||
++                    (!isIntersect &amp;&amp; objSet.find(obj) == objSet.end()))
++                objects.push_back(obj);
++            lua_pop(L, 1);          // the object        
++        }
++        lua_pop(L, 1);          // the metatable        
++    } else {
++        Object * obj = to_object(L, 2);
++        if ((isIntersect &amp;&amp; objSet.find(obj) != objSet.end()) ||
++                (!isIntersect &amp;&amp; objSet.find(obj) == objSet.end()))
++            objects.push_back(obj);
++    }
++    return pushNewGroup(L, objects);    
++}
++
++static int intersectGroup(lua_State *L) {
++    // (grp|obj) * (grp|obj)
++    return intersectGroupBase(L, true);    
++}
++
++static int differenzGroup(lua_State *L) {
++    // (grp|obj) - (grp|obj)
++    return intersectGroupBase(L, false);    
++}
++
++MethodMap objectMethodeMap;
++
++static int dispatchObjectReadAccess(lua_State *L) {
++    int keyType = lua_type(L, 2);
++    
++    std::string keyStr;
++    MethodMap::iterator iter;
++    double keyNum = 0;
++    
++    switch (keyType) {
++        case LUA_TSTRING:
++            keyStr = lua_tostring(L, 2); 
++            iter = objectMethodeMap.find(keyStr);
++            break;
++        case LUA_TNUMBER:
++            keyNum = lua_tonumber(L, 2); break;
++        default:
++            throwLuaError(L, &quot;Invalid object read index type&quot;);
++            return 0;
++    }
++    
++    if (keyType == LUA_TSTRING &amp;&amp; iter != objectMethodeMap.end()) {
++        // call method -- the existance of the object is not guaranteed!
++        lua_pushcfunction(L, iter-&gt;second);
++        return 1;
++    } 
++    
++    Object *obj = to_object(L,1);
++
++    if (obj &amp;&amp; (keyType == LUA_TSTRING) &amp;&amp; ((keyStr == &quot;x&quot;) || (keyStr == &quot;y&quot;))) {
++//    if (obj &amp;&amp; (((keyType == LUA_TSTRING) &amp;&amp;
++//            ((keyStr == &quot;x&quot;) || (keyStr == &quot;y&quot;))) || 
++//            ((keyType == LUA_TNUMBER) &amp;&amp; ((keyNum == 1) || (keyNum == 2))))) {
++        GridPos  p;
++        if (GridObject *gobj = dynamic_cast&lt;GridObject*&gt;(obj)) {
++            p = gobj-&gt;get_pos();
++        } else if (Actor *a = dynamic_cast&lt;Actor*&gt;(obj)) {
++            p = GridPos(a-&gt;get_pos());
++        } else {
++            p = GridPos(-1, -1);
++        }
++        
++        if (keyStr == &quot;x&quot;)  {
++//        if (((keyType == LUA_TSTRING) &amp;&amp; (keyStr == &quot;x&quot;)) ||
++//                 ((keyType == LUA_TNUMBER) &amp;&amp; (keyNum == 1))) {
++            lua_pushnumber(L, double(p.x));
++            return 1;
++        } else {
++            lua_pushnumber(L, double(p.y));
++            return 1;
++        }
++    } else {
++        // attribute
++        Value val;  // nil
++        if (obj) 
++            val = obj-&gt;getAttr(keyStr);
++        if ((keyStr.find('_') != 0) &amp;&amp; val.isDefault()) {
++            // object exists and no user attribute - no existing system attribute
++            // try to send message
++            messageLIFO.push_back(keyStr);
++            lua_pushcfunction(L, objectDirectMessage);
++        } else {
++            // user attribute, existing system attribute or nil if no object
++            push_value(L, val);
++        }
++        return 1;
++    }
++    return 0;
++}
++
++static int dispatchObjectWriteAccess(lua_State *L){
++    Object *obj = to_object(L,1);
++    const char *key = lua_tostring(L,2);
++    if (obj &amp;&amp; key)
++        obj-&gt;set_attrib(key, to_value(L, 3));
++    else if (obj)  // ignore NULL objects
++        throwLuaError(L, strf(&quot;SetAttrib: invalid object or attribute name '%s'&quot;, key).c_str());
++    return 0;
++}
++
++
++
++static int xyPosition(lua_State *L) {
++    // position guaranteed
++    lua_getmetatable(L, 1);            
++    lua_rawgeti(L, -1, 1);
++    lua_rawgeti(L, -2, 2);
++    return 2;    
++}
++
++static int positionEquality(lua_State *L) {
++    // position type is guaranteed
++    lua_getmetatable(L, 1);
++    lua_rawgeti(L, -1, 1);
++    lua_rawgeti(L, -2, 2);
++    lua_getmetatable(L, 2);
++    lua_rawgeti(L, -1, 1);
++    lua_rawgeti(L, -2, 2);
++
++    lua_pushboolean(L, lua_equal(L, -5, -2) &amp;&amp; lua_equal(L, -4, -1));
++    return 1;
++}
++
++
++MethodMap positionMethodeMap;
++
++
++static int dispatchPositionReadAccess(lua_State *L) {
++    // L,1 is a table
++    int keyType = lua_type(L, 2);
++    
++    std::string keyStr;
++    MethodMap::iterator iter;
++    double keyNum = 0;
++    
++    switch (keyType) {
++        case LUA_TSTRING:
++            keyStr = lua_tostring(L, 2); 
++            iter = positionMethodeMap.find(keyStr);
++            break;
++        case LUA_TNUMBER:
++            keyNum = lua_tonumber(L, 2); break;
++        default:
++            throwLuaError(L, &quot;Invalid position read index type&quot;);
++            return 0;
++    }
++    
++    if (keyType == LUA_TSTRING &amp;&amp; iter != positionMethodeMap.end()) {
++        // call method
++        lua_pushcfunction(L, iter-&gt;second);
++        return 1;
++    } 
++    
++    if ((keyType == LUA_TSTRING) &amp;&amp; ((keyStr == &quot;x&quot;) || (keyStr == &quot;y&quot;))) {
++//    if (((keyType == LUA_TSTRING) &amp;&amp;
++//            ((keyStr == &quot;x&quot;) || (keyStr == &quot;y&quot;))) || 
++//            ((keyType == LUA_TNUMBER) &amp;&amp; ((keyNum == 1) || (keyNum == 2)))) {
++        
++        lua_getmetatable(L, 1);
++        if (keyStr == &quot;x&quot;) {
++//        if (((keyType == LUA_TSTRING) &amp;&amp; (keyStr == &quot;x&quot;)) ||
++//                 ((keyType == LUA_TNUMBER) &amp;&amp; (keyNum == 1))) {
++            lua_rawgeti(L, -1, 1);
++        } else {
++            lua_rawgeti(L, -1, 2);
++        }
++        return 1;
++    }
++    
++    throwLuaError(L, &quot;Invalid position index&quot;);
++    return 0;
++}
++
++static int dispatchPositionWriteAccess(lua_State *L) {
++    // L,1 is a table
++    int keyType = lua_type(L, 2);
++    // L,3 is value
++    
++    std::string keyStr;
++    double keyNum = 0;
++    
++    switch (keyType) {
++        case LUA_TSTRING:
++            keyStr = lua_tostring(L, 2);  break;
++        case LUA_TNUMBER:
++            keyNum = lua_tonumber(L, 2); break;
++        default:
++            throwLuaError(L, &quot;Invalid position write index type&quot;);
++            return 0;
++    }
++    
++    if (lua_type(L, 3) != LUA_TNUMBER) {
++            throwLuaError(L, &quot;Invalid position write value type&quot;);
++            return 0;
++    }
++     
++    if ((keyType == LUA_TSTRING) &amp;&amp; ((keyStr == &quot;x&quot;) || (keyStr == &quot;y&quot;))) {
++//    if (((keyType == LUA_TSTRING) &amp;&amp;
++//            ((keyStr == &quot;x&quot;) || (keyStr == &quot;y&quot;))) || 
++//            ((keyType == LUA_TNUMBER) &amp;&amp; ((keyNum == 1) || (keyNum == 2)))) {
++        lua_getmetatable(L, 1);
++        lua_pushvalue(L, -2);
++        if (keyStr == &quot;x&quot;) {
++//        if (((keyType == LUA_TSTRING) &amp;&amp; (keyStr == &quot;x&quot;)) ||
++//                 ((keyType == LUA_TNUMBER) &amp;&amp; (keyNum == 1))) {
++            lua_rawseti(L, -2, 1);
++            return 0;
++        } else {
++            lua_rawseti(L, -2, 2);
++            return 0;
++        }
++    }
++    
++    throwLuaError(L, &quot;Invalid position index&quot;);
++    return 0;
++}
++
++MethodMap namedObjMethodeMap;
++
++
++static int dispatchNamedObjReadAccess(lua_State *L) {
++    // string with *,? wildcards are groups, rest is single object
++    if (!lua_isstring(L, 2)) {
++        throwLuaError(L, &quot;Named object access without giving a name&quot;);
++        return 0;
++    }
++    std::string name = lua_tostring(L, 2);
++    
++    if (name.find_first_of(&quot;*?&quot;) != std::string::npos) {
++        // search all objects that match the template
++        std::list&lt;Object *&gt; group = world::GetNamedGroup(name);
++        return pushNewGroup(L, group);
++    } else {    
++        // search for a unique object
++        Object *obj = world::GetNamedObject(name);
++        pushobject(L, obj);
++    }
++    return 1;
++}
++
++static int dispatchNamedObjWriteAccess(lua_State *L) {
++    // $string -- is reserved
++    Object *obj  = to_object(L, 3);
++    if (!obj) {   // no need to name not existing object
++        return 0;
++    } else if (!lua_isstring(L, 2)) {
++        throwLuaError(L, &quot;NameObject: Illegal name&quot;);
++        return 0;
++    }
++    std::string name = lua_tostring(L, 2);
++    if (name.find('$') == 0) {
++        throwLuaError(L, &quot;NameObject: names with leading '$' are reserved&quot;);
++        return 0;
++    }
++    world::NameObject(obj, name);
++    return 0;
++}
++
++static int pushNewNamedObj(lua_State *L) {
++    // x at -2, y at -1
++    int *udata;
++    udata=(int *)lua_newuserdata(L,sizeof(int));   // position user object
++    *udata = 1;
++    
++    luaL_getmetatable(L, LUA_ID_NAMEOBJ);
++    lua_setmetatable(L, -2);
++    return 1;
++}
++
++
++MethodMap worldMethodeMap;
++
++
++static int dispatchWorldReadAccess(lua_State *L) {
++    // 
++    if (lua_isstring(L, 2)) {
++        std::string keyStr = lua_tostring(L, 2);
++        // TODO check string
++        MethodMap::iterator iter = worldMethodeMap.find(keyStr);
++        if (iter != positionMethodeMap.end()) {
++            // call method
++            lua_pushcfunction(L, iter-&gt;second);
++        } else {
++            Value v = WorldProxy::instance()-&gt;getAttr(keyStr);
++            push_value(L, v);
++        }
++        return 1;
++    } else {
++        throwLuaError(L, &quot;Named object access without giving a name&quot;);
++        return 0;
++    }
++}
++
++
++static int setObjectByTable(lua_State *L, double x, double y) {
++    // table at -1 
++    int xi = round_down&lt;int&gt;(x);
++    int yi = round_down&lt;int&gt;(y);
++    Object *obj = NULL;
++    lua_rawgeti(L, -1, 1);
++    if (!lua_isstring(L, -1)) {
++        throwLuaError(L, &quot;World: object type string missing&quot;);
++        return 0;
++    }
++    std::string name = lua_tostring(L, -1);
++    if (name.find('#') == 0 ) {
++        // position to be centered
++        x = xi + 0.5;
++        y = yi + 0.5;
++        name = name.substr(1);
++    }
++    
++    if (name == &quot;fl-nil&quot;) {
++        world::KillFloor(GridPos(xi, yi));
++        return 0;
++    } else if (name == &quot;st-nil&quot;) {
++        world::KillStone(GridPos(xi, yi));
++        return 0;
++    } else if (name == &quot;it-nil&quot;) {
++        world::KillItem(GridPos(xi, yi));
++        return 0;
++    }
++    
++    obj = world::MakeObject(name.c_str());
++    if (obj == NULL) {
++        throwLuaError(L, ecl::strf(&quot;World: unknown object name '%s'&quot;, name.c_str()).c_str());
++        return 0;
++    }
++    lua_pop(L, 1);   // object type
++    setObjectAttributes(obj, L);
++    switch (obj-&gt;getObjectType()) {
++        case Object::FLOOR :
++            world::SetFloor(GridPos(xi,yi), dynamic_cast&lt;Floor *&gt;(obj));
++            break;
++        case Object::STONE :
++            world::SetStone(GridPos(xi,yi), dynamic_cast&lt;Stone *&gt;(obj));
++            break;
++        case Object::ITEM  :
++            world::SetItem(GridPos(xi,yi), dynamic_cast&lt;Item *&gt;(obj));
++            break;
++        case Object::ACTOR :
++            lua_rawgeti(L, -1, 2);
++            if (lua_isnumber(L, -1))
++                x += lua_tonumber(L, -1);
++            lua_rawgeti(L, -2, 3);
++            if (lua_isnumber(L, -1))
++                y += lua_tonumber(L, -1);
++            lua_pop(L, 2);               
++            if (world::IsInsideLevel(GridPos(round_down&lt;int&gt;(x), round_down&lt;int&gt;(y)))) 
++                world::AddActor(x, y, dynamic_cast&lt;Actor *&gt;(obj));
++            else
++                throwLuaError(L, &quot;World: actor addition to position outside of world&quot;);
++            break;
++        default :
++            throwLuaError(L, &quot;World set of unknown object&quot;);
++    }
++    return 0;
++}
++
++static int setObjectByTile(lua_State *L, double x, double y) {
++    // tile at -1
++    
++    // this is a recursive function - ensure enough space on the stack
++    if (lua_gettop(L) &gt;  LUA_MINSTACK - 5)
++        lua_checkstack(L, 10);         // guarantee another 10 free slots
++        
++    lua_getmetatable(L, -1);
++    lua_rawgeti(L, -1, 1);    // first tile part
++    if (is_tile(L, -1))
++        setObjectByTile(L, x, y);
++    else
++        setObjectByTable(L, x, y);
++    lua_pop(L, 1);  // tile or table
++    lua_rawgeti(L, -1, 2);    // second optional tile part
++    if (!lua_isnil(L, -1)) {
++        if (is_tile(L, -1))
++            setObjectByTile(L, x, y);
++        else
++            setObjectByTable(L, x, y);
++    }
++    lua_pop(L, 2);  // tile or table or nil + metatable
++    return 0;
++}
++
++static int initWorld(lua_State *L) {
++    // (ti|function), string, table
++    if (server::WorldInitialized) {
++        throwLuaError(L, &quot;World reinitialization not allowed&quot;);
++        return 0;
++    }
++    
++    int width = 0;
++    int height = 0;
++    int keyLength = 1;
++    std::string defaultKey;
++    if (!(is_tiles(L, 2) &amp;&amp; lua_isstring(L, 3) &amp;&amp; is_table(L, 4))) {
++        throwLuaError(L, &quot;World init with false argument types&quot;);
++        return 0;
++    }
++    defaultKey = lua_tostring(L, 3);
++    keyLength = defaultKey.length();
++    height = lua_objlen(L, 4);
++    std::vector&lt;std::string&gt; lines;
++    Log &lt;&lt; &quot;initWorld  keyLength &quot; &lt;&lt; keyLength &lt;&lt;&quot;\n&quot;;
++    for (int i = 1; i &lt;= height; i++) {
++        lua_pushinteger(L, i);
++        lua_gettable(L, -2);
++        if (!lua_isstring(L, -1)) {
++            throwLuaError(L, &quot;World init table has enties that are no strings&quot;);
++            return 0;
++        }
++        lines.push_back(lua_tostring(L, -1));
++        lua_pop(L, 1);
++        width = ecl::Max(width, (int)lines.back().length());
++    }
++    if (width % keyLength != 0) {
++        throwLuaError(L, &quot;World init table row with odd length&quot;);
++        return 0;
++    }
++    width = width/keyLength;
++    Log &lt;&lt; &quot;initWorld  - w &quot; &lt;&lt; width &lt;&lt; &quot;  - h &quot; &lt;&lt; height &lt;&lt; &quot;\n&quot;;
++
++    world::Resize(width, height);
++    
++    luaL_getmetatable(L, LUA_ID_TILES);
++    lua_rawgeti(L, -1, 1);               // tiles content table
++    for (int i = 0; i &lt; height; i++) {
++        std::string &amp;line = lines[i];
++        int lineLength = line.length();
++        if (lineLength % keyLength != 0) {
++            throwLuaError(L, &quot;World init table row with odd length&quot;);
++            return 0;
++        }
++        lineLength = lineLength / keyLength;
++        for (int j = 0; j &lt; width; j++) {
++            std::string key;
++            if (j &lt; lineLength) {
++                key = line.substr(j*keyLength, keyLength);  // tiles key
++            } else {
++                key = defaultKey;
++            }
++            lua_pushstring(L, key.c_str());
++            lua_rawget(L, -2);        // get tile entry in table
++            if (lua_isnil(L, -1)) {
++                throwLuaError(L, ecl::strf(&quot;World init undefined tile '%s' at %d, %d&quot;, 
++                        key.c_str(), j, i).c_str());
++                return 0;
++            }
++            setObjectByTile(L, j, i);
++            lua_pop(L, 1);  // tile
++        }
++    }
++    lua_pushinteger(L, width);
++    lua_pushinteger(L, height);
++    return 2;
++}
++
++static int dispatchWorldWriteAccess(lua_State *L) {
++    // [object|position|table] = table|tile
++    // [string] = value
++    if (lua_isstring(L, 2)) {
++        std::string name = lua_tostring(L, 2);
++        // TODO check string
++        
++        WorldProxy::instance()-&gt;set_attrib(name, to_value(L, 3));
++        return 0;
++    } else if ((is_object(L, 2) || is_position(L, 2) || is_table(L, 2) || is_group(L, 2)) &amp;&amp; 
++            ((is_table(L, 3)) || is_tile(L, 3))) {
++        // set object
++        double x = -1;
++        double y = -1;
++        if (is_table(L,2)) {
++            lua_rawgeti(L, 2, 1);
++            lua_rawgeti(L, 2, 2);
++            if ((lua_type(L, -2) != LUA_TNUMBER) || (lua_type(L, -1) != LUA_TNUMBER)) {
++                throwLuaError(L, &quot;Invalid position value type&quot;);
++                return 0;
++            }
++            x = lua_tonumber(L, -2);
++            y = lua_tonumber(L, -1);
++            lua_pop(L, 2);
++        } else if (is_position(L, 2)) {  // position
++            lua_getmetatable(L, 2);
++            lua_rawgeti(L, -1, 1);
++            x = lua_tonumber(L, -1);
++            lua_rawgeti(L, -2, 2);
++            y = lua_tonumber(L, -1);
++            lua_remove(L, -3);
++        } else if (is_object(L, 2)) {
++            Object *obj = to_object(L, 2);
++            GridPos  p;
++            if (GridObject *gobj = dynamic_cast&lt;GridObject*&gt;(obj)) {
++                p = gobj-&gt;get_pos();
++            } else if (Actor *a = dynamic_cast&lt;Actor*&gt;(obj)) {
++                p = GridPos(a-&gt;get_pos());
++            } else {  // NULL object
++                // ignore not existing objects
++                return 0;                
++            }
++            x = p.x;
++            y = p.y;
++        } else if (is_group(L, 2)) {
++            lua_getmetatable(L, 2);
++            int numObjects = lua_objlen(L, -1);
++            for (int i = 1; i &lt;= numObjects; ++i) {
++                lua_rawgeti(L, -1, i);  // the object
++                Object *obj = to_object(L, -1);
++                if (obj) {              // ignore not existing objects
++                    GridPos  p;
++                    if (GridObject *gobj = dynamic_cast&lt;GridObject*&gt;(obj)) {
++                        p = gobj-&gt;get_pos();
++                    } else if (Actor *a = dynamic_cast&lt;Actor*&gt;(obj)) {
++                        p = GridPos(a-&gt;get_pos());
++                    }
++                    x = p.x;
++                    y = p.y;
++                    lua_pushvalue(L, 3);
++                    if (is_table(L, -1))
++                        setObjectByTable(L, x, y);
++                    else // is tile
++                        setObjectByTile(L, x, y);
++
++                    lua_pop(L, 1);          // the tile/table        
++                }
++                lua_pop(L, 1);          // the object        
++            }
++            return 0;
++        }
++        
++        lua_pushvalue(L, 3);
++        if (is_table(L, -1))
++            setObjectByTable(L, x, y);
++        else // is tile
++            setObjectByTile(L, x, y);
++        return 0;
++    } else {
++        throwLuaError(L, &quot;World write access with bad index&quot;);
++        return 0;
++    }
++}
++
++
++static int pushNewWorld(lua_State *L) {
++    int *udata;
++    udata=(int *)lua_newuserdata(L,sizeof(int));   // position user object
++    *udata = 1;
++    
++    luaL_getmetatable(L, LUA_ID_WORLD);
++    lua_setmetatable(L, -2);
++    return 1;
++}
++
++MethodMap tileMethodeMap;
++
++static int dispatchTileWriteAccess(lua_State *L) {
++    throwLuaError(L, &quot;Tile: illegal write access&quot;);
++    return 0;
++}
++
++static int dispatchTileReadAccess(lua_State *L) {
++    throwLuaError(L, &quot;Tile: illegal read access&quot;);
++    return 0;
++}
++
++static int appendTile(lua_State *L) {
++    // (tile|table) .. (tile|table)
++    if (!((is_tile(L, 1)||is_table(L, 1)) &amp;&amp; (is_tile(L, 1)||is_table(L, 1)))) {
++        throwLuaError(L, &quot;Tile concat of unsupported types&quot;);
++        return 0;
++    }
++    // TODO check tables for position content
++    
++    // Lua currently does not provide a default metatable for tables - thus we cannot define
++    // a concat of new tables like  &quot;{&quot;fl-hay&quot;} .. {&quot;it-seed&quot;}&quot;
++    // If this feature is added to Lua we would have to add:
++//    if (is_table(L, 1) &amp;&amp; is_table(L, 2)) {
++//        pushNewTile(L, 1);  // wrap second table into a tile;
++//        lua_remove(L, 2);   // replace table by tile
++//    }
++    pushNewTile(L, 2);   // wrap both arguments into a new tile
++    return 1;
++}
++
++MethodMap tilesMethodeMap;
++
++static int dispatchTilesReadAccess(lua_State *L) {
++//    Log &lt;&lt; &quot;Tiles read key - &quot; &lt;&lt; lua_tostring(L, 2) &lt;&lt; &quot;\n&quot;;
++    if (!lua_isstring(L, 2)) {     // sideeffect: numbers are converted to string
++        throwLuaError(L, &quot;Tiles: key is not a string&quot;);
++        return 0;
++    }
++    lua_getmetatable(L, 1);
++    lua_rawgeti(L, -1, 1);   // content table
++    lua_pushvalue(L, 2);      // copy key
++    lua_rawget(L, -2);        // check for existing entry in table
++    return 1;
++}
++
++static int dispatchTilesWriteAccess(lua_State *L) {
++//    Log &lt;&lt; &quot;Tiles write key - &quot; &lt;&lt; lua_tostring(L, 2) &lt;&lt; &quot;\n&quot;;
++    if (!lua_isstring(L, 2)) {     // sideeffect: numbers are converted to string
++        throwLuaError(L, &quot;Tiles: key is not a string&quot;);
++        return 0;
++    }
++    if (is_table(L, 3)) {
++        // convert table to a tile
++        pushNewTile(L, 1);
++        lua_remove(L, 3);   
++    } else if (!is_tile(L, 3)) {
++        throwLuaError(L, &quot;Tiles: value is not a tile or table&quot;);
++        return 0;
++    }
++    lua_getmetatable(L, 1);
++    lua_rawgeti(L, -1, 1);   // content table
++    lua_pushvalue(L, 2);      // copy key
++    lua_rawget(L, -2);        // check for existing entry in table
++    if (!lua_isnil(L, -1)) {
++        throwLuaError(L, ecl::strf(&quot;Tiles: redefinition of key '%s'&quot;, lua_tostring(L, 2)).c_str());
++        return 0;
++    }
++    lua_pop(L, 1);            // remove nil
++    lua_pushvalue(L, 2);
++    lua_pushvalue(L, 3);
++    lua_rawset(L, -3);        // store tile value for key
++    return 0;
++}
++
++static int pushNewTiles(lua_State *L) {
++    // tiles is a singleton
++    
++    int *udata;
++    udata=(int *)lua_newuserdata(L,sizeof(int));   // position user object
++    *udata = 1;
++    
++    luaL_getmetatable(L, LUA_ID_TILES);
++    lua_rawgeti(L, -1, 1);
++    if (lua_isnil(L, -1)) {
++        lua_newtable(L);            // this is the contents table that stores the data
++        lua_rawseti(L, -3, 1);
++    }
++    lua_pop(L, 1); //nil or content table
++    lua_setmetatable(L, -2);
++    return 1;
++}
++
++static int newTile(lua_State *L) {
++    // ti(table)
++    if (!(is_table(L, 2) &amp;&amp; lua_gettop(L) == 2)) {
++        throwLuaError(L, &quot;New tile with wrong arguments&quot;);
++        return 0;
++    }
++    
++    pushNewTile(L, 1);
++    return 1;
++}
++
++MethodMap groupMethodeMap;
++
++static int dispatchGroupWriteAccess(lua_State *L) {
++    if (!(lua_isstring(L, 2))) {
++        throwLuaError(L, &quot;Group: illegal attribute write access&quot;);
++        return 0;
++    }
++    std::string name = lua_tostring(L, 2);
++    lua_getmetatable(L, 1);
++    int numObjects = lua_objlen(L, -1);
++    for (int i = 1; i &lt;= numObjects; ++i) {
++        lua_rawgeti(L, -1, i);  // the object
++        Object *obj = to_object(L, -1);
++        if (obj)                // ignore not existing objects
++            obj-&gt;set_attrib(name, to_value(L, 3));
++        lua_pop(L, 1);          // the object        
++    }
++    return 0;
++}
++
++static int dispatchGroupReadAccess(lua_State *L) {
++    if (!(lua_isnumber(L, 2) || lua_isstring(L, 2))) {
++        throwLuaError(L, &quot;Group: illegal read access&quot;);
++        return 0;
++    }
++    
++    if (lua_isnumber(L, 2)) {
++        int i = lua_tointeger(L, 2);
++        lua_getmetatable(L, 1);
++        int size = lua_objlen(L, -1);
++        if (i &gt;= 1 &amp;&amp; i &lt;= size)
++            lua_rawgeti(L, -1, i);
++        else
++            pushobject(L, NULL);
++    } else if(lua_isstring(L, 2)) {
++        std::string keyStr = lua_tostring(L, 2); 
++        MethodMap::iterator iter;
++        iter = groupMethodeMap.find(keyStr);
++        if (iter != groupMethodeMap.end()) {
++            // call method
++            lua_pushcfunction(L, iter-&gt;second);
++        } else {
++            // try to send message to all objects
++            messageLIFO.push_back(keyStr);
++            lua_pushcfunction(L, groupDirectMessage);
++        }
++    }
++    return 1;
++}
++
++static int lengthGroup(lua_State *L) {
++    lua_getmetatable(L, 1);
++    int size = lua_objlen(L, -1);
++//    Log &lt;&lt; &quot;Length Group &quot; &lt;&lt; size &lt;&lt; &quot;\n&quot;;
++    lua_pushinteger(L, size);
++    return 1;
++}
++
+ static CFunction globalfuncs[] = {
+     {FindDataFile,          &quot;FindDataFile&quot;},
+ //    {lua::PlaySoundGlobal,  &quot;PlaySoundGlobal&quot;},
+@@ -690,14 +2007,124 @@
+     {en_add_scramble,           &quot;AddScramble&quot;},
+     {en_set_scramble_intensity, &quot;SetScrambleIntensity&quot;},
+ 
++    {0,0}
++};
+ 
++static CFunction levelFuncs[] = {
++    {newGroup,                      &quot;grp&quot;},
++    {newPosition,                   &quot;po&quot;},
++    {getFloor,                      &quot;fl&quot;},
++    {getItem,                       &quot;it&quot;},
++    {getStone,                      &quot;st&quot;},
+     {0,0}
+ };
+ 
+-
++
++static CFunction objectOperations[] = {
++    {dispatchObjectWriteAccess,     &quot;__newindex&quot;}, //  obj[key]=value
++    {dispatchObjectReadAccess,      &quot;__index&quot;},    //  obj[key]
++    {objectEquality,                &quot;__eq&quot;},       //  ==
++    {addPositions,                  &quot;__add&quot;},      //  obj + obj
++    {subPositions,                  &quot;__sub&quot;},      //  obj - obj
++    {centerPosition,                &quot;__len&quot;},      //  #obj
++    {objectExistance,               &quot;__unm&quot;},      //  -obj
++    {0,0}
++};
++
++static CFunction objectMethods[] = {
++    {objectExistance,               &quot;exists&quot;},
++    {killObject,                    &quot;kill&quot;},
++    {objectMessage,                 &quot;message&quot;},
++    {setAttributes,                 &quot;set&quot;},
++    {xyObject,                      &quot;xy&quot;},
++    {0,0}
++};
++
++static CFunction positionOperations[] = {
++    {dispatchPositionWriteAccess,   &quot;__newindex&quot;}, //  obj[key]=value
++    {dispatchPositionReadAccess,    &quot;__index&quot;},    //  obj[key]
++    {positionEquality,              &quot;__eq&quot;},       //  ==
++    {addPositions,                  &quot;__add&quot;},      //  obj + obj
++    {subPositions,                  &quot;__sub&quot;},      //  obj - obj
++    {multiplyPositions,             &quot;__mul&quot;},      //  obj * obj
++    {dividePositions,               &quot;__div&quot;},      //  obj / obj
++    {centerPosition,                &quot;__len&quot;},      //  #obj
++    {0,0}
++};
++
++static CFunction positionMethods[] = {
++    {xyPosition,                    &quot;xy&quot;},
++    {gridAlignPosition,             &quot;grid&quot;},
++    {0,0}
++};
++
++static CFunction namedObjOperations[] = {
++    {dispatchNamedObjWriteAccess,   &quot;__newindex&quot;}, //  obj[key]=value
++    {dispatchNamedObjReadAccess,    &quot;__index&quot;},    //  obj[key]
++    {0,0}
++};
++
++static CFunction namedObjMethods[] = {
++    {0,0}
++};
++
++static CFunction worldOperations[] = {
++    {dispatchWorldWriteAccess,      &quot;__newindex&quot;}, //  obj[key]=value
++    {dispatchWorldReadAccess,       &quot;__index&quot;},    //  obj[key]
++    {initWorld,                     &quot;__call&quot;},
++    {0,0}
++};
++
++static CFunction worldMethods[] = {
++    {initWorld,                     &quot;init&quot;},
++    {getFloor,                      &quot;fl&quot;},
++    {getItem,                       &quot;it&quot;},
++    {getStone,                      &quot;st&quot;},
++    {0,0}
++};
++
++static CFunction tileOperations[] = {
++    {dispatchTileWriteAccess,       &quot;__newindex&quot;}, //  obj[key]=value
++    {dispatchTileReadAccess,        &quot;__index&quot;},    //  obj[key]
++    {appendTile,                    &quot;__concat&quot;},   //  obj .. obj
++    {0,0}
++};
++
++static CFunction tileMethods[] = {
++    {0,0}
++};
++
++static CFunction tilesOperations[] = {
++    {dispatchTilesWriteAccess,      &quot;__newindex&quot;}, //  obj[key]=value
++    {dispatchTilesReadAccess,       &quot;__index&quot;},    //  obj[key]
++    {newTile,                       &quot;__call&quot;},
++    {0,0}
++};
++
++static CFunction tilesMethods[] = {
++    {0,0}
++};
++
++static CFunction groupOperations[] = {
++    {dispatchGroupWriteAccess,      &quot;__newindex&quot;}, //  obj[key]=value
++    {dispatchGroupReadAccess,       &quot;__index&quot;},    //  obj[key]
++    {lengthGroup,                   &quot;__len&quot;},      //  #obj
++    {joinGroup,                     &quot;__add&quot;},      //  obj + obj
++    {intersectGroup,                &quot;__mul&quot;},      //  obj * obj
++    {differenzGroup,                &quot;__sub&quot;},      //  obj - obj
++    {0,0}
++};
++
++static CFunction groupMethods[] = {
++    {groupMessage,                  &quot;message&quot;},
++    {killObject,                    &quot;kill&quot;},
++    {0,0}
++};
++
++
+ /* -------------------- lua:: functions -------------------- */
+ 
+-int lua::FindDataFile (lua_State *L) 
++int FindDataFile (lua_State *L) 
+ {
+     const char *filename = lua_tostring(L, 1);
+     string absfile;
+@@ -708,7 +2135,7 @@
+     return 1;
+ }
+ 
+-void lua::RegisterFuncs(lua_State *L, CFunction *funcs) 
++void RegisterFuncs(lua_State *L, CFunction *funcs) 
+ {
+     lua_getglobal(L, &quot;enigma&quot;);
+     for (unsigned i=0; funcs[i].func; ++i) {
+@@ -719,38 +2146,83 @@
+     lua_pop(L, 1);
+ }
+ 
+-Error lua::CallFunc(lua_State *L, const char *funcname, const Value&amp; arg, world::Object *obj) {
++void RegisterFuncs2(lua_State *L, CFunction *funcs) {
++    lua_newtable(L);    // create Namespace &quot;en&quot; 
++    for (unsigned i=0; funcs[i].func; ++i) {
++        // function within namspace
++        lua_pushstring(L, funcs[i].name);
++        lua_pushcfunction(L, funcs[i].func);
++        lua_settable(L, -3);
++        
++        // function in global space 
++        lua_pushcfunction(L, funcs[i].func);
++        lua_setglobal(L, funcs[i].name);
++    }
++    lua_setglobal(L, &quot;en&quot;);
++}
++
++void RegisterObject(lua_State *L, std::string name) {
++    lua_pushvalue(L, -1);  // make a copy
++    lua_setglobal(L, name.c_str());
++    
++    lua_getglobal(L, &quot;en&quot;);
++    lua_pushstring(L, name.c_str());
++    lua_pushvalue(L, -3);
++    lua_settable(L, -3);
++    lua_pop(L, 2);
++}
++
++void RegisterLuaType(lua_State *L, std::string registryKey, CFunction *ops,
++        CFunction *methods, MethodMap &amp;methodMap) {
++
++    luaL_newmetatable(L, registryKey.c_str());
++    lua_pushstring(L, &quot;_id&quot;);
++    lua_pushstring(L, registryKey.c_str());
++    lua_settable(L, -3);
++    for (unsigned i=0; ops[i].func; ++i) {
++        lua_pushstring(L, ops[i].name);
++        lua_pushcfunction(L, ops[i].func);
++        lua_settable(L, -3);
++    }
++    lua_pop(L, 1);  // remove mt pointer
++    
++    for (unsigned i=0; methods[i].func; ++i) {
++        methodMap[methods[i].name] = methods[i].func;
++    }
++}
++
++Error CallFunc(lua_State *L, const char *funcname, const Value&amp; arg, world::Object *obj) {
+     int retval;
+     lua_getglobal(L, funcname);
+     push_value(L, arg);
+     pushobject(L, obj);
+     retval=lua_pcall(L,2,0,0);
+     if (retval!=0) // error
+-      {
+-	lua_setglobal (L, &quot;_LASTERROR&quot;) ; //Set _LASTERROR to returned error message
+-      }
++    {
++        lua_setglobal (L, &quot;_LASTERROR&quot;) ; //Set _LASTERROR to returned error message
++    }
+     return _lua_err_code(retval);
+ }
+ 
+-Error lua::CallFunc(lua_State *L, const char *funcname, const ByteVec&amp; arg) {
++Error CallFunc(lua_State *L, const char *funcname, const ByteVec&amp; arg) {
+   int retval;
+     lua_getglobal(L, funcname);
+     lua_pushlstring (L, &amp;arg[0], arg.size());
+     retval=lua_pcall(L,1,0,0);
+     if (retval!=0) // error
+-      {
+-	lua_setglobal (L, &quot;_LASTERROR&quot;) ; //Set _LASTERROR to returned error message
+-      }
++    {
++        lua_setglobal (L, &quot;_LASTERROR&quot;) ; //Set _LASTERROR to returned error message
++    }
+     return _lua_err_code(retval);
+ }
+ 
+-Error lua::DoAbsoluteFile(lua_State *L, const string &amp;filename)
++Error DoAbsoluteFile(lua_State *L, const string &amp;filename)
+ {
+     int oldtop = lua_gettop(L);
+     int retval = luaL_loadfile(L, filename.c_str());
+     if (retval!=0) // error
+     {
+-      lua_setglobal (L, &quot;_LASTERROR&quot;) ; //Set _LASTERROR to returned error message
++        lua_setglobal (L, &quot;_LASTERROR&quot;) ; //Set _LASTERROR to returned error message
+     }
+     else 
+     {
+@@ -764,7 +2236,7 @@
+     return _lua_err_code(retval);
+ }
+     
+-Error lua::DoGeneralFile(lua_State *L, GameFS * fs, const string &amp;filename)
++Error DoGeneralFile(lua_State *L, GameFS * fs, const string &amp;filename)
+ {
+     string completefn;
+     if (fs-&gt;findFile(filename, completefn)) {
+@@ -775,17 +2247,17 @@
+     }
+ }
+ 
+-Error lua::Dofile(lua_State *L, const string &amp;filename) 
++Error Dofile(lua_State *L, const string &amp;filename) 
+ {
+     return lua::DoGeneralFile(L, app.resourceFS, filename);
+ }
+ 
+-Error lua::DoSysFile(lua_State *L, const string &amp;filename) 
++Error DoSysFile(lua_State *L, const string &amp;filename) 
+ {
+     return lua::DoGeneralFile(L, app.systemFS, filename);
+ }
+ 
+-void lua::CheckedDoFile (lua_State *L, GameFS * fs, std::string const&amp; fname)
++void CheckedDoFile (lua_State *L, GameFS * fs, std::string const&amp; fname)
+ {
+     string completefn;
+     if (!fs-&gt;findFile(fname, completefn))
+@@ -799,70 +2271,60 @@
+     if (status != lua::NO_LUAERROR) {
+         fprintf(stderr, _(&quot;There was an error loading '%s'.\n&quot;), completefn.c_str());
+         fprintf(stderr, _(&quot;Your installation may be incomplete or invalid.\n&quot;));
+-	fprintf(stderr, _(&quot;Error: '%s'\n&quot;), lua::LastError(L).c_str());
++        fprintf(stderr, _(&quot;Error: '%s'\n&quot;), lua::LastError(L).c_str());
+         exit (1);
+     }
+ }
+ 
+ 
+-Error lua::Dobuffer (lua_State *L, const ByteVec &amp;luacode) {
+-  int retval;
++Error Dobuffer (lua_State *L, const ByteVec &amp;luacode) {
++    int retval;
+     const char *buffer = reinterpret_cast&lt;const char *&gt;(&amp;luacode[0]);
+-    
++
+     retval=luaL_loadbuffer(L, buffer, luacode.size(), &quot;buffer&quot;);
+-    if (retval!=0) // error
+-      {
+-	lua_setglobal (L, &quot;_LASTERROR&quot;) ; //Set _LASTERROR to returned error message
+-      }
+-      else 
+-	{
+-	  retval= lua_pcall(L, 0, 0, 0);
+-	  if (retval!=0) // error
+-          {
+-	    lua_setglobal (L, &quot;_LASTERROR&quot;) ; //Set _LASTERROR to returned error message
+-          }
+-	}
++    if (retval!=0) { // error
++        lua_setglobal (L, &quot;_LASTERROR&quot;) ; //Set _LASTERROR to returned error message
++    } else {
++        retval= lua_pcall(L, 0, 0, 0);
++        if (retval!=0) { // error
++            lua_setglobal (L, &quot;_LASTERROR&quot;) ; //Set _LASTERROR to returned error message
++        }
++    }
+     return _lua_err_code(retval);
+ }
+ 
+-string lua::LastError (lua_State *L)
+-{
++string LastError (lua_State *L) {
+     lua_getglobal (L, &quot;_LASTERROR&quot;);
+-    if (lua_isstring(L,-1)){
+-      return string (lua_tostring (L, -1));
++    if (lua_isstring(L,-1)) {
++        return string (lua_tostring (L, -1));
++    } else {
++        return &quot;Lua Error. No error message available.&quot;;
+     }
+-    else {
+-      return &quot;Lua Error. No error message available.&quot;;
+-    }
+ }
+ 
+ 
+-Error lua::DoSubfolderfile(lua_State *L, const string &amp;basefolder, const string &amp;filename) {
++Error DoSubfolderfile(lua_State *L, const string &amp;basefolder, const string &amp;filename) {
+     std::list &lt;string&gt; fnames = app.resourceFS-&gt;findSubfolderFiles(basefolder, filename);
+     int retval = 0;
+     while (fnames.size() &gt; 0) {
+         int oldtop = lua_gettop(L);
+-	string fname = fnames.front();
++        string fname = fnames.front();
+         retval = luaL_loadfile(L, fname.c_str());
+-        if (retval!=0) // error
+-        {
+-	  lua_setglobal (L, &quot;_LASTERROR&quot;) ; //Set _LASTERROR to returned error message
++        if (retval!=0)  { // error
++            lua_setglobal (L, &quot;_LASTERROR&quot;) ; //Set _LASTERROR to returned error message
++        } else {
++            retval= lua_pcall(L, 0, 0, 0);
++            if (retval!=0) { // error
++                lua_setglobal (L, &quot;_LASTERROR&quot;) ; //Set _LASTERROR to returned error message
++            }
+         }
+-	else 
+-	{
+-	  retval= lua_pcall(L, 0, 0, 0);
+-	  if (retval!=0) // error
+-          {
+-	    lua_setglobal (L, &quot;_LASTERROR&quot;) ; //Set _LASTERROR to returned error message
+-          }
+-	}
+-	fnames.pop_front();
++        fnames.pop_front();
+         lua_settop(L, oldtop);
+     }
+     return _lua_err_code(retval);
+ }
+ 
+-lua_State *lua::GlobalState() 
++lua_State *GlobalState() 
+ {
+     if (global_state == 0) {
+         lua_State *L = global_state = lua_open();
+@@ -878,7 +2340,7 @@
+     return global_state;
+ }
+ 
+-void lua::ShutdownGlobal() 
++void ShutdownGlobal() 
+ {
+     assert (global_state);
+     lua_close(global_state);
+@@ -891,7 +2353,7 @@
+ 
+ 
+ 
+-lua_State *lua::InitLevel() 
++lua_State *InitLevel() 
+ {
+     char buffer[255];
+ 
+@@ -908,22 +2370,41 @@
+     tolua_px_open(L);
+     tolua_display_open(L);
+ 
++    
+     RegisterFuncs(L, levelfuncs);
++    RegisterFuncs2(L, levelFuncs);
+ 
+     // Create a new metatable for world::Object objects
+-    luaL_newmetatable(L,&quot;_ENIGMAOBJECT&quot;);
++    RegisterLuaType(L, LUA_ID_OBJECT, objectOperations, objectMethods, objectMethodeMap);
++    RegisterLuaType(L, LUA_ID_POSITION, positionOperations, positionMethods, positionMethodeMap);
++    RegisterLuaType(L, LUA_ID_NAMEOBJ, namedObjOperations, namedObjMethods, namedObjMethodeMap);
++    RegisterLuaType(L, LUA_ID_WORLD, worldOperations, worldMethods, worldMethodeMap);
++    RegisterLuaType(L, LUA_ID_TILE, tileOperations, tileMethods, tileMethodeMap);
++    RegisterLuaType(L, LUA_ID_TILES, tilesOperations, tilesMethods, tilesMethodeMap);
++    RegisterLuaType(L, LUA_ID_GROUP, groupOperations, groupMethods, groupMethodeMap);
++    
++    pushNewNamedObj(L);
++    RegisterObject(L, &quot;no&quot;);
++    
++    pushNewWorld(L);
++    RegisterObject(L, &quot;wo&quot;);
++    
++    pushNewTiles(L);
++    RegisterObject(L, &quot;ti&quot;);
++    
+     return L;
+ }
+ 
+-lua_State *lua::LevelState ()
++lua_State *LevelState ()
+ {
+     return level_state;
+ }
+ 
+-void lua::ShutdownLevel() {
++void ShutdownLevel() {
+     if (level_state) {
+         lua_close(level_state);
+         level_state = 0;
+     }
+ }
+ 
++}} // namespace enigma::lua
+
+Modified: trunk/src/lua.hh
+===================================================================
+--- trunk/src/lua.hh	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/lua.hh	2007-09-29 21:35:15 UTC (rev 889)
+@@ -22,6 +22,7 @@
+ #include &quot;enigma.hh&quot;
+ #include &quot;ecl_geom.hh&quot;
+ #include &quot;objects_decl.hh&quot;
++#include &lt;map&gt;
+ 
+ #ifdef CXXLUA
+ struct lua_State;
+@@ -30,9 +31,7 @@
+ #endif
+ 
+ 
+-namespace lua
+-{
+-    using namespace enigma;
++namespace enigma { namespace lua {
+ 
+ /* -------------------- Data structures -------------------- */
+ 
+@@ -40,14 +39,17 @@
+         int (*func) (lua_State *); // lua_CFunction func;
+         const char *name;
+     };
+-
++    
++    
++    typedef std::map&lt;std::string, int (*) (lua_State *)&gt; MethodMap;
++    
+     enum Error {
+         NO_LUAERROR = 0,
+         ERRRUN,
+-	ERRFILE,
+-	ERRSYNTAX,
+-	ERRMEM,
+-	ERRERR
++        ERRFILE,
++        ERRSYNTAX,
++        ERRMEM,
++        ERRERR
+     };
+ 
+ /* -------------------- Lua states for Enigma -------------------- */
+@@ -74,6 +76,10 @@
+ 
+ /* -------------------- Helper routines -------------------- */
+ 
++    void RegisterLuaType(lua_State *L, std::string registryKey, CFunction *ops,
++        CFunction *methods, MethodMap &amp;methodMap);
++
++
+     /*! Register the C functions in `funcs'.  The end of the array is
+       denoted by an entry with func==0. */
+     void RegisterFuncs (lua_State *L, CFunction funcs[]);
+@@ -117,6 +123,7 @@
+     Error DoSubfolderfile(lua_State *L, 
+                         const std::string &amp; basefolder, 
+                         const std::string &amp; filename);
+-}
++
++}} // namespace enigma::lua
+ #endif
+ 
+
+Modified: trunk/src/objects.cc
+===================================================================
+--- trunk/src/objects.cc	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/objects.cc	2007-09-29 21:35:15 UTC (rev 889)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004,2005 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -32,6 +33,7 @@
+ #include &lt;iostream&gt;
+ #include &lt;iomanip&gt;
+ 
++
+ using namespace std;
+ using namespace enigma;
+ using namespace world;
+@@ -40,52 +42,51 @@
+ // note: VERBOSE_MESSAGES is defined in multiple source files!
+ // #define VERBOSE_MESSAGES
+ 
+-
+-/* -------------------- Helper routines -------------------- */
++/* -------------------- Object implementation -------------------- */
+ 
+-namespace
+-{
+-    // string_match accepts simple wildcards
+-    // '?' means 'any character'
+-    // '*' means '0 or more characters'
+-    bool string_match(const char *str, const char *templ) {
+-        while (true) {
+-            char t = *templ++;
+-            char s = *str++;
++int Object::next_id = 1;
++std::map&lt;int, Object *&gt; Object::objects;
+ 
+-            if (t == s) {
+-                if (!t) return true;
+-                continue;
+-            }
+-            else { // mismatch
+-                if (t == '?') continue;
+-                if (t != '*') break;
++int Object::getNextId(Object *obj) {
++    objects[next_id] = obj;
++    return next_id++;
++}
+ 
+-                t = *templ++;
+-                if (!t) return true; // '*' at EOS
++void Object::freeId(int id) {
++    objects.erase(id);
++}
+ 
+-                while (1) {
+-                    if (!s) break;
+-                    if (s == t) {
+-                        if (string_match(str, templ))
+-                            return true;
+-                    }
+-                    s = *str++;
+-                }
+-            }
+-        }
+-        return false;
+-    }
++Object * Object::getObject(int id) {
++    std::map&lt;int, Object *&gt;::iterator it = objects.find(id);
++    if (it == objects.end())
++        return NULL;
++    else
++        return it-&gt;second;
+ }
+ 
+-
+-/* -------------------- Object implementation -------------------- */
++Object::Object() {
++    id = getNextId(this);
++}
+ 
+ Object::Object(const char *kind) {
+     set_attrib(&quot;kind&quot;, Value(kind));
++    id = getNextId(this);
+ }
+ 
++Object::Object(const Object &amp;src_obj) {
++    id = getNextId(this);
++    attribs = src_obj.attribs;
++}
+ 
++Object::~Object() {
++    freeId(id);
++//cerr &lt;&lt; &quot;obj del &quot; &lt;&lt; id &lt;&lt; &quot; - &quot; &lt;&lt; this-&gt;get_kind() &lt;&lt;&quot;\n&quot;;
++}
++
++int Object::getId() const {
++    return id;
++}
++
+ Value Object::on_message (const world::Message &amp;m)
+ {
+     return message (m.message, m.value);
+@@ -110,11 +111,11 @@
+ // check kind of object
+ // kind_templ may contain wildcards ( ? and * )
+ bool Object::is_kind(const char *kind_templ) const {
+-    return string_match(get_kind(), kind_templ);
++    return ecl::string_match(get_kind(), kind_templ);
+ }
+ 
+ bool Object::is_kind(const string&amp; kind_templ) const {
+-    return string_match(get_kind(), kind_templ.c_str());
++    return ecl::string_match(get_kind(), kind_templ.c_str());
+ }
+ 
+ void Object::set_attrib(const string&amp; key, const Value&amp; val) {
+@@ -188,7 +189,9 @@
+     va_end(arg_ptr);
+ }
+ 
+-
++Object::ObjectType Object::getObjectType() const {
++    return OTHER;
++}
+ /* -------------------- GridObject implementation -------------------- */
+ 
+ display::Model *GridObject::set_anim (const std::string &amp;mname) 
+@@ -217,4 +220,3 @@
+ 
+     va_end(arg_ptr);
+ }
+-
+
+Modified: trunk/src/objects_decl.hh
+===================================================================
+--- trunk/src/objects_decl.hh	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/objects_decl.hh	2007-09-29 21:35:15 UTC (rev 889)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -21,13 +22,13 @@
+ 
+ #include &quot;display.hh&quot;
+ #include &quot;ecl_alist.hh&quot;
++#include &lt;map&gt;
+ 
+ namespace world
+ {
+     using std::string;
+     using namespace enigma;
+ 
+-
+ /* -------------------- Objects -------------------- */
+ 
+     /*! Object is the base class for all ``objects'' in the world.
+@@ -49,10 +50,22 @@
+      */
+     class Object {
+     public:
+-        Object() {}
++        enum ObjectType { 
++            OTHER,
++            STONE,
++            FLOOR,
++            ITEM,
++            ACTOR
++            };
++            
++        Object();
+         Object(const char *kind);
+-        virtual ~Object() {}
++        Object(const Object &amp;src_obj); 
++        virtual ~Object();
+ 
++        static Object * getObject(int id);
++        int getId() const;
++        
+         /* ---------- Attributes ---------- */
+ 
+         typedef ecl::AssocList&lt;std::string, Value&gt; AttribMap;
+@@ -115,15 +128,20 @@
+         virtual void on_levelinit();
+ 
+         virtual void warning(const char *format, ...) const;
++        virtual ObjectType getObjectType() const;
+ 
+     protected:
+         virtual Value getDefaultValue(const string &amp;key) const;
+     private:
++        static int next_id;
++        static std::map&lt;int, Object *&gt; objects;
++        int id;
++        AttribMap attribs;
++        static int getNextId(Object *obj);
++        static void freeId(int id);
+         const Value* get_attrib(const string&amp; key) const;
+-        AttribMap attribs;
+     };
+ 
+-
+ /* -------------------- GridObject -------------------- */
+ 
+     /*! GridObject is the base class for everything that can only be
+@@ -140,13 +158,13 @@
+             on_creation (p);
+         }
+         void removal(GridPos p) { on_removal(p); }
++        GridPos get_pos() const {return pos;}
+ 
+         // GridObject interface
+         virtual void on_laserhit (Direction) {}
+         virtual void actor_enter (Actor *) {}
+         virtual void actor_leave (Actor *) {}
+ 
+-        GridPos get_pos() const { return pos; }
+ 
+         void warning(const char *format, ...) const;
+ 
+
+Modified: trunk/src/player.cc
+===================================================================
+--- trunk/src/player.cc	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/player.cc	2007-09-29 21:35:15 UTC (rev 889)
+@@ -71,6 +71,7 @@
+         void respawn_dead_actors(double dtime);
+         void resurrect_actor (Actor *a);
+         bool remove_extralife (Actor *a);
++        void reset();
+ 
+         // Variables
+         vector&lt;RespawnInfo&gt; respawn_list;
+@@ -133,7 +134,10 @@
+     }
+ }
+ 
+-
++void LevelLocalData::reset() {
++    respawn_list.clear();
++}
++
+ /* -------------------- Local variables -------------------- */
+ 
+ namespace
+@@ -144,7 +148,11 @@
+     std::vector&lt;Actor *&gt; unassignedActors;
+ }
+ 
+-
++
++void player::PlayerShutdown() {
++    players.clear();    // release objects of inventories
++}
++
+ /* -------------------- Functions -------------------- */
+ 
+ void player::NewGame (bool isRestart) {
+@@ -178,6 +186,7 @@
+     }
+     
+     unassignedActors.clear();
++    leveldat.reset();
+ }
+ 
+ void player::AddYinYang ()
+
+Modified: trunk/src/player.hh
+===================================================================
+--- trunk/src/player.hh	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/player.hh	2007-09-29 21:35:15 UTC (rev 889)
+@@ -95,6 +95,7 @@
+         world::ItemAction ActivateItem (Item *it);
+ 
+         void Tick (double dtime);
++        void PlayerShutdown();
+ 
+     } // namespace player
+ } // namespace enigma
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/server.cc	2007-09-29 21:35:15 UTC (rev 889)
+@@ -72,37 +72,37 @@
+ 
+ }
+ 
+-
+ /* -------------------- Global variables -------------------- */
+ 
+ 
+-bool           server::CreatingPreview = false;
+ 
+ bool server::NoCollisions = false;
+ 
+-double   server::LevelTime;
++bool     server::AllowTogglePlayer;
++bool     server::CreatingPreview = false;   // read only for Lua
+ bool     server::ConserveLevel;
+-bool     server::TwoPlayerGame;
+-bool     server::SingleComputerGame;
+-bool     server::AllowTogglePlayer;
++double   server::LevelTime;                 // read only for Lua (&gt; 1.10)
+ bool     server::ShowMoves;
+-GameType server::GameCompatibility;
++bool     server::SingleComputerGame;        // no Lua access
++bool     server::TwoPlayerGame;             // no Lua access
++GameType server::GameCompatibility;         // no Lua access
++bool     server::WorldInitialized;          // no Lua access
+ double   server::Brittleness;
+-double   server::SlopeForce;
++double   server::BumperForce;
++double   server::ElectricForce;
++double   server::EnigmaCompatibility;       // no Lua access
+ double   server::FlatForce;
+ double   server::FrictionFactor;
++double   server::HoleForce;
+ double   server::IceFriction;
+-double   server::ElectricForce;
+-double   server::BumperForce;
+-double   server::WaterSinkSpeed;
+-double   server::SwampSinkSpeed;
+ double   server::MagnetForce;
+ double   server::MagnetRange;
++double   server::SlopeForce;
++double   server::SwampSinkSpeed;
++double   server::WaterSinkSpeed;
+ double   server::WormholeForce;
+ double   server::WormholeRange;
+-double   server::HoleForce;
+ 
+-
+ /* -------------------- Local variables -------------------- */
+ 
+ namespace
+@@ -195,7 +195,7 @@
+     world::TickFinished ();
+ }
+ 
+-
++
+ /* -------------------- Functions -------------------- */
+ 
+ void server::Init()
+@@ -252,6 +252,8 @@
+     move_counter = 0;
+ 
+     world::PrepareLevel ();
++    server::WorldInitialized = false;
++
+     player::PrepareLevel();
+ 
+     /* Restart the Lua environment so symbol definitions from
+
+Modified: trunk/src/server.hh
+===================================================================
+--- trunk/src/server.hh	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/server.hh	2007-09-29 21:35:15 UTC (rev 889)
+@@ -68,6 +68,12 @@
+     // Behave like Oxyd/Enigma version
+     extern GameType GameCompatibility;
+ 
++    // Detect double initialization (resize) attempts
++    extern bool     WorldInitialized;
++    
++    // level compatibility
++    extern double   EnigmaCompatibility;
++   
+     // Default brittleness of the floor: 0 = stable..1=unstable.
+     // Really: probability that a floor tile will crack when an actor
+     // enters or leaves it.
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/stones.hh	2007-09-29 21:35:15 UTC (rev 889)
+@@ -210,6 +210,8 @@
+         virtual void   on_impulse(const Impulse&amp; impulse);
+ 
+     protected:
++        virtual Object::ObjectType getObjectType() const {return Object::STONE;}
++        
+         bool move_stone(GridPos newPos, const char *soundevent);
+         bool move_stone(Direction dir);
+         ecl::V2 distortedVelocity (ecl::V2 vel, double defaultfactor);
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/stones_complex.cc	2007-09-29 21:35:15 UTC (rev 889)
+@@ -2264,7 +2264,14 @@
+ namespace
+ {
+     class OxydStone : public PhotoStone {
+-        INSTANCELISTOBJ(OxydStone);
++        typedef std::vector&lt;OxydStone *&gt; InstanceList;
++        static InstanceList instances;
++        OxydStone * clone();
++        void dispose() {
++            instances.erase(find(instances.begin(), instances.end(), this));
++            delete this;
++        }
++
+     public:
+         OxydStone();
+ 
+@@ -2309,6 +2316,16 @@
+ 
+ OxydStone::InstanceList OxydStone::instances;
+ 
++OxydStone * OxydStone::clone() { 
++    OxydStone *o = new OxydStone(*this); 
++    instances.push_back(o);
++    if (server::EnigmaCompatibility &gt;= 1.10) {
++        int color = ((instances.size() -1) / 2) % 8;
++        o-&gt;set_attrib(&quot;color&quot;, ecl::strf(&quot;%d&quot;, color));
++    }
++    return o;
++}
++
+ OxydStone::OxydStone()
+ : PhotoStone(&quot;st-oxyd&quot;),
+   state(CLOSED)
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/world.cc	2007-09-29 21:35:15 UTC (rev 889)
+@@ -27,6 +27,7 @@
+ #include &quot;client.hh&quot;
+ #include &quot;main.hh&quot;
+ #include &quot;stones_internal.hh&quot;
++#include &quot;WorldProxy.hh&quot;
+ 
+ #include &lt;iostream&gt;
+ #include &lt;algorithm&gt;
+@@ -416,19 +417,36 @@
+         forces.erase(i);
+ }
+ 
+-Object *World::get_named (const string &amp;name)
++Object * World::get_named(const string &amp;name)
+ {
+     ecl::Dict&lt;Object*&gt;::iterator found = m_objnames.find(name);
+     if (found != m_objnames.end()) 
+         return found-&gt;second;
+-    Log &lt;&lt; &quot;Did not find named object: &quot; &lt;&lt; name &lt;&lt; '\n';
+-    return 0;
++//    Log &lt;&lt; &quot;Did not find named object: &quot; &lt;&lt; name &lt;&lt; '\n';
++    return NULL;
+ }
+ 
+-void World::name_object (Object *obj, const std::string &amp;name)
++std::list&lt;Object *&gt; World::get_group(const std::string &amp;tmpl) {
++    std::list&lt;Object *&gt; result;
++    ecl::Dict&lt;Object *&gt;::iterator it = m_objnames.begin();
++    for (; it != m_objnames.end(); ++it) {
++        if (string_match(it-&gt;first, tmpl))
++            result.push_back(it-&gt;second);
++    }
++    return result;
++}
++
++void World::name_object(Object *obj, const std::string &amp;name)
+ {
+-    m_objnames.insert(name, obj); // [name] = obj;
+-    obj-&gt;set_attrib(&quot;name&quot;, name);
++    std::string unique_name = name;
++    if (server::EnigmaCompatibility &gt;= 1.10 &amp;&amp; name.size() &gt; 0 &amp;&amp; name[name.size() - 1] == '#') {
++        // auto name object with a unique name
++        int i;
++        for (i = 1; get_named(name + ecl::strf(&quot;%d&quot;,i)) != NULL; i++);
++        unique_name = name + ecl::strf(&quot;%d&quot;,i);
++    }
++    m_objnames.insert(unique_name, obj); // [name] = obj;
++    obj-&gt;set_attrib(&quot;name&quot;, unique_name);
+ }
+ 
+ void World::unname (Object *obj)
+@@ -1614,6 +1632,7 @@
+ {
+     level.reset (new World(w,h));
+     display::NewWorld(w, h);
++    server::WorldInitialized = true;
+ }
+ 
+ void world::PrepareLevel ()
+@@ -1707,6 +1726,10 @@
+     return level-&gt;get_named (name);
+ }
+ 
++std::list&lt;Object *&gt; world::GetNamedGroup(const std::string &amp;name) {
++    return level-&gt;get_group(name);
++}
++
+ bool world::IsLevelBorder(GridPos p)
+ {
+     return level-&gt;is_border(p);
+@@ -2346,10 +2369,11 @@
+ void world::Shutdown()
+ {
+     level.reset();
++    player::PlayerShutdown();
+     Repos_Shutdown();
++    WorldProxy::shutdown();
+ }
+ 
+-
+ /* -------------------- Object repository -------------------- */
+ namespace
+ {
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/world.hh	2007-09-29 21:35:15 UTC (rev 889)
+@@ -174,6 +174,7 @@
+     void    UnnameObject (Object *obj);
+     void    TransferObjectName(Object *source, Object *target);
+     Object *GetNamedObject (const string &amp;name);
++    std::list&lt;Object *&gt; GetNamedGroup(const std::string &amp;templ);
+ 
+ /* -------------------- Force Fields -------------------- */
+ 
+
+Modified: trunk/src/world_internal.hh
+===================================================================
+--- trunk/src/world_internal.hh	2007-09-25 23:20:08 UTC (rev 888)
++++ trunk/src/world_internal.hh	2007-09-29 21:35:15 UTC (rev 889)
+@@ -292,6 +292,7 @@
+         void    name_object (Object *obj, const string &amp;name);
+         void    unname (Object *);
+         Object *get_named (const string &amp;);
++        std::list&lt;Object *&gt; get_group(const std::string &amp;tmpl);
+ 
+         void tick (double dtime);
+         void remove (ForceField *ff);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000320.html">[Enigma-game-svn] r888 - in trunk/data/levels: enigma_experimental	lib
+</A></li>
+	
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#321">[ date ]</a>
+              <a href="thread.html#321">[ thread ]</a>
+              <a href="subject.html#321">[ subject ]</a>
+              <a href="author.html#321">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

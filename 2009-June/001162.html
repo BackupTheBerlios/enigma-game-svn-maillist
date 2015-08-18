@@ -1,0 +1,861 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1733 - in trunk/doc/reference: . images
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1733%20-%20in%20trunk/doc/reference%3A%20.%20images&In-Reply-To=%3C200906212235.n5LMZBpG006773%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001161.html">
+   <LINK REL="Next"  HREF="001163.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1733 - in trunk/doc/reference: . images</H1>
+    <B>ral at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1733%20-%20in%20trunk/doc/reference%3A%20.%20images&In-Reply-To=%3C200906212235.n5LMZBpG006773%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1733 - in trunk/doc/reference: . images">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon Jun 22 00:35:11 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001161.html">[Enigma-game-svn] r1732 - trunk/src/lev
+</A></li>
+        <LI>Next message: <A HREF="001163.html">[Enigma-game-svn] r1734 - in trunk: data data/levels/lib	doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1162">[ date ]</a>
+              <a href="thread.html#1162">[ thread ]</a>
+              <a href="subject.html#1162">[ subject ]</a>
+              <a href="author.html#1162">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-06-22 00:35:00 +0200 (Mon, 22 Jun 2009)
+New Revision: 1733
+
+Modified:
+   trunk/doc/reference/enigma-ref.texi
+   trunk/doc/reference/images/Makefile.am
+Log:
+Trunk 1.1: refman
+- section 4.4.3 level initialization
+- floor images part II
+- stone images part III
+
+
+Modified: trunk/doc/reference/enigma-ref.texi
+===================================================================
+--- trunk/doc/reference/enigma-ref.texi	2009-06-21 15:19:05 UTC (rev 1732)
++++ trunk/doc/reference/enigma-ref.texi	2009-06-21 22:35:00 UTC (rev 1733)
+@@ -7,9 +7,9 @@
+ @titlepage
+ @title Enigma Reference Manual
+ @subtitle for version @value{VERSION}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at author</A> Daniel Heck
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at author</A> Petr Machata
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at author</A> Ralf Westram
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at author</A> Daniel Heck (old API v 0.92)
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at author</A> Petr Machata (old API v 0.92)
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at author</A> Ralf Westram (old API v 0.92)
+ @author Ronald Lamprecht
+ @author Andreas Lochmann
+ @author Andreas Abraham
+@@ -3513,9 +3513,11 @@
+ * Ending Conditions::
+ @end menu
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at c</A> ----------------- Library Preloading --------------------
+ @node Library Preloading
+ @subsection Library Preloading
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at c</A> ----------------- Snapshot Principle --------------------
+ @node Snapshot Principle
+ @subsection Snapshot Principle
+ 
+@@ -3571,15 +3573,63 @@
+ subkind on a kind request as they come into existence as a standard object.
+ 
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at c</A> ----------------- Level Initialization --------------------
+ @node Level Initialization
+ @subsection Level Initialization
+ 
+-global variables
+-tile declarations
+-world init
+-oxyd shuffle
+-postinit()
++Knowing what has been preloaded and knowing exaktly which objects we have to
++set in which state, it is time to have a look on how your level code is 
++processed. The main issue is to guarantee that all parts referenced have been
++set up properly in advance.
+ 
++Prior execution of the first line of your code the world exists just as an
++abstract handle, but not as grid array able to accept objects. Thus the first
++lines of code should set up all @ref{Global Attributes} derivating from their
++defaults. Even though many attributes can be set or changes later on and even
++on runtime, there are some attributes like @ref{ProvideExtralifes} that take
++only effect if being set prior world creation, or others like @ref{MaxOxydColor}
++that must be set prior their first usage. Our recommendation is to collect all
++global attribut settings at the very beginning of the level.
++
++The second section of your level code should be the declaration of tiles. Being
++just declarations these code lines do not set objects to the world. They just
++depend on global attributes and may reference each other. Listing them all
++together in a code section makes it easy to maintain the overview and to avoid
++dependecy conflicts.
++
++If you use @ref{Resolvers} you should put their declarations in the next code
++section as they may refer to tiles and global attributes and need to be set up
++prior the world creation.
++
++The central statement of every level is the @ref{World Creation}. It sets up
++the world to its size and sets initial objects according to the given tile
++declarations to the grid array. While you are free to add and change any of
++these objects later on the size of the world is fixed and can not be changed.
++
++Thus subsequent code lines should @ref{add} other objects, draw additional
++maps of objects and finalize some objects. The most common statement for such
++a finialization is the @ref{shuffleOxyd} method. It needs to know all 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at ref</A>{st_oxyd} to be able to color and shuffle them. Another finalization may
++be a custom rendering of a maze, that extracts the maze shape out of the
++level map (@pxref{res.maze}).
++
++This post world creation code may well have the need of loops or even some
++local used functions that need to be integrated to precede. Please keep such
++functions near by their usage and within the same code section.
++
++Another set of functions that you may want to add are @ref{Callbacks}. We 
++recommend to append these functions as the last section as they are not called
++within the level initialization itself.
++
++But there is one very special exception. The @code{postinit()} callback is
++called after the level initialization code has been processed and all subsequent
++engine internal initialization has been finished. If this function is present
++in a level it gets execute directly before the first mouse movement event gets
++processed. Thus you can rely within this function that all objects are set up
++in their final state. If you have need of such a postinit callback you should
++put it after all the level intialization code and in front of other callback
++functions that will be executed on subsequent events.
++
+ @node Object Transformation
+ @subsection Object Transformation
+ 
+@@ -3623,12 +3673,15 @@
+ Note that a request for a named position will include all positions of matching
+ named objects as well as those named positions derived from killed floors.
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at c</A> ----------------- Callbacks and Timers --------------------
+ @node Callbacks and Timers
+ @subsection Callbacks and Timers
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at c</A> ----------------- Level Restart --------------------
+ @node Level Restart
+ @subsection Level Restart
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at c</A> ----------------- Ending Conditions --------------------
+ @node Ending Conditions
+ @subsection Ending Conditions
+ 
+@@ -9358,46 +9411,45 @@
+ @tab @image{images/fl_bluegreen, 12mm} @tab @yref{fl_bluegreen}
+ @item @image{images/fl_blueslab, 12mm} @tab @yref{fl_blueslab}
+ @tab @image{images/fl_brick, 12mm} @tab @yref{fl_brick}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/fl_bridge_bw_closed, 12mm} @tab @yref{fl_bridge}_bw
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_bridge_gc_closed, 12mm} @tab @yref{fl_bridge}_gc
+ @tab @image{images/fl_bright, 12mm} @tab @yref{fl_bright}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/fl_concrete, 12mm} @tab @yref{fl_concrete}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/fl_darkgray, 12mm} @tab @yref{fl_darkgray}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/fl_concrete, 12mm} @tab @yref{fl_concrete}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_darkgray, 12mm} @tab @yref{fl_darkgray}
+ @tab @image{images/fl_dark, 12mm} @tab @yref{fl_dark}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/fl_dunes, 12mm} @tab @yref{fl_dunes}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/fl_fake_trigger, 12mm} @tab @yref{fl_fake_trigger}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/fl_dunes, 12mm} @tab @yref{fl_dunes}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_fake_trigger, 12mm} @tab @yref{fl_fake}_trigger
+ @tab @image{images/fl_gravel, 12mm} @tab @yref{fl_gravel}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/fl_gray, 12mm} @tab @yref{fl_gray}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/fl_hay, 12mm} @tab @yref{fl_hay}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/fl_gray, 12mm} @tab @yref{fl_gray}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_hay, 12mm} @tab @yref{fl_hay}
+ @tab @image{images/fl_himalaya, 12mm} @tab @yref{fl_himalaya}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/fl_ice_heating, 12mm} @tab @yref{fl_ice_heating}
+ @tab @image{images/fl_ice, 12mm} @tab @yref{fl_ice}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/fl_inverse_gray, 12mm} @tab @yref{fl_inverse_gray}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/fl_inverse_white, 12mm} @tab @yref{fl_inverse_white}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_inverse_gray, 12mm} @tab @yref{fl_inverse}_gray
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/fl_inverse_white, 12mm} @tab @yref{fl_inverse}_white
+ @tab @image{images/fl_ivory, 12mm} @tab @yref{fl_ivory}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/fl_lawn, 12mm} @tab @yref{fl_lawn}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/fl_marble, 12mm} @tab @yref{fl_marble}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_lawn, 12mm} @tab @yref{fl_lawn}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/fl_marble, 12mm} @tab @yref{fl_marble}
+ @tab @image{images/fl_metal, 12mm} @tab @yref{fl_metal}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/fl_mortar, 12mm} @tab @yref{fl_mortar}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/fl_pinkbumps, 12mm} @tab @yref{fl_pinkbumps}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_mortar, 12mm} @tab @yref{fl_mortar}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/fl_pinkbumps, 12mm} @tab @yref{fl_pinkbumps}
+ @tab @image{images/fl_plank, 12mm} @tab @yref{fl_plank}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/fl_platinum, 12mm} @tab @yref{fl_platinum}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/fl_red, 12mm} @tab @yref{fl_red}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_platinum, 12mm} @tab @yref{fl_platinum}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/fl_red, 12mm} @tab @yref{fl_red}
+ @tab @image{images/fl_redslab, 12mm} @tab @yref{fl_redslab}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/fl_rock, 12mm} @tab @yref{fl_rock}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/fl_rough, 12mm} @tab @yref{fl_rough}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_rock, 12mm} @tab @yref{fl_rock}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/fl_rough, 12mm} @tab @yref{fl_rough}
+ @tab @image{images/fl_sahara, 12mm} @tab @yref{fl_sahara}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/fl_samba, 12mm} @tab @yref{fl_samba}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/fl_sand, 12mm} @tab @yref{fl_sand}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_samba, 12mm} @tab @yref{fl_samba}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/fl_sand, 12mm} @tab @yref{fl_sand}
+ @tab @image{images/fl_space, 12mm} @tab @yref{fl_space}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/fl_stone, 12mm} @tab @yref{fl_stone}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/fl_swamp_heating, 12mm} @tab @yref{fl_swamp_heating}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_stone, 12mm} @tab @yref{fl_stone}
+ @tab @image{images/fl_swamp, 12mm} @tab @yref{fl_swamp}
+ @tab @image{images/fl_tigris, 12mm} @tab @yref{fl_tigris}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/fl_water_heating, 12mm} @tab @yref{fl_water_heating}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/fl_water, 12mm} @tab @yref{fl_water}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_water, 12mm} @tab @yref{fl_water}
+ @tab @image{images/fl_white, 12mm} @tab @yref{fl_white}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/fl_woven, 12mm} @tab @yref{fl_woven}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/fl_yinyang_yang, 12mm} @tab @yref{fl_yinyang_yang}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/fl_yinyang_yin, 12mm} @tab @yref{fl_yinyang_yin}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/fl_woven, 12mm} @tab @yref{fl_woven}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_yinyang_yang, 12mm} @tab @yref{fl_yinyang}_yang
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/fl_yinyang_yin, 12mm} @tab @yref{fl_yinyang}_yin
+ @end multitable
+ 
+ @c ----------------- Floor Attributes --------------------
+@@ -10446,7 +10498,7 @@
+ 
+ @item @b{Variants:}
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_space}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_space, 12mm} @b{fl_space}
+ @end table
+ @end table
+ 
+@@ -10592,7 +10644,7 @@
+ 
+ @item @b{Variants:}
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_abyss}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_abyss, 12mm} @b{fl_abyss}
+ @end table
+ @end table
+ 
+@@ -10635,7 +10687,7 @@
+ @table @asis
+ @item @b{state}, @ @ @i{values}: @code{CLOSED}, @code{OPEN}; @ @ @i{default}: @code{OPEN} @ @ @xref{state}
+ The state as visible and responsible for the actor ability to pass.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{flavor}, @ @ @i{values}: @code{&quot;gc&quot;}, @code{&quot;bw&quot;}, @code{&quot;bn&quot;}; @ @ @i{default}: @code{&quot;gc&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{flavor}, @ @ @i{values}: @code{&quot;gc&quot;}, @code{&quot;bw&quot;}, @code{&quot;bs&quot;}, @code{&quot;be&quot;}, @code{&quot;bn&quot;}; @ @ @i{default}: @code{&quot;gc&quot;}
+ The type of the bridge.
+ @item @b{adhesion}, @ @ @i{values}: number; @ @ @i{default}: 1.0 @ @ @xref{adhesion}
+ @item @b{friction}, @ @ @i{values}: number; @ @ @i{default}: 5.0 @ @ @xref{friction}
+@@ -10664,10 +10716,12 @@
+ 
+ @item @b{Variants:}
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_bridge} flavor = @code{&quot;gc&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_bridge_gc} flavor = @code{&quot;gc&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_bridge_bw} flavor = @code{&quot;bw&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_bridge_bn} flavor = @code{&quot;bn&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_bridge_gc_closed, 12mm} @b{fl_bridge} flavor = @code{&quot;gc&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_bridge_gc_closed, 12mm} @b{fl_bridge_gc} flavor = @code{&quot;gc&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_bridge_bw_closed, 12mm} @b{fl_bridge_bw} flavor = @code{&quot;bw&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_bridge_bw_closed, 12mm} @b{fl_bridge_bs} flavor = @code{&quot;bs&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_bridge_bw_closed, 12mm} @b{fl_bridge_be} flavor = @code{&quot;be&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_bridge_bw_closed, 12mm} @b{fl_bridge_bn} flavor = @code{&quot;bn&quot;}
+ @end table
+ 
+ @end table
+@@ -10697,8 +10751,8 @@
+ 
+ @item @b{Variants:}
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_fake_abyss}: flavor = @code{&quot;abyss&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_fake_trigger}: flavor = @code{&quot;trigger&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_abyss, 12mm} @b{fl_fake_abyss}: flavor = @code{&quot;abyss&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_fake_trigger, 12mm} @b{fl_fake_trigger}: flavor = @code{&quot;trigger&quot;}
+ @end table
+ @end table
+ 
+@@ -10731,7 +10785,7 @@
+ 
+ @item @b{Variants:}
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_hay}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_hay, 12mm} @b{fl_hay}
+ @item @b{fl_hay_framed}: faces = @code{&quot;nesw&quot;}
+ @end table
+ @end table
+@@ -10758,7 +10812,7 @@
+ 
+ @item @b{Variants:}
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_ice}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_ice, 12mm} @b{fl_ice}
+ @end table
+ @end table
+ 
+@@ -10781,9 +10835,9 @@
+ 
+ @item @b{Variants:}
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_inverse}: flavor = @code{&quot;white&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_inverse_white}: flavor = @code{&quot;white&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_inverse_gray}: flavor = @code{&quot;gray&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_inverse_white, 12mm} @b{fl_inverse}: flavor = @code{&quot;white&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_inverse_white, 12mm} @b{fl_inverse_white}: flavor = @code{&quot;white&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_inverse_gray, 12mm} @b{fl_inverse_gray}: flavor = @code{&quot;gray&quot;}
+ @end table
+ @end table
+ 
+@@ -10816,7 +10870,7 @@
+ 
+ @item @b{Variants:}
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_rock}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_rock, 12mm} @b{fl_rock}
+ @item @b{fl_rock_framed}: faces = @code{&quot;nesw&quot;}
+ @end table
+ @end table
+@@ -10941,7 +10995,7 @@
+ 
+ @item @b{Variants:}
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_swamp}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_swamp, 12mm} @b{fl_swamp}
+ @end table
+ @end table
+ 
+@@ -10984,7 +11038,7 @@
+ 
+ @item @b{Variants:}
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_thief}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_bluegray, 12mm} @b{fl_thief}
+ @end table
+ @end table
+ 
+@@ -11039,8 +11093,8 @@
+ 
+ @item @b{Variants:}
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_water}: state = @code{IDLE}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_water_source}: state = @code{FLOODING}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_water, 12mm} @b{fl_water}: state = @code{IDLE}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_water, 12mm} @b{fl_water_source}: state = @code{FLOODING}
+ @end table
+ @end table
+ 
+@@ -11112,9 +11166,9 @@
+ 
+ @item @b{Variants:}
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_yinyang}: state = @code{YIN}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_yinyang_yin}: state = @code{YIN}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{fl_yinyang_yang}: state = @code{YANG}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_yinyang_yin, 12mm} @b{fl_yinyang}: state = @code{YIN}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_yinyang_yin, 12mm} @b{fl_yinyang_yin}: state = @code{YIN}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_yinyang_yang, 12mm} @b{fl_yinyang_yang}: state = @code{YANG}
+ @end table
+ @end table
+ 
+@@ -13874,7 +13928,10 @@
+ @item @image{images/st_actorimpulse, 12mm} @tab @yref{st_actorimpulse}
+ @tab @image{images/st_ancient, 12mm} @tab @yref{st_ancient}
+ @tab @image{images/st_beads, 12mm} @tab @yref{st_beads}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/st_bluegray, 12mm} @tab @yref{st_bluegray}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_blocker, 12mm} @tab @yref{st_blocker}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_boulder, 12mm} @tab @yref{st_boulder}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_bluegray, 12mm} @tab @yref{st_bluegray}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_bluesand, 12mm} @tab @yref{st_bluesand}
+ @tab @image{images/st_blur_cross, 12mm} @tab @yref{st_blur}_cross
+ @tab @image{images/st_blur_straight, 12mm} @tab @yref{st_blur}_straight
+ @item @image{images/st_box_hay, 12mm} @tab @yref{st_box}_hay
+@@ -13887,34 +13944,40 @@
+ @tab @image{images/st_break_oxydc, 12mm} @tab @yref{st_break}_oxydc
+ @tab @image{images/st_break_plain, 12mm} @tab @yref{st_break}_plain
+ @item @image{images/st_break_white, 12mm} @tab @yref{st_break}_white
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_brick, 12mm} @tab @yref{st_brick}
+ @tab @image{images/st_brownie, 12mm} @tab @yref{st_brownie}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/st_brownmarble, 12mm} @tab @yref{st_brownmarble}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/st_brownpyramide, 12mm} @tab @yref{st_brownpyramide}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_brownmarble, 12mm} @tab @yref{st_brownmarble}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_brownpyramide, 12mm} @tab @yref{st_brownpyramide}
+ @tab @image{images/st_camouflage, 12mm} @tab @yref{st_camouflage}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/st_charge_minus, 12mm} @tab @yref{st_charge}_minus
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/st_charge_plus, 12mm} @tab @yref{st_charge}_plus
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_charge_minus, 12mm} @tab @yref{st_charge}_minus
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_charge_plus, 12mm} @tab @yref{st_charge}_plus
+ @tab @image{images/st_charge_zero, 12mm} @tab @yref{st_charge}_zero
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/st_chess_black, 12mm} @tab @yref{st_chess}_black
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/st_chess_white, 12mm} @tab @yref{st_chess}_white
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/st_concrete, 12mm} @tab @yref{st_concrete}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_chess_black, 12mm} @tab @yref{st_chess}_black
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_chess_white, 12mm} @tab @yref{st_chess}_white
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_coinslot, 12mm} @tab @yref{st_coinslot}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_concrete, 12mm} @tab @yref{st_concrete}
+ @tab @image{images/st_darkglass, 12mm} @tab @yref{st_darkglass}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/st_darkgray, 12mm} @tab @yref{st_darkgray}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/st_death, 12mm} @tab @yref{st_death}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_darkgray, 12mm} @tab @yref{st_darkgray}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_death, 12mm} @tab @yref{st_death}
+ @tab @image{images/st_dispenser_bombblack, 12mm} @tab @yref{st_dispenser}_bombblack
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/st_dispenser_bombwhite, 12mm} @tab @yref{st_dispenser}_bombwhite
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/st_dispenser_dynamite, 12mm} @tab @yref{st_dispenser}_dynamite
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_dispenser_bombwhite, 12mm} @tab @yref{st_dispenser}_bombwhite
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_dispenser_dynamite, 12mm} @tab @yref{st_dispenser}_dynamite
+ @tab @image{images/st_flash, 12mm} @tab @yref{st_flash}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/st_flat, 12mm} @tab @yref{st_flat}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_flat, 12mm} @tab @yref{st_flat}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_floppy_off, 12mm} @tab @yref{st_floppy}_off
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_floppy_on, 12mm} @tab @yref{st_floppy}_on
+ @tab @image{images/st_fourswitch, 12mm} @tab @yref{st_fourswitch}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/st_granite, 12mm} @tab @yref{st_granite}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/st_grate_cross, 12mm} @tab @yref{st_grate}_cross
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_granite, 12mm} @tab @yref{st_granite}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_grate_cross, 12mm} @tab @yref{st_grate}_cross
+ @tab @image{images/st_grate_framed, 12mm} @tab @yref{st_grate}_framed
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/st_greenbrown, 12mm} @tab @yref{st_greenbrown}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/st_greengray, 12mm} @tab @yref{st_greengray}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_greenbrown, 12mm} @tab @yref{st_greenbrown}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_greengray, 12mm} @tab @yref{st_greengray}
+ @tab @image{images/st_ice, 12mm} @tab @yref{st_ice}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A>                            @tab @yref{st_invisible}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/st_jamb_black, 12mm} @tab @yref{st_jamb}_black
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A>                            @tab @yref{st_invisible}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_jamb_black, 12mm} @tab @yref{st_jamb}_black
+ @tab @image{images/st_jamb_white, 12mm} @tab @yref{st_jamb}_white
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_key_off, 12mm} @tab @yref{st_key}_off
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_key_on, 12mm} @tab @yref{st_key}_on
+ @tab @image{images/st_knight, 12mm} @tab @yref{st_knight}
+ @item @image{images/st_lightglass, 12mm} @tab @yref{st_lightglass}
+ @tab @image{images/st_lightpassenger, 12mm} @tab @yref{st_lightpassenger}
+@@ -13924,33 +13987,47 @@
+ @tab @image{images/st_oxydc, 12mm} @tab @yref{st_oxyd}_c
+ @item @image{images/st_oxydd, 12mm} @tab @yref{st_oxyd}_d
+ @tab @image{images/st_oxyde, 12mm} @tab @yref{st_oxyd}_e
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/st_passage_black_square, 12mm} @tab @yref{st_passage}_black
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/st_passage_black_slash, 12mm} @tab @yref{st_passage}_black
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_panel, 12mm} @tab @yref{st_panel}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_passage_black_square, 12mm} @tab @yref{st_passage}_black
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_passage_black_slash, 12mm} @tab @yref{st_passage}_black
+ @tab @image{images/st_passage_black_cross, 12mm} @tab @yref{st_passage}_black
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/st_passage_black_frame, 12mm} @tab @yref{st_passage}_black
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/st_passage_white_square, 12mm} @tab @yref{st_passage}_white
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_passage_black_frame, 12mm} @tab @yref{st_passage}_black
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_passage_white_square, 12mm} @tab @yref{st_passage}_white
+ @tab @image{images/st_passage_white_slash, 12mm} @tab @yref{st_passage}_white
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/st_passage_white_cross, 12mm} @tab @yref{st_passage}_white
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/st_passage_white_frame, 12mm} @tab @yref{st_passage}_white
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_passage_white_cross, 12mm} @tab @yref{st_passage}_white
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_passage_white_frame, 12mm} @tab @yref{st_passage}_white
+ @tab @image{images/st_pinkbumps, 12mm} @tab @yref{st_pinkbumps}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/st_plaster, 12mm} @tab @yref{st_plaster}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/st_plop_slate, 12mm} @tab @yref{st_plop}_slate
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_plaster, 12mm} @tab @yref{st_plaster}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_plop_slate, 12mm} @tab @yref{st_plop}_slate
+ @tab @image{images/st_portal_horse, 12mm} @tab @yref{st_portal}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_pull, 12mm} @tab @yref{st_pull}
+ @tab @image{images/st_purplegray, 12mm} @tab @yref{st_purplegray}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/st_purplemarble, 12mm} @tab @yref{st_purplemarble}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/st_rawglass, 12mm} @tab @yref{st_rawglass}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_purplemarble, 12mm} @tab @yref{st_purplemarble}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_rawglass, 12mm} @tab @yref{st_rawglass}
+ @tab @image{images/st_rawglass_quad, 12mm} @tab @yref{st_rawglass}_quad
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/st_redbrown, 12mm} @tab @yref{st_redbrown}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/st_redfiber, 12mm} @tab @yref{st_redfiber}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_redbrown, 12mm} @tab @yref{st_redbrown}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_redfiber, 12mm} @tab @yref{st_redfiber}
+ @tab @image{images/st_redmarble, 12mm} @tab @yref{st_redmarble}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/st_redrock, 12mm} @tab @yref{st_redrock}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_redrock, 12mm} @tab @yref{st_redrock}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_rotator_ccw, 12mm} @tab @yref{st_rotator}_ccw
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_rotator_cw, 12mm} @tab @yref{st_rotator}_cw
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_rubberband, 12mm} @tab @yref{st_rubberband}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_scissors, 12mm} @tab @yref{st_scissors}
+ @tab @image{images/st_spitter_idle, 12mm} @tab @yref{st_spitter}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_stoneimpulse, 12mm} @tab @yref{st_stoneimpulse}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_stoneimpulse_hollow, 12mm} @tab @yref{st_stoneimpulse}_hollow
+ @tab @image{images/st_surprise, 12mm} @tab @yref{st_surprise}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_swap, 12mm} @tab @yref{st_swap}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_switch, 12mm} @tab @yref{st_switch}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_switch_black, 12mm} @tab @yref{st_switch}_black
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_switch_white, 12mm} @tab @yref{st_switch}_white
+ @item @image{images/st_tigris, 12mm} @tab @yref{st_tigris}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/st_woven, 12mm} @tab @yref{st_woven}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_turnstile, 12mm} @tab @yref{st_turnstile}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_turnstile_green, 12mm} @tab @yref{st_turnstile}_green
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_woven, 12mm} @tab @yref{st_woven}
+ @tab @image{images/st_yellow, 12mm} @tab @yref{st_yellow}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @image{images/st_yinyang, 12mm} @tab @yref{st_yinyang}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at tab</A> @image{images/st_yinyang_inactive, 12mm} @tab @yref{st_yinyang}_inactive 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at tab</A> @image{images/st_yinyang, 12mm} @tab @yref{st_yinyang}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_yinyang_inactive, 12mm} @tab @yref{st_yinyang}_inactive 
+ @end multitable
+ 
+ @c ----------------- Stone Attributes --------------------
+@@ -14490,7 +14567,7 @@
+ @table @asis
+ @item @b{Variants:}
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_bluesand}: connections = @code{&quot;&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_bluesand, 12mm} @b{st_bluesand}: connections = @code{&quot;&quot;}
+ @item @b{st_bluesand_w}: connections = @code{&quot;w&quot;}
+ @item @b{st_bluesand_s}: connections = @code{&quot;s&quot;}
+ @item @b{st_bluesand_sw}: connections = @code{&quot;sw&quot;}
+@@ -14522,7 +14599,7 @@
+ @table @asis
+ @item @b{Variants:}
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_brick}: connections = @code{&quot;&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_brick, 12mm} @b{st_brick}: connections = @code{&quot;&quot;}
+ @item @b{st_brick_w}: connections = @code{&quot;w&quot;}
+ @item @b{st_brick_s}: connections = @code{&quot;s&quot;}
+ @item @b{st_brick_sw}: connections = @code{&quot;sw&quot;}
+@@ -14553,7 +14630,7 @@
+ @table @asis
+ @item @b{Variants:}
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_panel}: connections = @code{&quot;&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_panel, 12mm} @b{st_panel}: connections = @code{&quot;&quot;}
+ @item @b{st_panel_w}: connections = @code{&quot;w&quot;}
+ @item @b{st_panel_s}: connections = @code{&quot;s&quot;}
+ @item @b{st_panel_sw}: connections = @code{&quot;sw&quot;}
+@@ -14800,9 +14877,9 @@
+ 
+ @item @b{Variants:}
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_blocker}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_blocker, 12mm}  @b{st_blocker}
+ A standard blocker stone.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_blocker_new}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_blocker, 12mm}  @b{st_blocker_new}
+ A blocker that just starts growing. Mainly used internally as the direct
+ successor of an @ref{it_blocker}. But it may be useful to generate an initial
+ snapshot of a moving boulder over a blocker line, too. See example levels.
+@@ -14921,11 +14998,11 @@
+ @item @b{Variants:}
+ 
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_boulder}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_boulder_n}: orientation = @code{NORTH}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_boulder_e}: orientation = @code{EAST}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_boulder_s}: orientation = @code{SOUTH}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_boulder_w}: orientation = @code{WEST}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_boulder, 12mm} @b{st_boulder}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_boulder, 12mm} @b{st_boulder_n}: orientation = @code{NORTH}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_white, 12mm} @b{st_boulder_e}: orientation = @code{EAST}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_white, 12mm} @b{st_boulder_s}: orientation = @code{SOUTH}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/fl_white, 12mm} @b{st_boulder_w}: orientation = @code{WEST}
+ @end table
+ 
+ @end table
+@@ -15306,8 +15383,8 @@
+ @item @b{Variants:}
+ 
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_coinslot}: instant = @code{false}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_coinslot_instant}: instant = @code{true}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_coinslot, 12mm} @b{st_coinslot}: instant = @code{false}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_coinslot, 12mm} @b{st_coinslot_instant}: instant = @code{true}
+ @end table
+ 
+ @end table
+@@ -15798,7 +15875,12 @@
+ 
+ @item @b{Action:} @ @ @xref{target}, @ @ @xref{action}
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Variants:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_floppy_off, 12mm} @b{st_floppy} with state=@code{OFF}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_floppy_on, 12mm} @b{st_floppy} with state=@code{ON}
+ @end table
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> table
+ 
+ @c ----------------- Fourswitch Stone --------------------
+ @node st_fourswitch
+@@ -16161,7 +16243,12 @@
+ 
+ @item @b{Action:} @ @ @xref{target}, @ @ @xref{action}
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Variants:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_key_off, 12mm} @b{st_key} with state=@code{OFF}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_key_on, 12mm} @b{st_key} with state=@code{ON}
+ @end table
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> table
+ @c ----------------- Knight Stone --------------------
+ @node st_knight
+ @subsection st_knight
+@@ -17066,7 +17153,6 @@
+ @item @b{Action:} none
+ 
+ @item @b{Variants:}
+-
+ @table @asis
+ @item @image{images/st_portal_horse, 12mm} @b{st_portal}: flavor=@code{&quot;horse&quot;}
+ @item @image{images/st_portal_horse, 12mm} @b{st_portal_horse}: flavor=@code{&quot;horse&quot;}
+@@ -17120,7 +17206,11 @@
+ 
+ @item @b{Action:} none
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Variants:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_pull, 12mm} @b{st_pull}
+ @end table
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> table
+ 
+ @c ----------------- Puzzle Stone --------------------
+ @node st_puzzle
+@@ -17400,13 +17490,11 @@
+ @end table
+ 
+ @item @b{Variants:}
+-
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_rotator}: state = @code{CW}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_rotator_cw}: state = @code{CW}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_rotator_ccw}: state = @code{CCW}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_rotator_cw, 12mm} @b{st_rotator}: state = @code{CW}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_rotator_cw, 12mm} @b{st_rotator_cw}: state = @code{CW}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_rotator_ccw, 12mm} @b{st_rotator_ccw}: state = @code{CCW}
+ @end table
+-
+ @end table
+ 
+ @c ----------------- Rubberband Stone --------------------
+@@ -17449,7 +17537,11 @@
+ 
+ @item @b{Messages:} none
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Variants:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_rubberband, 12mm} @b{st_rubberband}
+ @end table
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> table
+ 
+ @c ----------------- Scissors Stone --------------------
+ @node st_scissors
+@@ -17469,7 +17561,11 @@
+ Sends an action message with value @samp{true} on freeing an actor from its
+ rubberbands.
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Variants:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_scissors, 12mm} @b{st_scissors}
+ @end table
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> table
+ 
+ @c ----------------- Shogun Stone --------------------
+ @node st_shogun
+@@ -17736,11 +17832,11 @@
+ 
+ @item @b{Variants:}
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_stoneimpulse}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_stoneimpulse_movable}: movable = @code{true}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_stoneimpulse_hollow}: hollow = @code{true}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_stoneimpulse_steady}: steady = @code{true}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_stoneimpulse_new}:
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_stoneimpulse, 12mm} @b{st_stoneimpulse}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_stoneimpulse, 12mm} @b{st_stoneimpulse_movable}: movable = @code{true}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_stoneimpulse_hollow, 12mm} @b{st_stoneimpulse_hollow}: hollow = @code{true}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_stoneimpulse, 12mm} @b{st_stoneimpulse_steady}: steady = @code{true}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_stoneimpulse, 12mm} @b{st_stoneimpulse_new}:
+ A stone that is about to pulse when being set.
+ @end table
+ 
+@@ -17831,7 +17927,11 @@
+ 
+ @item @b{Action:} none
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Variants:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_swap, 12mm} @b{st_swap}
+ @end table
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> table
+ 
+ @c ----------------- Switch Stone --------------------
+ @node st_switch
+@@ -17878,9 +17978,9 @@
+ @item @b{Variants:}
+ 
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_switch}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_switch_black}: color = @code{BLACK}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_switch_white}: color = @code{WHITE}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_switch, 12mm} @b{st_switch}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_switch_black, 12mm} @b{st_switch_black}: color = @code{BLACK}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_switch_white, 12mm} @b{st_switch_white}: color = @code{WHITE}
+ @end table
+ 
+ @end table
+@@ -18064,9 +18164,9 @@
+ 
+ @item @b{Variants:}
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_turnstile}: flavor = @code{&quot;red&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_turnstile_red}: flavor = @code{&quot;red&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @b{st_turnstile_green}: flavor = @code{&quot;green&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_turnstile, 12mm} @b{st_turnstile}: flavor = @code{&quot;red&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_turnstile, 12mm} @b{st_turnstile_red}: flavor = @code{&quot;red&quot;}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @image{images/st_turnstile_green, 12mm} @b{st_turnstile_green}: flavor = @code{&quot;green&quot;}
+ @end table
+ @end table
+ 
+
+Modified: trunk/doc/reference/images/Makefile.am
+===================================================================
+--- trunk/doc/reference/images/Makefile.am	2009-06-21 15:19:05 UTC (rev 1732)
++++ trunk/doc/reference/images/Makefile.am	2009-06-21 22:35:00 UTC (rev 1733)
+@@ -13,6 +13,8 @@
+ 	fl_bluegreen.png \
+ 	fl_blueslab.png \
+ 	fl_brick.png \
++	fl_bridge_bw_closed.png \
++	fl_bridge_gc_closed.png \
+ 	fl_bright.png \
+ 	fl_concrete.png \
+ 	fl_dark.png \
+@@ -24,7 +26,6 @@
+ 	fl_hay.png \
+ 	fl_himalaya.png \
+ 	fl_ice.png \
+-	fl_ice_heating.png \
+ 	fl_inverse_gray.png \
+ 	fl_inverse_white.png \
+ 	fl_ivory.png \
+@@ -45,10 +46,8 @@
+ 	fl_space.png \
+ 	fl_stone.png \
+ 	fl_swamp.png \
+-	fl_swamp_heating.png \
+ 	fl_tigris.png \
+ 	fl_water.png \
+-	fl_water_heating.png \
+ 	fl_white.png \
+ 	fl_woven.png \
+ 	fl_yinyang_yang.png \
+@@ -130,9 +129,12 @@
+ 	st_actorimpulse.png \
+ 	st_ancient.png \
+ 	st_beads.png \
++	st_blocker.png \
+ 	st_bluegray.png \
++	st_bluesand.png \
+ 	st_blur_cross.png \
+ 	st_blur_straight.png \
++	st_boulder.png \
+ 	st_box_hay.png \
+ 	st_box_rock.png \
+ 	st_box_wood.png \
+@@ -143,6 +145,7 @@
+ 	st_break_oxydc.png \
+ 	st_break_plain.png \
+ 	st_break_white.png \
++	st_brick.png \
+ 	st_brownie.png \
+ 	st_brownmarble.png \
+ 	st_brownpyramide.png \
+@@ -152,6 +155,7 @@
+ 	st_charge_zero.png \
+ 	st_chess_black.png \
+ 	st_chess_white.png \
++	st_coinslot.png \
+ 	st_concrete.png \
+ 	st_darkglass.png \
+ 	st_darkgray.png \
+@@ -164,6 +168,8 @@
+ 	st_flat.png \
+ 	st_flat_cracked.png \
+ 	st_flat_fire.png \
++	st_floppy_off.png \
++	st_floppy_on.png \
+ 	st_fourswitch.png \
+ 	st_granite.png \
+ 	st_grate_cross.png \
+@@ -173,6 +179,8 @@
+ 	st_ice.png \
+ 	st_jamb_black.png \
+ 	st_jamb_white.png \
++	st_key_off.png \
++	st_key_on.png \
+ 	st_knight.png \
+ 	st_lightglass.png \
+ 	st_lightpassenger.png \
+@@ -182,6 +190,7 @@
+ 	st_oxydc.png \
+ 	st_oxydd.png \
+ 	st_oxyde.png \
++	st_panel.png \
+ 	st_passage_black_cross.png \
+ 	st_passage_black_frame.png \
+ 	st_passage_black_slash.png \
+@@ -193,6 +202,7 @@
+ 	st_pinkbumps.png \
+ 	st_plaster.png \
+ 	st_plop_slate.png \
++	st_pull.png \
+ 	st_portal_horse.png \
+ 	st_purplegray.png \
+ 	st_purplemarble.png \
+@@ -202,9 +212,21 @@
+ 	st_redfiber.png \
+ 	st_redmarble.png \
+ 	st_redrock.png \
++	st_rotator_ccw.png \
++	st_rotator_cw.png \
++	st_rubberband.png \
+ 	st_spitter_idle.png \
++	st_scissors.png \
++	st_stoneimpulse.png \
++	st_stoneimpulse_hollow.png \
+ 	st_surprise.png \
++	st_swap.png \
++	st_switch.png \
++	st_switch_black.png \
++	st_switch_white.png \
+ 	st_tigris.png \
++	st_turnstile.png \
++	st_turnstile_green.png \
+ 	st_woven.png \
+ 	st_yellow.png \
+ 	st_yinyang.png \
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001161.html">[Enigma-game-svn] r1732 - trunk/src/lev
+</A></li>
+	<LI>Next message: <A HREF="001163.html">[Enigma-game-svn] r1734 - in trunk: data data/levels/lib	doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1162">[ date ]</a>
+              <a href="thread.html#1162">[ thread ]</a>
+              <a href="subject.html#1162">[ subject ]</a>
+              <a href="author.html#1162">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

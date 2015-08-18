@@ -1,0 +1,180 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1374 - in trunk/src: others stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-November/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1374%20-%20in%20trunk/src%3A%20others%20stones&In-Reply-To=%3C200811022251.mA2MpwX9007757%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000802.html">
+   <LINK REL="Next"  HREF="000804.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1374 - in trunk/src: others stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1374%20-%20in%20trunk/src%3A%20others%20stones&In-Reply-To=%3C200811022251.mA2MpwX9007757%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1374 - in trunk/src: others stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Nov  2 23:51:58 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000802.html">[Enigma-game-svn] r1373 - homepage/input
+</A></li>
+        <LI>Next message: <A HREF="000804.html">[Enigma-game-svn] r1375 - in homepage: images/lotm input/lotm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#803">[ date ]</a>
+              <a href="thread.html#803">[ thread ]</a>
+              <a href="subject.html#803">[ subject ]</a>
+              <a href="author.html#803">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-11-02 23:51:57 +0100 (Sun, 02 Nov 2008)
+New Revision: 1374
+
+Modified:
+   trunk/src/others/Rubberband.cc
+   trunk/src/stones/PuzzleStone.cc
+Log:
+Trunk 1.1:  new API 
+- puzzle:
+  - explode two adjacent complete blue puzzles in per.oxyd mode
+- rubberband:
+  in case of a blocked actor a limit can be exceeded due to collision forces -
+  do correct these possible small errors on next timestep before they sum up
+
+
+Modified: trunk/src/others/Rubberband.cc
+===================================================================
+--- trunk/src/others/Rubberband.cc	2008-11-02 16:17:34 UTC (rev 1373)
++++ trunk/src/others/Rubberband.cc	2008-11-02 22:51:57 UTC (rev 1374)
+@@ -184,8 +184,17 @@
+ 
+             if (isMax &amp;&amp; (relspeed &lt; 0) || isMin &amp;&amp; (relspeed &gt;0))
+                 relspeed = 0;
++                
+             force = (dmu * relspeed / dt) * vn;
+             force = force * (0.5 + 0.4 / numRubbers);   // damping for inverse friction and multicollision
++
++            // in case one actor is blocked the length can exceed the limits due to later force corrections
++            // in the last timestep - we need to correct possible small errors before they sum up
++            if (isMax &amp;&amp; (len &gt; maxLength) &amp;&amp; (relspeed &gt;= 0))
++                force = (dmu * (len - maxLength) / dt / dt) * vn;
++            if (isMin &amp;&amp; (len &lt; minLength) &amp;&amp; (relspeed &lt;= 0))
++                force = (dmu * (len - minLength) / dt / dt) * vn;
++
+ //            Log &lt;&lt; &quot;Rubber force &quot; &lt;&lt; force1 &lt;&lt;  &quot;  &quot; &lt;&lt; force2 &lt;&lt; &quot;  relspeed  &quot; &lt;&lt; relspeed  &lt;&lt; &quot; both &quot; &lt;&lt; isBoth &lt;&lt; &quot;\n&quot;;
+             ai1-&gt;collforce += force;
+             ai2-&gt;collforce -= force;
+
+Modified: trunk/src/stones/PuzzleStone.cc
+===================================================================
+--- trunk/src/stones/PuzzleStone.cc	2008-11-02 16:17:34 UTC (rev 1373)
++++ trunk/src/stones/PuzzleStone.cc	2008-11-02 22:51:57 UTC (rev 1374)
+@@ -22,6 +22,7 @@
+ #include &quot;errors.hh&quot;
+ #include &quot;main.hh&quot;
+ #include &quot;player.hh&quot;
++#include &quot;server.hh&quot;
+ #include &quot;world.hh&quot;
+ #include &lt;algorithm&gt;
+ 
+@@ -451,37 +452,35 @@
+             if (huddle.size() == cluster.size()) {
+                 exploded = true;
+             }
+-//            else {
+-//                if (getAttr(&quot;color&quot;) == BLUE) {
+-//                    // check if 'huddle' is made up of complete clusters :
+-//
+-//                    while (!huddle.empty()) {
+-//                        // remove one complete cluster from 'huddle'
+-//                        markList(cluster, true);
+-//                        for (PuzzleList::iterator itr = huddle.begin(); itr != huddle.end(); ) {
+-//                            if ((*itr)-&gt;objFlags &amp; OBJBIT_VISITED) {
+-//                                (*itr)-&gt;objFlags &amp;= ~OBJBIT_VISITED;
+-//                                PuzzleList::iterator ditr = itr;
+-//                                ++itr;
+-//                                huddle.erase(ditr);
+-//                            } else
+-//                               ++itr;
+-//                        }
+-//
+-//                        if (huddle.empty()) { // none left -&gt; all were complete
+-//                            exploded = true;
+-//                            break;
+-//                        }
+-//
+-//                        // look for next complete cluster :
+-//                        cluster.clear();
+-//                        PuzzleStone *pz = huddle.front();
+-//                        if (!pz-&gt;findFragment(cluster)) {
+-//                            break; // incomplete cluster found -&gt; don't explode
+-//                        }
+-//                    }
+-//                }
+-//            }
++            else if ((server::GameCompatibility == GAMET_PEROXYD) &amp;&amp; (getAttr(&quot;color&quot;) == BLUE)) {
++                // check if 'huddle' is made up of complete clusters :
++
++                while (!huddle.empty()) {
++                    // remove one complete cluster from 'huddle'
++                    markList(cluster, true);
++                    for (PuzzleList::iterator itr = huddle.begin(); itr != huddle.end(); ) {
++                        if ((*itr)-&gt;objFlags &amp; OBJBIT_VISITED) {
++                            (*itr)-&gt;objFlags &amp;= ~OBJBIT_VISITED;
++                            PuzzleList::iterator ditr = itr;
++                            ++itr;
++                            huddle.erase(ditr);
++                        } else
++                           ++itr;
++                    }
++
++                    if (huddle.empty()) { // none left -&gt; all were complete
++                        exploded = true;
++                        break;
++                    }
++
++                    // look for next complete cluster :
++                    cluster.clear();
++                    PuzzleStone *pz = huddle.front();
++                    if (!pz-&gt;findFragment(cluster)) {
++                        break; // incomplete cluster found -&gt; don't explode
++                    }
++                }
++            }
+         }
+ 
+         if (exploded) {
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000802.html">[Enigma-game-svn] r1373 - homepage/input
+</A></li>
+	<LI>Next message: <A HREF="000804.html">[Enigma-game-svn] r1375 - in homepage: images/lotm input/lotm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#803">[ date ]</a>
+              <a href="thread.html#803">[ thread ]</a>
+              <a href="subject.html#803">[ subject ]</a>
+              <a href="author.html#803">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

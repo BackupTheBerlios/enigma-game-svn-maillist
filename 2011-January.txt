@@ -1,0 +1,810 @@
+From ral at mail.berlios.de  Sun Jan  9 23:33:43 2011
+From: ral at mail.berlios.de (ral at mail.berlios.de)
+Date: Sun,  9 Jan 2011 23:33:43 +0100
+Subject: [Enigma-game-svn] r2196 - in trunk: data doc/reference src
+Message-ID: <20110109223344.9EFB3480BEC@sheep.berlios.de>
+
+Author: ral
+Date: 2011-01-09 23:33:43 +0100 (Sun, 09 Jan 2011)
+New Revision: 2196
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/doc/reference/enigma-ref.texi
+   trunk/src/lua.cc
+Log:
+resolver autotile: substitute wildcard in keys, too.
+
+- see refman description
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2010-12-31 18:30:43 UTC (rev 2195)
++++ trunk/data/api2init.lua	2011-01-09 22:33:43 UTC (rev 2196)
+@@ -1,5 +1,5 @@
+ ------------------------------------------------------------------------
+--- Copyright (C) 2008,2009 Ronald Lamprecht
++-- Copyright (C) 2008,2009,2010,211 Ronald Lamprecht
+ --
+ -- This program is free software; you can redistribute it and/or
+ -- modify it under the terms of the GNU General Public License
+@@ -546,15 +546,16 @@
+     return context
+ end
+ 
+-function res.autotile_newtile(key, template, substitution)
++function res.autotile_newtile(context, evaluator, key, x, y, template, substitution)
+     local decl = template:_declaration()  -- get a deep copy
+     local result
+     for i, tile in ipairs(decl) do
+         if type(tile) == "string" then
++            local subkey = string.gsub(tile, "%%%%", substitution)
+             if result == nil then
+-                result = ti[tile]
++                result = evaluator(context[3], subkey, x, y)
+             else
+-                result = result .. ti[tile]
++                result = result .. evaluator(context[3], subkey, x, y)
+             end
+         else
+             local at = {}   -- attribute table
+@@ -603,7 +604,7 @@
+                     and first <= candidate and candidate <= last then
+                 local tile = evaluator(context[3], key, x, y)
+                 if tile == nil then
+-                    res.autotile_newtile(key, ti[rule[3]], candidate - first + offset)
++                    res.autotile_newtile(context, evaluator, key, x, y, ti[rule[3]], candidate - first + offset)
+                     return ti[key]
+                 else
+                     return tile
+@@ -613,7 +614,7 @@
+             -- prefix based substitution
+             local tile = evaluator(context[3], key, x, y)
+             if tile == nil then
+-                res.autotile_newtile(key, ti[rule[2]], string.sub(key, #(rule[1]) + 1))
++                res.autotile_newtile(context, evaluator, key, x, y, ti[rule[2]], string.sub(key, #(rule[1]) + 1))
+                 return ti[key]
+             else
+                 return tile
+
+Modified: trunk/doc/reference/enigma-ref.texi
+===================================================================
+--- trunk/doc/reference/enigma-ref.texi	2010-12-31 18:30:43 UTC (rev 2195)
++++ trunk/doc/reference/enigma-ref.texi	2011-01-09 22:33:43 UTC (rev 2196)
+@@ -23501,11 +23501,14 @@
+ Prefix rules need a key length of at least 2. You can not use it with maps
+ of just one character per tile. The resolver will create a tile declaration for
+ any tile key in the map that matches the given prefix. A copy of the template
+-will be taken and all occurrences of the two characters @samp{%%} will be
+-substituted by a single percent sign followed by the suffix of the used tile
+-key. Thus a key of @samp{AD} will target the laser @samp{laser%D}. You need to
+-use the key @samp{LD} in the map for the matching laser.
++will be taken.
+ 
++Within this copy of the template all occurrences of the two characters @samp{%%}
++in explicit object declarations will be substituted by a single percent sign 
++followed by the suffix of the used tile key. Thus a key of @samp{AD} will target
++the laser @samp{laser%D}. You need to use the key @samp{LD} in the map for the 
++matching laser.
++
+ Rangerules match any tile key in the given range. It can well be used in one
+ character key maps. But it can be used in multicharacter maps, too. In this case
+ the given first and last keys may just differ in the last character. Again a
+@@ -23524,6 +23527,19 @@
+ ti["template"] = ti["~"] .. ti(@{"it_trigger", target=@{"door%%#*","laser%%"@}@}) .. @{"st_grate1"@}
+ @end example
+ 
++A pattern substitution can even take place on a key of a referenced base tile.
++Every occurrence of the two characters @samp{%%} in the key will be substituted
++by the suffix of the used tile key without a preceeding percent sign. E.g. the
++template:
++
++ at example
++ti["template"] = ti["P%%"] .. @{"st_floppy", target="laser%%"@}
++ at end example
++
++applied to a key with the suffix @samp{d} will result in a base tile key @samp{Pd}.
++This feature is especially useful if the autotile resolver is chained to 
++another subresolver which generates the base tiles.
++
+ @item @b{Full Example:}
+ @example
+ ti[" "] = @{"fl_sahara"@}
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2010-12-31 18:30:43 UTC (rev 2195)
++++ trunk/src/lua.cc	2011-01-09 22:33:43 UTC (rev 2196)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2007,2008,2009,2010 Ronald Lamprecht
++ * Copyright (C) 2007,2008,2009,2010,2011 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -3004,19 +3004,6 @@
+ 
+ MethodMap tilesMethodeMap;
+ 
+-static int dispatchTilesReadAccess(lua_State *L) {
+-//    Log << "Tiles read key - " << lua_tostring(L, 2) << "\n";
+-    if (!lua_isstring(L, 2)) {     // sideeffect: numbers are converted to string
+-        throwLuaError(L, "Tiles: key is not a string");
+-        return 0;
+-    }
+-    lua_getmetatable(L, 1);
+-    lua_rawgeti(L, -1, 1);    // content table
+-    lua_pushvalue(L, 2);      // copy key
+-    lua_rawget(L, -2);        // check for existing entry in table
+-    return 1;
+-}
+-
+ static int dispatchTilesWriteAccess(lua_State *L) {
+ //    Log << "Tiles write key - " << lua_tostring(L, 2) << "\n";
+     if (server::EnigmaCompatibility < 1.10) {
+@@ -3050,6 +3037,31 @@
+     return 0;
+ }
+ 
++static int dispatchTilesReadAccess(lua_State *L) {
++//    Log << "Tiles read key - " << lua_tostring(L, 2) << "\n";
++    if (!lua_isstring(L, 2)) {     // sideeffect: numbers are converted to string
++        throwLuaError(L, "Tiles: key is not a string");
++        return 0;
++    }
++    std::string key = lua_tostring(L, 2);
++    lua_getmetatable(L, 1);
++    lua_rawgeti(L, -1, 1);    // content table
++    lua_pushvalue(L, 2);      // copy key
++    lua_rawget(L, -2);        // check for existing entry in table
++    if (lua_isnil(L, -1) && key.find("%%") != string::npos) {  // autotile wildcard
++        // insert a dummy tile declaration
++        lua_pop(L, 3);            // cleanup stack
++        lua_newtable(L);          // dummy declaration as value for key
++        dispatchTilesWriteAccess(L); // insert dummy entry
++        // get entry as return value
++        lua_getmetatable(L, 1);
++        lua_rawgeti(L, -1, 1);    // content table
++        lua_pushvalue(L, 2);      // copy key
++        lua_rawget(L, -2);        // get entry in table
++    }
++    return 1;
++}
++
+ static int pushNewTiles(lua_State *L) {
+     // tiles is a singleton
+     
+
+
+
+From ral at mail.berlios.de  Mon Jan 10 00:10:01 2011
+From: ral at mail.berlios.de (ral at mail.berlios.de)
+Date: Mon, 10 Jan 2011 00:10:01 +0100
+Subject: [Enigma-game-svn] r2197 - homepage/input
+Message-ID: <20110109231001.4EEC7480D96@sheep.berlios.de>
+
+Author: ral
+Date: 2011-01-10 00:10:00 +0100 (Mon, 10 Jan 2011)
+New Revision: 2197
+
+Modified:
+   homepage/input/stat-other.html
+   homepage/input/table-hcp.html
+   homepage/input/table-rat.html
+   homepage/input/table-solved.html
+   homepage/input/table-wr.html
+Log:
+hp statistics December 2010
+
+Modified: homepage/input/stat-other.html
+===================================================================
+--- homepage/input/stat-other.html	2011-01-09 22:33:43 UTC (rev 2196)
++++ homepage/input/stat-other.html	2011-01-09 23:10:00 UTC (rev 2197)
+@@ -1,22 +1,22 @@
+   <div class="stat-help">
+     <h3>$$Other_Statistics$$</h3>
+     <h4>$$Scores$$</h4>
+-      104142 $$single_level_scores$$.
++      104270 $$single_level_scores$$.
+     <h4>$$Ratings$$</h4>
+-      20655 $$single_level_ratings$$ 4.97 $$and_distribution$$: 
++      20702 $$single_level_ratings$$ 4.97 $$and_distribution$$: 
+       <table>
+         <colgroup><col width="80"><col width="80"></colgroup>
+         <tr><th>$$rating$$</th><th>$$count$$</th></tr>
+         <tr><td class="num">0</td><td class="num">126</td></tr>
+-        <tr><td class="num">1</td><td class="num">362</td></tr>
+-        <tr><td class="num">2</td><td class="num">1081</td></tr>
+-        <tr><td class="num">3</td><td class="num">2697</td></tr>
+-        <tr><td class="num">4</td><td class="num">3874</td></tr>
+-        <tr><td class="num">5</td><td class="num">4912</td></tr>
+-        <tr><td class="num">6</td><td class="num">3508</td></tr>
+-        <tr><td class="num">7</td><td class="num">2518</td></tr>
+-        <tr><td class="num">8</td><td class="num">1008</td></tr>
+-        <tr><td class="num">9</td><td class="num">392</td></tr>
++        <tr><td class="num">1</td><td class="num">363</td></tr>
++        <tr><td class="num">2</td><td class="num">1082</td></tr>
++        <tr><td class="num">3</td><td class="num">2703</td></tr>
++        <tr><td class="num">4</td><td class="num">3877</td></tr>
++        <tr><td class="num">5</td><td class="num">4926</td></tr>
++        <tr><td class="num">6</td><td class="num">3520</td></tr>
++        <tr><td class="num">7</td><td class="num">2525</td></tr>
++        <tr><td class="num">8</td><td class="num">1009</td></tr>
++        <tr><td class="num">9</td><td class="num">394</td></tr>
+         <tr><td class="num">10</td><td class="num">177</td></tr>
+       </table>
+   </div>
+
+Modified: homepage/input/table-hcp.html
+===================================================================
+--- homepage/input/table-hcp.html	2011-01-09 22:33:43 UTC (rev 2196)
++++ homepage/input/table-hcp.html	2011-01-09 23:10:00 UTC (rev 2197)
+@@ -1,95 +1,95 @@
+   <table>
+-    <caption>$$Handicap_Statistics$$ $$November$$ 2010</caption>
++    <caption>$$Handicap_Statistics$$ $$December$$ 2010</caption>
+     <colgroup><col width="130"><col width="220"></colgroup>
+     <tr><th>$$solved_hcp$$</th><th class="left">$$user$$</th></tr>
+-     <tr><td class="num">-170.1</td><td class="left">'Medimaster'</td></tr>
+-     <tr><td class="num">-153.3</td><td class="left">'Moneymaker'</td></tr>
+-     <tr><td class="num"> -98.2</td><td class="left">'l'ane'</td></tr>
+-     <tr><td class="num"> -98.2</td><td class="left">'daydreamer'</td></tr>
+-     <tr><td class="num"> -66.9</td><td class="left">'Mentist'</td></tr>
+-     <tr><td class="num"> -66.0</td><td class="left">'Stupid'</td></tr>
+-     <tr><td class="num"> -64.6</td><td class="left">'Johannes'</td></tr>
+-     <tr><td class="num"> -62.6</td><td class="left">'Daisy'</td></tr>
+-     <tr><td class="num"> -58.6</td><td class="left">'Angolino'</td></tr>
+-     <tr><td class="num"> -56.5</td><td class="left">'dev0'</td></tr>
+-     <tr><td class="num"> -53.9</td><td class="left">'Great Scott'</td></tr>
+-     <tr><td class="num"> -47.7</td><td class="left">'Crystalicum'</td></tr>
+-     <tr><td class="num"> -46.8</td><td class="left">'Skywolf'</td></tr>
+-     <tr><td class="num"> -46.1</td><td class="left">'Duffy'</td></tr>
+-     <tr><td class="num"> -43.9</td><td class="left">'Malla'</td></tr>
+-     <tr><td class="num"> -42.1</td><td class="left">'Alexandros'</td></tr>
+-     <tr><td class="num"> -41.9</td><td class="left">'Emmanuel'</td></tr>
+-     <tr><td class="num"> -41.9</td><td class="left">'ryujun'</td></tr>
+-     <tr><td class="num"> -36.9</td><td class="left">'Another'</td></tr>
+-     <tr><td class="num"> -33.3</td><td class="left">'Django'</td></tr>
+-     <tr><td class="num"> -30.0</td><td class="left">'Gloop'</td></tr>
+-     <tr><td class="num"> -23.8</td><td class="left">'Taztunes'</td></tr>
+-     <tr><td class="num"> -22.6</td><td class="left">'Safalra'</td></tr>
+-     <tr><td class="num"> -22.0</td><td class="left">'Zekobah'</td></tr>
+-     <tr><td class="num"> -19.3</td><td class="left">'Ludmian'</td></tr>
+-     <tr><td class="num"> -17.2</td><td class="left">'Zephyr'</td></tr>
+-     <tr><td class="num"> -17.1</td><td class="left">'H-J.Epting'</td></tr>
+-     <tr><td class="num"> -16.2</td><td class="left">'dpl'</td></tr>
+-     <tr><td class="num"> -16.0</td><td class="left">'B-Huff'</td></tr>
+-     <tr><td class="num"> -14.6</td><td class="left">'bojster'</td></tr>
++     <tr><td class="num">-170.8</td><td class="left">'Medimaster'</td></tr>
++     <tr><td class="num">-153.0</td><td class="left">'Moneymaker'</td></tr>
++     <tr><td class="num"> -98.1</td><td class="left">'l'ane'</td></tr>
++     <tr><td class="num"> -97.9</td><td class="left">'daydreamer'</td></tr>
++     <tr><td class="num"> -66.7</td><td class="left">'Mentist'</td></tr>
++     <tr><td class="num"> -65.8</td><td class="left">'Stupid'</td></tr>
++     <tr><td class="num"> -64.4</td><td class="left">'Johannes'</td></tr>
++     <tr><td class="num"> -62.5</td><td class="left">'Daisy'</td></tr>
++     <tr><td class="num"> -60.9</td><td class="left">'Angolino'</td></tr>
++     <tr><td class="num"> -56.3</td><td class="left">'dev0'</td></tr>
++     <tr><td class="num"> -53.8</td><td class="left">'Great Scott'</td></tr>
++     <tr><td class="num"> -47.6</td><td class="left">'Crystalicum'</td></tr>
++     <tr><td class="num"> -46.6</td><td class="left">'Skywolf'</td></tr>
++     <tr><td class="num"> -46.0</td><td class="left">'Duffy'</td></tr>
++     <tr><td class="num"> -43.8</td><td class="left">'Malla'</td></tr>
++     <tr><td class="num"> -41.9</td><td class="left">'Alexandros'</td></tr>
++     <tr><td class="num"> -41.8</td><td class="left">'Emmanuel'</td></tr>
++     <tr><td class="num"> -41.7</td><td class="left">'ryujun'</td></tr>
++     <tr><td class="num"> -37.2</td><td class="left">'Another'</td></tr>
++     <tr><td class="num"> -33.1</td><td class="left">'Django'</td></tr>
++     <tr><td class="num"> -29.9</td><td class="left">'Gloop'</td></tr>
++     <tr><td class="num"> -23.6</td><td class="left">'Taztunes'</td></tr>
++     <tr><td class="num"> -22.3</td><td class="left">'Safalra'</td></tr>
++     <tr><td class="num"> -21.9</td><td class="left">'Zekobah'</td></tr>
++     <tr><td class="num"> -19.2</td><td class="left">'Ludmian'</td></tr>
++     <tr><td class="num"> -17.1</td><td class="left">'Zephyr'</td></tr>
++     <tr><td class="num"> -16.9</td><td class="left">'H-J.Epting'</td></tr>
++     <tr><td class="num"> -16.0</td><td class="left">'dpl'</td></tr>
++     <tr><td class="num"> -15.9</td><td class="left">'B-Huff'</td></tr>
++     <tr><td class="num"> -14.4</td><td class="left">'bojster'</td></tr>
+      <tr><td class="num"> -13.6</td><td class="left">'Ghatotkacha'</td></tr>
+      <tr><td class="num"> -10.2</td><td class="left">'ged'</td></tr>
+-     <tr><td class="num">  -9.9</td><td class="left">'Raoul'</td></tr>
+-     <tr><td class="num">  -8.4</td><td class="left">'ABS'</td></tr>
+-     <tr><td class="num">  -8.3</td><td class="left">'hendrik'</td></tr>
+-     <tr><td class="num">  -7.9</td><td class="left">'Freshman'</td></tr>
+-     <tr><td class="num">  -7.4</td><td class="left">'Alex'</td></tr>
+-     <tr><td class="num">  -6.7</td><td class="left">'Ronald'</td></tr>
+-     <tr><td class="num">  -6.2</td><td class="left">'Dime'</td></tr>
+-     <tr><td class="num">  -4.7</td><td class="left">'cuoha'</td></tr>
+-     <tr><td class="num">  -1.4</td><td class="left">'Lukas'</td></tr>
+-     <tr><td class="num">  -0.6</td><td class="left">'HuB34'</td></tr>
+-     <tr><td class="num">   2.0</td><td class="left">'Timo'</td></tr>
++     <tr><td class="num"> -10.2</td><td class="left">'Raoul'</td></tr>
++     <tr><td class="num">  -8.3</td><td class="left">'ABS'</td></tr>
++     <tr><td class="num">  -8.2</td><td class="left">'hendrik'</td></tr>
++     <tr><td class="num">  -7.8</td><td class="left">'Freshman'</td></tr>
++     <tr><td class="num">  -7.2</td><td class="left">'Alex'</td></tr>
++     <tr><td class="num">  -6.5</td><td class="left">'Ronald'</td></tr>
++     <tr><td class="num">  -6.0</td><td class="left">'Dime'</td></tr>
++     <tr><td class="num">  -4.6</td><td class="left">'cuoha'</td></tr>
++     <tr><td class="num">  -1.3</td><td class="left">'Lukas'</td></tr>
++     <tr><td class="num">  -0.5</td><td class="left">'HuB34'</td></tr>
++     <tr><td class="num">   2.1</td><td class="left">'Timo'</td></tr>
+      <tr><td class="num">   2.5</td><td class="left">'Iceshark7'</td></tr>
+      <tr><td class="num">   3.7</td><td class="left">'Kevin'</td></tr>
+-     <tr><td class="num">   3.8</td><td class="left">'joseba'</td></tr>
+-     <tr><td class="num">   5.6</td><td class="left">'mecke'</td></tr>
+-     <tr><td class="num">   6.4</td><td class="left">'U-Punkt'</td></tr>
+-     <tr><td class="num">   6.5</td><td class="left">'fabian'</td></tr>
+-     <tr><td class="num">   6.5</td><td class="left">'Daniel'</td></tr>
+-     <tr><td class="num">   7.4</td><td class="left">'Craven'</td></tr>
+-     <tr><td class="num">   7.6</td><td class="left">'JuSt'</td></tr>
++     <tr><td class="num">   3.9</td><td class="left">'joseba'</td></tr>
++     <tr><td class="num">   5.7</td><td class="left">'mecke'</td></tr>
++     <tr><td class="num">   6.5</td><td class="left">'U-Punkt'</td></tr>
++     <tr><td class="num">   6.6</td><td class="left">'fabian'</td></tr>
++     <tr><td class="num">   6.6</td><td class="left">'Daniel'</td></tr>
++     <tr><td class="num">   7.5</td><td class="left">'Craven'</td></tr>
++     <tr><td class="num">   7.8</td><td class="left">'JuSt'</td></tr>
+      <tr><td class="num">   8.0</td><td class="left">'Hairball'</td></tr>
+      <tr><td class="num">   8.5</td><td class="left">'Tiza'</td></tr>
+      <tr><td class="num">   8.6</td><td class="left">'Wuzzy'</td></tr>
+-     <tr><td class="num">   9.4</td><td class="left">'mrduke'</td></tr>
+-     <tr><td class="num">  10.2</td><td class="left">'para_doks'</td></tr>
+-     <tr><td class="num">  10.6</td><td class="left">'Tobias'</td></tr>
++     <tr><td class="num">   9.5</td><td class="left">'mrduke'</td></tr>
++     <tr><td class="num">  10.3</td><td class="left">'para_doks'</td></tr>
++     <tr><td class="num">  10.7</td><td class="left">'Tobias'</td></tr>
+      <tr><td class="num">  11.8</td><td class="left">'alfred69'</td></tr>
+-     <tr><td class="num">  12.2</td><td class="left">'Guglielmo'</td></tr>
++     <tr><td class="num">  12.3</td><td class="left">'Guglielmo'</td></tr>
+      <tr><td class="num">  12.9</td><td class="left">'serpent'</td></tr>
+-     <tr><td class="num">  13.1</td><td class="left">'Andy'</td></tr>
++     <tr><td class="num">  13.2</td><td class="left">'Andy'</td></tr>
+      <tr><td class="num">  13.3</td><td class="left">'Sigma'</td></tr>
+      <tr><td class="num">  14.7</td><td class="left">'oxyd4ever'</td></tr>
+-     <tr><td class="num">  15.2</td><td class="left">'Austin'</td></tr>
++     <tr><td class="num">  15.3</td><td class="left">'Austin'</td></tr>
+      <tr><td class="num">  16.2</td><td class="left">'shoki'</td></tr>
+-     <tr><td class="num">  18.7</td><td class="left">'ShadowPhrogg32642342'</td></tr>
+-     <tr><td class="num">  19.3</td><td class="left">'ais523'</td></tr>
++     <tr><td class="num">  17.0</td><td class="left">'ais523'</td></tr>
++     <tr><td class="num">  18.8</td><td class="left">'ShadowPhrogg32642342'</td></tr>
+      <tr><td class="num">  20.3</td><td class="left">'alfix'</td></tr>
+      <tr><td class="num">  20.4</td><td class="left">'Mark P.'</td></tr>
+      <tr><td class="num">  21.0</td><td class="left">'Andreas'</td></tr>
+      <tr><td class="num">  21.0</td><td class="left">'AlephD'</td></tr>
+      <tr><td class="num">  21.3</td><td class="left">'Sim_Ed'</td></tr>
+-     <tr><td class="num">  22.4</td><td class="left">'Agnieszka'</td></tr>
+-     <tr><td class="num">  22.7</td><td class="left">'Chocolate Zero'</td></tr>
+-     <tr><td class="num">  23.4</td><td class="left">'casmith_789'</td></tr>
+-     <tr><td class="num">  25.3</td><td class="left">'Ale'</td></tr>
++     <tr><td class="num">  22.5</td><td class="left">'Agnieszka'</td></tr>
++     <tr><td class="num">  22.8</td><td class="left">'Chocolate Zero'</td></tr>
++     <tr><td class="num">  23.5</td><td class="left">'casmith_789'</td></tr>
++     <tr><td class="num">  25.4</td><td class="left">'Ale'</td></tr>
+      <tr><td class="num">  27.3</td><td class="left">'Klaus'</td></tr>
+-     <tr><td class="num">  28.0</td><td class="left">'Antonio EE'</td></tr>
++     <tr><td class="num">  28.1</td><td class="left">'Antonio EE'</td></tr>
+      <tr><td class="num">  28.3</td><td class="left">'Iceball'</td></tr>
+-     <tr><td class="num">  28.6</td><td class="left">'Marc-Hendrik'</td></tr>
++     <tr><td class="num">  28.7</td><td class="left">'Marc-Hendrik'</td></tr>
+      <tr><td class="num">  29.6</td><td class="left">'Thomas'</td></tr>
+-     <tr><td class="num">  29.8</td><td class="left">'Feynman'</td></tr>
++     <tr><td class="num">  29.9</td><td class="left">'Feynman'</td></tr>
+      <tr><td class="num">  29.9</td><td class="left">'Chris'</td></tr>
+-     <tr><td class="num">  30.3</td><td class="left">'Gottseinsohn'</td></tr>
++     <tr><td class="num">  30.4</td><td class="left">'Gottseinsohn'</td></tr>
+      <tr><td class="num">  30.4</td><td class="left">'hdwow'</td></tr>
+      <tr><td class="num">  31.4</td><td class="left">'Hans-HD'</td></tr>
+-     <tr><td class="num">  31.8</td><td class="left">'Bent'</td></tr>
++     <tr><td class="num">  31.9</td><td class="left">'Bent'</td></tr>
+      <tr><td class="num">  32.0</td><td class="left">'un_guru'</td></tr>
+      <tr><td class="num">  32.7</td><td class="left">'Little_Mole'</td></tr>
+      <tr><td class="num">  33.0</td><td class="left">'DINA'</td></tr>
+@@ -97,81 +97,81 @@
+      <tr><td class="num">  33.4</td><td class="left">'Jinajon'</td></tr>
+      <tr><td class="num">  33.6</td><td class="left">'Vinksu'</td></tr>
+      <tr><td class="num">  33.8</td><td class="left">'biotopa'</td></tr>
+-     <tr><td class="num">  34.0</td><td class="left">'oblo'</td></tr>
+      <tr><td class="num">  34.0</td><td class="left">'evane'</td></tr>
+-     <tr><td class="num">  34.3</td><td class="left">'GiannuzzITA'</td></tr>
++     <tr><td class="num">  34.2</td><td class="left">'oblo'</td></tr>
++     <tr><td class="num">  34.4</td><td class="left">'GiannuzzITA'</td></tr>
+      <tr><td class="num">  34.6</td><td class="left">'redsantz'</td></tr>
+-     <tr><td class="num">  36.0</td><td class="left">'NorthForty'</td></tr>
+-     <tr><td class="num">  36.0</td><td class="left">'Edgar_Flesk'</td></tr>
+      <tr><td class="num">  36.0</td><td class="left">'geembo_90'</td></tr>
++     <tr><td class="num">  36.1</td><td class="left">'NorthForty'</td></tr>
++     <tr><td class="num">  36.1</td><td class="left">'Edgar_Flesk'</td></tr>
+      <tr><td class="num">  36.1</td><td class="left">'Melanie'</td></tr>
+-     <tr><td class="num">  36.4</td><td class="left">'Gorn'</td></tr>
++     <tr><td class="num">  36.5</td><td class="left">'Gorn'</td></tr>
+      <tr><td class="num">  36.9</td><td class="left">'IChrisI'</td></tr>
+-     <tr><td class="num">  37.2</td><td class="left">'erich'</td></tr>
+-     <tr><td class="num">  39.5</td><td class="left">'niebie'</td></tr>
++     <tr><td class="num">  37.3</td><td class="left">'erich'</td></tr>
++     <tr><td class="num">  39.6</td><td class="left">'niebie'</td></tr>
+      <tr><td class="num">  39.7</td><td class="left">'MicWa'</td></tr>
+      <tr><td class="num">  39.9</td><td class="left">'WP319'</td></tr>
+-     <tr><td class="num">  40.1</td><td class="left">'Kosby'</td></tr>
+-     <tr><td class="num">  40.7</td><td class="left">'alain'</td></tr>
++     <tr><td class="num">  40.2</td><td class="left">'Kosby'</td></tr>
++     <tr><td class="num">  40.8</td><td class="left">'alain'</td></tr>
+      <tr><td class="num">  41.8</td><td class="left">'Liam Sheehan'</td></tr>
+      <tr><td class="num">  42.4</td><td class="left">'Rugby4ever'</td></tr>
+      <tr><td class="num">  43.0</td><td class="left">'Drotten'</td></tr>
+      <tr><td class="num">  43.1</td><td class="left">'WesleyCrusher'</td></tr>
+      <tr><td class="num">  43.2</td><td class="left">'purplerainbow'</td></tr>
+-     <tr><td class="num">  43.2</td><td class="left">'Archcorenth'</td></tr>
++     <tr><td class="num">  43.3</td><td class="left">'Archcorenth'</td></tr>
+      <tr><td class="num">  43.4</td><td class="left">'Nanor22'</td></tr>
+      <tr><td class="num">  43.5</td><td class="left">'Harry Lim'</td></tr>
+      <tr><td class="num">  44.2</td><td class="left">'B-man'</td></tr>
+      <tr><td class="num">  44.5</td><td class="left">'Nfol'</td></tr>
+-     <tr><td class="num">  45.0</td><td class="left">'Jonyzz'</td></tr>
++     <tr><td class="num">  45.1</td><td class="left">'Jonyzz'</td></tr>
+      <tr><td class="num">  45.2</td><td class="left">'Tiger'</td></tr>
+      <tr><td class="num">  45.2</td><td class="left">'gringer'</td></tr>
+      <tr><td class="num">  45.6</td><td class="left">'Alexander J'</td></tr>
+      <tr><td class="num">  45.8</td><td class="left">'Snaily'</td></tr>
+      <tr><td class="num">  46.0</td><td class="left">'Vlad'</td></tr>
+      <tr><td class="num">  46.1</td><td class="left">'B.3'</td></tr>
+-     <tr><td class="num">  46.6</td><td class="left">'Momcat'</td></tr>
++     <tr><td class="num">  46.7</td><td class="left">'Momcat'</td></tr>
+      <tr><td class="num">  47.2</td><td class="left">'ThingFish'</td></tr>
+      <tr><td class="num">  47.5</td><td class="left">'Breezy'</td></tr>
+      <tr><td class="num">  47.7</td><td class="left">'Mecki'</td></tr>
+-     <tr><td class="num">  48.0</td><td class="left">'Uli'</td></tr>
+-     <tr><td class="num">  48.2</td><td class="left">'Paulus'</td></tr>
+-     <tr><td class="num">  48.8</td><td class="left">'Tarim'</td></tr>
+-     <tr><td class="num">  49.8</td><td class="left">'IntKecsk'</td></tr>
++     <tr><td class="num">  48.1</td><td class="left">'Uli'</td></tr>
++     <tr><td class="num">  48.3</td><td class="left">'Paulus'</td></tr>
++     <tr><td class="num">  48.9</td><td class="left">'Tarim'</td></tr>
++     <tr><td class="num">  49.9</td><td class="left">'IntKecsk'</td></tr>
+      <tr><td class="num">  50.2</td><td class="left">'tjRaven'</td></tr>
+      <tr><td class="num">  50.6</td><td class="left">'Valkyrie2'</td></tr>
+      <tr><td class="num">  50.8</td><td class="left">'mhatta'</td></tr>
+      <tr><td class="num">  51.1</td><td class="left">'ntaeijr'</td></tr>
+      <tr><td class="num">  52.5</td><td class="left">'aranelv'</td></tr>
+      <tr><td class="num">  53.0</td><td class="left">'Zak'</td></tr>
+-     <tr><td class="num">  53.1</td><td class="left">'Jeffrey S'</td></tr>
++     <tr><td class="num">  53.1</td><td class="left">'Tomson'</td></tr>
+      <tr><td class="num">  53.1</td><td class="left">'rima'</td></tr>
+-     <tr><td class="num">  53.2</td><td class="left">'Tomson'</td></tr>
+-     <tr><td class="num">  53.3</td><td class="left">'brynn'</td></tr>
+-     <tr><td class="num">  53.4</td><td class="left">'Sandra'</td></tr>
+-     <tr><td class="num">  54.1</td><td class="left">'jdcampo'</td></tr>
++     <tr><td class="num">  53.2</td><td class="left">'Jeffrey S'</td></tr>
++     <tr><td class="num">  53.4</td><td class="left">'brynn'</td></tr>
++     <tr><td class="num">  53.5</td><td class="left">'Sandra'</td></tr>
++     <tr><td class="num">  54.2</td><td class="left">'jdcampo'</td></tr>
+      <tr><td class="num">  54.9</td><td class="left">'ReasonAnce'</td></tr>
+      <tr><td class="num">  54.9</td><td class="left">'AkRa'</td></tr>
+      <tr><td class="num">  55.9</td><td class="left">'Vaily'</td></tr>
+      <tr><td class="num">  56.1</td><td class="left">'Slav'</td></tr>
+      <tr><td class="num">  56.1</td><td class="left">'Pascal'</td></tr>
+-     <tr><td class="num">  56.3</td><td class="left">'Cyphase'</td></tr>
++     <tr><td class="num">  56.4</td><td class="left">'Cyphase'</td></tr>
+      <tr><td class="num">  57.1</td><td class="left">'Neophilus'</td></tr>
+      <tr><td class="num">  57.5</td><td class="left">'Turbogurk'</td></tr>
+-     <tr><td class="num">  58.6</td><td class="left">'krazy62'</td></tr>
++     <tr><td class="num">  58.8</td><td class="left">'krazy62'</td></tr>
+      <tr><td class="num">  59.9</td><td class="left">'Adonica'</td></tr>
+      <tr><td class="num">  60.2</td><td class="left">'Kadu'</td></tr>
+      <tr><td class="num">  61.8</td><td class="left">'Enrymather'</td></tr>
+      <tr><td class="num">  62.9</td><td class="left">'Sopoforic'</td></tr>
+-     <tr><td class="num">  63.4</td><td class="left">'jumbo'</td></tr>
++     <tr><td class="num">  63.5</td><td class="left">'jumbo'</td></tr>
+      <tr><td class="num">  64.2</td><td class="left">'Jan'</td></tr>
+      <tr><td class="num">  64.3</td><td class="left">'jdrexler'</td></tr>
+      <tr><td class="num">  64.8</td><td class="left">'Asbel'</td></tr>
+      <tr><td class="num">  65.7</td><td class="left">'fjp'</td></tr>
+      <tr><td class="num">  66.1</td><td class="left">'tasker'</td></tr>
+-     <tr><td class="num">  66.8</td><td class="left">'Meeve'</td></tr>
++     <tr><td class="num">  66.9</td><td class="left">'Meeve'</td></tr>
+      <tr><td class="num">  67.9</td><td class="left">'Zdzislav'</td></tr>
+-     <tr><td class="num">  68.4</td><td class="left">'ael'</td></tr>
++     <tr><td class="num">  68.5</td><td class="left">'ael'</td></tr>
+      <tr><td class="num">  69.1</td><td class="left">'Samuel'</td></tr>
+      <tr><td class="num">  69.3</td><td class="left">'schmusi20'</td></tr>
+      <tr><td class="num">  69.4</td><td class="left">'Alf'</td></tr>
+@@ -180,10 +180,10 @@
+      <tr><td class="num">  69.7</td><td class="left">'TerryOneill'</td></tr>
+      <tr><td class="num">  70.2</td><td class="left">'GPCollin'</td></tr>
+      <tr><td class="num">  70.9</td><td class="left">'Shaez'</td></tr>
+-     <tr><td class="num">  71.4</td><td class="left">'Magnus and Susi'</td></tr>
++     <tr><td class="num">  71.5</td><td class="left">'Magnus and Susi'</td></tr>
+      <tr><td class="num">  71.9</td><td class="left">'Zhura'</td></tr>
+      <tr><td class="num">  72.4</td><td class="left">'wildgoose'</td></tr>
+-     <tr><td class="num">  72.9</td><td class="left">'xmouse'</td></tr>
++     <tr><td class="num">  73.0</td><td class="left">'xmouse'</td></tr>
+      <tr><td class="num">  73.9</td><td class="left">'AQZ'</td></tr>
+      <tr><td class="num">  74.0</td><td class="left">'Joona'</td></tr>
+      <tr><td class="num">  75.6</td><td class="left">'tony'</td></tr>
+
+Modified: homepage/input/table-rat.html
+===================================================================
+--- homepage/input/table-rat.html	2011-01-09 22:33:43 UTC (rev 2196)
++++ homepage/input/table-rat.html	2011-01-09 23:10:00 UTC (rev 2197)
+@@ -1,5 +1,5 @@
+   <table>
+-    <caption>$$Rating_Statistics$$ $$November$$ 2010</caption>
++    <caption>$$Rating_Statistics$$ $$December$$ 2010</caption>
+     <colgroup><col width="80"><col width="80"><col width="220"></colgroup>
+     <tr><th>$$count$$</th><th>$$average$$</th><th class="left">$$user$$</th></tr>    <tr><td class="num">1062</td><td class="num"> 5.06</td><td class="left">'ryujun'</td></tr>
+     <tr><td class="num">1056</td><td class="num"> 4.83</td><td class="left">'Taztunes'</td></tr>
+@@ -30,11 +30,11 @@
+     <tr><td class="num">254</td><td class="num"> 4.91</td><td class="left">'JuSt'</td></tr>
+     <tr><td class="num">208</td><td class="num"> 6.15</td><td class="left">'Momcat'</td></tr>
+     <tr><td class="num">200</td><td class="num"> 5.74</td><td class="left">'Malla'</td></tr>
++    <tr><td class="num">199</td><td class="num"> 4.79</td><td class="left">'Medimaster'</td></tr>
+     <tr><td class="num">187</td><td class="num"> 5.05</td><td class="left">'WP319'</td></tr>
+     <tr><td class="num">178</td><td class="num"> 4.41</td><td class="left">'Jonyzz'</td></tr>
+-    <tr><td class="num">172</td><td class="num"> 4.68</td><td class="left">'Medimaster'</td></tr>
+-    <tr><td class="num">149</td><td class="num"> 5.48</td><td class="left">'Raoul'</td></tr>
+-    <tr><td class="num">145</td><td class="num"> 4.93</td><td class="left">'Angolino'</td></tr>
++    <tr><td class="num">156</td><td class="num"> 4.90</td><td class="left">'Angolino'</td></tr>
++    <tr><td class="num">150</td><td class="num"> 5.47</td><td class="left">'Raoul'</td></tr>
+     <tr><td class="num">135</td><td class="num"> 4.13</td><td class="left">'Edgar_Flesk'</td></tr>
+     <tr><td class="num">126</td><td class="num"> 5.79</td><td class="left">'Ghatotkacha'</td></tr>
+     <tr><td class="num">124</td><td class="num"> 4.44</td><td class="left">'Sigma'</td></tr>
+@@ -61,11 +61,11 @@
+     <tr><td class="num"> 30</td><td class="num"> 4.40</td><td class="left">'Archcorenth'</td></tr>
+     <tr><td class="num"> 30</td><td class="num"> 6.93</td><td class="left">'un_guru'</td></tr>
+     <tr><td class="num"> 27</td><td class="num"> 5.33</td><td class="left">'Jeffrey S'</td></tr>
++    <tr><td class="num"> 26</td><td class="num"> 5.31</td><td class="left">'ais523'</td></tr>
+     <tr><td class="num"> 25</td><td class="num"> 4.88</td><td class="left">'Drotten'</td></tr>
+     <tr><td class="num"> 20</td><td class="num"> 6.05</td><td class="left">'Iceball'</td></tr>
+     <tr><td class="num"> 19</td><td class="num"> 3.74</td><td class="left">'Eselchen'</td></tr>
+     <tr><td class="num"> 18</td><td class="num"> 4.22</td><td class="left">'Mecki'</td></tr>
+-    <tr><td class="num"> 18</td><td class="num"> 5.06</td><td class="left">'ais523'</td></tr>
+     <tr><td class="num"> 16</td><td class="num"> 3.25</td><td class="left">'tasker'</td></tr>
+     <tr><td class="num"> 15</td><td class="num"> 5.40</td><td class="left">'oxyd4ever'</td></tr>
+     <tr><td class="num"> 13</td><td class="num"> 5.23</td><td class="left">'Samuel'</td></tr>
+
+Modified: homepage/input/table-solved.html
+===================================================================
+--- homepage/input/table-solved.html	2011-01-09 22:33:43 UTC (rev 2196)
++++ homepage/input/table-solved.html	2011-01-09 23:10:00 UTC (rev 2197)
+@@ -1,5 +1,5 @@
+   <table>
+-    <caption>$$Solved_Level_Statistics$$ $$November$$ 2010</caption>
++    <caption>$$Solved_Level_Statistics$$ $$December$$ 2010</caption>
+     <colgroup><col width="130"><col width="130"><col width="130"><col width="240"></colgroup>
+     <tr><th>$$difficult$$</th><th>$$easy$$</th><th>$$total$$</th><th class="left">$$user$$</th></tr>
+     <tr><td class="num">1045/1045</td><td class="num">189/189</td><td class="num">100.00%</td><td class="left">'ryujun'</td></tr>
+@@ -30,8 +30,8 @@
+     <tr><td class="num"> 917/1045</td><td class="num">106/189</td><td class="num"> 82.90%</td><td class="left">'Django'</td></tr>
+     <tr><td class="num"> 866/1045</td><td class="num">151/189</td><td class="num"> 82.41%</td><td class="left">'Gloop'</td></tr>
+     <tr><td class="num"> 876/1045</td><td class="num">141/189</td><td class="num"> 82.41%</td><td class="left">'Skywolf'</td></tr>
++    <tr><td class="num"> 864/1045</td><td class="num">150/189</td><td class="num"> 82.17%</td><td class="left">'Medimaster'</td></tr>
+     <tr><td class="num"> 867/1045</td><td class="num">145/189</td><td class="num"> 82.01%</td><td class="left">'Gorn'</td></tr>
+-    <tr><td class="num"> 855/1045</td><td class="num">148/189</td><td class="num"> 81.28%</td><td class="left">'Medimaster'</td></tr>
+     <tr><td class="num"> 849/1045</td><td class="num">151/189</td><td class="num"> 81.04%</td><td class="left">'WP319'</td></tr>
+     <tr><td class="num"> 867/1045</td><td class="num">124/189</td><td class="num"> 80.31%</td><td class="left">'Lukas'</td></tr>
+     <tr><td class="num"> 854/1045</td><td class="num">131/189</td><td class="num"> 79.82%</td><td class="left">'shoki'</td></tr>
+@@ -44,6 +44,7 @@
+     <tr><td class="num"> 812/1045</td><td class="num">114/189</td><td class="num"> 75.04%</td><td class="left">'brynn'</td></tr>
+     <tr><td class="num"> 794/1045</td><td class="num">126/189</td><td class="num"> 74.55%</td><td class="left">'U-Punkt'</td></tr>
+     <tr><td class="num"> 782/1045</td><td class="num">132/189</td><td class="num"> 74.07%</td><td class="left">'AlephD'</td></tr>
++    <tr><td class="num"> 788/1045</td><td class="num">120/189</td><td class="num"> 73.58%</td><td class="left">'ais523'</td></tr>
+     <tr><td class="num"> 739/1045</td><td class="num">131/189</td><td class="num"> 70.50%</td><td class="left">'ABS'</td></tr>
+     <tr><td class="num"> 761/1045</td><td class="num">103/189</td><td class="num"> 70.02%</td><td class="left">'Klaus'</td></tr>
+     <tr><td class="num"> 719/1045</td><td class="num">138/189</td><td class="num"> 69.45%</td><td class="left">'Alexandros'</td></tr>
+@@ -54,7 +55,6 @@
+     <tr><td class="num"> 696/1045</td><td class="num">119/189</td><td class="num"> 66.05%</td><td class="left">'Tiza'</td></tr>
+     <tr><td class="num"> 782/1045</td><td class="num"> 33/189</td><td class="num"> 66.05%</td><td class="left">'Sim_Ed'</td></tr>
+     <tr><td class="num"> 684/1045</td><td class="num">130/189</td><td class="num"> 65.96%</td><td class="left">'Zekobah'</td></tr>
+-    <tr><td class="num"> 733/1045</td><td class="num"> 78/189</td><td class="num"> 65.72%</td><td class="left">'ais523'</td></tr>
+     <tr><td class="num"> 674/1045</td><td class="num">133/189</td><td class="num"> 65.40%</td><td class="left">'Emmanuel'</td></tr>
+     <tr><td class="num"> 661/1045</td><td class="num">123/189</td><td class="num"> 63.53%</td><td class="left">'oxyd4ever'</td></tr>
+     <tr><td class="num"> 661/1045</td><td class="num">114/189</td><td class="num"> 62.80%</td><td class="left">'Raoul'</td></tr>
+@@ -62,9 +62,9 @@
+     <tr><td class="num"> 681/1045</td><td class="num"> 78/189</td><td class="num"> 61.51%</td><td class="left">'HuB34'</td></tr>
+     <tr><td class="num"> 659/1045</td><td class="num"> 95/189</td><td class="num"> 61.10%</td><td class="left">'Marc-Hendrik'</td></tr>
+     <tr><td class="num"> 658/1045</td><td class="num"> 87/189</td><td class="num"> 60.37%</td><td class="left">'Zephyr'</td></tr>
++    <tr><td class="num"> 633/1045</td><td class="num">108/189</td><td class="num"> 60.05%</td><td class="left">'Angolino'</td></tr>
+     <tr><td class="num"> 665/1045</td><td class="num"> 64/189</td><td class="num"> 59.08%</td><td class="left">'alain'</td></tr>
+     <tr><td class="num"> 643/1045</td><td class="num"> 83/189</td><td class="num"> 58.83%</td><td class="left">'Great Scott'</td></tr>
+-    <tr><td class="num"> 623/1045</td><td class="num">101/189</td><td class="num"> 58.67%</td><td class="left">'Angolino'</td></tr>
+     <tr><td class="num"> 714/1045</td><td class="num">  0/189</td><td class="num"> 57.86%</td><td class="left">'Gottseinsohn'</td></tr>
+     <tr><td class="num"> 620/1045</td><td class="num"> 72/189</td><td class="num"> 56.08%</td><td class="left">'Breezy'</td></tr>
+     <tr><td class="num"> 636/1045</td><td class="num"> 55/189</td><td class="num"> 56.00%</td><td class="left">'fabian'</td></tr>
+@@ -127,8 +127,8 @@
+     <tr><td class="num"> 261/1045</td><td class="num"> 53/189</td><td class="num"> 25.45%</td><td class="left">'Andreas'</td></tr>
+     <tr><td class="num"> 264/1045</td><td class="num"> 46/189</td><td class="num"> 25.12%</td><td class="left">'ThingFish'</td></tr>
+     <tr><td class="num"> 282/1045</td><td class="num"> 27/189</td><td class="num"> 25.04%</td><td class="left">'Jonyzz'</td></tr>
++    <tr><td class="num"> 252/1045</td><td class="num"> 40/189</td><td class="num"> 23.66%</td><td class="left">'Tomson'</td></tr>
+     <tr><td class="num"> 276/1045</td><td class="num"> 15/189</td><td class="num"> 23.58%</td><td class="left">'Thomas'</td></tr>
+-    <tr><td class="num"> 250/1045</td><td class="num"> 40/189</td><td class="num"> 23.50%</td><td class="left">'Tomson'</td></tr>
+     <tr><td class="num"> 258/1045</td><td class="num"> 27/189</td><td class="num"> 23.10%</td><td class="left">'un_guru'</td></tr>
+     <tr><td class="num"> 264/1045</td><td class="num"> 20/189</td><td class="num"> 23.01%</td><td class="left">'alfix'</td></tr>
+     <tr><td class="num"> 245/1045</td><td class="num"> 36/189</td><td class="num"> 22.77%</td><td class="left">'B-man'</td></tr>
+
+Modified: homepage/input/table-wr.html
+===================================================================
+--- homepage/input/table-wr.html	2011-01-09 22:33:43 UTC (rev 2196)
++++ homepage/input/table-wr.html	2011-01-09 23:10:00 UTC (rev 2197)
+@@ -1,25 +1,25 @@
+   <table>
+-    <caption>$$Worldrecord_Statistics$$ $$November$$ 2010</caption>
++    <caption>$$Worldrecord_Statistics$$ $$December$$ 2010</caption>
+     <colgroup><col width="80"><col width="80"><col width="470"></colgroup>
+     <tr><th>$$total$$</th><th>$$shared$$</th><th class="left">$$user$$</th></tr>
+-    <tr><td class="num">847</td><td class="num">338</td><td class="left">'Medimaster'</td></tr>
+-    <tr><td class="num">534</td><td class="num">261</td><td class="left">'Moneymaker'</td></tr>
++    <tr><td class="num">860</td><td class="num">342</td><td class="left">'Medimaster'</td></tr>
++    <tr><td class="num">522</td><td class="num">263</td><td class="left">'Moneymaker'</td></tr>
+     <tr><td class="num">160</td><td class="num">153</td><td class="left">'l'ane'</td></tr>
+-    <tr><td class="num"> 74</td><td class="num"> 60</td><td class="left">'daydreamer'</td></tr>
++    <tr><td class="num"> 71</td><td class="num"> 59</td><td class="left">'daydreamer'</td></tr>
++    <tr><td class="num"> 71</td><td class="num"> 60</td><td class="left">'Angolino'</td></tr>
+     <tr><td class="num"> 66</td><td class="num"> 66</td><td class="left">'Crystalicum'</td></tr>
+-    <tr><td class="num"> 65</td><td class="num"> 58</td><td class="left">'Angolino'</td></tr>
+     <tr><td class="num"> 64</td><td class="num"> 38</td><td class="left">'Stupid'</td></tr>
+     <tr><td class="num"> 54</td><td class="num"> 50</td><td class="left">'dev0'</td></tr>
+     <tr><td class="num"> 50</td><td class="num"> 45</td><td class="left">'Mentist'</td></tr>
++    <tr><td class="num"> 38</td><td class="num"> 35</td><td class="left">'Daisy'</td></tr>
+     <tr><td class="num"> 38</td><td class="num"> 36</td><td class="left">'Johannes'</td></tr>
+-    <tr><td class="num"> 37</td><td class="num"> 35</td><td class="left">'Daisy'</td></tr>
+     <tr><td class="num"> 27</td><td class="num"> 27</td><td class="left">'H-J.Epting'</td></tr>
+     <tr><td class="num"> 25</td><td class="num"> 25</td><td class="left">'Another'</td></tr>
+     <tr><td class="num"> 24</td><td class="num"> 22</td><td class="left">'Emmanuel' + 'Skywolf'</td></tr>
+     <tr><td class="num"> 24</td><td class="num"> 24</td><td class="left">'Alexandros'</td></tr>
+     <tr><td class="num"> 22</td><td class="num"> 22</td><td class="left">'Ghatotkacha'</td></tr>
+     <tr><td class="num"> 19</td><td class="num"> 17</td><td class="left">'Zekobah'</td></tr>
+-    <tr><td class="num"> 18</td><td class="num"> 12</td><td class="left">'Malla'</td></tr>
++    <tr><td class="num"> 18</td><td class="num"> 13</td><td class="left">'Malla'</td></tr>
+     <tr><td class="num"> 16</td><td class="num"> 16</td><td class="left">'ryujun'</td></tr>
+     <tr><td class="num"> 15</td><td class="num"> 14</td><td class="left">'Django'</td></tr>
+     <tr><td class="num"> 15</td><td class="num"> 15</td><td class="left">'joseba' + 'Great Scott'</td></tr>
+
+
+
+From ral at mail.berlios.de  Mon Jan 24 00:05:25 2011
+From: ral at mail.berlios.de (ral at mail.berlios.de)
+Date: Mon, 24 Jan 2011 00:05:25 +0100
+Subject: [Enigma-game-svn] r2198 - in trunk: data src
+Message-ID: <20110123230525.85A154812E1@sheep.berlios.de>
+
+Author: ral
+Date: 2011-01-24 00:05:25 +0100 (Mon, 24 Jan 2011)
+New Revision: 2198
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/src/lua.cc
+Log:
+add undefined tile key error message
+
+- report any reference of undefined tile keys
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2011-01-09 23:10:00 UTC (rev 2197)
++++ trunk/data/api2init.lua	2011-01-23 23:05:25 UTC (rev 2198)
+@@ -1,5 +1,5 @@
+ ------------------------------------------------------------------------
+--- Copyright (C) 2008,2009,2010,211 Ronald Lamprecht
++-- Copyright (C) 2008,2009,2010,2011 Ronald Lamprecht
+ --
+ -- This program is free software; you can redistribute it and/or
+ -- modify it under the terms of the GNU General Public License
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2011-01-09 23:10:00 UTC (rev 2197)
++++ trunk/src/lua.cc	2011-01-23 23:05:25 UTC (rev 2198)
+@@ -3048,16 +3048,21 @@
+     lua_rawgeti(L, -1, 1);    // content table
+     lua_pushvalue(L, 2);      // copy key
+     lua_rawget(L, -2);        // check for existing entry in table
+-    if (lua_isnil(L, -1) && key.find("%%") != string::npos) {  // autotile wildcard
+-        // insert a dummy tile declaration
+-        lua_pop(L, 3);            // cleanup stack
+-        lua_newtable(L);          // dummy declaration as value for key
+-        dispatchTilesWriteAccess(L); // insert dummy entry
+-        // get entry as return value
+-        lua_getmetatable(L, 1);
+-        lua_rawgeti(L, -1, 1);    // content table
+-        lua_pushvalue(L, 2);      // copy key
+-        lua_rawget(L, -2);        // get entry in table
++    if (lua_isnil(L, -1)) {
++        if (key.find("%%") != string::npos) {  // autotile wildcard
++            // insert a dummy tile declaration
++            lua_pop(L, 3);            // cleanup stack
++            lua_newtable(L);          // dummy declaration as value for key
++            dispatchTilesWriteAccess(L); // insert dummy entry
++            // get entry as return value
++            lua_getmetatable(L, 1);
++            lua_rawgeti(L, -1, 1);    // content table
++            lua_pushvalue(L, 2);      // copy key
++            lua_rawget(L, -2);        // get entry in table
++        } else {
++            throwLuaError(L, ecl::strf("Tiles: undefined key '%s'", key.c_str()).c_str());
++            return 0;
++        }
+     }
+     return 1;
+ }
+
+
+
+From ral at mail.berlios.de  Mon Jan 24 13:37:53 2011
+From: ral at mail.berlios.de (ral at mail.berlios.de)
+Date: Mon, 24 Jan 2011 13:37:53 +0100
+Subject: [Enigma-game-svn] r2199 - trunk/src
+Message-ID: <20110124123753.EAF91481290@sheep.berlios.de>
+
+Author: ral
+Date: 2011-01-24 13:37:53 +0100 (Mon, 24 Jan 2011)
+New Revision: 2199
+
+Modified:
+   trunk/src/lua.cc
+Log:
+fix 2198: autotile resolver problems due to error message
+
+- allow read access to tiles without existing key
+- nil as return value for detection of invalid keys
+- improve argument check for nil values on operators like ".."
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2011-01-23 23:05:25 UTC (rev 2198)
++++ trunk/src/lua.cc	2011-01-24 12:37:53 UTC (rev 2199)
+@@ -2985,7 +2985,11 @@
+ 
+ static int appendTile(lua_State *L) {
+     // (tile|table) .. (tile|table)
+-    if (!((is_tile(L, 1)||is_table(L, 1)) && (is_tile(L, 1)||is_table(L, 1)))) {
++    if (lua_isnil(L, 2)) {
++        // catch otherwise undetected ti["x"] access with not existing key
++        throwLuaError(L, "Tile concat of not existing second argument");
++        return 0;
++    } else if (!((is_tile(L, 1)||is_table(L, 1)) && (is_tile(L, 2)||is_table(L, 2)))) {
+         throwLuaError(L, "Tile concat of unsupported types");
+         return 0;
+     }
+@@ -3048,22 +3052,20 @@
+     lua_rawgeti(L, -1, 1);    // content table
+     lua_pushvalue(L, 2);      // copy key
+     lua_rawget(L, -2);        // check for existing entry in table
+-    if (lua_isnil(L, -1)) {
+-        if (key.find("%%") != string::npos) {  // autotile wildcard
+-            // insert a dummy tile declaration
+-            lua_pop(L, 3);            // cleanup stack
+-            lua_newtable(L);          // dummy declaration as value for key
+-            dispatchTilesWriteAccess(L); // insert dummy entry
+-            // get entry as return value
+-            lua_getmetatable(L, 1);
+-            lua_rawgeti(L, -1, 1);    // content table
+-            lua_pushvalue(L, 2);      // copy key
+-            lua_rawget(L, -2);        // get entry in table
+-        } else {
+-            throwLuaError(L, ecl::strf("Tiles: undefined key '%s'", key.c_str()).c_str());
+-            return 0;
+-        }
++    if (lua_isnil(L, -1) && (key.find("%%") != string::npos)) {  // autotile wildcard
++        // insert a dummy tile declaration
++        lua_pop(L, 3);            // cleanup stack
++        lua_newtable(L);          // dummy declaration as value for key
++        dispatchTilesWriteAccess(L); // insert dummy entry
++        // get entry as return value
++        lua_getmetatable(L, 1);
++        lua_rawgeti(L, -1, 1);    // content table
++        lua_pushvalue(L, 2);      // copy key
++        lua_rawget(L, -2);        // get entry in table
+     }
++    // nil is returned as valid value for not existing keys, what is evaluated
++    // by resolvers like autotile to trigger the generation of missing tile
++    // declarations
+     return 1;
+ }
+ 
+
+
+

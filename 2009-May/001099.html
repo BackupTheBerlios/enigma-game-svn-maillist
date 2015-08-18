@@ -1,0 +1,707 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1669 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1669%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200905092303.n49N3okn028865%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001098.html">
+   <LINK REL="Next"  HREF="001100.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1669 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1669%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200905092303.n49N3okn028865%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1669 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun May 10 01:03:50 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001098.html">[Enigma-game-svn] r1668 - in trunk: attic/images-stones data/gfx32	data/gfx48
+</A></li>
+        <LI>Next message: <A HREF="001100.html">[Enigma-game-svn] r1670 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1099">[ date ]</a>
+              <a href="thread.html#1099">[ thread ]</a>
+              <a href="subject.html#1099">[ subject ]</a>
+              <a href="author.html#1099">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-05-10 01:03:48 +0200 (Sun, 10 May 2009)
+New Revision: 1669
+
+Added:
+   trunk/src/stones/SpitterStone.cc
+   trunk/src/stones/SpitterStone.hh
+Modified:
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/stones.hh
+   trunk/src/stones/GlassStones.cc
+   trunk/src/stones/GlassStones.hh
+   trunk/src/stones/IceBlock.cc
+   trunk/src/stones/IceBlock.hh
+   trunk/src/stones/PlasterStone.cc
+   trunk/src/stones/PlasterStone.hh
+   trunk/src/stones/SimpleStones.cc
+   trunk/src/stones/SimpleStones.hh
+Log:
+Trunk 1.1:
+- st_ice: no longer movable while breaking
+- st_plaster_movebreakable: no longer movable while breaking
+- st_rawglass: add texture st_rawglass_quad - static version only
+- st_spitter:
+  - extracted to own hh/cc files
+  - added attribute state: IDLE, ACTIVE = default
+  - IDLE spitter does not allow spitting
+  - fixed break anim: single anim run, spead up
+  - fixed spitter/swap interaction: reset anim after swap
+Note:
+- some images are currently just available for 800x600 resolution!
+
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2009-05-09 22:46:23 UTC (rev 1668)
++++ trunk/data/models-2d.lua	2009-05-09 23:03:48 UTC (rev 1669)
+@@ -1687,8 +1687,9 @@
+ do
+      local images = DefSubimages(&quot;st_spitter_idle&quot;, {h=6})
+      local frames = BuildFrames(images,150)
+-     DefAnim(&quot;st_spitter_idle&quot;, frames, true)
+-     DefShModel(&quot;st_spitter_idle&quot;, &quot;st_spitter_idle&quot;, &quot;sh-round&quot;)
++     DefAnim(&quot;st_spitter_active&quot;, frames, true)
++     DefShModel(&quot;st_spitter_active&quot;, &quot;st_spitter_active&quot;, &quot;sh-round&quot;)
++     DefShModel(&quot;st_spitter_idle&quot;, &quot;st_spitter_idle1&quot;,  &quot;sh-round&quot;)
+ 
+      local images = DefSubimages(&quot;st_spitter_spitting&quot;, {h=6})
+      local frames = BuildFrames(images,175)
+@@ -1702,8 +1703,8 @@
+      DefShModel(&quot;st_spitter_loading&quot;, &quot;st_spitter_loading&quot;, &quot;sh-round&quot;)
+ 
+      local images = DefSubimages(&quot;st_spitter_breaking&quot;, {h=6})
+-     local frames = BuildFrames(images,150)
+-     DefAnim(&quot;st_spitter_breaking&quot;, frames, true)
++     local frames = BuildFrames(images,100)
++     DefAnim(&quot;st_spitter_breaking&quot;, frames)
+      DefShModel(&quot;st_spitter_breaking&quot;, &quot;st_spitter_breaking&quot;, &quot;sh-round&quot;)
+ 
+ end
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2009-05-09 22:46:23 UTC (rev 1668)
++++ trunk/data/schemas/objects.xml	2009-05-09 23:03:48 UTC (rev 1669)
+@@ -1696,6 +1696,7 @@
+       &lt;msg name=&quot;_trigger&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;st_rawglass&quot;/&gt;
++    &lt;object name=&quot;st_rawglass_quad&quot;  init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;st_rawglass_movable&quot;&gt;
+       &lt;attr name=&quot;movable&quot; value=&quot;true&quot;/&gt;
+     &lt;/object&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2009-05-09 22:46:23 UTC (rev 1668)
++++ trunk/src/Makefile.am	2009-05-09 23:03:48 UTC (rev 1669)
+@@ -391,6 +391,8 @@
+ 	stones/ShogunStone.hh	\
+ 	stones/SimpleStones.cc	\
+ 	stones/SimpleStones.hh	\
++	stones/SpitterStone.cc	\
++	stones/SpitterStone.hh	\
+ 	stones/StandardStones.cc	\
+ 	stones/StandardStones.hh	\
+ 	stones/StoneImpulse.cc	\
+
+Modified: trunk/src/stones/GlassStones.cc
+===================================================================
+--- trunk/src/stones/GlassStones.cc	2009-05-09 22:46:23 UTC (rev 1668)
++++ trunk/src/stones/GlassStones.cc	2009-05-09 23:03:48 UTC (rev 1669)
+@@ -24,12 +24,14 @@
+ #include &quot;main.hh&quot;
+ 
+ namespace enigma {
+-    GlassStone::GlassStone(int type, bool hollow, bool movable, bool cloth) {
++    GlassStone::GlassStone(int type, bool hollow, bool movable, bool quad, bool cloth) {
+         state = type;
+         if (hollow)
+             objFlags |= OBJBIT_HOLLOW;
+         if (movable)
+             objFlags |= OBJBIT_MOVABLE;
++        if (quad)
++            objFlags |= OBJBIT_QUAD;
+         if (cloth)
+             objFlags |= OBJBIT_CLOTH;
+     }
+@@ -72,7 +74,7 @@
+         if (objFlags &amp; OBJBIT_GLASSES)
+             set_model(&quot;invisible&quot;);
+         else
+-            set_model(getClass());
++            set_model(ecl::strf(&quot;%s%s&quot;, getClass().c_str(), (objFlags &amp; OBJBIT_QUAD) ? &quot;_quad&quot; : &quot;&quot;));
+     }
+     
+     bool GlassStone::is_floating() const {
+@@ -115,6 +117,7 @@
+     
+     BOOT_REGISTER_START
+         BootRegister(new GlassStone(0, false, false), &quot;st_rawglass&quot;);
++        BootRegister(new GlassStone(0, false, false, true), &quot;st_rawglass_quad&quot;);
+         BootRegister(new GlassStone(1, false, true),  &quot;st_rawglass_movable&quot;);
+         BootRegister(new GlassStone(2, false, false), &quot;st_lightglass&quot;);
+         BootRegister(new GlassStone(2, true, false),  &quot;st_lightglass_hollow&quot;);
+
+Modified: trunk/src/stones/GlassStones.hh
+===================================================================
+--- trunk/src/stones/GlassStones.hh	2009-05-09 22:46:23 UTC (rev 1668)
++++ trunk/src/stones/GlassStones.hh	2009-05-09 23:03:48 UTC (rev 1669)
+@@ -61,11 +61,12 @@
+             OBJBIT_MOVABLE  =   1&lt;&lt;24,    ///&lt;  
+             OBJBIT_HOLLOW   =   1&lt;&lt;25,    ///&lt; 
+             OBJBIT_GLASSES  =   1&lt;&lt;26,    ///&lt; invisible due to glasses
+-            OBJBIT_CLOTH    =   1&lt;&lt;27     ///&lt; collision sound cloth instead of standard stone
++            OBJBIT_QUAD     =   1&lt;&lt;27,    ///&lt; quad texture
++            OBJBIT_CLOTH    =   1&lt;&lt;28     ///&lt; collision sound cloth instead of standard stone
+         };
+         
+     public:
+-        GlassStone(int type, bool hollow, bool movable, bool cloth = false);
++        GlassStone(int type, bool hollow, bool movable, bool quad = false, bool cloth = false);
+         
+         // Object interface
+         virtual std::string getClass() const;        
+
+Modified: trunk/src/stones/IceBlock.cc
+===================================================================
+--- trunk/src/stones/IceBlock.cc	2009-05-09 22:46:23 UTC (rev 1668)
++++ trunk/src/stones/IceBlock.cc	2009-05-09 23:03:48 UTC (rev 1669)
+@@ -34,6 +34,7 @@
+     Value IceBlock::message(const Message &amp;m) {
+         if (m.message == &quot;_explosion&quot; || m.message == &quot;ignite&quot;) {
+             if (isDisplayable()) {
++                state = BREAKING;
+                 set_anim(&quot;st_ice_breaking&quot;);
+             }
+             return Value();
+@@ -66,6 +67,10 @@
+         return true;
+     }
+     
++    bool IceBlock::is_movable() const {
++        return (state != BREAKING) ? Stone::is_movable() : false;
++    }
++    
+     bool IceBlock::on_move(const GridPos &amp;origin) {
+         bool isFrozenBomb = false;
+         Item *itf = GetItem(origin);
+
+Modified: trunk/src/stones/IceBlock.hh
+===================================================================
+--- trunk/src/stones/IceBlock.hh	2009-05-09 22:46:23 UTC (rev 1668)
++++ trunk/src/stones/IceBlock.hh	2009-05-09 23:03:48 UTC (rev 1669)
+@@ -52,6 +52,7 @@
+         
+         // Stone interface
+         virtual bool is_transparent(Direction d) const;
++        virtual bool is_movable() const;
+         virtual bool on_move(const GridPos &amp;origin);
+         
+     private:
+
+Modified: trunk/src/stones/PlasterStone.cc
+===================================================================
+--- trunk/src/stones/PlasterStone.cc	2009-05-09 22:46:23 UTC (rev 1668)
++++ trunk/src/stones/PlasterStone.cc	2009-05-09 23:03:48 UTC (rev 1669)
+@@ -93,6 +93,10 @@
+         return objFlags &amp; OBJBIT_HOLLOW;
+     }
+ 
++    bool PlasterStone::is_movable() const {
++        return (state != BREAKING) ? Stone::is_movable() : false;
++    }
++    
+     StoneResponse PlasterStone::collision_response(const StoneContact &amp;sc) {
+         if (objFlags &amp; OBJBIT_HOLLOW)
+             return STONE_PASS;
+
+Modified: trunk/src/stones/PlasterStone.hh
+===================================================================
+--- trunk/src/stones/PlasterStone.hh	2009-05-09 22:46:23 UTC (rev 1668)
++++ trunk/src/stones/PlasterStone.hh	2009-05-09 23:03:48 UTC (rev 1669)
+@@ -63,6 +63,7 @@
+         
+         // Stone interface
+         virtual bool is_floating() const;
++        virtual bool is_movable() const;
+         virtual StoneResponse collision_response(const StoneContact &amp;sc);
+         virtual const char *collision_sound();
+         virtual void actor_hit(const StoneContact &amp;sc);
+
+Modified: trunk/src/stones/SimpleStones.cc
+===================================================================
+--- trunk/src/stones/SimpleStones.cc	2009-05-09 22:46:23 UTC (rev 1668)
++++ trunk/src/stones/SimpleStones.cc	2009-05-09 23:03:48 UTC (rev 1669)
+@@ -22,7 +22,7 @@
+ #include &quot;stones/SimpleStones.hh&quot;
+ #include &quot;client.hh&quot;
+ #include &quot;errors.hh&quot;
+-#include &quot;Inventory.hh&quot;
++//#include &quot;Inventory.hh&quot;
+ #include &quot;main.hh&quot;
+ #include &quot;player.hh&quot;
+ #include &quot;server.hh&quot;
+@@ -239,106 +239,6 @@
+     
+     DEF_TRAITSM(PlopStone, &quot;st_plop&quot;, st_plop, MOVABLE_STANDARD);
+ 
+-/* -------------------- SpitterStone -------------------- */
+-
+-    SpitterStone::SpitterStone() {
+-    }
+-    
+-    void SpitterStone::setState(int extState) {
+-        // block any calls
+-    }
+-    
+-    Value SpitterStone::message(const Message &amp;m) {
+-        if (m.message == &quot;_cannonball&quot;) {
+-            if (!getAttr(&quot;secure&quot;).to_bool() || server::GameCompatibility == enigma::GAMET_PEROXYD) {
+-                state = BREAKING;
+-                init_model();
+-            }
+-            return Value();
+-        } else if (m.message == &quot;spit&quot; &amp;&amp; state == IDLE &amp;&amp; isDisplayable()) {
+-            ecl::V2 dest = m.value;
+-            if (!IsInsideLevel(dest)) {
+-                int idx = getDefaultedAttr(&quot;$hitdestindex&quot;, 0);
+-                if (!getDestinationByIndex(idx++, dest)) {
+-                    if (idx != 1) {
+-                        idx = 0;
+-                        if (!getDestinationByIndex(idx++, dest))
+-                            return Value();
+-                    } else
+-                        return Value();
+-                }
+-                setAttr(&quot;$hitdestindex&quot;, idx);
+-                if (!IsInsideLevel(dest))
+-                    return Value();
+-            }
+-            ecl::V2 vel = (GridPos(dest).center() - get_pos().center()) /0.55;
+-            setAttr(&quot;$ball_velocity&quot;, vel);
+-            state = LOADING;
+-            init_model();
+-            return Value();
+-        }
+-        return Stone::message(m);
+-    }
+-    
+-    void SpitterStone::init_model() {
+-        if (state == IDLE)
+-            set_anim(&quot;st_spitter_idle&quot;);
+-        else if (state == LOADING)
+-            set_anim(&quot;st_spitter_loading&quot;);
+-        else if (state == SPITTING)
+-            set_anim(&quot;st_spitter_spitting&quot;);
+-        else
+-            set_anim(&quot;st_spitter_breaking&quot;);
+-    }
+-    
+-    void SpitterStone::animcb() {
+-        switch (state) {
+-            case IDLE :
+-                ASSERT(false, XLevelRuntime, &quot;SpitterStone: animcb called with inconsistent state&quot;); 
+-            case LOADING : {
+-                Other *cb = dynamic_cast&lt;Other *&gt;(MakeObject(&quot;ot_cannonball&quot;));
+-                ecl::V2 center  = get_pos().center();
+-                cb-&gt;setAttr(&quot;$position&quot;, center);
+-                cb-&gt;setAttr(&quot;$ball_velocity&quot;, getAttr(&quot;$ball_velocity&quot;));
+-                AddOther(cb);
+-                
+-                state = SPITTING;
+-                init_model();
+-                break;
+-            }
+-            case SPITTING : 
+-                state = IDLE;
+-                init_model();
+-                break;
+-            case BREAKING :
+-                SetItem(get_pos(), MakeItem(&quot;it_meditation&quot;));
+-                KillStone(get_pos());
+-                break;
+-        }
+-    }
+-
+-    void SpitterStone::actor_hit (const StoneContact &amp;sc) {
+-        if (state != IDLE)
+-            return;
+-    
+-        if (enigma::Inventory *inv = player::GetInventory(sc.actor)) {
+-            int lifepos = inv-&gt;find(&quot;it_extralife&quot;);
+-            if (lifepos != -1) {
+-                delete inv-&gt;yield_item(lifepos);
+-                player::RedrawInventory (inv);
+-                ecl::V2 vel = distortedVelocity(sc.actor-&gt;get_vel(), 1.0);
+-                double maxvel = (double)getAttr(&quot;range&quot;)/0.56;
+-                if (maxvel * maxvel &lt; square(vel))
+-                    vel = maxvel * normalize(vel);
+-                setAttr(&quot;$ball_velocity&quot;, vel);
+-                state = LOADING;
+-                init_model();
+-            }
+-        }
+-    }
+-
+-    DEF_TRAITSM(SpitterStone, &quot;st_spitter&quot;, st_yinyang, MOVABLE_PERSISTENT);
+-
+ /* -------------------- Yinyang stone -------------------- */
+     YinyangStone::YinyangStone(int initState, bool isInstant) : Stone () {
+         state = initState;
+@@ -433,7 +333,6 @@
+         BootRegister(new GrateStone(1), &quot;st_grate_framed&quot;);
+         BootRegister(new PlopStone(), &quot;st_plop&quot;);
+         BootRegister(new PlopStone(), &quot;st_plop_slate&quot;);
+-        BootRegister(new SpitterStone(), &quot;st_spitter&quot;);
+         BootRegister(new YinyangStone(0), &quot;st_yinyang&quot;);
+         BootRegister(new YinyangStone(0, true), &quot;st_yinyang_instant&quot;);
+         BootRegister(new YinyangStone(1), &quot;st_yinyang_active&quot;);
+
+Modified: trunk/src/stones/SimpleStones.hh
+===================================================================
+--- trunk/src/stones/SimpleStones.hh	2009-05-09 22:46:23 UTC (rev 1668)
++++ trunk/src/stones/SimpleStones.hh	2009-05-09 23:03:48 UTC (rev 1669)
+@@ -159,38 +159,7 @@
+         virtual void on_floor_change();
+     };
+    
+-    /** 
+-     * SpitterStone
+-     */
+-    class SpitterStone : public Stone {
+-        CLONEOBJ(SpitterStone);
+-        DECL_TRAITS;
+-    private:
+-        enum iState {
+-            IDLE, 
+-            LOADING,
+-            SPITTING,
+-            BREAKING
+-        };
+-
+-    public:
+-        SpitterStone ();
+-        
+-        // StateObject interface
+-        virtual void setState(int extState);
+-        virtual Value message(const Message &amp;m);
+-
+-        // GridObject interface
+-        virtual void init_model();
+-        
+-        // ModelCallback interface  - Animation callback
+-        virtual void animcb();
+-
+-        // Stone interface
+-        virtual void actor_hit(const StoneContact &amp;sc);
+-    };
+-    
+-    /** 
++     /** 
+      * Yinyang 
+      */
+     class YinyangStone : public Stone {
+
+Added: trunk/src/stones/SpitterStone.cc
+===================================================================
+--- trunk/src/stones/SpitterStone.cc	2009-05-09 22:46:23 UTC (rev 1668)
++++ trunk/src/stones/SpitterStone.cc	2009-05-09 23:03:48 UTC (rev 1669)
+@@ -0,0 +1,148 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/SpitterStone.hh&quot;
++#include &quot;errors.hh&quot;
++#include &quot;Inventory.hh&quot;
++#include &quot;player.hh&quot;
++#include &quot;server.hh&quot;
++#include &quot;world.hh&quot;
++//#include &quot;main.hh&quot;
++
++namespace enigma {
++    SpitterStone::SpitterStone() {
++        state = ACTIVE;
++    }
++    
++    Value SpitterStone::message(const Message &amp;m) {
++        if (m.message == &quot;_cannonball&quot;) {
++            if (!getAttr(&quot;secure&quot;).to_bool() || server::GameCompatibility == enigma::GAMET_PEROXYD) {
++                state = BREAKING;
++                init_model();
++            }
++            return Value();
++        } else if (m.message == &quot;spit&quot; &amp;&amp; state == ACTIVE &amp;&amp; isDisplayable()) {
++            ecl::V2 dest = m.value;
++            if (!IsInsideLevel(dest)) {
++                int idx = getDefaultedAttr(&quot;$hitdestindex&quot;, 0);
++                if (!getDestinationByIndex(idx++, dest)) {
++                    if (idx != 1) {
++                        idx = 0;
++                        if (!getDestinationByIndex(idx++, dest))
++                            return Value();
++                    } else
++                        return Value();
++                }
++                setAttr(&quot;$hitdestindex&quot;, idx);
++                if (!IsInsideLevel(dest))
++                    return Value();
++            }
++            ecl::V2 vel = (GridPos(dest).center() - get_pos().center()) /0.55;
++            setAttr(&quot;$ball_velocity&quot;, vel);
++            state = LOADING;
++            init_model();
++            return Value();
++        } else if (m.message == &quot;_model_reanimated&quot;) {
++            if (state == LOADING)
++                state = SPITTING;   // abort - position, velocity are bogus anyway
++            init_model();  // replace bogus model - state may have changed
++        }
++        return Stone::message(m);
++    }
++    
++    int SpitterStone::externalState() const {
++        return state == IDLE ? 0 : 1;
++    }
++    
++    void SpitterStone::setState(int extState) {
++        if (state != extState) {
++            state = (extState == 0) ? IDLE : ACTIVE;
++            if (isDisplayable())
++                init_model();
++        }
++    }
++    
++    void SpitterStone::init_model() {
++        if (state == IDLE)
++            set_model(&quot;st_spitter_idle&quot;);
++        else if (state == ACTIVE)
++            set_anim(&quot;st_spitter_active&quot;);
++        else if (state == LOADING)
++            set_anim(&quot;st_spitter_loading&quot;);
++        else if (state == SPITTING)
++            set_anim(&quot;st_spitter_spitting&quot;);
++        else
++            set_anim(&quot;st_spitter_breaking&quot;);
++    }
++    
++    void SpitterStone::animcb() {
++        switch (state) {
++            case ACTIVE :
++                ASSERT(false, XLevelRuntime, &quot;SpitterStone: animcb called with inconsistent state&quot;); 
++            case LOADING : {
++                Other *cb = dynamic_cast&lt;Other *&gt;(MakeObject(&quot;ot_cannonball&quot;));
++                ecl::V2 center  = get_pos().center();
++                cb-&gt;setAttr(&quot;$position&quot;, center);
++                cb-&gt;setAttr(&quot;$ball_velocity&quot;, getAttr(&quot;$ball_velocity&quot;));
++                AddOther(cb);
++                
++                state = SPITTING;
++                init_model();
++                break;
++            }
++            case SPITTING : 
++                state = ACTIVE;
++                init_model();
++                break;
++            case BREAKING :
++                SetItem(get_pos(), MakeItem(&quot;it_meditation&quot;));
++                KillStone(get_pos());
++                break;
++        }
++    }
++
++    void SpitterStone::actor_hit (const StoneContact &amp;sc) {
++        if (state != ACTIVE)
++            return;
++    
++        if (enigma::Inventory *inv = player::GetInventory(sc.actor)) {
++            int lifepos = inv-&gt;find(&quot;it_extralife&quot;);
++            if (lifepos != -1) {
++                delete inv-&gt;yield_item(lifepos);
++                player::RedrawInventory (inv);
++                ecl::V2 vel = distortedVelocity(sc.actor-&gt;get_vel(), 1.0);
++                double maxvel = (double)getAttr(&quot;range&quot;)/0.56;
++                if (maxvel * maxvel &lt; square(vel))
++                    vel = maxvel * normalize(vel);
++                setAttr(&quot;$ball_velocity&quot;, vel);
++                state = LOADING;
++                init_model();
++            }
++        }
++    }
++
++    DEF_TRAITSM(SpitterStone, &quot;st_spitter&quot;, st_spitter, MOVABLE_PERSISTENT);
++
++    
++    BOOT_REGISTER_START
++        BootRegister(new SpitterStone(), &quot;st_spitter&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/SpitterStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/SpitterStone.hh
+===================================================================
+--- trunk/src/stones/SpitterStone.hh	2009-05-09 22:46:23 UTC (rev 1668)
++++ trunk/src/stones/SpitterStone.hh	2009-05-09 23:03:48 UTC (rev 1669)
+@@ -0,0 +1,64 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2009 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef SPITTERSTONE_HH
++#define SPITTERSTONE_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * SpitterStone
++     */
++    class SpitterStone : public Stone {
++        CLONEOBJ(SpitterStone);
++        DECL_TRAITS;
++    private:
++        enum iState {
++            IDLE,
++            ACTIVE,
++            LOADING,
++            SPITTING,
++            BREAKING
++        };
++
++    public:
++        SpitterStone ();
++        
++        // StateObject interface
++        virtual int externalState() const;
++        virtual void setState(int extState);
++        virtual Value message(const Message &amp;m);
++
++        // GridObject interface
++        virtual void init_model();
++        
++        // ModelCallback interface  - Animation callback
++        virtual void animcb();
++
++        // Stone interface
++        virtual void actor_hit(const StoneContact &amp;sc);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/SpitterStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2009-05-09 22:46:23 UTC (rev 1668)
++++ trunk/src/stones.hh	2009-05-09 23:03:48 UTC (rev 1669)
+@@ -83,6 +83,7 @@
+         st_rubberband,
+         st_scissors,
+         st_shogun,
++        st_spitter,
+         st_standard,
+         st_stoneimpulse,
+         st_stoneimpulse_steady,
+@@ -184,7 +185,7 @@
+         virtual StoneResponse collision_response(const StoneContact &amp;sc);
+ 
+         /*! Is this stone movable? Affects impulse-stones, fire, ordinary pushes... */
+-        bool   is_movable() const {
++        virtual bool is_movable() const {
+             return get_traits().movable &gt;= MOVABLE_STANDARD;
+         }
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001098.html">[Enigma-game-svn] r1668 - in trunk: attic/images-stones data/gfx32	data/gfx48
+</A></li>
+	<LI>Next message: <A HREF="001100.html">[Enigma-game-svn] r1670 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1099">[ date ]</a>
+              <a href="thread.html#1099">[ thread ]</a>
+              <a href="subject.html#1099">[ subject ]</a>
+              <a href="author.html#1099">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

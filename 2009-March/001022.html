@@ -1,0 +1,305 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1592 - in trunk: doc src src/items
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1592%20-%20in%20trunk%3A%20doc%20src%20src/items&In-Reply-To=%3C200903162244.n2GMiurT021048%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001021.html">
+   <LINK REL="Next"  HREF="001023.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1592 - in trunk: doc src src/items</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1592%20-%20in%20trunk%3A%20doc%20src%20src/items&In-Reply-To=%3C200903162244.n2GMiurT021048%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1592 - in trunk: doc src src/items">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon Mar 16 23:44:56 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001021.html">[Enigma-game-svn] r1591 - in trunk: data/levels/lib doc/reference
+</A></li>
+        <LI>Next message: <A HREF="001023.html">[Enigma-game-svn] r1593 - trunk/data/levels/enigma_experimental
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1022">[ date ]</a>
+              <a href="thread.html#1022">[ thread ]</a>
+              <a href="subject.html#1022">[ subject ]</a>
+              <a href="author.html#1022">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-03-16 23:44:55 +0100 (Mon, 16 Mar 2009)
+New Revision: 1592
+
+Modified:
+   trunk/doc/README.macosx
+   trunk/src/items/SimpleItems.cc
+   trunk/src/items/SimpleItems.hh
+   trunk/src/lua.cc
+Log:
+Trunk 1.1: new API
+- Mac OS X readme update by Sidney Markowitz
+- resolver support: report error messages thrown in finalizer
+- position list: add linear multiplication operator '*'
+- group:sort() add linear sorting support:
+  - sort(&quot;linear&quot;): take first two objects to define a direction vector
+  - sort(&quot;linear&quot;, po): use given po as direction vector
+  - return group with objects sorted in given direction 
+- explosion, flag, spring: fix class identification - did cause wrong
+    bomb explosion patterns
+
+
+Modified: trunk/doc/README.macosx
+===================================================================
+--- trunk/doc/README.macosx	2009-03-16 00:55:33 UTC (rev 1591)
++++ trunk/doc/README.macosx	2009-03-16 22:44:55 UTC (rev 1592)
+@@ -3,14 +3,14 @@
+ Overview:
+ ---------
+ 
+-Due to which machines are available to Enigma developers, The latest version
+-of Enigma has only been built under MacOS X 10.5. The instructions for
+-building under older versions of MacOS X are retained below, but have
+-not been tested to verify that they continue to work. Note that the
+-Enigma Mac developers all have Apple's free Xcode development environment
+-installed on their machines. Even though the build process is not run
+-under Xcode, there may be some things that would not work if Xcode had
+-never been installed.
++Due to which machines are available to Enigma developers, the latest
++version of Enigma has only been built under MacOS X 10.5. The
++instructions for building under older versions of MacOS X have been
++removed from this README as there can be no assurance that they would
++continue to work. Note that the Enigma Mac developers all have Apple's
++free Xcode development environment installed on their machines. Even
++though the build process is not run under Xcode, there may be some
++things that would not work if Xcode had never been installed.
+ 
+ Enigma is built from the command line using make. There is a make
+ target that will create a Mac OS application bundle in a compressed
+
+Modified: trunk/src/items/SimpleItems.cc
+===================================================================
+--- trunk/src/items/SimpleItems.cc	2009-03-16 00:55:33 UTC (rev 1591)
++++ trunk/src/items/SimpleItems.cc	2009-03-16 22:44:55 UTC (rev 1592)
+@@ -129,6 +129,10 @@
+         state = strength;
+     }
+     
++    std::string Explosion::getClass() const {
++        return &quot;it_explosion&quot;;
++    }
++
+     Value Explosion::message(const Message &amp;m) {
+         if (m.message == &quot;_cannonball&quot;) {
+             state = 3;
+@@ -176,6 +180,10 @@
+         Item::setAttr(&quot;color&quot;, type);
+     }
+     
++    std::string FlagItem::getClass() const {
++        return &quot;it_flag&quot;;
++    }
++
+     void FlagItem::on_drop(Actor *a) {
+         player::SetRespawnPositions(get_pos(), getAttr(&quot;color&quot;));
+     }
+@@ -296,6 +304,9 @@
+         state = type;
+     }
+     
++    std::string Spring::getClass() const {
++        return &quot;it_spring&quot;;
++    }
+     void Spring::setState(int extState) {
+         // block all write attempts
+     }
+
+Modified: trunk/src/items/SimpleItems.hh
+===================================================================
+--- trunk/src/items/SimpleItems.hh	2009-03-16 00:55:33 UTC (rev 1591)
++++ trunk/src/items/SimpleItems.hh	2009-03-16 22:44:55 UTC (rev 1592)
+@@ -123,6 +123,7 @@
+         Explosion(int strength);
+         
+         // Object interface
++        virtual std::string getClass() const;
+         virtual Value message(const Message &amp;m);
+         
+         // StateObject interface
+@@ -147,6 +148,9 @@
+     public:
+         FlagItem(int type);
+         
++        // Object interface
++        virtual std::string getClass() const;
++        
+         // Item interface
+         virtual void on_drop(Actor *a);
+         virtual void on_pickup(Actor *a);
+@@ -254,6 +258,9 @@
+     public:
+         Spring(int type);
+         
++        // Object interface
++        virtual std::string getClass() const;
++
+         // StateObject interface
+         virtual void setState(int extState);
+ 
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2009-03-16 00:55:33 UTC (rev 1591)
++++ trunk/src/lua.cc	2009-03-16 22:44:55 UTC (rev 1592)
+@@ -1024,7 +1024,7 @@
+     return pushNewPosition(L);
+ }
+ 
+-static int addPositionsBase(lua_State *L, int factorArg2) {
++static int addPositionsBase(lua_State *L, double factorArg2, bool scalarMultiplication =false) {
+     // (pos|obj|table|polist) +|- (pos|obj|table|polist)
+     if (!(is_polist(L, 1) || is_polist(L, 2) )) {
+         // add two positions resulting a new position
+@@ -1062,21 +1062,23 @@
+         // add a position to a list of postions resulting a list of positions
+         PositionList pl;
+         PositionList newpl;
++        ecl::V2 offset;
+         bool found = false;
+         if (is_polist(L, 1)) {
+             pl = toPositionList(L, 1);
+             found = true;
+-        } else {
++        } else if (!scalarMultiplication) {
+             newPosition(L, 1);
++            offset = toPosition(L, -1);
+         }
+         if (is_polist(L, 2)) {
+             if (found)
+                 throwLuaError(L, &quot;Addition of two position lists not supported&quot;);                
+             pl = toPositionList(L, 2);
+-        } else {
++        } else if (!scalarMultiplication) {
+             newPosition(L, 2);
++            offset = toPosition(L, -1);
+         }
+-        ecl::V2 offset = toPosition(L, -1);
+         lua_pop(L, 1);
+         for (PositionList::iterator itr = pl.begin(); itr != pl.end(); ++itr) {
+              ecl::V2 newpos = offset + factorArg2 * (ecl::V2)(*itr);
+@@ -1124,6 +1126,19 @@
+     return addPositionsBase(L, -1);
+ }
+ 
++static int scalarMultPositions(lua_State *L) {
++    // (num|polist) * (num|polist)
++    double factor = 0;
++    if (lua_isnumber(L, 1)) {
++        factor = lua_tonumber(L, 1);
++    } else if (lua_isnumber(L, 2)) {
++        factor = lua_tonumber(L, 2);
++    } else {
++        throwLuaError(L, &quot;Position List - scalar multiplications with invalid value type.&quot;);
++    }
++    return addPositionsBase(L, factor, true);
++}
++
+ static int centerPosition(lua_State *L) {
+     // #(pos|obj)
+     if (is_position(L, 1)) {  // position
+@@ -2498,7 +2513,6 @@
+         }
+     }
+     
+-    // TODO finalization of resolvers
+     lua_getfield(L, LUA_REGISTRYINDEX, LUA_ID_RESOLVER);
+     while (is_table(L, -1)) {
+         lua_rawgeti(L, -1, 2);      // get resolver finalization at index 2
+@@ -2506,7 +2520,8 @@
+             lua_pushvalue(L, -2);       // duplicate table as resolver context
+             int retval=lua_pcall(L, 1, 0, 0);     // resolver(context,evaluator,key,x,y) -&gt;  tile
+             if (retval!=0) {
+-                throwLuaError(L, &quot;Error within tile key resolver finalization&quot;);
++                throwLuaError(L, ecl::strf(&quot;Error within tile key resolver finalization:\n %s&quot;, 
++                        lua_tostring(L, -1)).c_str());
+                 return 0;
+             }
+         } else {
+@@ -3135,7 +3150,7 @@
+         return 0;        
+     }
+     std::string command;
+-    if (lua_gettop(L) == 2 &amp;&amp; lua_isstring(L, 2)) {
++    if (lua_gettop(L) &gt;= 2 &amp;&amp; lua_isstring(L, 2)) {
+         command = lua_tostring(L, 2);
+     }
+     ObjectList oldSort = toObjectList(L, 1);
+@@ -3169,6 +3184,27 @@
+                 newSort.push_back(itr-&gt;second);
+             }
+         }
++    } else if (command == &quot;linear&quot;) {
++        ecl::V2 dir;
++        std::multimap&lt;double, Object *&gt; sortMap;
++        if (lua_gettop(L) == 2 &amp;&amp; oldSort.size() &gt;= 2) {
++            Object *front = oldSort.front();
++            oldSort.pop_front();
++            dir = (ecl::V2)(Value(oldSort.front())) - (ecl::V2)(Value(front));
++            oldSort.push_front(front);
++        } else if (lua_gettop(L) == 3 &amp;&amp; is_position(L, 3)) {
++            dir = toPosition(L, 3);
++        } else {
++            return pushNewGroup(L, oldSort);
++        }
++        dir.normalize();
++        for (ObjectList::iterator itr = oldSort.begin(); itr != oldSort.end(); ++itr) {
++            double d = dir * (ecl::V2)(Value(*itr));
++            sortMap.insert(std::make_pair(d, *itr));
++        }
++        for (std::multimap&lt;double, Object *&gt;::iterator itr = sortMap.begin(); itr != sortMap.end(); ++itr)
++            newSort.push_back(itr-&gt;second);
++        
+     } else {
+         // default sort lexical by name
+         std::map&lt;std::string, Object *&gt; sortMap;
+@@ -3488,6 +3524,7 @@
+     {addPositions,                  &quot;__add&quot;},      //  obj + obj
+     {subPositions,                  &quot;__sub&quot;},      //  obj - obj
+     {joinPolist,                    &quot;__concat&quot;},   //  obj .. obj
++    {scalarMultPositions,           &quot;__mul&quot;},      //  obj * obj
+     {0,0}
+ };
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001021.html">[Enigma-game-svn] r1591 - in trunk: data/levels/lib doc/reference
+</A></li>
+	<LI>Next message: <A HREF="001023.html">[Enigma-game-svn] r1593 - trunk/data/levels/enigma_experimental
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1022">[ date ]</a>
+              <a href="thread.html#1022">[ thread ]</a>
+              <a href="subject.html#1022">[ subject ]</a>
+              <a href="author.html#1022">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

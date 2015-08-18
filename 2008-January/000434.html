@@ -1,0 +1,568 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1002 - in trunk: data src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1002%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200801242321.m0ONLjA2003105%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000433.html">
+   <LINK REL="Next"  HREF="000435.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1002 - in trunk: data src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1002%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200801242321.m0ONLjA2003105%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1002 - in trunk: data src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Fri Jan 25 00:21:45 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000433.html">[Enigma-game-svn] r1001 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000435.html">[Enigma-game-svn] r1003 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#434">[ date ]</a>
+              <a href="thread.html#434">[ thread ]</a>
+              <a href="subject.html#434">[ subject ]</a>
+              <a href="author.html#434">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-01-25 00:21:44 +0100 (Fri, 25 Jan 2008)
+New Revision: 1002
+
+Added:
+   trunk/src/stones/ClusterStone.cc
+   trunk/src/stones/ClusterStone.hh
+Modified:
+   trunk/data/models-2d.lua
+   trunk/src/GridObject.cc
+   trunk/src/GridObject.hh
+   trunk/src/Makefile.am
+   trunk/src/items.cc
+   trunk/src/stones/ConnectiveStone.hh
+   trunk/src/stones/Switch.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1: Reengineering Connective Stones
+- fix st_switch state value on instant case
+- fix r1000 it-explosion renamed animation error
+- world object naming: allow a replacement object with identical name as
+  predecessor.
+- GridObject as basis for connective object: 
+  - support for attribut handling of &quot;connections&quot;, &quot;faces&quot;, &quot;$connections&quot;
+  - model handling of connective objects
+- ClusterStone as common C++ class for simple stones that support clustering
+  - &quot;st_panel&quot;, &quot;st_brick&quot;, &quot;st_bluesand&quot;
+  - auto clustering by common &quot;cluster&quot; attribute according to 4-color theorem
+  - dynamic reclustering on change of connections, removed or added
+    ClusterStones.
+ToDo:
+- map old Big* stones to new ones and remove old code
+
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-01-23 21:43:14 UTC (rev 1001)
++++ trunk/data/models-2d.lua	2008-01-24 23:21:44 UTC (rev 1002)
+@@ -758,6 +758,27 @@
+     DefSolidStone(&quot;st-wood_001&quot;, &quot;st-bigpanelx1&quot;)
+ end
+ 
++-- st_bluesand --
++do
++    DefSubimages(&quot;st-bigbluesand&quot;, {modelname=&quot;st_bluesandx&quot;,w=4,h=4})
++    for i=0,15 do DefSolidStone(&quot;st_bluesand&quot;..i, &quot;st_bluesandx&quot;..(i+1)) end
++    DefSolidStone(&quot;st_bluesand&quot;, &quot;st_bluesandx1&quot;)
++end
++
++-- st_brick --
++do
++    DefSubimages(&quot;st-bigbrick&quot;, {modelname=&quot;st_brickx&quot;,w=4,h=4})
++    for i=0,15 do DefSolidStone(&quot;st_brick&quot;..i, &quot;st_brickx&quot;..(i+1)) end
++    DefSolidStone(&quot;st_brick&quot;, &quot;st_brickx1&quot;)
++end
++
++-- st_panel --
++do
++    DefSubimages(&quot;st-bigpanel&quot;, {modelname=&quot;st_panelx&quot;,w=4,h=4})
++    for i=0,15 do DefSolidStone(&quot;st_panel&quot;..i, &quot;st_panelx&quot;..(i+1)) end
++    DefSolidStone(&quot;st_panel&quot;, &quot;st_panelx1&quot;)
++end
++
+ -- st-bolder --
+ do
+     local img=DefSubimages(&quot;st-bolder&quot;, {w=4,h=3})
+
+Modified: trunk/src/GridObject.cc
+===================================================================
+--- trunk/src/GridObject.cc	2008-01-23 21:43:14 UTC (rev 1001)
++++ trunk/src/GridObject.cc	2008-01-24 23:21:44 UTC (rev 1002)
+@@ -108,9 +108,65 @@
+         va_end(arg_ptr);
+     }
+     
++    void GridObject::set_attrib(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;connections&quot; || key == &quot;faces&quot;) {
++            int d = NODIRBIT;
++            std::string vs(val);
++            if (vs.find('n') != std::string::npos) d |= NORTHBIT;
++            if (vs.find('e') != std::string::npos) d |= EASTBIT;
++            if (vs.find('s') != std::string::npos) d |= SOUTHBIT;
++            if (vs.find('w') != std::string::npos) d |= WESTBIT;
++            if (key == &quot;faces&quot;) d ^= ALL_DIRECTIONS;
++            Object::set_attrib(&quot;$connections&quot;, d);
++            if (isDisplayable())
++                init_model();
++        } else if (key == &quot;$connections&quot;) {
++            Object::set_attrib(&quot;$connections&quot;, val);
++            if (isDisplayable())
++                init_model();
++        } else
++            Object::set_attrib(key, val);
++    }
++    
++    Value GridObject::getAttr(const string &amp;key) const {
++        if (key == &quot;connections&quot; || (key == &quot;faces&quot;)) {
++            std::string result;
++            DirectionBits db = (key == &quot;connections&quot;) ? getConnections() :getFaces();
++            if (db &amp; NORTHBIT) result += &quot;n&quot;;
++            if (db &amp; EASTBIT)  result += &quot;e&quot;;
++            if (db &amp; SOUTHBIT) result += &quot;s&quot;;
++            if (db &amp; WESTBIT)  result += &quot;w&quot;;
++            return result;
++        } else
++            return StateObject::getAttr(key);
++    }
++    
+     void GridObject::setState(int extState) {
+         StateObject::setState(extState);
+         init_model();
+     }
+     
++    std::string GridObject::getModelName() const {
++        return get_kind();
++    }
++    
++    void GridObject::init_model() {
++        DirectionBits c = getConnections();
++        if (c != NODIRBIT)
++            set_model(getModelName() + ecl::strf(&quot;%d&quot;, c));
++        else
++            set_model(getModelName());
++    }
++
++    DirectionBits GridObject::getConnections() const {
++        if (Value v = getAttr(&quot;$connections&quot;))
++            return DirectionBits((int)v);
++        else
++            return NODIRBIT;
++    }
++    
++    DirectionBits GridObject::getFaces() const {
++        return DirectionBits(ALL_DIRECTIONS ^ getConnections());
++    }
++    
+ } // namespace enigma
+
+Modified: trunk/src/GridObject.hh
+===================================================================
+--- trunk/src/GridObject.hh	2008-01-23 21:43:14 UTC (rev 1001)
++++ trunk/src/GridObject.hh	2008-01-24 23:21:44 UTC (rev 1002)
+@@ -44,6 +44,14 @@
+         GridObject() : pos (GridPos(-1, -1)) {}
+         GridObject(const char * kind) : StateObject(kind), pos (GridPos(-1, -1)) {}
+ 
++        // Object interface
++        virtual void set_attrib(const string&amp; key, const Value &amp;val);
++        virtual Value getAttr(const string &amp;key) const;
++
++        // StateObject interface
++        virtual void setState(int extState);
++
++
+         void creation(GridPos p) {
+             pos = p;
+             on_creation (p);
+@@ -89,27 +97,28 @@
+         bool sound_event (const char *name, double vol = 1.0);
+         display::Model *set_anim (const std::string &amp;mname);
+ 
++        DirectionBits getConnections() const;
++        DirectionBits getFaces() const;
++
+     protected:
+         // GridObject interface
++        virtual std::string getModelName() const;
+         virtual void set_model (const std::string &amp;mname) = 0;
+         virtual display::Model *get_model () = 0;
+         virtual void kill_model (GridPos p) = 0;
+ 
+-        virtual void init_model() {
+-            set_model(get_kind());
+-        }
++        virtual void init_model();
+ 
+-        virtual void on_creation (GridPos) {
++        virtual void on_creation(GridPos p) {
+             init_model();
+         }
+ 
+-        virtual void on_removal (GridPos p) {
++        virtual void on_removal(GridPos p) {
+             kill_model (p);
+         }
++        
++        
+ 
+-        // StateObject interface
+-        virtual void setState(int extState);
+-
+     private:
+         // ModelCallback interface.
+         void animcb() {}
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-01-23 21:43:14 UTC (rev 1001)
++++ trunk/src/Makefile.am	2008-01-24 23:21:44 UTC (rev 1002)
+@@ -191,6 +191,8 @@
+ 	stones/BlockerStone.hh	\
+ 	stones/BoulderStone.cc	\
+ 	stones/BoulderStone.hh	\
++	stones/ClusterStone.cc	\
++	sotnes/ClusterStone.hh	\
+ 	stones/ConnectiveStone.cc	\
+ 	stones/ConnectiveStone.hh	\
+ 	stones/FloppySwitch.hh   \
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-01-23 21:43:14 UTC (rev 1001)
++++ trunk/src/items.cc	2008-01-24 23:21:44 UTC (rev 1002)
+@@ -991,7 +991,7 @@
+         {}
+ 
+     private:
+-        void init_model() {set_anim(&quot;_explosion&quot;);}
++        void init_model() {set_anim(&quot;expl&quot;);}
+         bool actor_hit(Actor *actor) {
+             SendMessage(actor, &quot;shatter&quot;);
+             return false;
+
+Added: trunk/src/stones/ClusterStone.cc
+===================================================================
+--- trunk/src/stones/ClusterStone.cc	2008-01-23 21:43:14 UTC (rev 1001)
++++ trunk/src/stones/ClusterStone.cc	2008-01-24 23:21:44 UTC (rev 1002)
+@@ -0,0 +1,149 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/ClusterStone.hh&quot;
++//#include &quot;main.hh&quot;
++
++namespace enigma {
++    ClusterStone::ClusterStone(std::string classname, std::string connections) : Stone(classname.c_str()) {
++        set_attrib(&quot;connections&quot;, connections);
++    }
++    
++    void ClusterStone::set_attrib(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;connections&quot;) {
++            Stone::set_attrib(key, val);
++            if (isDisplayable()) {
++                autoLeaveCluster();
++                autoJoinCluster();
++            }
++            return;
++        }
++        Stone::set_attrib(key, val);
++    }
++
++    void ClusterStone::on_creation(GridPos p) {
++        autoJoinCluster();
++        Stone::on_creation(p);
++    }
++    
++    void ClusterStone::on_removal(GridPos p) {
++        autoLeaveCluster();
++        Stone::on_removal(p);
++    }
++
++    bool ClusterStone::is_removable() const {
++        return getFaces() == ALL_DIRECTIONS;
++    }
++    
++    void ClusterStone::autoJoinCluster() {
++        GridPos p = get_pos();
++        Value myCluster = getAttr(&quot;cluster&quot;);
++        for (int i = WEST; i &lt;= NORTH; i++) {
++            Direction d = (Direction) i;
++            Stone *neighbour = GetStone(move(p, d));
++            if (neighbour != NULL &amp;&amp; std::string(neighbour-&gt;get_kind()) == get_kind()) {
++                Value neighbourCluster = neighbour-&gt;getAttr(&quot;cluster&quot;);
++                if (myCluster) {
++                    if (myCluster == neighbourCluster) {
++                        set_attrib(&quot;$connections&quot;, getConnections() | to_bits(d));
++                        neighbour-&gt;set_attrib(&quot;$connections&quot;, neighbour-&gt;getConnections() | to_bits(reverse(d)));
++                    } else if (!neighbourCluster &amp;&amp; neighbour-&gt;getConnections() &amp; to_bits(reverse(d))) {
++                        set_attrib(&quot;$connections&quot;, getConnections() | to_bits(d));
++                    } else {
++                        set_attrib(&quot;$connections&quot;, getConnections() &amp; (ALL_DIRECTIONS ^ to_bits(d))); // clear connection
++                    }
++                } else if (neighbourCluster)  {// I have fixed connections -&gt; adapt neighbour
++                    if (getConnections() &amp; to_bits(d))
++                        neighbour-&gt;set_attrib(&quot;$connections&quot;, neighbour-&gt;getConnections() | to_bits(reverse(d)));
++                    else
++                        neighbour-&gt;set_attrib(&quot;$connections&quot;, neighbour-&gt;getConnections() &amp; (ALL_DIRECTIONS ^ to_bits(reverse(d))));
++                }
++            } else if (myCluster) { // no neighbour -&gt; no connection
++                set_attrib(&quot;$connections&quot;, getConnections() &amp; (ALL_DIRECTIONS ^ to_bits(d))); // clear connection                
++            }
++        }
++    }
++    
++    void ClusterStone::autoLeaveCluster() {
++        GridPos p = get_pos();
++        for (int i = WEST; i &lt;= NORTH; i++) {
++            Direction d = (Direction) i;
++            Stone *neighbour = GetStone(move(p, d));
++            if (neighbour != NULL &amp;&amp; std::string(neighbour-&gt;get_kind()) == get_kind() 
++                    &amp;&amp; neighbour-&gt;getAttr(&quot;cluster&quot;)) {
++                neighbour-&gt;set_attrib(&quot;$connections&quot;, neighbour-&gt;getConnections() &amp; (ALL_DIRECTIONS ^ to_bits(reverse(d))));
++            }
++        }
++    }
++    
++    BOOT_REGISTER_START
++        BootRegister(new ClusterStone(&quot;st_panel&quot;, &quot;&quot;), &quot;st_panel&quot;);
++        BootRegister(new ClusterStone(&quot;st_panel&quot;, &quot;w&quot;), &quot;st_panel_w&quot;);
++        BootRegister(new ClusterStone(&quot;st_panel&quot;, &quot;s&quot;), &quot;st_panel_s&quot;);
++        BootRegister(new ClusterStone(&quot;st_panel&quot;, &quot;sw&quot;), &quot;st_panel_sw&quot;);
++        BootRegister(new ClusterStone(&quot;st_panel&quot;, &quot;e&quot;), &quot;st_panel_e&quot;);
++        BootRegister(new ClusterStone(&quot;st_panel&quot;, &quot;ew&quot;), &quot;st_panel_ew&quot;);
++        BootRegister(new ClusterStone(&quot;st_panel&quot;, &quot;es&quot;), &quot;st_panel_es&quot;);
++        BootRegister(new ClusterStone(&quot;st_panel&quot;, &quot;esw&quot;), &quot;st_panel_esw&quot;);
++        BootRegister(new ClusterStone(&quot;st_panel&quot;, &quot;n&quot;), &quot;st_panel_n&quot;);
++        BootRegister(new ClusterStone(&quot;st_panel&quot;, &quot;nw&quot;), &quot;st_panel_nw&quot;);
++        BootRegister(new ClusterStone(&quot;st_panel&quot;, &quot;ns&quot;), &quot;st_panel_ns&quot;);
++        BootRegister(new ClusterStone(&quot;st_panel&quot;, &quot;nsw&quot;), &quot;st_panel_nsw&quot;);
++        BootRegister(new ClusterStone(&quot;st_panel&quot;, &quot;ne&quot;), &quot;st_panel_ne&quot;);
++        BootRegister(new ClusterStone(&quot;st_panel&quot;, &quot;new&quot;), &quot;st_panel_new&quot;);
++        BootRegister(new ClusterStone(&quot;st_panel&quot;, &quot;nes&quot;), &quot;st_panel_nes&quot;);
++        BootRegister(new ClusterStone(&quot;st_panel&quot;, &quot;nesw&quot;), &quot;st_panel_nesw&quot;);
++
++        BootRegister(new ClusterStone(&quot;st_brick&quot;, &quot;&quot;), &quot;st_brick&quot;);
++        BootRegister(new ClusterStone(&quot;st_brick&quot;, &quot;w&quot;), &quot;st_brick_w&quot;);
++        BootRegister(new ClusterStone(&quot;st_brick&quot;, &quot;s&quot;), &quot;st_brick_s&quot;);
++        BootRegister(new ClusterStone(&quot;st_brick&quot;, &quot;sw&quot;), &quot;st_brick_sw&quot;);
++        BootRegister(new ClusterStone(&quot;st_brick&quot;, &quot;e&quot;), &quot;st_brick_e&quot;);
++        BootRegister(new ClusterStone(&quot;st_brick&quot;, &quot;ew&quot;), &quot;st_brick_ew&quot;);
++        BootRegister(new ClusterStone(&quot;st_brick&quot;, &quot;es&quot;), &quot;st_brick_es&quot;);
++        BootRegister(new ClusterStone(&quot;st_brick&quot;, &quot;esw&quot;), &quot;st_brick_esw&quot;);
++        BootRegister(new ClusterStone(&quot;st_brick&quot;, &quot;n&quot;), &quot;st_brick_n&quot;);
++        BootRegister(new ClusterStone(&quot;st_brick&quot;, &quot;nw&quot;), &quot;st_brick_nw&quot;);
++        BootRegister(new ClusterStone(&quot;st_brick&quot;, &quot;ns&quot;), &quot;st_brick_ns&quot;);
++        BootRegister(new ClusterStone(&quot;st_brick&quot;, &quot;nsw&quot;), &quot;st_brick_nsw&quot;);
++        BootRegister(new ClusterStone(&quot;st_brick&quot;, &quot;ne&quot;), &quot;st_brick_ne&quot;);
++        BootRegister(new ClusterStone(&quot;st_brick&quot;, &quot;new&quot;), &quot;st_brick_new&quot;);
++        BootRegister(new ClusterStone(&quot;st_brick&quot;, &quot;nes&quot;), &quot;st_brick_nes&quot;);
++        BootRegister(new ClusterStone(&quot;st_brick&quot;, &quot;nesw&quot;), &quot;st_brick_nesw&quot;);
++        
++        BootRegister(new ClusterStone(&quot;st_bluesand&quot;, &quot;&quot;), &quot;st_bluesand&quot;);
++        BootRegister(new ClusterStone(&quot;st_bluesand&quot;, &quot;w&quot;), &quot;st_bluesand_w&quot;);
++        BootRegister(new ClusterStone(&quot;st_bluesand&quot;, &quot;s&quot;), &quot;st_bluesand_s&quot;);
++        BootRegister(new ClusterStone(&quot;st_bluesand&quot;, &quot;sw&quot;), &quot;st_bluesand_sw&quot;);
++        BootRegister(new ClusterStone(&quot;st_bluesand&quot;, &quot;e&quot;), &quot;st_bluesand_e&quot;);
++        BootRegister(new ClusterStone(&quot;st_bluesand&quot;, &quot;ew&quot;), &quot;st_bluesand_ew&quot;);
++        BootRegister(new ClusterStone(&quot;st_bluesand&quot;, &quot;es&quot;), &quot;st_bluesand_es&quot;);
++        BootRegister(new ClusterStone(&quot;st_bluesand&quot;, &quot;esw&quot;), &quot;st_bluesand_esw&quot;);
++        BootRegister(new ClusterStone(&quot;st_bluesand&quot;, &quot;n&quot;), &quot;st_bluesand_n&quot;);
++        BootRegister(new ClusterStone(&quot;st_bluesand&quot;, &quot;nw&quot;), &quot;st_bluesand_nw&quot;);
++        BootRegister(new ClusterStone(&quot;st_bluesand&quot;, &quot;ns&quot;), &quot;st_bluesand_ns&quot;);
++        BootRegister(new ClusterStone(&quot;st_bluesand&quot;, &quot;nsw&quot;), &quot;st_bluesand_nsw&quot;);
++        BootRegister(new ClusterStone(&quot;st_bluesand&quot;, &quot;ne&quot;), &quot;st_bluesand_ne&quot;);
++        BootRegister(new ClusterStone(&quot;st_bluesand&quot;, &quot;new&quot;), &quot;st_bluesand_new&quot;);
++        BootRegister(new ClusterStone(&quot;st_bluesand&quot;, &quot;nes&quot;), &quot;st_bluesand_nes&quot;);
++        BootRegister(new ClusterStone(&quot;st_bluesand&quot;, &quot;nesw&quot;), &quot;st_bluesand_nesw&quot;);
++
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/ClusterStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/ClusterStone.hh
+===================================================================
+--- trunk/src/stones/ClusterStone.hh	2008-01-23 21:43:14 UTC (rev 1001)
++++ trunk/src/stones/ClusterStone.hh	2008-01-24 23:21:44 UTC (rev 1002)
+@@ -0,0 +1,53 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef CLUSTERSTONE_HH
++#define CLUSTERSTONE_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class ClusterStone : public Stone {
++        CLONEOBJ(ClusterStone);
++    public:
++        ClusterStone(std::string classname, std::string connections);
++        
++        // Object interface
++        virtual void set_attrib(const string&amp; key, const Value &amp;val);
++
++        // GridObject interface
++        virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
++                
++        // Stone interface
++        virtual bool is_removable() const;
++        
++    private:
++        void autoJoinCluster();
++        void autoLeaveCluster();
++    };
++
++} // namespace enigma
++
++#endif /*CLUSTERSTONE_HH_*/
+
+
+Property changes on: trunk/src/stones/ClusterStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones/ConnectiveStone.hh
+===================================================================
+--- trunk/src/stones/ConnectiveStone.hh	2008-01-23 21:43:14 UTC (rev 1001)
++++ trunk/src/stones/ConnectiveStone.hh	2008-01-24 23:21:44 UTC (rev 1002)
+@@ -45,6 +45,22 @@
+                 return NODIRBIT;
+         }
+ 
++        // temp. workarounds until this class gets eliminated
++        virtual void set_attrib(const string&amp; key, const Value &amp;val) {
++            if (key == &quot;connections&quot;)
++                Object::set_attrib(key, val);  // bypass GridObject
++            else
++                Stone::set_attrib(key, val);
++        }
++        
++        virtual Value getAttr(const string &amp;key) const {
++            if (key == &quot;connections&quot;)
++                return Object::getAttr(key);
++            else
++                return Stone::getAttr(key);
++        }
++
++
+     protected:
+         virtual void init_model() {
+             set_model(get_kind()+ecl::strf(&quot;%d&quot;, get_modelno()));
+
+Modified: trunk/src/stones/Switch.cc
+===================================================================
+--- trunk/src/stones/Switch.cc	2008-01-23 21:43:14 UTC (rev 1001)
++++ trunk/src/stones/Switch.cc	2008-01-24 23:21:44 UTC (rev 1002)
+@@ -55,7 +55,7 @@
+     
+     int Switch::externalState() const {
+         if (isInstant())
+-            return state == ON || state == TURNON;
++            return (state == ON || state == TURNON) ? 1 : 0;
+         else
+             return state % 2;   // 0 for OFF, TURNON, 1 for ON, TURNOFF
+     }
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-01-23 21:43:14 UTC (rev 1001)
++++ trunk/src/world.cc	2008-01-24 23:21:44 UTC (rev 1002)
+@@ -348,6 +348,10 @@
+ 
+ void World::name_object(Object *obj, const std::string &amp;name)
+ {
++    Object *old = get_named(name);
++    if (old != NULL)
++        unname(old);
++    
+     std::string unique_name = name;
+     if (server::EnigmaCompatibility &gt;= 1.10 &amp;&amp; name.size() &gt; 0 &amp;&amp; name[name.size() - 1] == '#') {
+         // auto name object with a unique name
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000433.html">[Enigma-game-svn] r1001 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000435.html">[Enigma-game-svn] r1003 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#434">[ date ]</a>
+              <a href="thread.html#434">[ thread ]</a>
+              <a href="subject.html#434">[ subject ]</a>
+              <a href="author.html#434">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

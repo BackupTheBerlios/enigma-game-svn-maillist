@@ -1,0 +1,1340 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1266 (repost)
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-August/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1266%20%28repost%29&In-Reply-To=%3C48A87A2D.5090608%40T-Online.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000704.html">
+   <LINK REL="Next"  HREF="000706.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1266 (repost)</H1>
+    <B>Ronald Lamprecht</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1266%20%28repost%29&In-Reply-To=%3C48A87A2D.5090608%40T-Online.de%3E"
+       TITLE="[Enigma-game-svn] r1266 (repost)">R.Lamprecht at T-Online.de
+       </A><BR>
+    <I>Sun Aug 17 21:21:17 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000704.html">[Enigma-game-svn] r1264 (repost)
+</A></li>
+        <LI>Next message: <A HREF="000706.html">[Enigma-game-svn] r1276 - in homepage: images/articles input	input/articles input/lotm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#705">[ date ]</a>
+              <a href="thread.html#705">[ thread ]</a>
+              <a href="subject.html#705">[ subject ]</a>
+              <a href="author.html#705">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-08-13 23:44:47 +0200 (Wed, 13 Aug 2008)
+New Revision: 1266
+
+Added:
+    trunk/src/items/ShogunDot.cc
+    trunk/src/items/ShogunDot.hh
+    trunk/src/stones/ShogunStone.cc
+    trunk/src/stones/ShogunStone.hh
+Modified:
+    trunk/data/api1init.lua
+    trunk/data/api2init.lua
+    trunk/data/models-2d.lua
+    trunk/data/schemas/objects.xml
+    trunk/src/Makefile.am
+    trunk/src/items.cc
+    trunk/src/ox_extra.cc
+    trunk/src/ox_magnum.cc
+    trunk/src/ox_oxyd1.cc
+    trunk/src/ox_peroxyd.cc
+    trunk/src/stones.cc
+    trunk/src/stones_complex.cc
+    trunk/src/world.cc
+Log:
+Trunk 1.1: new API reengineering - Shogun
+- complete rewrite of shogun stone and item:
+   - rename to &quot;st_shogun&quot;, &quot;st_shogun_s&quot;, ..., &quot;st_shogun_sml&quot;
+            &quot;it_shogun&quot;, &quot;it_shugun_s&quot;, ..., &quot;it_shogun_l&quot;
+   - the &quot;state&quot; attribute keeps the stack info - a sum of
+       SHOGUN_S, SHOGUN_M, SHOGUN_L constants.
+       it is always readable, but writeable only prior to setting onto grid
+   - on grid set a shogun stack expands to seperate shogun objects, all
+       positioned on the same grid. The largest shogun is retrieved by
+       position access.
+   - the stone attributes &quot;name_s&quot; and &quot;name_m&quot; can be used to name 
+subshoguns
+   - the identity of shogun stones is now preserved:
+     - rubberbands and wires will keep connected to moving shoguns and even
+         survive a shogun stack membership
+     - user attributes will survive, too
+     - even single shogun objects in a stack can be killed by a &quot;kill&quot; 
+message
+   - shogun dots will observe the snapshot princple for 1.10 but keep the
+       old init behaviour for old levels
+- other fixes:
+   - crash fix on old API floor killing
+   - improve world destruction by disposing all objects prior deleting grid
+       fields
+   - sort order destruction and clearings
+   - fix coin item getClass
+   - fix YieldedGridStone for swap and puller stone: disconnect yielded 
+stone
+       from wires and rubberbands in case of an unexpected disposal.
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-08-13 12:01:32 UTC (rev 1265)
++++ trunk/data/api1init.lua	2008-08-13 21:44:47 UTC (rev 1266)
+@@ -64,6 +64,9 @@
+      it_magnet_on = &quot;it-magnet-on&quot;,
+      it_magnet_off = &quot;it-magnet-off&quot;,
+      it_rubberband = &quot;it-rubberband&quot;,
++    it_shogun_s = &quot;it-shogun-s&quot;,
++    it_shogun_m = &quot;it-shogun-m&quot;,
++    it_shogun_l = &quot;it-shogun-l&quot;,
+      it_strip_ew = &quot;it-hstrip&quot;,
+      it_strip_ns = &quot;it-vstrip&quot;,
+      it_sword = &quot;it-sword&quot;,
+@@ -196,6 +199,14 @@
+      st_rotator_ccw_movable = &quot;st-rotator_move-left&quot;,
+      st_rubberband = &quot;st-rubberband&quot;,
+      st_scissors = &quot;st-scissors&quot;,
++    st_shogun = &quot;st-shogun&quot;,
++    st_shogun_s = &quot;st-shogun-s&quot;,
++    st_shogun_m = &quot;st-shogun-m&quot;,
++    st_shogun_sm = &quot;st-shogun-sm&quot;,
++    st_shogun_l = &quot;st-shogun-l&quot;,
++    st_shogun_sl = &quot;st-shogun-sl&quot;,
++    st_shogun_ml = &quot;st-shogun-ml&quot;,
++    st_shogun_sml = &quot;st-shogun-sml&quot;,
+      st_switch = &quot;st-switch&quot;,
+      st_switch_black = &quot;st-switch_black&quot;,
+      st_switch_white = &quot;st-switch_white&quot;,
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2008-08-13 12:01:32 UTC (rev 1265)
++++ trunk/data/api2init.lua	2008-08-13 21:44:47 UTC (rev 1266)
+@@ -131,7 +131,12 @@
+  SPOT_LIGHTPASSENGER =  16
+  SPOT_TRAP           =  32
+
+--- Follower
++-- shogun
++SHOGUN_S =  4
++SHOGUN_M =  8
++SHOGUN_L = 16
++
++-- follower
+  FOLLOW_NO     = 0
+  FOLLOW_SCROLL = 1
+  FOLLOW_FLIP   = 2
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-08-13 12:01:32 UTC (rev 1265)
++++ trunk/data/models-2d.lua	2008-08-13 21:44:47 UTC (rev 1266)
+@@ -613,9 +613,9 @@
+
+  -- it-shogun --
+  do
+-    NewAnim(&quot;it-shogun-s&quot;, {img=&quot;it-shogun-small&quot;, h=3, speed=160, 
+pingpong=1, loop=1})
+-    NewAnim(&quot;it-shogun-m&quot;, {img=&quot;it-shogun-med&quot;,   h=3, speed=160, 
+pingpong=1, loop=1})
+-    NewAnim(&quot;it-shogun-l&quot;, {img=&quot;it-shogun-big&quot;,   h=3, speed=160, 
+pingpong=1, loop=1})
++    NewAnim(&quot;it_shogun_s&quot;, {img=&quot;it-shogun-small&quot;, h=3, speed=160, 
+pingpong=1, loop=1})
++    NewAnim(&quot;it_shogun_m&quot;, {img=&quot;it-shogun-med&quot;,   h=3, speed=160, 
+pingpong=1, loop=1})
++    NewAnim(&quot;it_shogun_l&quot;, {img=&quot;it-shogun-big&quot;,   h=3, speed=160, 
+pingpong=1, loop=1})
+  end
+
+  -- it-springboard --
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-08-13 12:01:32 UTC (rev 1265)
++++ trunk/data/schemas/objects.xml	2008-08-13 21:44:47 UTC (rev 1266)
+@@ -37,6 +37,8 @@
+      &lt;attr name=&quot;min&quot; type=&quot;double&quot; default=&quot;0&quot; rw=&quot;rw&quot;/&gt;
+      &lt;attr name=&quot;movable&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+      &lt;attr name=&quot;name&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;name_m&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;name_s&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+      &lt;attr name=&quot;nopaction&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+      &lt;attr name=&quot;noshuffle&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+      &lt;attr name=&quot;orientation&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;3&quot; 
+rw=&quot;rw&quot;/&gt;
+@@ -85,6 +87,7 @@
+      &lt;msg name=&quot;_model_reanimated&quot; type=&quot;nil&quot;/&gt;
+      &lt;msg name=&quot;_passed&quot; type=&quot;nil&quot;/&gt;            &lt;!-- check type--&gt;
+      &lt;msg name=&quot;_performaction&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;_shogun&quot; type=&quot;int&quot;/&gt;
+      &lt;msg name=&quot;_spitter&quot; type=&quot;nil&quot;/&gt;
+      &lt;msg name=&quot;_start&quot; type=&quot;nil&quot;/&gt;
+      &lt;msg name=&quot;_trigger&quot; type=&quot;bool&quot;/&gt;
+@@ -169,6 +172,20 @@
+        &lt;msg name=&quot;_glasses&quot;/&gt;
+        &lt;msg name=&quot;_hit&quot;/&gt;
+      &lt;/object&gt;
++    &lt;object name=&quot;it_shogun&quot;&gt;
++      &lt;attr name=&quot;state&quot; max=&quot;16&quot; default=&quot;4&quot;/&gt;
++      &lt;msg name=&quot;_shogun&quot;/&gt;
++      &lt;msg name=&quot;_init&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_shogun_s&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;4&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_shogun_m&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;8&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_shogun_l&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;16&quot;/&gt;
++    &lt;/object&gt;
+      &lt;object name=&quot;it_rubberband&quot;&gt;
+        &lt;attr name=&quot;anchor2&quot;/&gt;
+        &lt;attr name=&quot;strength&quot; default=&quot;10&quot;/&gt;
+@@ -693,6 +710,38 @@
+        &lt;attr name=&quot;scissor&quot; default=&quot;true&quot;/&gt;
+      &lt;/object&gt;
+      &lt;object name=&quot;st_scissors&quot;/&gt;
++    &lt;object name=&quot;st_shogun&quot;&gt;
++      &lt;attr name=&quot;state&quot; max=&quot;16&quot;/&gt;
++      &lt;msg name=&quot;_shogun&quot;/&gt;
++      &lt;msg name=&quot;_init&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_shogun&quot;&gt;
++      &lt;attr name=&quot;name_m&quot;/&gt;
++      &lt;attr name=&quot;name_s&quot;/&gt;
++      &lt;attr name=&quot;state&quot; max=&quot;16&quot; default=&quot;4&quot;/&gt;
++      &lt;msg name=&quot;_shogun&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_shogun_s&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;4&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_shogun_m&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;8&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_shogun_sm&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;12&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_shogun_l&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;16&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_shogun_sl&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;20&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_shogun_ml&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;24&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_shogun_sml&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;28&quot;/&gt;
++    &lt;/object&gt;
+      &lt;object name=&quot;st_switch&quot;&gt;
+        &lt;attr name=&quot;color&quot;/&gt;
+        &lt;attr name=&quot;instant&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-08-13 12:01:32 UTC (rev 1265)
++++ trunk/src/Makefile.am	2008-08-13 21:44:47 UTC (rev 1266)
+@@ -201,6 +201,8 @@
+  	items/BlockerItem.hh	\
+  	items/GlassesItem.cc	\
+  	items/GlassesItem.hh	\
++	items/ShogunDot.cc	\
++	items/ShogunDot.hh	\
+  	others/Other.cc		\
+  	others/Other.hh		\
+  	others/Rubberband.cc	\
+@@ -255,6 +257,8 @@
+  	stones/RubberbandStone.hh	\
+  	stones/ScissorsStone.cc	\
+  	stones/ScissorsStone.hh	\
++	stones/ShogunStone.cc	\
++	stones/ShogunStone.hh	\
+  	stones/Switch.cc	\
+  	stones/Switch.hh	\
+  	stones/TimerStone.cc	\
+
+Added: trunk/src/items/ShogunDot.cc
+===================================================================
+--- trunk/src/items/ShogunDot.cc	2008-08-13 12:01:32 UTC (rev 1265)
++++ trunk/src/items/ShogunDot.cc	2008-08-13 21:44:47 UTC (rev 1266)
+@@ -0,0 +1,89 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;items/ShogunDot.hh&quot;
++#include &quot;stones/ShogunStone.hh&quot;
++#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++
++    ShogunDot::ShogunDot(int initState) {
++        state = initState;
++    }
++
++    std::string ShogunDot::getClass() const {
++        return &quot;it_shogun&quot;;
++    }
++
++    Value ShogunDot::message(const Message &amp;m) {
++        if (m.message ==&quot;_init&quot; ) {
++            if (SendMessage(GetStone(get_pos()), &quot;_shogun&quot;, (state/2 
+-1)*4).to_bool()) {
++                objFlags |= OBJBIT_ACTIVE;
++                if (server::EnigmaCompatibility &lt; 1.10)
++                    performAction(true);
++            }
++        } else if (m.message ==&quot;_shogun&quot; &amp;&amp; server::WorldInitialized) {
++            if (!(objFlags &amp; OBJBIT_ACTIVE) &amp;&amp; ((state/2 -1)*4 == 
+(int)m.value)) {  // shoguns s, sm, sml for dots s, m, l
++                performAction(true);
++                objFlags |= OBJBIT_ACTIVE;
++            } else if ((objFlags &amp; OBJBIT_ACTIVE) &amp;&amp; ((state/2 -1)*4 != 
+(int)m.value)) {  // shoguns s, sm, sml for dots s, m, l
++                performAction(false);
++                objFlags &amp;= ~OBJBIT_ACTIVE;
++            }
++            return Value();
++        }
++        return Item::message(m);
++    }
++
++    void ShogunDot::setState(int extState) {
++        ASSERT(extState == 16 || extState == 8 || extState == 4, 
+XLevelRuntime,&quot;&quot;);
++        state = extState;
++        if (isDisplayable()) {
++            init_model();
++        }
++    }
++
++    void ShogunDot::on_creation(GridPos p) {
++        if (server::WorldInitialized &amp;&amp;
++                SendMessage(GetStone(get_pos()), &quot;_shogun&quot;, (state/2 
+-1)*4).to_bool())
++            objFlags |= OBJBIT_ACTIVE;
++        Item::on_creation(p);
++    }
++
++    int ShogunDot::traitsIdx() const {
++        return state == 16 ? 2 : (state == 8 ? 1 : 0);
++    }
++
++
++    ItemTraits ShogunDot::traits[3] = {
++        { &quot;it_shogun_s&quot;, it_shogun_s, itf_static, 0.0 },
++        { &quot;it_shogun_m&quot;, it_shogun_m, itf_static, 0.0 },
++        { &quot;it_shogun_l&quot;, it_shogun_l, itf_static, 0.0 }
++    };
++
++    BOOT_REGISTER_START
++        BootRegister(new ShogunDot(4), &quot;it_shogun&quot;);
++        BootRegister(new ShogunDot(4), &quot;it_shogun_s&quot;);
++        BootRegister(new ShogunDot(8), &quot;it_shogun_m&quot;);
++        BootRegister(new ShogunDot(16), &quot;it_shogun_l&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/items/ShogunDot.cc
+___________________________________________________________________
+Name: svn:eol-style
+    + native
+
+Added: trunk/src/items/ShogunDot.hh
+===================================================================
+--- trunk/src/items/ShogunDot.hh	2008-08-13 12:01:32 UTC (rev 1265)
++++ trunk/src/items/ShogunDot.hh	2008-08-13 21:44:47 UTC (rev 1266)
+@@ -0,0 +1,56 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef SHOGUNDOTITEM_HH
++#define SHOGUNDOTITEM_HH
++
++#include &quot;items.hh&quot;
++
++#include &quot;enigma.hh&quot;
++
++namespace enigma {
++    /**
++     */
++    class ShogunDot : public Item {
++        CLONEOBJ(ShogunDot);
++        DECL_ITEMTRAITS_ARRAY(3, traitsIdx());
++
++    private:
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_ACTIVE =   1&lt;&lt;24,   ///&lt;
++        };
++    public:
++        ShogunDot(int initState);
++
++        // Object interface
++        virtual std::string getClass() const;
++        virtual Value message(const Message &amp;m);
++
++        // GridObject interface
++        virtual void on_creation(GridPos p);
++
++        // StateObject interface
++        virtual void setState(int extState);
++
++    private:
++        int traitsIdx() const;
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/items/ShogunDot.hh
+___________________________________________________________________
+Name: svn:eol-style
+    + native
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-08-13 12:01:32 UTC (rev 1265)
++++ trunk/src/items.cc	2008-08-13 21:44:47 UTC (rev 1266)
+@@ -665,7 +665,7 @@
+      }
+
+      std::string Coin::getClass() const {
+-        return &quot;Coin&quot;;
++        return &quot;it_coin&quot;;
+      }
+
+      void Coin::setState(int extState) {
+@@ -1673,83 +1673,6 @@
+  }
+
+
+-/* -------------------- Shogun dot -------------------- */
+-
+-/** \page it-shogun Shogun Dot
+-
+-\subsection shogundota Attributes
+-- \b size:            1..3  (smallest..largest)
+-- \b target, \b action:   as usual
+-*/
+-namespace
+-{
+-    class ShogunDot : public Item {
+-        CLONEOBJ(ShogunDot);
+-        DECL_ITEMTRAITS_ARRAY(3, subtype);
+-    public:
+-        static void setup() {
+-            RegisterItem (new ShogunDot(SMALL));
+-            RegisterItem (new ShogunDot(MEDIUM));
+-            RegisterItem (new ShogunDot(LARGE));
+-        }
+-    private:
+-        enum SubType { SMALL, MEDIUM, LARGE };
+-        ShogunDot(SubType size);
+-
+-        virtual Value message(const Message &amp;m);
+-        void stone_change(Stone *st);
+-
+-        // Variables.
+-        bool activated;
+-        SubType subtype;
+-    };
+-
+-    ItemTraits ShogunDot::traits[3] = {
+-        { &quot;it-shogun-s&quot;, it_shogun_s, itf_static, 0.0 },
+-        { &quot;it-shogun-m&quot;, it_shogun_m, itf_static, 0.0 },
+-        { &quot;it-shogun-l&quot;, it_shogun_l, itf_static, 0.0 }
+-    };
+-}
+-
+-ShogunDot::ShogunDot (SubType size)
+-: activated(false), subtype(size)
+-{
+-}
+-
+-void ShogunDot::stone_change(Stone *st) {
+-    if (activated) {
+-        if (st == 0) {
+-            warning(&quot;stone_change: Stone disappeared w/o sending me a 
+proper message!&quot;);
+-            activated = false;
+-            performAction(false);
+-        }
+-    }
+-}
+-
+-Value ShogunDot::message(const Message &amp;m) {
+-    if (m.message == &quot;noshogun&quot;) {
+-        if (activated) {
+-            activated = false;
+-            performAction(false);
+-        }
+-        return Value();
+-    } else {
+-        const char *s = m.message.c_str();
+-        bool size_matches =
+-            (strncmp(s, &quot;shogun&quot;, 6) == 0)    &amp;&amp;
+-            ((s[6]-'1')              == subtype) &amp;&amp;
+-            (s[7] == 0);
+-
+-        if (size_matches != activated) {
+-            activated = size_matches;
+-            performAction(activated);
+-            return Value();
+-        }
+-    }
+-    return Item::message(m);
+-}
+-
+-
+  /* -------------------- Magnet -------------------- */
+
+      class Magnet : public Item, public ForceField {
+@@ -3922,7 +3845,6 @@
+      RegisterItem (new SeedNowood);
+      RegisterItem (new SeedVolcano);
+      Sensor::setup();
+-    ShogunDot::setup();
+      RegisterItem (new Spade);
+      RegisterItem (new Spoon);
+      RegisterItem (new Spring1);
+
+Modified: trunk/src/ox_extra.cc
+===================================================================
+--- trunk/src/ox_extra.cc	2008-08-13 12:01:32 UTC (rev 1265)
++++ trunk/src/ox_extra.cc	2008-08-13 21:44:47 UTC (rev 1266)
+@@ -218,7 +218,7 @@
+      UNUSED,              // OxydExtra stone 0x63
+      &quot;st_coinslot_instant&quot;, // OxydExtra stone 0x64
+      &quot;st-thief&quot;,          // OxydExtra stone 0x65
+-    &quot;st-shogun-s&quot;,       // OxydExtra stone 0x66
++    &quot;st_shogun_s&quot;,       // OxydExtra stone 0x66
+      UNUSED,              // OxydExtra stone 0x67
+      UNUSED,              // OxydExtra stone 0x68
+      UNUSED,              // OxydExtra stone 0x69
+@@ -351,7 +351,7 @@
+      UNUSED,                  // OxydExtra item 0x28
+      UNUSED,                  // OxydExtra item 0x29
+      &quot;it_sensor&quot;,                  // OxydExtra item 0x2a
+-    &quot;it-shogun-s&quot;,                // OxydExtra item 0x2b
++    &quot;it_shogun_s&quot;,                // OxydExtra item 0x2b
+      UNUSED,                  // OxydExtra item 0x2c
+      &quot;it_vortex_open&quot;,             // OxydExtra item 0x2d
+      UNUSED,                  // OxydExtra item 0x2e
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2008-08-13 12:01:32 UTC (rev 1265)
++++ trunk/src/ox_magnum.cc	2008-08-13 21:44:47 UTC (rev 1266)
+@@ -224,7 +224,7 @@
+      &quot;st-flash&quot;,                 // OxydMagnum stone 0x69
+      &quot;st_coinslot_instant&quot;,      // OxydMagnum stone 0x6a
+      &quot;st-thief&quot;,                 // OxydMagnum stone 0x6b
+-    &quot;st-shogun-s&quot;,              // OxydMagnum stone 0x6c
++    &quot;st_shogun_s&quot;,              // OxydMagnum stone 0x6c
+      &quot;st-stoneimpulse&quot;,          // OxydMagnum stone 0x6d
+      &quot;st_laserflop&quot;,             // OxydMagnum stone 0x6e
+      &quot;st-mail-n&quot;,                // OxydMagnum stone 0x6f
+@@ -334,7 +334,7 @@
+      &quot;it_magnet_off&quot;,    // OxydMagnum item 0x29
+      &quot;it_inversesensor&quot;, // OxydMagnum item 0x2a
+      &quot;it_sensor&quot;,        // OxydMagnum item 0x2b
+-    &quot;it-shogun-s&quot;,      // OxydMagnum item 0x2c
++    &quot;it_shogun_s&quot;,      // OxydMagnum item 0x2c
+      &quot;it_vortex_open&quot;,   // OxydMagnum item 0x2d
+      &quot;it_vortex_closed&quot;, // OxydMagnum item 0x2e
+      &quot;it_wormhole_on&quot;,   // OxydMagnum item 0x2f
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2008-08-13 12:01:32 UTC (rev 1265)
++++ trunk/src/ox_oxyd1.cc	2008-08-13 21:44:47 UTC (rev 1266)
+@@ -256,7 +256,7 @@
+      &quot;st-flash&quot;,                 // Oxyd1 stone 0x69
+      &quot;st_coinslot_instant&quot;,      // Oxyd1 stone 0x6a
+      &quot;st-thief&quot;,                 // Oxyd1 stone 0x6b
+-    &quot;st-shogun-s&quot;,              // Oxyd1 stone 0x6c
++    &quot;st_shogun_s&quot;,              // Oxyd1 stone 0x6c
+      &quot;st-stoneimpulse&quot;,          // Oxyd1 stone 0x6d
+      &quot;st_laserflop&quot;,             // Oxyd1 stone 0x6e
+      &quot;st-mail-n&quot;,                // Oxyd1 stone 0x6f
+@@ -350,7 +350,7 @@
+      &quot;it_magnet_off&quot;,              // 0x29
+      &quot;it_inversesensor&quot;,           // 0x2a
+      &quot;it_sensor&quot;,                  // 0x2b
+-    &quot;it-shogun-s&quot;,                // 0x2c
++    &quot;it_shogun_s&quot;,                // 0x2c
+      &quot;it_vortex_open&quot;,             // 0x2d
+      &quot;it_vortex_closed&quot;,           // 0x2e
+      &quot;it_wormhole_on&quot;,             // 0x2f
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-08-13 12:01:32 UTC (rev 1265)
++++ trunk/src/ox_peroxyd.cc	2008-08-13 21:44:47 UTC (rev 1266)
+@@ -283,20 +283,20 @@
+      &quot;st-puzzle-hollow&quot;,         // PerOxyd stone 0x5c
+      &quot;st-laserbreak&quot;,            // PerOxyd stone 0x5d
+      &quot;st-coffee&quot;,                // PerOxyd stone 0x5e
+-    &quot;st-shogun&quot;,                // PerOxyd stone 0x5f (oxyd with a 
+hole, movable ... strange stone! st-shogun as workaround, only link 
+level 74)
++    &quot;st_shogun&quot;,                // PerOxyd stone 0x5f (oxyd with a 
+hole, movable ... strange stone! st-shogun as workaround, only link 
+level 74)
+      &quot;st-disco-dark&quot;,            // PerOxyd stone 0x60
+      &quot;st-disco-medium&quot;,          // PerOxyd stone 0x61
+      &quot;st-bombs&quot;,                 // PerOxyd stone 0x62
+      &quot;st-flash&quot;,                 // PerOxyd stone 0x63
+      &quot;st_coinslot_instant&quot;,      // PerOxyd stone 0x64
+      &quot;st-thief&quot;,                 // PerOxyd stone 0x65
+-    &quot;st-shogun-s&quot;,              // PerOxyd stone 0x66
+-    &quot;st-shogun-m&quot;,              // PerOxyd stone 0x67
+-    &quot;st-shogun-l&quot;,              // PerOxyd stone 0x68
+-    &quot;st-shogun-sml&quot;,            // PerOxyd stone 0x69
+-    &quot;st-shogun-ml&quot;,             // PerOxyd stone 0x6a
+-    &quot;st-shogun-sl&quot;,             // PerOxyd stone 0x6b
+-    &quot;st-shogun-sm&quot;,             // PerOxyd stone 0x6c
++    &quot;st_shogun_s&quot;,              // PerOxyd stone 0x66
++    &quot;st_shogun_m&quot;,              // PerOxyd stone 0x67
++    &quot;st_shogun_l&quot;,              // PerOxyd stone 0x68
++    &quot;st_shogun_sml&quot;,            // PerOxyd stone 0x69
++    &quot;st_shogun_ml&quot;,             // PerOxyd stone 0x6a
++    &quot;st_shogun_sl&quot;,             // PerOxyd stone 0x6b
++    &quot;st_shogun_sm&quot;,             // PerOxyd stone 0x6c
+      &quot;st-stoneimpulse&quot;,          // PerOxyd stone 0x6d
+      &quot;st_laserflop&quot;,             // PerOxyd stone 0x6e
+      &quot;st-mail-n&quot;,                // PerOxyd stone 0x6f
+@@ -422,8 +422,8 @@
+      &quot;it_magnet_off&quot;,              // 0x28
+      &quot;it_sensor_filter0&quot;,          // 0x29
+      &quot;it_sensor_filter1&quot;,          // 0x2a
+-    &quot;it-shogun-s&quot;,                // 0x2b
+-    &quot;it-shogun-l&quot;,                // 0x2c
++    &quot;it_shogun_s&quot;,                // 0x2b
++    &quot;it_shogun_l&quot;,                // 0x2c
+      &quot;it_vortex_open&quot;,             // 0x2d
+      &quot;it_vortex_closed&quot;,           // 0x2e
+      &quot;it_wormhole_on&quot;,             // 0x2f XXX
+
+Added: trunk/src/stones/ShogunStone.cc
+===================================================================
+--- trunk/src/stones/ShogunStone.cc	2008-08-13 12:01:32 UTC (rev 1265)
++++ trunk/src/stones/ShogunStone.cc	2008-08-13 21:44:47 UTC (rev 1266)
+@@ -0,0 +1,227 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/ShogunStone.hh&quot;
++#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;server.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    ShogunStone::ShogunStone(int initState) : Stone () {
++        state = initState;
++    }
++
++    ShogunStone* ShogunStone::clone() {
++        return new ShogunStone(*this);
++    }
++
++    void ShogunStone::dispose() {
++         if (subShogun != NULL) {
++            SendMessage(subShogun, &quot;disconnect&quot;);
++            DisposeObject(subShogun);
++         }
++         subShogun = NULL;
++         superShogun = NULL;
++         delete this;
++    }
++
++    std::string ShogunStone::getClass() const {
++        return &quot;st_shogun&quot;;
++    }
++
++    Value ShogunStone::message(const Message &amp;m) {
++        if (m.message == &quot;kill&quot;) {
++            if (yieldShogun()) {
++                SendMessage(this, &quot;disconnect&quot;);
++                DisposeObject(this);
++            }
++            return Value();
++        } else if (m.message ==&quot;_shogun&quot;) {
++            return m.value == state;
++        }
++            return Stone::message(m);
++    }
++
++    void ShogunStone::setState(int extState) {
++        if (!isDisplayable())
++            Stone::setState(extState &amp; 28);   // just not yet set 
+shoguns with legal values
++    }
++
++    void ShogunStone::init_model() {
++        set_model(ecl::strf(&quot;st-shogun%d&quot;, state/4));
++    }
++
++    void ShogunStone::setOwnerPos(GridPos po) {
++        Stone::setOwnerPos(po);
++        if (subShogun != NULL)
++            subShogun-&gt;setOwnerPos(po);
++    }
++
++    void ShogunStone::on_creation(GridPos p) {
++        Stone::on_creation(p);
++        if (subShogun != NULL)
++            // swap or pull based new grid positioning of a shogun stack
++            subShogun-&gt;setOwnerPos(p);
++        else if (state != ownHole()) {
++            // initial set of a new shogun stack
++            int subState = state &amp; ~ownHole();
++            if (subState &amp; 8) {
++                ShogunStone *s = dynamic_cast&lt;ShogunStone 
+*&gt;(MakeObject(&quot;st_shogun_m&quot;));
++                subShogun = s;
++                s-&gt;superShogun = this;
++                s-&gt;setOwnerPos(p);
++                s-&gt;state = subState;
++                subState &amp;= ~8;
++                if (Value v = getAttr(&quot;name_m&quot;))
++                    NameObject(s, v.to_string());
++            }
++            if (subState &amp; 4) {
++                ShogunStone *s = dynamic_cast&lt;ShogunStone 
+*&gt;(MakeObject(&quot;st_shogun_s&quot;));
++                if (subShogun == NULL) {
++                    subShogun = s;
++                    s-&gt;superShogun = this;
++                } else {
++                    subShogun-&gt;subShogun = s;
++                    s-&gt;superShogun = subShogun;
++                }
++                if (Value v = getAttr(&quot;name_s&quot;))
++                    NameObject(s, v.to_string());
++                s-&gt;setOwnerPos(p);
++            }
++        }
++        SendMessage(GetItem(p), &quot;_shogun&quot;, state);
++    }
++
++    void ShogunStone::on_removal(GridPos p) {
++        SendMessage(GetItem(p), &quot;_shogun&quot;, 0);
++        if (subShogun != NULL)
++            subShogun-&gt;setOwnerPos(GridPos(-1,-1));
++        Stone::on_removal(p);
++    }
++
++    void ShogunStone::on_impulse(const Impulse&amp; impulse) {
++        static char * soundevent = &quot;movesmall&quot;;
++
++        if (!impulse.byWire &amp;&amp; subShogun != NULL) {
++            subShogun-&gt;on_impulse(impulse);
++            return;
++        }
++        GridPos newPos = move(getOwnerPos(), impulse.dir);
++        Stone * st = GetStone(newPos);
++        ShogunStone *nss = NULL;
++        bool fitsNeighborShogun = false;
++        if (st != NULL) {
++            nss = dynamic_cast&lt;ShogunStone *&gt;(st);
++            if (nss != NULL)
++                fitsNeighborShogun = (nss-&gt;state &amp; (2*ownHole() -1)) == 0;
++        }
++
++        if ((st == NULL) || fitsNeighborShogun) {  // can we move?
++            // first remove from current position
++            if (!yieldShogun())
++                return;            // being swapped or pulled
++
++            sound_event(soundevent);
++
++            // then put to new position
++            if (st == NULL) {
++                SetStone(newPos, this);
++                SendMessage(GetItem(newPos), &quot;_shogun&quot;, state);
++            } else {
++                // register our hole to all super shoguns
++                ShogunStone *s = nss;
++                for (; s-&gt;subShogun != NULL; s = s-&gt;subShogun) {
++                    s-&gt;state |= ownHole();
++                }
++                // register ourself to smallest shogun
++                s-&gt;state |= ownHole();
++                s-&gt;subShogun = this;
++                superShogun = s;
++
++                nss-&gt;init_model();     // display new hole
++                SendMessage(GetItem(newPos), &quot;_shogun&quot;, nss-&gt;state);
++                setOwnerPos(newPos);   // the stone is owned at the new 
+position
++            }
++
++            server::IncMoveCounter();
++            ShatterActorsInsideField(newPos);
++        }
++        propagateImpulse(impulse);
++    }
++
++    int ShogunStone::ownHole() {
++        return (state &gt;= 16) ? 16 : ((state &gt;= 8) ? 8 : 4);
++    }
++
++    bool ShogunStone::yieldShogun() {
++        if (isDisplayable() &amp;&amp; subShogun == NULL) {
++            YieldStone(get_pos());
++            SendMessage(GetItem(get_pos()), &quot;_shogun&quot;, 0);
++        } else if (isDisplayable()) {
++            // top most shogun moved by wire or killed
++            GridPos oldPos = get_pos();
++            YieldStone(oldPos);
++            subShogun-&gt;superShogun = NULL;
++            SetStone(oldPos, subShogun);
++            SendMessage(GetItem(oldPos), &quot;_shogun&quot;, subShogun-&gt;state);
++            subShogun = NULL;
++            state = ownHole();
++        } else {
++            // a sub shogun
++            ShogunStone *oss = dynamic_cast&lt;ShogunStone 
+*&gt;(GetStone(getOwnerPos()));
++            if (oss == NULL)   // we are swapped or pulled and impulsed 
+by wire
++                return false;        // forget impulse
++
++            ASSERT(superShogun != NULL, XLevelRuntime, &quot;Shogun: missing 
+super shogun&quot;);
++            superShogun-&gt;subShogun = subShogun;
++            superShogun-&gt;state &amp;= ~ownHole();
++            if (ShogunStone *superSuperShogun = superShogun-&gt;superShogun) {
++                superSuperShogun-&gt;state &amp;= ~ownHole();
++                superSuperShogun-&gt;init_model();
++                SendMessage(GetItem(getOwnerPos()), &quot;_shogun&quot;, 
+superSuperShogun-&gt;state);
++            } else
++                superShogun-&gt;init_model();
++                SendMessage(GetItem(getOwnerPos()), &quot;_shogun&quot;, 
+superShogun-&gt;state);
++            if (subShogun != NULL) subShogun-&gt;superShogun = superShogun;
++            superShogun = NULL;
++            subShogun = NULL;
++            state = ownHole();
++        }
++        return true;
++    }
++
++    FreezeStatusBits ShogunStone::get_freeze_bits() {
++        return (state == 4) ? FREEZEBIT_STANDARD : FREEZEBIT_NO_STONE;
++    }
++
++    DEF_TRAITSM(ShogunStone, &quot;st_shogun&quot;, st_shogun, MOVABLE_IRREGULAR);
++
++    BOOT_REGISTER_START
++        BootRegister(new ShogunStone(4), &quot;st_shogun&quot;);
++        BootRegister(new ShogunStone(4), &quot;st_shogun_s&quot;);
++        BootRegister(new ShogunStone(8), &quot;st_shogun_m&quot;);
++        BootRegister(new ShogunStone(12), &quot;st_shogun_sm&quot;);
++        BootRegister(new ShogunStone(16), &quot;st_shogun_l&quot;);
++        BootRegister(new ShogunStone(20), &quot;st_shogun_sl&quot;);
++        BootRegister(new ShogunStone(24), &quot;st_shogun_ml&quot;);
++        BootRegister(new ShogunStone(28), &quot;st_shogun_sml&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/ShogunStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+    + native
+
+Added: trunk/src/stones/ShogunStone.hh
+===================================================================
+--- trunk/src/stones/ShogunStone.hh	2008-08-13 12:01:32 UTC (rev 1265)
++++ trunk/src/stones/ShogunStone.hh	2008-08-13 21:44:47 UTC (rev 1266)
+@@ -0,0 +1,76 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef SHOGUNSTONE_HH
++#define SHOGUNSTONE_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /**
++     *
++     */
++    class ShogunStone : public Stone {
++        DECL_TRAITS;
++
++    public:
++        enum Hole {
++            N         =  1,   ///&lt;  Nano - not yet existing
++            T         =  2,   ///&lt;  Tiny - not yet existing
++            S         =  4,   ///&lt;  Small
++            M         =  8,   ///&lt;  Medium
++            L         = 16,   ///&lt;  Large
++            G         = 32,   ///&lt;  Giant
++            U         = 64    ///&lt;  Universal
++        };
++
++        ShogunStone(int initState);
++        ShogunStone* clone();
++        void dispose();
++
++        // Object interface
++        virtual std::string getClass() const;
++        virtual Value message(const Message &amp;m);
++
++        // StateObject interface
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        virtual void setOwnerPos(GridPos po);
++        virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
++
++        // Stone interface
++        virtual void on_impulse(const Impulse&amp; impulse);
++        virtual FreezeStatusBits get_freeze_bits();
++
++    private:
++        ShogunStone *superShogun;
++        ShogunStone *subShogun;
++
++        int ownHole();
++        bool yieldShogun();
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/ShogunStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+    + native
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-08-13 12:01:32 UTC (rev 1265)
++++ trunk/src/stones.cc	2008-08-13 21:44:47 UTC (rev 1266)
+@@ -133,18 +133,22 @@
+     Note: This should be used by on_impulse() to perform a move.
+  */
+  bool Stone::move_stone(GridPos newPos, const char *soundevent) {
+-    GridPos p      = get_pos();
+-
+-    if (!GetStone(newPos)) {
+-        sound_event (soundevent);
+-
+-        MoveStone(p, newPos);
+-        server::IncMoveCounter();
+-
+-        on_move();
+-        if (Item *it = GetItem(newPos)) it-&gt;on_stonehit(this);
+-
+-        return true;
++    if (isDisplayable()) {
++        GridPos p      = get_pos();
++
++        if (!GetStone(newPos)) {
++            sound_event (soundevent);
++
++            MoveStone(p, newPos);
++            server::IncMoveCounter();
++
++            on_move();
++            if (Item *it = GetItem(newPos))
++                it-&gt;on_stonehit(this);
++
++            return true;
++        }
++        return false;
+      }
+      return false;
+  }
+@@ -447,6 +451,7 @@
+
+  void YieldedGridStone::dispose()
+  {
++    SendMessage(stone, &quot;disconnect&quot;);
+      stone-&gt;dispose();
+      delete model;
+      stone = 0;
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-08-13 12:01:32 UTC (rev 1265)
++++ trunk/src/stones_complex.cc	2008-08-13 21:44:47 UTC (rev 1266)
+@@ -962,160 +962,6 @@
+  }
+
+
+-/* -------------------- ShogunStone -------------------- */
+-
+-// Attributes:
+-//
+-// :holes            1..7
+-namespace
+-{
+-    class ShogunStone : public Stone {
+-        CLONEOBJ(ShogunStone);
+-        DECL_TRAITS;
+-
+-        enum Holes { SMALL = 1, MEDIUM = 2, LARGE = 4};
+-        static Holes smallest_hole(Holes s);
+-        void set_holes(Holes h) { setAttr(&quot;holes&quot;, h); }
+-
+-    public:
+-        ShogunStone(int holes=SMALL) {
+-            set_holes(static_cast&lt;Holes&gt;(holes));
+-        }
+-    private:
+-        Holes get_holes() const;
+-        void notify_item();
+-
+-        virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;_init&quot;) { // request from ShogunDot (if 
+set _after_ ShogunStone)
+-                notify_item();
+-                return Value();
+-            }
+-            return Stone::message(m);
+-        }
+-
+-        void add_hole(Holes h) {
+-            setAttr(&quot;holes&quot;, get_holes() | h);
+-            init_model();
+-            notify_item();
+-        }
+-
+-        void on_creation (GridPos p) {
+-            init_model();
+-            notify_item();
+-        }
+-
+-        void on_removal(GridPos p) {
+-            Stone::on_removal(p);
+-            if (Item *it = GetItem(p))
+-                SendMessage(it, &quot;noshogun&quot;);
+-        }
+-
+-        void on_impulse(const Impulse&amp; impulse);
+-
+-        void init_model() {
+-            set_model(ecl::strf(&quot;st-shogun%d&quot;, int(get_holes())));
+-        }
+-
+-        void actor_hit (const StoneContact &amp;sc) {
+-            maybe_push_stone (sc);
+-        }
+-
+-        FreezeStatusBits get_freeze_bits() {
+-            return (get_holes() == SMALL) ? FREEZEBIT_STANDARD : 
+FREEZEBIT_NO_STONE;
+-        }
+-    };
+-    DEF_TRAITSM(ShogunStone, &quot;st-shogun&quot;, st_shogun, MOVABLE_IRREGULAR);
+-}
+-
+-ShogunStone::Holes ShogunStone::get_holes() const {
+-    int h = getAttr(&quot;holes&quot;);
+-    if (h&gt;=1 &amp;&amp; h&lt;=7)
+-        return Holes(h);
+-    else {
+-        warning(&quot;Wrong 'holes' attribute (%i)&quot;, h);
+-        return SMALL;
+-    }
+-}
+-
+-ShogunStone::Holes ShogunStone::smallest_hole(Holes s) {
+-    if (s &amp; SMALL) return SMALL;
+-    if (s &amp; MEDIUM) return MEDIUM;
+-    if (s &amp; LARGE) return LARGE;
+-    throw XLevelRuntime (&quot;ShogunStone: internal error&quot;);
+-}
+-
+-void ShogunStone::notify_item ()
+-{
+-    if (Item *it = GetItem(get_pos())) {
+-        switch (get_holes()) {
+-        case SMALL:                    SendMessage(it, &quot;shogun1&quot;); break;
+-        case (MEDIUM | SMALL):         SendMessage(it, &quot;shogun2&quot;); break;
+-        case (LARGE | MEDIUM | SMALL): SendMessage(it, &quot;shogun3&quot;); break;
+-        default:                       SendMessage(it, &quot;noshogun&quot;); break;
+-        }
+-    }
+-}
+-
+-void ShogunStone::on_impulse(const Impulse&amp; impulse) {
+-    GridPos destpos     = move(get_pos(), impulse.dir);
+-    Holes holes         = get_holes();
+-    Holes smallest      = smallest_hole(holes);
+-    ShogunStone *target = 0;
+-
+-    if (Stone *st = GetStone(destpos)) {
+-        target = dynamic_cast&lt;ShogunStone*&gt;(st);
+-
+-        /* If the stone at `p' is not a shogun stone or if smallest hole
+-           does not fit into target, do not transfer the smallest hole. */
+-        if (!target || smallest &gt;= smallest_hole(target-&gt;get_holes()))
+-            return;
+-    }
+-
+-    /* It's important to remove the old stone before setting the new
+-       one: otherwise it is possible to activate two triggers with one
+-       shogun stone when shifting from one shogun target to a second
+-       adjacent shogun target. */
+-
+-    GridPos my_pos = get_pos();
+-    string  old_name;
+-
+-    // Remove/modify source stone:
+-    if (Holes newholes = Holes(holes &amp; ~smallest)) {
+-        set_holes(newholes);
+-        init_model();
+-        notify_item();
+-    }
+-    else {
+-        if (Value v = getAttr(&quot;name&quot;)) old_name = v.get_string(); // 
+store name of disappearing stone
+-        SendMessage(GetItem(my_pos), &quot;noshogun&quot;);
+-        KillStone(my_pos);
+-    }
+-
+-    // Modify/create target stone:
+-    if (target) {
+-        target-&gt;add_hole(smallest);
+-//         target-&gt;sound_event(&quot;st-magic&quot;);
+-//         sound::PlaySound(&quot;st-magic&quot;, my_pos.center()); // object 
+already disappeared
+-    }
+-    else {                       // create new
+-        target = new ShogunStone(smallest);
+-        int targetId = target-&gt;getId();
+-        SetStone(destpos, target);
+-        // Shogunstone might have disappeared via some triggered action.
+-        // Most important example: Last box in a sokoban.
+-        if (Stone *st = GetStone(destpos))
+-            if (st-&gt;getId() == targetId)
+-                st-&gt;on_move();
+-    }
+-
+-    if (!old_name.empty())
+-        NameObject(target, old_name);
+-
+-    server::IncMoveCounter();
+-    sound::EmitSoundEvent (&quot;movesmall&quot;, my_pos.center());
+-}
+-
+-
+  /* -------------------- Stone impulse stones -------------------- */
+
+  // Messages:
+@@ -1535,15 +1381,6 @@
+      Register(&quot;st-puzzle2-esw&quot;, new PuzzleStone(8, true));
+      Register(&quot;st-puzzle2-nesw&quot;, new PuzzleStone(16, true));
+
+-    Register(new ShogunStone);
+-    Register(&quot;st-shogun-s&quot;, new ShogunStone(1));
+-    Register(&quot;st-shogun-m&quot;, new ShogunStone(2));
+-    Register(&quot;st-shogun-sm&quot;, new ShogunStone(3));
+-    Register(&quot;st-shogun-l&quot;, new ShogunStone(4));
+-    Register(&quot;st-shogun-sl&quot;, new ShogunStone(5));
+-    Register(&quot;st-shogun-ml&quot;, new ShogunStone(6));
+-    Register(&quot;st-shogun-sml&quot;, new ShogunStone(7));
+-
+      Register(new StoneImpulseStone);
+
+  }
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-08-13 12:01:32 UTC (rev 1265)
++++ trunk/src/world.cc	2008-08-13 21:44:47 UTC (rev 1266)
+@@ -103,9 +103,13 @@
+
+  Field::~Field()
+  {
++    // the field should be empty at this point, but for security 
+reasons ...
++    DisposeObject(stone);
++    stone = NULL;
++    DisposeObject(item);
++    item = NULL;
+      DisposeObject(floor);
+-    DisposeObject(item);
+-    DisposeObject(stone);
++    floor = NULL;
+  }
+
+
+@@ -230,13 +234,25 @@
+
+  World::~World()
+  {
+-    fields = FieldArray(0,0);
+-    for_each(actorlist.begin(), actorlist.end(), mem_fun(&amp;Actor::dispose));
++    // remove wires, rubberbands first, as they disconnect from other 
+objects
+      while (!others.empty()) {
+          Other *ot = others.back();
+          others.pop_back();
+          ot-&gt;dispose();
+      }
++    // dispose all grid objects without removing them to avoid side effects
++    // keep the field array still valid for arbitrary access
++    for (FieldArray::iterator itr = fields.begin(); itr != 
+fields.end(); ++itr) {
++        DisposeObject((*itr).stone);
++        (*itr).stone = NULL;
++        DisposeObject((*itr).item);
++        (*itr).item = NULL;
++        DisposeObject((*itr).floor);
++        (*itr).floor = NULL;
++    }
++    // reset the fields
++    fields = FieldArray(0,0);
++    for_each(actorlist.begin(), actorlist.end(), mem_fun(&amp;Actor::dispose));
+  }
+
+  bool World::is_border(const GridPos &amp;p) {
+@@ -1558,9 +1574,9 @@
+  void WorldPrepareLevel ()
+  {
+      GameTimer.clear();
+-    GridObject::prepareLevel();
+-    LaserBeam::prepareLevel();
+-    Resize (20, 13);
++    Resize (20, 13);             // delete old world with all its objects
++    GridObject::prepareLevel();  // clear lists of no longer existing 
+objects
++    LaserBeam::prepareLevel();   // clear lists of no longer existing 
+objects
+  }
+
+  bool WorldInitLevel()
+@@ -1953,7 +1969,8 @@
+  void KillFloor(GridPos p)
+  {
+      level-&gt;fl_layer.kill(p);
+-    lua::SetDefaultFloor(lua::LevelState(), p.x, p.y);
++    if (server::EnigmaCompatibility &gt;= 1.10)
++        lua::SetDefaultFloor(lua::LevelState(), p.x, p.y);
+  }
+
+  Floor *GetFloor(GridPos p)
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000704.html">[Enigma-game-svn] r1264 (repost)
+</A></li>
+	<LI>Next message: <A HREF="000706.html">[Enigma-game-svn] r1276 - in homepage: images/articles input	input/articles input/lotm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#705">[ date ]</a>
+              <a href="thread.html#705">[ thread ]</a>
+              <a href="subject.html#705">[ subject ]</a>
+              <a href="author.html#705">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

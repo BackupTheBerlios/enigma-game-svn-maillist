@@ -1,0 +1,415 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1860 - in trunk: . doc etc lib-src/enigma-core	src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1860%20-%20in%20trunk%3A%20.%20doc%20etc%20lib-src/enigma-core%0A%09src&In-Reply-To=%3C200911152210.nAFMA7q7025491%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001288.html">
+   <LINK REL="Next"  HREF="001290.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1860 - in trunk: . doc etc lib-src/enigma-core	src</H1>
+    <B>ral at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1860%20-%20in%20trunk%3A%20.%20doc%20etc%20lib-src/enigma-core%0A%09src&In-Reply-To=%3C200911152210.nAFMA7q7025491%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1860 - in trunk: . doc etc lib-src/enigma-core	src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Nov 15 23:10:07 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001288.html">[Enigma-game-svn] r1859 - in trunk: attic/images-floors data/gfx16	data/gfx32 data/gfx40 data/gfx48 data/gfx64 src
+</A></li>
+        <LI>Next message: <A HREF="001290.html">[Enigma-game-svn] r1861 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1289">[ date ]</a>
+              <a href="thread.html#1289">[ thread ]</a>
+              <a href="subject.html#1289">[ subject ]</a>
+              <a href="author.html#1289">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-11-15 23:09:56 +0100 (Sun, 15 Nov 2009)
+New Revision: 1860
+
+Modified:
+   trunk/configure.ac
+   trunk/doc/REQUIREMENTS
+   trunk/etc/mingw32-dist.sh.in
+   trunk/lib-src/enigma-core/ecl_font.cc
+   trunk/src/SoundEngine.cc
+   trunk/src/SoundEngine.hh
+   trunk/src/main.cc
+Log:
+Trunk 1.1: update SDL support
+- recommended versions:
+  - SDL 1.2.14 (Windows needs a fixed version that revokes patch r4990)
+  - SDL_image 1.2.10
+  - SDL_mixer 1.2.11
+  - SDL_ttf 2.0.9
+- detect new versions and use improved initialization if possible
+- log versions of linked libraries
+- drop requirement of unused libtiff, smpeg
+
+
+Modified: trunk/configure.ac
+===================================================================
+--- trunk/configure.ac	2009-11-15 19:31:24 UTC (rev 1859)
++++ trunk/configure.ac	2009-11-15 22:09:56 UTC (rev 1860)
+@@ -120,40 +120,48 @@
+ 
+ dnl ----------------------------------------
+ dnl Check for SDL image library
++dnl ----------------------------------------
++AC_CHECK_LIB(SDL_image,main,,[AC_MSG_ERROR([SDL_image is required to compile Enigma])])
++
++SDL_LIBS=&quot;$SDL_LIBS -lSDL_image&quot;
++
++AC_CHECK_LIB(SDL_image, IMG_Init, have_img_init=&quot;yes&quot;, have_img_init=&quot;no&quot;)
++if test &quot;$have_img_init&quot; = yes; then
++  AC_DEFINE(SDL_IMG_INIT, , [Whether SDL_image library provides init])
++fi
++
++dnl ----------------------------------------
+ dnl Check for SDL mixer library
+ dnl ----------------------------------------
+-AC_CHECK_LIB(SDL_image,main,,[AC_MSG_ERROR([SDL_image is required to compile Enigma])])
+ AC_CHECK_LIB(SDL_mixer,main,,[AC_MSG_ERROR([SDL_mixer is required to compile Enigma])])
+ 
+-SDL_LIBS=&quot;$SDL_LIBS -lSDL_image -lSDL_mixer&quot;
++SDL_LIBS=&quot;$SDL_LIBS -lSDL_mixer&quot;
+ 
+ AC_CHECK_LIB(SDL_mixer, Mix_QuickLoad_RAW, have_mix_quickload=&quot;yes&quot;, have_mix_quickload=&quot;no&quot;)
+-
+ if test &quot;$have_mix_quickload&quot; = no; then
+   AC_MSG_ERROR([SDL_mixer &gt;= 1.2.5 is required to compile Enigma])
+ fi
+ 
++AC_CHECK_LIB(SDL_mixer, Mix_Init, have_mix_init=&quot;yes&quot;, have_mix_init=&quot;no&quot;)
++if test &quot;$have_mix_init&quot; = yes; then
++  AC_DEFINE(SDL_MIX_INIT, , [Whether SDL_mixer library provides init])
++fi
++
+ dnl ----------------------------------------
+ dnl Check for SDL_ttf library
+ dnl ---------------------------------------
+-if test &quot;$MINGW32&quot; = yes; then
+-  AC_CHECK_LIB(SDL_ttf, main,,[AC_MSG_ERROR([SDL_ttf &gt;= 2.0.6 is required to compile Enigma])])
+-  AC_DEFINE(HAVE_SDLTTF, , [Whether SDL_ttf library was found during configure])
+-else
+-  AC_MSG_CHECKING([for SDL_ttf &gt;=2.0.6])
+-  AC_RUN_IFELSE([AC_LANG_SOURCE(
+-        [[#include &lt;SDL_ttf.h&gt;
+-	  int main(int argc, char *argv[]) {
+-	  if (TTF_MAJOR_VERSION &lt; 2)
+-            return 1;
+-          else if (TTF_MAJOR_VERSION == 2 &amp;&amp; TTF_MINOR_VERSION == 0 &amp;&amp; TTF_PATCHLEVEL &lt; 6) 
+-            return 1;
+-          return 0;}]])],
+-      [AC_MSG_RESULT([found])],
+-      [AC_MSG_ERROR([SDL_ttf &gt;= 2.0.6 not found.])])
+-  AC_CHECK_LIB(SDL_ttf, main,,[AC_MSG_ERROR([SDL_ttf is required to compile Enigma])])
+-  AC_DEFINE(HAVE_SDLTTF, , [Whether SDL_ttf library was found during configure])
+-fi
++AC_MSG_CHECKING([for SDL_ttf &gt;=2.0.6])
++AC_RUN_IFELSE([AC_LANG_SOURCE(
++    [[#include &lt;SDL_ttf.h&gt;
++      int main(int argc, char *argv[]) {
++      if (TTF_MAJOR_VERSION &lt; 2)
++	return 1;
++      else if (TTF_MAJOR_VERSION == 2 &amp;&amp; TTF_MINOR_VERSION == 0 &amp;&amp; TTF_PATCHLEVEL &lt; 6) 
++	return 1;
++      return 0;}]])],
++  [AC_MSG_RESULT([found])],
++  [AC_MSG_ERROR([SDL_ttf &gt;= 2.0.6 not found.])])
++AC_CHECK_LIB(SDL_ttf, main,,[AC_MSG_ERROR([SDL_ttf is required to compile Enigma])])
+ 
+ SDL_LIBS=&quot;$SDL_LIBS -lSDL_ttf&quot;
+ 
+
+Modified: trunk/doc/REQUIREMENTS
+===================================================================
+--- trunk/doc/REQUIREMENTS	2009-11-15 19:31:24 UTC (rev 1859)
++++ trunk/doc/REQUIREMENTS	2009-11-15 22:09:56 UTC (rev 1860)
+@@ -19,17 +19,17 @@
+                 <A HREF="http://www.libsdl.org/download-1.2.php">http://www.libsdl.org/download-1.2.php</A>
+                 SDL-devel-1.2.14-mingw32.tar.gz (Mingw32)
+                 
+-SDL_ttf-devel   2.0.9 -  2.0.7
++SDL_ttf-devel   2.0.9 -  2.0.6
+                 <A HREF="http://www.libsdl.org/projects/SDL_ttf/">http://www.libsdl.org/projects/SDL_ttf/</A>
+-                SDL_ttf-devel-2.0.7-VC8.zip (W)
++                SDL_ttf-devel-2.0.9-VC8.zip (W)
+                 
+-SDL_mixer-devel 1.2.9 - 1.2.7
++SDL_mixer-devel 1.2.11 - 1.2.7
+                 <A HREF="http://www.libsdl.org/projects/SDL_mixer/">http://www.libsdl.org/projects/SDL_mixer/</A>
+-                SDL_mixer-devel-1.2.8-VC8.zip (W)
++                SDL_mixer-devel-1.2.11-VC.zip (W)
+                 
+-SDL_image-devel 1.2.8
++SDL_image-devel 1.2.10
+                 <A HREF="http://www.libsdl.org/projects/SDL_image/">http://www.libsdl.org/projects/SDL_image/</A>
+-                SDL_image-devel-1.2.6-VC8.zip (W)
++                SDL_image-devel-1.2.10-VC.zip (W)
+ 
+ Xerces-C        3.0.1     2.4 - 2.8 (L)   &lt; 2.3 (L); 3.0 &lt; r671894
+ Apache          2.7 : <A HREF="http://xml.apache.org/xerces-c/download.cgi">http://xml.apache.org/xerces-c/download.cgi</A>
+
+Modified: trunk/etc/mingw32-dist.sh.in
+===================================================================
+--- trunk/etc/mingw32-dist.sh.in	2009-11-15 19:31:24 UTC (rev 1859)
++++ trunk/etc/mingw32-dist.sh.in	2009-11-15 22:09:56 UTC (rev 1860)
+@@ -6,7 +6,7 @@
+ DDIR=&quot;`pwd`/Enigma-$VERSION&quot;
+ SDIR=@top_srcdir@
+ BDIR=@top_builddir@
+-DLLDEFAULTS=&quot;SDL SDL_image SDL_mixer SDL_ttf jpeg zlib1 libfreetype-6 libogg-0 libpng12-0 libtiff-3 libvorbis-0 libvorbisfile-3 smpeg mikmod libcurl-4&quot;
++DLLDEFAULTS=&quot;SDL SDL_image SDL_mixer SDL_ttf jpeg zlib1 libfreetype-6 libogg-0 libpng12-0 libvorbis-0 libvorbisfile-3 mikmod libcurl-4&quot;
+ 
+ if [ &quot;$ENIGMADEVDLLS&quot; != &quot;&quot; ]; then
+   DLLS=$ENIGMADEVDLLS
+
+Modified: trunk/lib-src/enigma-core/ecl_font.cc
+===================================================================
+--- trunk/lib-src/enigma-core/ecl_font.cc	2009-11-15 19:31:24 UTC (rev 1859)
++++ trunk/lib-src/enigma-core/ecl_font.cc	2009-11-15 22:09:56 UTC (rev 1860)
+@@ -204,17 +204,8 @@
+ 
+ 
+ 
+-#ifndef HAVE_SDLTTF
+-
+-Font *ecl::LoadTTF (const char * /*filename*/, int /*ptsize*/, int, int, int)
+-{
+-    return 0;
+-}
+-
+-#else /* if defined (HAVE_SDLTTF) */
+-
+ //
+-// TrueType fonts (using SDL_ttf if available)
++// TrueType fonts 
+ //
+ #include &quot;SDL_ttf.h&quot;
+ 
+@@ -302,11 +293,11 @@
+ 
+ Font *ecl::LoadTTF (const char *filename, int ptsize, int r, int g, int b)
+ {
+-    if (TTF_Init()) {
+-        // Error initializing TTF engine
++    if (!TTF_WasInit() &amp;&amp; TTF_Init()==-1) {
++        fprintf(stderr, &quot;Couldn't initialize SDL_ttf: %s\n&quot;, SDL_GetError());
++        exit(1);
+     }
+     TTF_Font *font = TTF_OpenFont (filename, ptsize);
+     return (font) ? new TrueTypeFont (font, r, g, b) : 0;
+ }
+ 
+-#endif
+
+Modified: trunk/src/SoundEngine.cc
+===================================================================
+--- trunk/src/SoundEngine.cc	2009-11-15 19:31:24 UTC (rev 1859)
++++ trunk/src/SoundEngine.cc	2009-11-15 22:09:56 UTC (rev 1860)
+@@ -45,17 +45,19 @@
+ 
+ /* -------------------- Interface Functions -------------------- */
+ 
+-void sound::Init() 
++void sound::Init(bool withMusic, bool withSound) 
+ {
++    sound_enabled = withSound;
++    music_enabled = withMusic;
+     if (!sound_engine.get()) {
+         sound_engine.reset(new SoundEngine_SDL);
+     }
+ 
+     if (sound_engine-&gt;init()) {
+         sound::UpdateVolume();
+-    }
+-    else {
++    } else {
+         sound_enabled = false;
++        music_enabled = false;
+         sound_engine.reset(new SoundEngine_Null);
+     }
+ }
+@@ -72,20 +74,6 @@
+     sound::MusicTick(dtime);
+ }
+ 
+-void sound::DisableSound() {
+-    if (sound_enabled) {
+-        sound_enabled = false;
+-        Shutdown();
+-    }
+-}
+-
+-void sound::EnableSound() {
+-    if (!sound_enabled) {
+-        sound_enabled = true;
+-        Init();
+-    }
+-}
+-
+ void sound::TempDisableSound() {
+     sound_enabled_temp = sound_enabled;
+     sound_enabled      = false;
+@@ -99,10 +87,6 @@
+     return !sound_enabled || sound_mute;
+ }
+ 
+-void sound::DisableMusic() {
+-    music_enabled = false;
+-}
+-
+ bool sound::IsMusicMute() {
+     return !sound_enabled || !music_enabled || music_mute;
+ }
+@@ -247,6 +231,16 @@
+             fprintf(stderr, &quot;Couldn't open SDL audio subsystem: %s\n&quot;, SDL_GetError());
+             return false;
+         }
++        
++        const SDL_version* vi = Mix_Linked_Version();
++        Log &lt;&lt;  ecl::strf(&quot;SDL_mixer Version: %u.%u.%u\n&quot;, vi-&gt;major, vi-&gt;minor, vi-&gt;patch);
++#ifdef SDL_MIX_INIT
++        int mix_flags = MIX_INIT_OGG | MIX_INIT_MOD;
++        if (Mix_Init(mix_flags) &amp; mix_flags != mix_flags) {
++            Log &lt;&lt; ecl::strf( &quot;Couldn't initialize SDL_mixer: %s\n&quot;, Mix_GetError());
++            return false;
++        }
++#endif
+ 
+         // Initialize SDL_mixer lib
+         if (Mix_OpenAudio(m_freq, m_format, m_channels, 1024) &lt; 0) {
+@@ -275,6 +269,9 @@
+         Mix_CloseAudio();
+         clear_cache();
+         SDL_DestroyMutex (m_mutex);
++#ifdef SDL_MIX_INIT
++        Mix_Quit();
++#endif
+         m_initialized = false;
+     }
+ }
+
+Modified: trunk/src/SoundEngine.hh
+===================================================================
+--- trunk/src/SoundEngine.hh	2009-11-15 19:31:24 UTC (rev 1859)
++++ trunk/src/SoundEngine.hh	2009-11-15 22:09:56 UTC (rev 1860)
+@@ -36,14 +36,11 @@
+ 
+ /* -------------------- Interface Functions -------------------- */
+ 
+-    void Init();
++    void Init(bool withMusic =true, bool withSound =true);
+     void Shutdown();
+ 
+     void Tick(double dtime);
+ 
+-    void DisableSound();
+-    void EnableSound();
+-    void DisableMusic();
+     bool PlayMusic(const std::string &amp;name, double position = 0.0);
+     void FadeoutMusic(bool blocking =true);
+ 
+
+Modified: trunk/src/main.cc
+===================================================================
+--- trunk/src/main.cc	2009-11-15 19:31:24 UTC (rev 1859)
++++ trunk/src/main.cc	2009-11-15 22:09:56 UTC (rev 1860)
+@@ -60,8 +60,9 @@
+ #include &lt;xercesc/util/PlatformUtils.hpp&gt;
+ #include &lt;xercesc/util/XercesVersion.hpp&gt;
+ #include &lt;SDL_image.h&gt;
++#include &lt;SDL_mixer.h&gt;
++#include &lt;SDL_ttf.h&gt;
+ 
+-
+ #ifdef MACOSX
+ // for search paths
+ #include &quot;NSSystemDirectories.h&quot;
+@@ -348,8 +349,23 @@
+     SDL_EnableUNICODE(1);
+     const SDL_version* vi = SDL_Linked_Version();
+     Log &lt;&lt; ecl::strf(&quot;SDL Version: %u.%u.%u\n&quot;, vi-&gt;major, vi-&gt;minor, vi-&gt;patch);
++    
++    vi = TTF_Linked_Version();
++    Log &lt;&lt;  ecl::strf(&quot;SDL_ttf Version: %u.%u.%u\n&quot;, vi-&gt;major, vi-&gt;minor, vi-&gt;patch);
++    if(TTF_Init() == -1) {
++        fprintf(stderr, &quot;Couldn't initialize SDL_ttf: %s\n&quot;, TTF_GetError());
++        exit(1);
++    }
++
+     vi = IMG_Linked_Version();
+-    Log &lt;&lt;  ecl::strf(&quot;SDL &lt;Image Version: %u.%u.%u\n&quot;, vi-&gt;major, vi-&gt;minor, vi-&gt;patch);
++    Log &lt;&lt;  ecl::strf(&quot;SDL_image Version: %u.%u.%u\n&quot;, vi-&gt;major, vi-&gt;minor, vi-&gt;patch);
++#ifdef SDL_IMG_INIT
++    int img_flags = IMG_INIT_PNG | IMG_INIT_JPG;
++    if (IMG_Init(img_flags) &amp; img_flags != img_flags) {
++        fprintf(stderr, &quot;Couldn't initialize SDL_image: %s\n&quot;, IMG_GetError());
++        exit(1);
++    }
++#endif
+ 
+     // ----- Initialize video subsystem
+     video::Init();
+@@ -361,11 +377,7 @@
+ 
+ 
+     // ----- Initialize sound subsystem
+-    if (ap.nosound)
+-        sound::DisableSound();
+-    else if (ap.nomusic)
+-        sound::DisableMusic();
+-    sound::Init();
++    sound::Init(!ap.nomusic, !ap.nosound);
+     lua::CheckedDoFile (L, app.systemFS, &quot;sound-defaults.lua&quot;);
+     lua::DoSubfolderfile (L, &quot;soundsets&quot;, &quot;soundset.lua&quot;);
+ 
+@@ -865,6 +877,10 @@
+     enigma::ShutdownCurl();
+     lua::ShutdownGlobal();
+     XMLPlatformUtils::Terminate();
++#ifdef SDL_IMG_INIT
++    IMG_Quit();
++#endif
++    TTF_Quit();
+     delete ::nullbuffer;
+ }
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001288.html">[Enigma-game-svn] r1859 - in trunk: attic/images-floors data/gfx16	data/gfx32 data/gfx40 data/gfx48 data/gfx64 src
+</A></li>
+	<LI>Next message: <A HREF="001290.html">[Enigma-game-svn] r1861 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1289">[ date ]</a>
+              <a href="thread.html#1289">[ thread ]</a>
+              <a href="subject.html#1289">[ subject ]</a>
+              <a href="author.html#1289">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

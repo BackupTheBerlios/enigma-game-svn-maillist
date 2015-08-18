@@ -1,0 +1,561 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1475 - in trunk/src: . floors
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1475%20-%20in%20trunk/src%3A%20.%20floors&In-Reply-To=%3C200901212055.n0LKtXpM006889%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000903.html">
+   <LINK REL="Next"  HREF="000905.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1475 - in trunk/src: . floors</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1475%20-%20in%20trunk/src%3A%20.%20floors&In-Reply-To=%3C200901212055.n0LKtXpM006889%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1475 - in trunk/src: . floors">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Jan 21 21:55:33 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000903.html">[Enigma-game-svn] r1474 - in trunk/src: . floors others stones
+</A></li>
+        <LI>Next message: <A HREF="000905.html">[Enigma-game-svn] r1476 - in trunk: data data/gfx32 data/gfx40	data/gfx48 data/schemas src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#904">[ date ]</a>
+              <a href="thread.html#904">[ thread ]</a>
+              <a href="subject.html#904">[ subject ]</a>
+              <a href="author.html#904">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-01-21 21:55:31 +0100 (Wed, 21 Jan 2009)
+New Revision: 1475
+
+Modified:
+   trunk/src/enigma-lua.pkg
+   trunk/src/floors/FloodStream.cc
+   trunk/src/lua-display.cc
+   trunk/src/lua-display.hh
+   trunk/src/lua-ecl.cc
+   trunk/src/lua-ecl.hh
+   trunk/src/lua-editor.cc
+   trunk/src/lua-editor.hh
+   trunk/src/lua-enigma.cc
+   trunk/src/lua-enigma.hh
+   trunk/src/lua-global.cc
+   trunk/src/lua-global.hh
+   trunk/src/stones_simple.cc
+Log:
+Trunk 1.1: new API reengineering
+- fix FloodStream broken on false patch r1474
+- some code cleanups:
+  - remove old simple stone with Lua functions DefineSimpleStone, DefineSimpleStoneMovable
+Note:
+- a few levels depending on these undocumented functions need to be rewritten
+
+
+Modified: trunk/src/enigma-lua.pkg
+===================================================================
+--- trunk/src/enigma-lua.pkg	2009-01-21 20:22:19 UTC (rev 1474)
++++ trunk/src/enigma-lua.pkg	2009-01-21 20:55:31 UTC (rev 1475)
+@@ -92,8 +92,6 @@
+     Object *GetNamedObject(const char *name);
+ 
+     void Resize(int w, int h);
+-    void DefineSimpleStone(const char *kind, const char *sound, int hollow, int glass);
+-    void DefineSimpleStoneMovable(const char *kind, const char *sound, int glass);
+     void DefineSimpleFloor(const char *kind, double friction, double mousefactor,
+                            bool burnable, const char *firetransform);
+ }
+
+Modified: trunk/src/floors/FloodStream.cc
+===================================================================
+--- trunk/src/floors/FloodStream.cc	2009-01-21 20:22:19 UTC (rev 1474)
++++ trunk/src/floors/FloodStream.cc	2009-01-21 20:55:31 UTC (rev 1475)
+@@ -47,8 +47,20 @@
+ 
+     // temporary hack for backward compatibility during reengineering
+     const char * FloodStream::get_kind() const {
+-        static std::string kind =  (getAttr(&quot;faces&quot;).to_string() == &quot;nesw&quot;) ? getClass() + &quot;_framed&quot; : getClass();
+-        return kind .c_str();
++        if (getAttr(&quot;faces&quot;).to_string() == &quot;nesw&quot;)
++            switch (getTyp()) { 
++                case WATER : return &quot;fl_water_framed&quot;;
++                case WOOD :  return &quot;fl_wood_framed&quot;;
++                case HAY :   return &quot;fl_hay_framed&quot;;
++                case ROCK :  return &quot;fl_rock_framed&quot;;
++            }
++        else
++            switch (getTyp()) { 
++                case WATER : return &quot;fl_water&quot;;
++                case WOOD :  return &quot;fl_wood&quot;;
++                case HAY :   return &quot;fl_hay&quot;;
++                case ROCK :  return &quot;fl_rock&quot;;
++            }   
+     }
+         
+     Value FloodStream::message(const Message &amp;m) {
+
+Modified: trunk/src/lua-display.cc
+===================================================================
+--- trunk/src/lua-display.cc	2009-01-21 20:22:19 UTC (rev 1474)
++++ trunk/src/lua-display.cc	2009-01-21 20:55:31 UTC (rev 1475)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: display
+-** Generated automatically by tolua++-1.0.92 on Mon Dec  8 13:32:36 2008.
++** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
+ */
+ 
+ #ifndef __cplusplus
+
+Modified: trunk/src/lua-display.hh
+===================================================================
+--- trunk/src/lua-display.hh	2009-01-21 20:22:19 UTC (rev 1474)
++++ trunk/src/lua-display.hh	2009-01-21 20:55:31 UTC (rev 1475)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: display
+-** Generated automatically by tolua++-1.0.92 on Mon Dec  8 13:32:36 2008.
++** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
+ */
+ 
+ /* Exported function */
+
+Modified: trunk/src/lua-ecl.cc
+===================================================================
+--- trunk/src/lua-ecl.cc	2009-01-21 20:22:19 UTC (rev 1474)
++++ trunk/src/lua-ecl.cc	2009-01-21 20:55:31 UTC (rev 1475)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: px
+-** Generated automatically by tolua++-1.0.92 on Mon Dec  8 13:32:36 2008.
++** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
+ */
+ 
+ #ifndef __cplusplus
+
+Modified: trunk/src/lua-ecl.hh
+===================================================================
+--- trunk/src/lua-ecl.hh	2009-01-21 20:22:19 UTC (rev 1474)
++++ trunk/src/lua-ecl.hh	2009-01-21 20:55:31 UTC (rev 1475)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: px
+-** Generated automatically by tolua++-1.0.92 on Mon Dec  8 13:32:36 2008.
++** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
+ */
+ 
+ /* Exported function */
+
+Modified: trunk/src/lua-editor.cc
+===================================================================
+--- trunk/src/lua-editor.cc	2009-01-21 20:22:19 UTC (rev 1474)
++++ trunk/src/lua-editor.cc	2009-01-21 20:55:31 UTC (rev 1475)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: editor
+-** Generated automatically by tolua++-1.0.92 on Mon Dec  8 13:32:36 2008.
++** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
+ */
+ 
+ #ifndef __cplusplus
+
+Modified: trunk/src/lua-editor.hh
+===================================================================
+--- trunk/src/lua-editor.hh	2009-01-21 20:22:19 UTC (rev 1474)
++++ trunk/src/lua-editor.hh	2009-01-21 20:55:31 UTC (rev 1475)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: editor
+-** Generated automatically by tolua++-1.0.92 on Mon Dec  8 13:32:36 2008.
++** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
+ */
+ 
+ /* Exported function */
+
+Modified: trunk/src/lua-enigma.cc
+===================================================================
+--- trunk/src/lua-enigma.cc	2009-01-21 20:22:19 UTC (rev 1474)
++++ trunk/src/lua-enigma.cc	2009-01-21 20:55:31 UTC (rev 1475)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: enigma
+-** Generated automatically by tolua++-1.0.92 on Mon Dec  8 13:32:36 2008.
++** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
+ */
+ 
+ #ifndef __cplusplus
+@@ -930,72 +930,6 @@
+ }
+ #endif //#ifndef TOLUA_DISABLE
+ 
+-/* function: DefineSimpleStone */
+-#ifndef TOLUA_DISABLE_tolua_enigma_world_DefineSimpleStone00
+-static int tolua_enigma_world_DefineSimpleStone00(lua_State* tolua_S)
+-{
+-#ifndef TOLUA_RELEASE
+- tolua_Error tolua_err;
+- if (
+-     !tolua_isstring(tolua_S,1,0,&amp;tolua_err) ||
+-     !tolua_isstring(tolua_S,2,0,&amp;tolua_err) ||
+-     !tolua_isnumber(tolua_S,3,0,&amp;tolua_err) ||
+-     !tolua_isnumber(tolua_S,4,0,&amp;tolua_err) ||
+-     !tolua_isnoobj(tolua_S,5,&amp;tolua_err)
+- )
+-  goto tolua_lerror;
+- else
+-#endif
+- {
+-  const char* kind = ((const char*)  tolua_tostring(tolua_S,1,0));
+-  const char* sound = ((const char*)  tolua_tostring(tolua_S,2,0));
+-  int hollow = ((int)  tolua_tonumber(tolua_S,3,0));
+-  int glass = ((int)  tolua_tonumber(tolua_S,4,0));
+-  {
+-   DefineSimpleStone(kind,sound,hollow,glass);
+-  }
+- }
+- return 0;
+-#ifndef TOLUA_RELEASE
+- tolua_lerror:
+- tolua_error(tolua_S,&quot;#ferror in function 'DefineSimpleStone'.&quot;,&amp;tolua_err);
+- return 0;
+-#endif
+-}
+-#endif //#ifndef TOLUA_DISABLE
+-
+-/* function: DefineSimpleStoneMovable */
+-#ifndef TOLUA_DISABLE_tolua_enigma_world_DefineSimpleStoneMovable00
+-static int tolua_enigma_world_DefineSimpleStoneMovable00(lua_State* tolua_S)
+-{
+-#ifndef TOLUA_RELEASE
+- tolua_Error tolua_err;
+- if (
+-     !tolua_isstring(tolua_S,1,0,&amp;tolua_err) ||
+-     !tolua_isstring(tolua_S,2,0,&amp;tolua_err) ||
+-     !tolua_isnumber(tolua_S,3,0,&amp;tolua_err) ||
+-     !tolua_isnoobj(tolua_S,4,&amp;tolua_err)
+- )
+-  goto tolua_lerror;
+- else
+-#endif
+- {
+-  const char* kind = ((const char*)  tolua_tostring(tolua_S,1,0));
+-  const char* sound = ((const char*)  tolua_tostring(tolua_S,2,0));
+-  int glass = ((int)  tolua_tonumber(tolua_S,3,0));
+-  {
+-   DefineSimpleStoneMovable(kind,sound,glass);
+-  }
+- }
+- return 0;
+-#ifndef TOLUA_RELEASE
+- tolua_lerror:
+- tolua_error(tolua_S,&quot;#ferror in function 'DefineSimpleStoneMovable'.&quot;,&amp;tolua_err);
+- return 0;
+-#endif
+-}
+-#endif //#ifndef TOLUA_DISABLE
+-
+ /* function: DefineSimpleFloor */
+ #ifndef TOLUA_DISABLE_tolua_enigma_world_DefineSimpleFloor00
+ static int tolua_enigma_world_DefineSimpleFloor00(lua_State* tolua_S)
+@@ -1257,8 +1191,6 @@
+    tolua_function(tolua_S,&quot;MakeStone&quot;,tolua_enigma_world_MakeStone00);
+    tolua_function(tolua_S,&quot;GetNamedObject&quot;,tolua_enigma_world_GetNamedObject00);
+    tolua_function(tolua_S,&quot;Resize&quot;,tolua_enigma_world_Resize00);
+-   tolua_function(tolua_S,&quot;DefineSimpleStone&quot;,tolua_enigma_world_DefineSimpleStone00);
+-   tolua_function(tolua_S,&quot;DefineSimpleStoneMovable&quot;,tolua_enigma_world_DefineSimpleStoneMovable00);
+    tolua_function(tolua_S,&quot;DefineSimpleFloor&quot;,tolua_enigma_world_DefineSimpleFloor00);
+   tolua_endmodule(tolua_S);
+   tolua_module(tolua_S,&quot;video&quot;,0);
+
+Modified: trunk/src/lua-enigma.hh
+===================================================================
+--- trunk/src/lua-enigma.hh	2009-01-21 20:22:19 UTC (rev 1474)
++++ trunk/src/lua-enigma.hh	2009-01-21 20:55:31 UTC (rev 1475)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: enigma
+-** Generated automatically by tolua++-1.0.92 on Mon Dec  8 13:32:36 2008.
++** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
+ */
+ 
+ /* Exported function */
+
+Modified: trunk/src/lua-global.cc
+===================================================================
+--- trunk/src/lua-global.cc	2009-01-21 20:22:19 UTC (rev 1474)
++++ trunk/src/lua-global.cc	2009-01-21 20:55:31 UTC (rev 1475)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: global
+-** Generated automatically by tolua++-1.0.92 on Mon Dec  8 13:32:36 2008.
++** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
+ */
+ 
+ #ifndef __cplusplus
+
+Modified: trunk/src/lua-global.hh
+===================================================================
+--- trunk/src/lua-global.hh	2009-01-21 20:22:19 UTC (rev 1474)
++++ trunk/src/lua-global.hh	2009-01-21 20:55:31 UTC (rev 1475)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: global
+-** Generated automatically by tolua++-1.0.92 on Mon Dec  8 13:32:36 2008.
++** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
+ */
+ 
+ /* Exported function */
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2009-01-21 20:22:19 UTC (rev 1474)
++++ trunk/src/stones_simple.cc	2009-01-21 20:55:31 UTC (rev 1475)
+@@ -33,192 +33,6 @@
+ namespace enigma {
+ 
+ 
+-/* -------------------- SimpleStoneTraits -------------------- */
+-
+-namespace
+-{
+-    /*! This class stores some atrributes for SimpleStones.  Only one
+-      instance is created for each type of SimpleStone. */
+-
+-    struct SimpleStoneTraits {
+-        string sound;           // collision sound
+-        bool   hollow;          // whether stone is hollow
+-        bool   glass;           // whether it's a glass stone
+-
+-        // static list of all allocated SimpleStoneTraits (never freed yet)
+-        static vector&lt;SimpleStoneTraits*&gt; simple_stone_traits;
+-
+-        SimpleStoneTraits(const string&amp; sound_, bool hollow_, bool glass_)
+-        : sound(sound_) , hollow(hollow_) , glass(glass_)
+-        {}
+-
+-    public:
+-        SimpleStoneTraits() {}
+-
+-//         static void clear() {
+-//             vector&lt;SimpleStoneTraits*&gt;::iterator i = simple_stone_traits.begin();
+-//             vector&lt;SimpleStoneTraits*&gt;::iterator e = simple_stone_traits.end();
+-//             for (; i != e; ++e)
+-//                 delete simple_stone_traits[i];
+-//             simple_stone_traits.clear();
+-//         }
+-
+-        static const SimpleStoneTraits* Register(const string&amp; sound_, bool hollow_, bool glass_) {
+-            simple_stone_traits.push_back(new SimpleStoneTraits(sound_, hollow_, glass_));
+-            return simple_stone_traits.back();
+-        }
+-    };
+-
+-    vector&lt;SimpleStoneTraits*&gt; SimpleStoneTraits::simple_stone_traits;
+-}
+-
+-
+-/* -------------------- SimpleStone -------------------- */
+-
+-namespace
+-{
+-    class SimpleStone : public Stone {
+-    public:
+-        SimpleStone(const string &amp;knd, const string &amp; snd, 
+-                    bool hollow, bool is_glass)
+-        : Stone(knd.c_str()), 
+-          traits(SimpleStoneTraits::Register(snd, hollow, is_glass)),
+-          sunglasses(false)
+-        {}
+-    private:
+-        SimpleStone(const SimpleStone&amp; other)
+-        : Stone(other.get_kind()), traits(other.traits),
+-          sunglasses(false)
+-        {}
+-
+-        Stone *clone() { return new SimpleStone(*this); }
+-        void dispose() { delete this; }
+-
+-        const char *collision_sound() {
+-            return traits-&gt;sound.c_str();
+-        }
+-
+-        /** Different kinds of glassstones:
+-         *  Stone:                 visible:     invisible:   lasertransparent:
+-         *  st-glass               -            pass         Y
+-         *  st-glass1              -            pass         Y
+-         *  st-glass1_hole         pass         pass         Y
+-         *  st-glass2              -            pass         N
+-         *  st-glass2_hole         pass         pass         Y
+-         *  st-glass3              -            -            Y
+-         */
+-        StoneResponse collision_response(const StoneContact &amp;sc) {
+-            if (traits-&gt;hollow)
+-                return STONE_PASS;
+-            if (sc.actor-&gt;is_invisible() &amp;&amp; ((traits-&gt;glass &amp;&amp; !is_kind(&quot;st-glass3&quot;)) || is_kind(&quot;st-beads&quot;)) )
+-                return STONE_PASS;
+-            return Stone::collision_response(sc);
+-        }
+-
+-        bool is_sticky (const Actor *actor) const {
+-            if (traits-&gt;glass || is_kind(&quot;st-beads&quot;))
+-                return !actor-&gt;is_invisible();
+-            return Stone::is_sticky(actor);
+-        }
+-
+-        bool is_floating() const {
+-            return traits-&gt;hollow;
+-        }
+-
+-        bool is_transparent (Direction dir) const {
+-            if (traits-&gt;hollow || (traits-&gt;glass &amp;&amp; !is_kind(&quot;st-glass2&quot;)) )
+-                return true;
+-            return Stone::is_transparent(dir);
+-        }
+-
+-        virtual Value message(const Message &amp;m)
+-        {
+-            if (traits-&gt;hollow &amp;&amp; m.message == &quot;_glasses&quot;) {
+-                if (to_int(m.value) &amp; Glasses::HOLLOW) {  // hollow
+-                    if (!sunglasses) {
+-                        sunglasses = true;
+-                        set_model( &quot;invisible&quot;);
+-                    }
+-                }
+-                else {
+-                    if (sunglasses) {
+-                        sunglasses = false;
+-                        set_model (this-&gt;get_kind());
+-                    }
+-                }
+-                return Value();
+-            }
+-            return Stone::message(m);
+-        }
+-
+-        const SimpleStoneTraits *traits; // owned by simple_stone_traits
+-        bool sunglasses; // seen through glasses
+-    };
+-}
+-
+-
+-/* -------------------- SimpleStoneMovable -------------------- */
+-
+-namespace
+-{
+-    class SimpleStoneMovable : public Stone {
+-    public:
+-        SimpleStoneMovable(const string &amp;knd, const string &amp; snd, bool is_glass)
+-        : Stone (knd.c_str()), 
+-          traits(SimpleStoneTraits::Register(snd, false, is_glass))
+-        {}
+-
+-    private:
+-        SimpleStoneMovable(const SimpleStoneMovable&amp; other)
+-        : Stone (other.get_kind()), 
+-          traits (other.traits)
+-        {}
+-
+-        Stone *clone() { return new SimpleStoneMovable(*this); }
+-        void dispose() { delete this; }
+-
+-        const char *collision_sound() {
+-            return traits-&gt;sound.c_str();
+-        }
+-
+-        /** Different kinds of movable glassstones:
+-         *  Stone:                 visible:     invisible:   lasertransparent:
+-         *  st-glass_move          push         pass         Y
+-         *  st-glass1_move         push         push         Y
+-         *  st-glass2_move         push         push         N
+-         */
+-        StoneResponse collision_response(const StoneContact &amp;sc) {
+-            if (traits-&gt;glass &amp;&amp; sc.actor-&gt;is_invisible() &amp;&amp; is_kind(&quot;st-glass_move&quot;))
+-                return STONE_PASS;
+-            return Stone::collision_response(sc);
+-        }
+-
+-        bool is_sticky (const Actor *actor) const {
+-            if (traits-&gt;glass)
+-                return !actor-&gt;is_invisible();
+-            return Stone::is_sticky(actor);
+-        }
+-
+-        bool is_transparent (Direction dir) const {
+-            if (traits-&gt;glass &amp;&amp; !is_kind(&quot;st-glass2_move&quot;))
+-                return true;
+-            return Stone::is_transparent(dir);
+-        }
+-
+-        const SimpleStoneTraits *traits; // owned by simple_stone_traits
+-
+-        const StoneTraits &amp;get_traits() const
+-        {
+-            static StoneTraits simple_stone_movable_traits = {
+-                &quot;INVALID&quot;, st_INVALID, stf_none, material_stone, 1.0,
+-                MOVABLE_STANDARD
+-            };
+-            return simple_stone_movable_traits;
+-        }    
+-    };
+-}
+-
+-
+ /* -------------------- DummyStone -------------------- */
+ 
+ namespace
+@@ -972,20 +786,6 @@
+ 
+ /* -------------------- Functions -------------------- */
+ 
+-void DefineSimpleStone(const std::string &amp;kind, 
+-                              const std::string &amp;sound,
+-                              int hollow, int glass)
+-{
+-    Register(new SimpleStone(kind, sound, hollow != 0, glass != 0));
+-}
+-
+-void DefineSimpleStoneMovable(const std::string &amp;kind, 
+-                                     const std::string &amp;sound, 
+-                                     int glass)
+-{
+-    Register(new SimpleStoneMovable(kind, sound, glass != 0));
+-}
+-
+ void Init_simple()
+ {
+     Register(new BlockStone);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000903.html">[Enigma-game-svn] r1474 - in trunk/src: . floors others stones
+</A></li>
+	<LI>Next message: <A HREF="000905.html">[Enigma-game-svn] r1476 - in trunk: data data/gfx32 data/gfx40	data/gfx48 data/schemas src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#904">[ date ]</a>
+              <a href="thread.html#904">[ thread ]</a>
+              <a href="subject.html#904">[ subject ]</a>
+              <a href="author.html#904">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

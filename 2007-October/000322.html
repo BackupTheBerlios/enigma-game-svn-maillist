@@ -1,0 +1,194 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r890 - in trunk: data src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r890%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200709302224.l8UMOWDs020765%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   
+   <LINK REL="Next"  HREF="000323.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r890 - in trunk: data src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r890%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200709302224.l8UMOWDs020765%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r890 - in trunk: data src">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon Oct  1 00:24:32 CEST 2007</I>
+    <P><UL>
+        
+        <LI>Next message: <A HREF="000323.html">[Enigma-game-svn] r891 - homepage/input
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#322">[ date ]</a>
+              <a href="thread.html#322">[ thread ]</a>
+              <a href="subject.html#322">[ subject ]</a>
+              <a href="author.html#322">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-10-01 00:24:31 +0200 (Mon, 01 Oct 2007)
+New Revision: 890
+
+Modified:
+   trunk/data/init.lua
+   trunk/src/enigma.cc
+   trunk/src/stones_complex.cc
+Log:
+Trunk 1.1: Lua API Reengineering
+- fix Value conversion of integers to string (has been %f style)
+- switch st-oxyd color attribute from string to int
+- introduce init.lua compatibility layer for 1.0 API levels
+
+
+Modified: trunk/data/init.lua
+===================================================================
+--- trunk/data/init.lua	2007-09-29 21:35:15 UTC (rev 889)
++++ trunk/data/init.lua	2007-09-30 22:24:31 UTC (rev 890)
+@@ -17,6 +17,39 @@
+ --
+ ------------------------------------------------------------------------
+ 
++-------------------------------
++-- Compatibility for old API --
++-------------------------------
++
++enigma._SetAttrib = enigma.SetAttrib
++enigma._GetAttrib = enigma.GetAttrib
++
++function enigma.SetAttrib(obj, key, val)
++     local _val = val
++     local _key = key
++     if enigma.GetKind(obj) == &quot;st-oxyd&quot; then
++         if key == &quot;color&quot; then
++	     _val = 0 + val   -- convert to int
++	 end
++     end
++     enigma._SetAttrib(obj, _key, _val)
++end
++
++function enigma.GetAttrib(obj, key)
++     local _key = key
++     local val = enigma._GetAttrib(obj, key)
++     if enigma.GetKind(obj) == &quot;st-oxyd&quot; then
++         if key == &quot;color&quot; then
++	     val = &quot;&quot; .. val   -- convert to string
++	 end
++     end
++     return val
++end
++
++----------------------
++-- old API 1.0      --
++----------------------
++
+ TRUE = 1
+ FALSE = 0
+ 
+
+Modified: trunk/src/enigma.cc
+===================================================================
+--- trunk/src/enigma.cc	2007-09-29 21:35:15 UTC (rev 889)
++++ trunk/src/enigma.cc	2007-09-30 22:24:31 UTC (rev 890)
+@@ -249,7 +249,7 @@
+     static std::string s;
+     switch (type) {
+         case Value::DOUBLE:
+-            s = ecl::strf(&quot;%f&quot;, val.dval);
++            s = ecl::strf(&quot;%g&quot;, val.dval);  // need drop of trailing zeros and point for int
+             return s.c_str();
+         case Value::STRING: 
+             return val.str;
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2007-09-29 21:35:15 UTC (rev 889)
++++ trunk/src/stones_complex.cc	2007-09-30 22:24:31 UTC (rev 890)
+@@ -2321,7 +2321,7 @@
+     instances.push_back(o);
+     if (server::EnigmaCompatibility &gt;= 1.10) {
+         int color = ((instances.size() -1) / 2) % 8;
+-        o-&gt;set_attrib(&quot;color&quot;, ecl::strf(&quot;%d&quot;, color));
++        o-&gt;set_attrib(&quot;color&quot;, color);
+     }
+     return o;
+ }
+@@ -2331,7 +2331,7 @@
+   state(CLOSED)
+ {
+     set_attrib(&quot;flavor&quot;, &quot;b&quot;);
+-    set_attrib(&quot;color&quot;, &quot;0&quot;);
++    set_attrib(&quot;color&quot;, 0);
+ }
+ 
+ Value OxydStone::message(const string &amp;m, const Value &amp;val) 
+@@ -2344,10 +2344,10 @@
+         shuffle_colors();
+     }
+     else if (m==&quot;trigger&quot; || m==&quot;spitter&quot;) {
+-	maybe_open_stone();
++        maybe_open_stone();
+     }
+     else if (m==&quot;signal&quot; &amp;&amp; to_int(val) != 0) {
+-	maybe_open_stone();
++        maybe_open_stone();
+     }
+     else if (m==&quot;init&quot;) {
+         // odd number of oxyd stones in the level? no problem, turn a
+@@ -2391,7 +2391,7 @@
+ void OxydStone::change_state(State newstate) 
+ {
+     string flavor(getAttr(&quot;flavor&quot;,&quot;a&quot;));
+-    string color(getAttr(&quot;color&quot;, &quot;1&quot;));
++    string color(getAttr(&quot;color&quot;, 0));
+ 
+     string modelname = string(&quot;st-oxyd&quot;) + flavor + color;
+ 
+@@ -2425,12 +2425,12 @@
+ 
+     case OPENING:
+         sound_event(&quot;oxydopen&quot;);
+-	if (oldstate == CLOSED)
++        if (oldstate == CLOSED)
+             set_anim(modelname + &quot;-opening&quot;);
+-	else if (oldstate == CLOSING)
++        else if (oldstate == CLOSING)
+             get_model()-&gt;reverse();
+ 
+-	break;
++        break;
+ 
+     case CLOSING:
+         if (oldstate == CLOSED || oldstate==CLOSING) {
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	
+	<LI>Next message: <A HREF="000323.html">[Enigma-game-svn] r891 - homepage/input
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#322">[ date ]</a>
+              <a href="thread.html#322">[ thread ]</a>
+              <a href="subject.html#322">[ subject ]</a>
+              <a href="author.html#322">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

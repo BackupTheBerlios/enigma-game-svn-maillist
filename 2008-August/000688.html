@@ -1,0 +1,121 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1254 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-August/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1254%20-%20trunk/src&In-Reply-To=%3C200808031937.m73Jbhrn004113%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000687.html">
+   <LINK REL="Next"  HREF="000689.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1254 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1254%20-%20trunk/src&In-Reply-To=%3C200808031937.m73Jbhrn004113%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1254 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Aug  3 21:37:43 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000687.html">[Enigma-game-svn] r1253 - homepage/input
+</A></li>
+        <LI>Next message: <A HREF="000689.html">[Enigma-game-svn] r1255 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#688">[ date ]</a>
+              <a href="thread.html#688">[ thread ]</a>
+              <a href="subject.html#688">[ subject ]</a>
+              <a href="author.html#688">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-08-03 21:37:42 +0200 (Sun, 03 Aug 2008)
+New Revision: 1254
+
+Modified:
+   trunk/src/stones_complex.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1:
+- fix old oneway/door collision problems:
+  - a regular passing actor could tunnel neighboring stones at the moment
+    the it passed the oneway/door
+  - an unjoined oneway had rounded edges, that did reflect actors even
+    on the free passable sides.
+
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-08-02 19:45:47 UTC (rev 1253)
++++ trunk/src/stones_complex.cc	2008-08-03 19:37:42 UTC (rev 1254)
+@@ -360,8 +360,16 @@
+     DirectionBits dirs=contact_faces(sc);
+     Direction o=get_orientation();
+ 
+-    if (!sc.actor-&gt;is_flying() &amp;&amp; actor_may_pass(sc.actor))
+-        return has_dir(dirs,o) ? STONE_REBOUND : STONE_PASS;
++    if (!sc.actor-&gt;is_flying() &amp;&amp; actor_may_pass(sc.actor)) {
++        StoneResponse result = STONE_PASS;
++        if ((o == WEST &amp;&amp; (get_pos().x &gt;= sc.actor-&gt;get_pos()[0])) ||
++                (o == SOUTH &amp;&amp; (get_pos().y + 1 &lt;= sc.actor-&gt;get_pos()[1])) ||
++                (o == EAST &amp;&amp; (get_pos().x + 1 &lt;= sc.actor-&gt;get_pos()[0])) ||
++                (o == NORTH &amp;&amp; (get_pos().y &gt;= sc.actor-&gt;get_pos()[1])))
++            result = STONE_REBOUND;
++        return result;
++//        return has_dir(dirs,o) ? STONE_REBOUND : STONE_PASS;
++    }
+     else
+         return STONE_REBOUND;
+ }
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-08-02 19:45:47 UTC (rev 1253)
++++ trunk/src/world.cc	2008-08-03 19:37:42 UTC (rev 1254)
+@@ -844,10 +844,14 @@
+     } else if (s0 &amp;&amp; s1 &amp;&amp; c0.response==STONE_REBOUND &amp;&amp; c1.response==STONE_REBOUND) {
+         // join stones to a block without rounded edges
+         find_contact_with_stone(a, p1, c1, winFacesActorStone, false, s1);  // collision with straight neighbour only
++        if (c1.normal*(a-&gt;get_actorinfo()-&gt;vel) &gt;= 0 /* &amp;&amp;  s1 has restituion 1.0 */)  // leaving a oneway or door
++            find_contact_with_stone(a, p0, c0, winFacesActorStone, true, s0);          // collide with diagonal stone
+         find_contact_with_stone(a, p2, c2, winFacesActorStone, true, s2);   // register contact without collision
+     } else if (s0 &amp;&amp; s2 &amp;&amp; c0.response==STONE_REBOUND &amp;&amp; c2.response==STONE_REBOUND) {
+         // join stones to a block without rounded edges
+         find_contact_with_stone(a, p2, c2, winFacesActorStone, false, s2);  // contact with straight neighbour only
++        if (c2.normal*(a-&gt;get_actorinfo()-&gt;vel) &gt;= 0 /* &amp;&amp;  s2 has restituion 1.0 */)  // leaving a oneway or door
++            find_contact_with_stone(a, p0, c0, winFacesActorStone, true, s0);          // collide with diagonal stone
+         find_contact_with_stone(a, p1, c1, winFacesActorStone, true, s1);   // register contact without collision
+     } else {
+         // register single stone collisions and contacts
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000687.html">[Enigma-game-svn] r1253 - homepage/input
+</A></li>
+	<LI>Next message: <A HREF="000689.html">[Enigma-game-svn] r1255 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#688">[ date ]</a>
+              <a href="thread.html#688">[ thread ]</a>
+              <a href="subject.html#688">[ subject ]</a>
+              <a href="author.html#688">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

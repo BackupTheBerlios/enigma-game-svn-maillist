@@ -1,0 +1,1038 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1346 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1346%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200809292228.m8TMS18I019515%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000774.html">
+   
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1346 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1346%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200809292228.m8TMS18I019515%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1346 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Sep 30 00:28:01 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000774.html">[Enigma-game-svn] r1345 - team_levelpacks/team_test_new_api
+</A></li>
+        
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#775">[ date ]</a>
+              <a href="thread.html#775">[ thread ]</a>
+              <a href="subject.html#775">[ subject ]</a>
+              <a href="author.html#775">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-09-30 00:28:00 +0200 (Tue, 30 Sep 2008)
+New Revision: 1346
+
+Added:
+   trunk/src/stones/StoneImpulse.cc
+   trunk/src/stones/StoneImpulse.hh
+Removed:
+   trunk/src/stones_complex.cc
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/enigma.cc
+   trunk/src/enigma.hh
+   trunk/src/ox_extra.cc
+   trunk/src/ox_magnum.cc
+   trunk/src/ox_oxyd1.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/stones.cc
+   trunk/src/stones.hh
+   trunk/src/stones_internal.hh
+Log:
+Trunk 1.1: new API reengineering Stoneimpulse
+- rename to st_stoneimpulse, st_stoneimulse_hollow, st_stoneimpulse_movable
+- attributes &quot;movable&quot;, &quot;hollow&quot;, &quot;steady&quot; - all mutual exclusive true
+- full wire support
+- two variants of laser light behaviour:
+  - &quot;steady&quot; stoneimpulse will send continuos impulses as long as enlighted
+  - not &quot;steady&quot; (currently default) will just send 1 impulse on each
+    new additional light beam
+- full swap support for both light variants
+- new variant: st_stoneimpulse_new can be set with attribute &quot;orientation&quot;
+    as a stoneimpulse that starts in activated status as if it had just
+    received an incoming impulse into given direction.
+- all other stoneimpulse are set and initialized according to the snapshot
+    principle.
+Note:
+- stone_complex.cc has been removed
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-09-29 22:13:33 UTC (rev 1345)
++++ trunk/data/api1init.lua	2008-09-29 22:28:00 UTC (rev 1346)
+@@ -266,6 +266,9 @@
+     st_shogun_sl = &quot;st-shogun-sl&quot;,
+     st_shogun_ml = &quot;st-shogun-ml&quot;,
+     st_shogun_sml = &quot;st-shogun-sml&quot;,
++    st_stoneimpulse = &quot;st-stoneimpulse&quot;,
++    st_stoneimpulse_hollow = &quot;st-stoneimpulse-hollow&quot;,
++    st_stoneimpulse_movable = &quot;st-stoneimpulse_movable&quot;,
+     st_swap = &quot;st-swap&quot;,
+     st_switch = &quot;st-switch&quot;,
+     st_switch_black = &quot;st-switch_black&quot;,
+@@ -765,9 +768,7 @@
+     st_floppy__onoff = &quot;toggle&quot;,
+     st_key__onoff = &quot;toggle&quot;,
+     st_laser__onoff = &quot;toggle&quot;,
+-    [&quot;st-stoneimpulse__trigger&quot;] = &quot;signal&quot;,
+-    [&quot;st-stoneimpulse-hollow__trigger&quot;] = &quot;signal&quot;,
+-    [&quot;st-stoneimpulse_movable__trigger&quot;] = &quot;signal&quot;,
++    st_stoneimpulse__trigger = &quot;signal&quot;,
+     st_lightpassenger__trigger = &quot;toggle&quot;,
+     st_lightpassenger__onoff = &quot;toggle&quot;,
+     st_mirror__trigger = &quot;turn&quot;,
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-09-29 22:13:33 UTC (rev 1345)
++++ trunk/data/schemas/objects.xml	2008-09-29 22:28:00 UTC (rev 1346)
+@@ -62,6 +62,7 @@
+     &lt;attr name=&quot;scratches&quot; type=&quot;string&quot; default=&quot;&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;state&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;static&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;steady&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;strength&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;target&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;transparent&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+@@ -926,6 +927,27 @@
+     &lt;object name=&quot;st_shogun_sml&quot;&gt;
+       &lt;attr name=&quot;flavor&quot; value=&quot;sml&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_stoneimpulse&quot;&gt;
++      &lt;attr name=&quot;hollow&quot;/&gt;
++      &lt;attr name=&quot;movable&quot;/&gt;
++      &lt;attr name=&quot;orientation&quot;/&gt;
++      &lt;attr name=&quot;steady&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++      &lt;msg name=&quot;_model_reanimated&quot;/&gt;
++      &lt;msg name=&quot;_init&quot;/&gt;
++      &lt;msg name=&quot;_trigger&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_stoneimpulse_hollow&quot;&gt;
++      &lt;attr name=&quot;hollow&quot; value=&quot;true&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_stoneimpulse_movable&quot;&gt;
++      &lt;attr name=&quot;movable&quot; value=&quot;true&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_stoneimpulse_steady&quot;&gt;
++      &lt;attr name=&quot;steady&quot; value=&quot;true&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_stoneimpulse_new&quot; init=&quot;true&quot;&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_swap&quot;&gt;
+       &lt;attr name=&quot;state&quot; rw=&quot;r&quot;/&gt;
+     &lt;/object&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-09-29 22:13:33 UTC (rev 1345)
++++ trunk/src/Makefile.am	2008-09-29 22:28:00 UTC (rev 1346)
+@@ -125,7 +125,6 @@
+ 	stones.hh 		\
+ 	stones_internal.hh 	\
+ 	stones_simple.cc 	\
+-	stones_complex.cc  	\
+ 	Utf8ToXML.cc		\
+ 	Utf8ToXML.hh		\
+ 	util.cc 		\
+@@ -291,6 +290,8 @@
+ 	stones/ScissorsStone.hh	\
+ 	stones/ShogunStone.cc	\
+ 	stones/ShogunStone.hh	\
++	stones/StoneImpulse.cc	\
++	stones/StoneImpulse.hh	\
+ 	stones/SwapStone.cc	\
+ 	stones/SwapStone.hh	\
+ 	stones/Switch.cc	\
+
+Modified: trunk/src/enigma.cc
+===================================================================
+--- trunk/src/enigma.cc	2008-09-29 22:13:33 UTC (rev 1345)
++++ trunk/src/enigma.cc	2008-09-29 22:28:00 UTC (rev 1346)
+@@ -89,7 +89,12 @@
+     return rdir[d+1];
+ }
+ 
++Direction previous(Direction d) {
++    static Direction rdir[] = {NORTH, NODIR, WEST, SOUTH, EAST};
++    return rdir[d+1];
++}
+ 
++
+ Direction
+ direction_fromto(GridPos source, GridPos target)
+ {
+
+Modified: trunk/src/enigma.hh
+===================================================================
+--- trunk/src/enigma.hh	2008-09-29 22:13:33 UTC (rev 1345)
++++ trunk/src/enigma.hh	2008-09-29 22:28:00 UTC (rev 1346)
+@@ -118,6 +118,7 @@
+     Direction rotate_cw (Direction d);
+     Direction rotate_ccw (Direction d);
+     Direction next(Direction d);
++    Direction previous(Direction d);
+ 
+     std::string to_suffix(Direction d);
+     std::string toSuffix(Direction d);
+
+Modified: trunk/src/ox_extra.cc
+===================================================================
+--- trunk/src/ox_extra.cc	2008-09-29 22:13:33 UTC (rev 1345)
++++ trunk/src/ox_extra.cc	2008-09-29 22:28:00 UTC (rev 1346)
+@@ -225,7 +225,7 @@
+     UNUSED,              // OxydExtra stone 0x6a
+     UNUSED,              // OxydExtra stone 0x6b
+     UNUSED,              // OxydExtra stone 0x6c
+-    &quot;st-stoneimpulse&quot;,   // OxydExtra stone 0x6d
++    &quot;st_stoneimpulse&quot;,   // OxydExtra stone 0x6d
+     UNUSED,              // OxydExtra stone 0x6e
+     UNUSED,              // OxydExtra stone 0x6f
+     UNUSED,              // OxydExtra stone 0x70
+@@ -303,7 +303,7 @@
+     UNUSED,              // OxydExtra stone 0xb8
+     UNUSED,              // OxydExtra stone 0xb9
+     UNUSED,              // OxydExtra stone 0xba
+-    &quot;st-stoneimpulse-hollow&quot;, // OxydExtra stone 0xbb
++    &quot;st_stoneimpulse_hollow&quot;, // OxydExtra stone 0xbb
+     // codes &gt;= 0xbc are unused
+ };
+ 
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2008-09-29 22:13:33 UTC (rev 1345)
++++ trunk/src/ox_magnum.cc	2008-09-29 22:28:00 UTC (rev 1346)
+@@ -225,7 +225,7 @@
+     &quot;st_coinslot_instant&quot;,      // OxydMagnum stone 0x6a
+     &quot;st-thief&quot;,                 // OxydMagnum stone 0x6b
+     &quot;st_shogun_s&quot;,              // OxydMagnum stone 0x6c
+-    &quot;st-stoneimpulse&quot;,          // OxydMagnum stone 0x6d
++    &quot;st_stoneimpulse&quot;,          // OxydMagnum stone 0x6d
+     &quot;st_laserflop&quot;,             // OxydMagnum stone 0x6e
+     &quot;st_mail_n&quot;,                // OxydMagnum stone 0x6f
+     &quot;st_mail_w&quot;,                // OxydMagnum stone 0x70
+@@ -280,7 +280,7 @@
+     UNUSED,                     // OxydMagnum stone 0xa1
+     UNUSED,                     // OxydMagnum stone 0xa2
+     UNUSED,                     // OxydMagnum stone 0xa3
+-    &quot;st-stoneimpulse-hollow&quot;,   // OxydMagnum stone 0xa4
++    &quot;st_stoneimpulse_hollow&quot;,   // OxydMagnum stone 0xa4
+     UNUSED,                     // OxydMagnum stone 0xa5
+     UNUSED,                     // OxydMagnum stone 0xa6
+     &quot;st_lightpassenger&quot;,        // OxydMagnum stone 0xa7
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2008-09-29 22:13:33 UTC (rev 1345)
++++ trunk/src/ox_oxyd1.cc	2008-09-29 22:28:00 UTC (rev 1346)
+@@ -257,7 +257,7 @@
+     &quot;st_coinslot_instant&quot;,      // Oxyd1 stone 0x6a
+     &quot;st-thief&quot;,                 // Oxyd1 stone 0x6b
+     &quot;st_shogun_s&quot;,              // Oxyd1 stone 0x6c
+-    &quot;st-stoneimpulse&quot;,          // Oxyd1 stone 0x6d
++    &quot;st_stoneimpulse&quot;,          // Oxyd1 stone 0x6d
+     &quot;st_laserflop&quot;,             // Oxyd1 stone 0x6e
+     &quot;st_mail_n&quot;,                // Oxyd1 stone 0x6f
+     &quot;st_mail_w&quot;,                // Oxyd1 stone 0x70
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-09-29 22:13:33 UTC (rev 1345)
++++ trunk/src/ox_peroxyd.cc	2008-09-29 22:28:00 UTC (rev 1346)
+@@ -297,7 +297,7 @@
+     &quot;st_shogun_ml&quot;,             // PerOxyd stone 0x6a
+     &quot;st_shogun_sl&quot;,             // PerOxyd stone 0x6b
+     &quot;st_shogun_sm&quot;,             // PerOxyd stone 0x6c
+-    &quot;st-stoneimpulse&quot;,          // PerOxyd stone 0x6d
++    &quot;st_stoneimpulse&quot;,          // PerOxyd stone 0x6d
+     &quot;st_laserflop&quot;,             // PerOxyd stone 0x6e
+     &quot;st_mail_n&quot;,                // PerOxyd stone 0x6f
+     &quot;st_mail_w&quot;,                // PerOxyd stone 0x70
+
+Added: trunk/src/stones/StoneImpulse.cc
+===================================================================
+--- trunk/src/stones/StoneImpulse.cc	2008-09-29 22:13:33 UTC (rev 1345)
++++ trunk/src/stones/StoneImpulse.cc	2008-09-29 22:28:00 UTC (rev 1346)
+@@ -0,0 +1,271 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/StoneImpulse.hh&quot;
++#include &quot;main.hh&quot;
++#include &quot;player.hh&quot;
++
++namespace enigma {
++    StoneImpulse::StoneImpulse(bool isSteady, bool isHollow, bool isMovable, bool isActive) : Stone () {
++        if (isSteady)
++            objFlags |= OBJBIT_STEADY;
++        if (isHollow)
++            objFlags |= OBJBIT_HOLLOW;
++        if (isMovable)
++            objFlags |= OBJBIT_MOVABLE;
++        if (isActive)
++            state = EXPANDING;
++    }
++
++    std::string StoneImpulse::getClass() const {
++        return &quot;st_stoneimpulse&quot;;
++    }
++        
++    void StoneImpulse::setAttr(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;hollow&quot;) {
++            if (val.to_bool()) {
++                objFlags |= OBJBIT_HOLLOW;
++                objFlags &amp;= ~OBJBIT_MOVABLE;
++                objFlags &amp;= ~OBJBIT_STEADY;
++            } else
++                objFlags &amp;= ~OBJBIT_HOLLOW;
++        } else if (key == &quot;movable&quot;) {
++            if (val.to_bool()) {
++                objFlags |= OBJBIT_MOVABLE;
++                objFlags &amp;= ~OBJBIT_HOLLOW;
++                objFlags &amp;= ~OBJBIT_STEADY;
++            } else
++                objFlags &amp;= ~OBJBIT_MOVABLE;
++        } else if (key == &quot;steady&quot;) {
++            if (val.to_bool()) {
++                objFlags |= OBJBIT_STEADY;
++                objFlags &amp;= ~OBJBIT_HOLLOW;
++                objFlags &amp;= ~OBJBIT_MOVABLE;
++            } else
++                objFlags &amp;= ~OBJBIT_STEADY;
++        } else if (key == &quot;orientation&quot;) {
++            if (!isDisplayable()) {
++                objFlags &amp;= ~OBJBIT_INCOMINGDIR;
++                Direction incoming = to_direction(val); 
++                if (incoming != NODIR ) {
++                    objFlags |= (incoming &lt;&lt; 29) | OBJBIT_NOBACKFIRE;
++                }
++            }
++        } else
++            Stone::setAttr(key, val);
++    }
++    
++    Value StoneImpulse::getAttr(const std::string &amp;key) const {
++        if (key == &quot;hollow&quot;) {
++            return (bool)(objFlags &amp; OBJBIT_HOLLOW);
++        } else if (key == &quot;movable&quot;) {
++            return (bool)(objFlags &amp; OBJBIT_MOVABLE);
++        } else if (key == &quot;steady&quot;) {
++            return (bool)(objFlags &amp; OBJBIT_STEADY);
++        } else
++            return Stone::getAttr(key);
++    }
++    
++    Value StoneImpulse::message(const Message &amp;m) {
++        if (m.message == &quot;_trigger&quot; &amp;&amp; m.value.to_bool()) {
++            Direction incoming = NODIR;
++            if (m.sender != NULL)
++                incoming = direction_fromto(dynamic_cast&lt;GridObject *&gt;(m.sender)-&gt;get_pos(), get_pos());
++            
++            if (state == IDLE &amp;&amp; incoming != NODIR) {
++                objFlags |= OBJBIT_NOBACKFIRE;
++            }
++            setIState(EXPANDING, incoming);
++            return Value();
++        } else if (m.message == &quot;signal&quot; &amp;&amp; (to_double(m.value) != 0 || 
++                (server::EnigmaCompatibility &lt; 1.10 /*&amp;&amp; m.value.getType() == Value::NIL*/))) { // hack for old trigger without value
++            setIState(EXPANDING);
++            return Value();
++        } else if (m.message == &quot;_model_reanimated&quot;) {
++            // we are swapped in or out of a laser beam
++            if ((objFlags &amp; OBJBIT_STEADY) &amp;&amp; (objFlags &amp; OBJBIT_LIGHTNEWDIRS))
++                init_model();     // replace potential bogus model
++            else if (!(objFlags &amp; OBJBIT_STEADY) &amp;&amp; (objFlags &amp; OBJBIT_LIGHTNEWDIRS) &amp;&amp; !(objFlags &amp; OBJBIT_LASERIDLE))
++                setIState(EXPANDING);
++        } else if (m.message == &quot;_init&quot;) {
++            // we may have the wrong model
++            updateCurrentLightDirs();
++            if (state == IDLE &amp;&amp; (objFlags &amp; OBJBIT_STEADY) &amp;&amp; (objFlags &amp; OBJBIT_LIGHTNEWDIRS))
++               setIState(EXPANDING);     // replace potential bogus model
++        } else
++            return Stone::message(m);
++    }
++    
++            
++    void StoneImpulse::setState(int extState) {
++        // block any write attempts
++    }
++
++    void StoneImpulse::init_model() {
++        if (state == IDLE)
++            set_model(ecl::strf(&quot;st-stoneimpulse%s&quot;, (objFlags &amp; OBJBIT_HOLLOW) ? &quot;-hollow&quot; : &quot;&quot;));
++        else
++            set_anim(ecl::strf(&quot;st-stoneimpulse%s-anim%d&quot;, (objFlags &amp; OBJBIT_HOLLOW) ? &quot;-hollow&quot; : &quot;&quot;,
++                    state == EXPANDING ? 1 : 2));
++    }
++    
++    void StoneImpulse::on_creation(GridPos p) {
++        updateCurrentLightDirs();
++            
++        if (!(objFlags &amp; OBJBIT_HOLLOW))
++            activatePhoto();
++        
++        if (state == IDLE &amp;&amp; (objFlags &amp; OBJBIT_STEADY) &amp;&amp; (objFlags &amp; OBJBIT_LIGHTNEWDIRS))
++            setIState(EXPANDING);
++        else if (!(objFlags &amp; OBJBIT_STEADY) &amp;&amp; !(objFlags &amp; OBJBIT_LIGHTNEWDIRS))  // being swapped out of light
++            objFlags &amp;= ~OBJBIT_LASERIDLE;    
++
++        Stone::on_creation(p);
++    }
++    
++    void StoneImpulse::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
++        if (added_dirs(oldDirs, newDirs) != NODIRBIT) {
++            setIState(EXPANDING);            
++        }
++    }
++
++    void StoneImpulse::animcb() {
++        if (state == EXPANDING)
++            setIState(SHRINKING);
++        else {
++            setIState(IDLE);
++            if ((objFlags &amp; OBJBIT_STEADY) &amp;&amp; (objFlags &amp; OBJBIT_LIGHTNEWDIRS))
++                setIState(EXPANDING);
++            else if (!(objFlags &amp; OBJBIT_STEADY) &amp;&amp; (objFlags &amp; OBJBIT_LIGHTNEWDIRS))
++                objFlags |= OBJBIT_LASERIDLE;
++        }
++        init_model();
++    }
++    
++    bool StoneImpulse::is_floating() const {
++        return objFlags &amp; OBJBIT_HOLLOW;
++    }
++    
++    StoneResponse StoneImpulse::collision_response(const StoneContact &amp;sc) {
++        return ((state != IDLE) || !(objFlags &amp; OBJBIT_HOLLOW)) ? STONE_REBOUND : STONE_PASS;
++    }
++    
++    void StoneImpulse::actor_inside(Actor *a) {
++        if ((state != IDLE) &amp;&amp; (objFlags &amp; OBJBIT_HOLLOW))
++            SendMessage(a, &quot;shatter&quot;);
++    }
++    
++    void StoneImpulse::actor_hit(const StoneContact &amp;sc) {
++        if ((objFlags &amp; OBJBIT_MOVABLE) &amp;&amp; maybe_push_stone(sc))
++            return;                                      // stone did move on impulse
++        else if (!(objFlags &amp; OBJBIT_HOLLOW)) 
++            sc.actor-&gt;send_impulse(sc.stonepos, NODIR);  // impulse on the slightest touch
++    }
++
++    void StoneImpulse::on_impulse(const Impulse&amp; impulse) {
++        if ((objFlags &amp; OBJBIT_MOVABLE) &amp;&amp; (impulse.dir != NODIR)) {
++            // move stone without disturbing a running animation
++            display::Model *yieldedModel = display::YieldModel(GridLoc(GRID_STONES, get_pos()));
++            move_stone(impulse.dir);
++            display::SetModel(GridLoc(GRID_STONES, get_pos()), yieldedModel);
++            
++            // pulse only if not pushed with a wand
++            Actor *hitman = dynamic_cast&lt;Actor*&gt;(impulse.sender);
++            if (hitman == NULL || !player::WieldedItemIs (hitman, &quot;it_magicwand&quot;)) {
++                if (state != IDLE)
++                    objFlags |= OBJBIT_REPULSE;
++                else
++                    setIState(EXPANDING, NODIR);
++            }
++        } else {
++            setIState(EXPANDING, impulse.dir);
++        }
++        
++        propagateImpulse(impulse);
++    }
++    
++    FreezeStatusBits StoneImpulse::get_freeze_bits() {
++        return FREEZEBIT_NO_STONE;
++    }
++    
++    void StoneImpulse::setIState(int newState, Direction incoming) {
++        if (newState != state &amp;&amp; isDisplayable()) {
++            switch (newState) {
++                case IDLE:
++                    state = newState;
++                    if (objFlags &amp; OBJBIT_REPULSE) {
++                        objFlags &amp;= ~OBJBIT_REPULSE;
++                        setIState(EXPANDING, NODIR);
++                    } else
++                        init_model();
++                    break;
++                case EXPANDING:
++                    if (state != IDLE) {
++                        return;         // do not set new state
++                    }
++                    objFlags &amp;= ~OBJBIT_LASERIDLE;
++                    objFlags &amp;= ~OBJBIT_INCOMINGDIR;
++                    if (incoming != NODIR)
++                        objFlags |= (incoming &lt;&lt; 29);
++                    state = newState;
++                    init_model();
++                    sound_event(&quot;impulse&quot;);
++                    break;
++                case SHRINKING:
++                    state = newState;
++                    init_model();
++                    GridPos p = get_pos();
++                    Direction origin = reverse((Direction)((objFlags &amp; OBJBIT_INCOMINGDIR) &gt;&gt; 29));
++                    for (Direction d = NORTH; d != NODIR; d = previous(d)) {
++                        if (!(objFlags &amp; OBJBIT_NOBACKFIRE) || d != origin)
++                            send_impulse(move(p, d), d);
++                    }
++                    break;
++            }
++        }
++    }
++    
++    int StoneImpulse::traitsIdx() const {
++        if (objFlags &amp; OBJBIT_MOVABLE)
++            return 3;
++        else if (objFlags &amp; OBJBIT_HOLLOW)
++            return 2;
++        else if (objFlags &amp; OBJBIT_STEADY)
++            return 1;
++        else
++            return 0;
++    }
++
++    
++    StoneTraits StoneImpulse::traits[4] = {
++        {&quot;st_stoneimpulse&quot;, st_stoneimpulse, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++        {&quot;st_stoneimpulse_steady&quot;, st_stoneimpulse_steady, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++        {&quot;st_stoneimpulse_hollow&quot;, st_stoneimpulse_hollow, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++        {&quot;st_stoneimpulse_movable&quot;, st_stoneimpulse_movable, stf_none, material_stone, 1.0, MOVABLE_STANDARD},
++    };
++    
++    BOOT_REGISTER_START
++        BootRegister(new StoneImpulse(false, false, false, false), &quot;st_stoneimpulse&quot;);
++        BootRegister(new StoneImpulse(true,  false, false, false), &quot;st_stoneimpulse_steady&quot;);
++        BootRegister(new StoneImpulse(false, true,  false, false), &quot;st_stoneimpulse_hollow&quot;);
++        BootRegister(new StoneImpulse(false, false, true,  false),  &quot;st_stoneimpulse_movable&quot;);
++        BootRegister(new StoneImpulse(false, false, false, true), &quot;st_stoneimpulse_new&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/StoneImpulse.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/StoneImpulse.hh
+===================================================================
+--- trunk/src/stones/StoneImpulse.hh	2008-09-29 22:13:33 UTC (rev 1345)
++++ trunk/src/stones/StoneImpulse.hh	2008-09-29 22:28:00 UTC (rev 1346)
+@@ -0,0 +1,93 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef STONEIMPULSESTONE_HH
++#define STONEIMPULSESTONE_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     * It is essential for the propagation of impulses, that the expanding phase
++     * of a stoneimpulse is slightly shorter than the shrinking phase. This is
++     * currently achieved by the animation sequence. This mismatch is responsible
++     * for blocking impulse waves from backfiring.
++     * 
++     * 
++     */
++    class StoneImpulse : public Stone {
++        CLONEOBJ(StoneImpulse);
++        DECL_TRAITS_ARRAY(4, traitsIdx());
++    private:
++        enum iState {
++            IDLE,        ///&lt;  
++            EXPANDING,   ///&lt;  
++            SHRINKING    ///&lt;
++        };
++        
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_MOVABLE     =  1&lt;&lt;24,   ///&lt; Object is movable 
++            OBJBIT_HOLLOW      =  1&lt;&lt;25,   ///&lt; 
++            OBJBIT_STEADY      =  1&lt;&lt;26,   ///&lt; continuous laser light causes repeating impulses 
++            OBJBIT_REPULSE     =  1&lt;&lt;27,   ///&lt; pending impulse
++            OBJBIT_NOBACKFIRE  =  1&lt;&lt;28,   ///&lt; avoid sending impulse back into incoming direction
++            OBJBIT_INCOMINGDIR =  3&lt;&lt;29,   ///&lt; incoming direction
++            OBJBIT_LASERIDLE   =  1&lt;&lt;31,   ///&lt; not steady stoneimpulse did run singleton pulse and is idle but still enlighted
++        };
++    public:
++        StoneImpulse(bool isSteady, bool isHollow, bool isMovable, bool isActive);
++        
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++        virtual Value getAttr(const std::string &amp;key) const;
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        virtual void on_creation(GridPos p);
++        virtual void lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs);
++        
++        // ModelCallback interface
++        virtual void animcb();
++        
++        // Stone interface
++        virtual bool is_floating() const;
++        virtual StoneResponse collision_response(const StoneContact &amp;sc);
++        virtual void actor_inside(Actor *a);
++        virtual void actor_hit(const StoneContact &amp;sc);
++        virtual void on_impulse(const Impulse&amp; impulse);
++//        virtual void on_move();
++        virtual FreezeStatusBits get_freeze_bits();
++        
++    private:
++        void setIState(int newState, Direction incoming = NODIR);
++        int traitsIdx() const;
++    };
++
++} // namespace enigma
++
++#endif
++
+
+
+Property changes on: trunk/src/stones/StoneImpulse.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-09-29 22:13:33 UTC (rev 1345)
++++ trunk/src/stones.cc	2008-09-29 22:28:00 UTC (rev 1346)
+@@ -990,6 +990,5 @@
+ 
+     // Init stones from stones_simple.cc and stones_complex.cc:
+     Init_simple();
+-    Init_complex();
+ }
+ } // namespace enigma
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2008-09-29 22:13:33 UTC (rev 1345)
++++ trunk/src/stones.hh	2008-09-29 22:28:00 UTC (rev 1346)
+@@ -87,6 +87,7 @@
+         st_scissors,
+         st_shogun,
+         st_stoneimpulse,
++        st_stoneimpulse_steady,
+         st_stoneimpulse_hollow,
+         st_stoneimpulse_movable,
+         st_surprise,
+
+Deleted: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-09-29 22:13:33 UTC (rev 1345)
++++ trunk/src/stones_complex.cc	2008-09-29 22:28:00 UTC (rev 1346)
+@@ -1,312 +0,0 @@
+-/*
+- * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2007 Ronald Lamprecht
+- *
+- * This program is free software; you can redistribute it and/ or
+- * modify it under the terms of the GNU General Public License
+- * as published by the Free Software Foundation; either version 2
+- * of the License, or (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along
+- * with this program; if not, write to the Free Software Foundation, Inc.,
+- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+- *
+- */
+-
+-#include &quot;errors.hh&quot;
+-#include &quot;laser.hh&quot;
+-#include &quot;SoundEffectManager.hh&quot;
+-#include &quot;server.hh&quot;
+-#include &quot;player.hh&quot;
+-#include &quot;Inventory.hh&quot;
+-#include &quot;stones_internal.hh&quot;
+-#include &quot;actors.hh&quot;
+-#include &quot;main.hh&quot;
+-#include &quot;Value.hh&quot;
+-
+-#include &quot;ecl_util.hh&quot;
+-
+-#include &lt;algorithm&gt;
+-#include &lt;iostream&gt;
+-
+-using namespace std;
+-
+-namespace enigma { 
+-
+-/* -------------------- Stone impulse stones -------------------- */
+-
+-// Messages:
+-//
+-// :trigger
+-namespace
+-{
+-    class StoneImpulse_Base : public Stone {
+-    protected:
+-        StoneImpulse_Base() : state(IDLE), incoming(NODIR), nobackfire (false)
+-        {}
+-
+-        enum State { IDLE, PULSING, CLOSING };
+-        State     state;
+-        Direction incoming; // direction of incoming impulse (may be NODIR)
+-        bool      nobackfire;
+-
+-        void change_state(State st);
+-
+-        virtual void on_impulse(const Impulse&amp; impulse) {
+-            incoming = impulse.dir;
+-            change_state(PULSING);
+-        }
+-
+-    private:
+-
+-        virtual void notify_state(State st) = 0;
+-
+-        virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;_trigger&quot; &amp;&amp; m.value.to_bool()) {
+-                incoming = NODIR;
+-                if (m.sender != NULL)
+-                    incoming = direction_fromto(dynamic_cast&lt;GridObject *&gt;(m.sender)-&gt;get_pos(), get_pos());
+-                
+-                if (state == IDLE &amp;&amp; incoming != NODIR) {
+-                    nobackfire = true;
+-                }
+-                change_state(PULSING);
+-                return Value();
+-            }
+-            else if (m.message == &quot;signal&quot; &amp;&amp; (to_double(m.value) != 0 || 
+-                    (server::EnigmaCompatibility &lt; 1.10 /*&amp;&amp; m.value.getType() == Value::NIL*/))) { // hack for old trigger without value
+-                incoming = NODIR;
+-                change_state (PULSING);
+-                return Value();
+-            }
+-            return Stone::message(m);
+-        }
+-
+-        void animcb() {
+-            if (state == PULSING)
+-                change_state (CLOSING);
+-            else if (state == CLOSING)
+-                change_state (IDLE);
+-        }
+-
+-        void processLight(Direction dir) {
+-            incoming = dir;
+-            change_state(PULSING);
+-        }
+-
+-        FreezeStatusBits get_freeze_bits() { return FREEZEBIT_NO_STONE; }
+-    };
+-}
+-
+-void StoneImpulse_Base::change_state(State new_state) {
+-    if (new_state == state) return;
+-
+-    GridPos p = get_pos();
+-    switch (new_state) {
+-        case IDLE: {
+-            state = new_state;
+-            notify_state(state);
+-            break;
+-        }
+-        case PULSING:
+-            if (state != IDLE) {
+-                return;         // do not set new state
+-            }
+-            state = new_state;
+-            notify_state(state);
+-            sound_event(&quot;impulse&quot;);
+-            break;
+-        case CLOSING: {
+-            GridPos targetpos[4];
+-            bool    haveStone[4];
+-
+-            // set CLOSING model _before_ sending impulses !!!
+-            // (any impulse might have side effects that move this stone)
+-
+-            state = new_state;
+-            notify_state(state);
+-
+-            for (int d = 0; d &lt; 4; ++d) {
+-                targetpos[d] = move(p, Direction(d));
+-                haveStone[d] = GetStone(targetpos[d]) != 0;
+-            }
+-
+-            for (int d = int(incoming)+1; d &lt;= int(incoming)+4; ++d) {
+-                int D = d%4;
+-                if (!nobackfire || reverse(incoming) != D) {
+-                    if (haveStone[D]) {
+-                        send_impulse(targetpos[D], Direction(D));
+-                    }
+-                }
+-            }
+-
+-            incoming = NODIR;   // forget impulse direction
+-            nobackfire = false;
+-            break;
+-        }
+-    }
+-}
+-
+-
+-namespace
+-{
+-    class StoneImpulseStone : public StoneImpulse_Base {
+-        CLONEOBJ(StoneImpulseStone);
+-        DECL_TRAITS;
+-    public:
+-        StoneImpulseStone()
+-        {}
+-
+-    private:
+-        void notify_state(State st) {
+-            switch (st) {
+-            case IDLE:
+-                init_model();
+-                break;
+-            case PULSING:
+-                set_anim(&quot;st-stoneimpulse-anim1&quot;);
+-                break;
+-            case CLOSING:
+-                set_anim(&quot;st-stoneimpulse-anim2&quot;);
+-                break;
+-            }
+-        }
+-
+-        void actor_hit(const StoneContact &amp;/*sc*/) {
+-            change_state(PULSING);
+-        }
+-    };
+-    DEF_TRAITS(StoneImpulseStone, &quot;st-stoneimpulse&quot;, st_stoneimpulse);
+-
+-    class HollowStoneImpulseStone : public StoneImpulse_Base {
+-        CLONEOBJ(HollowStoneImpulseStone);
+-        DECL_TRAITS;
+-    public:
+-        HollowStoneImpulseStone()
+-        {}
+-    private:
+-        void notify_state(State st) {
+-            switch (st) {
+-            case IDLE:
+-                init_model();
+-                MaybeRecalcLight(get_pos());
+-                break;
+-            case PULSING:
+-                MaybeRecalcLight(get_pos());
+-                set_anim(&quot;st-stoneimpulse-hollow-anim1&quot;);
+-                break;
+-            case CLOSING:
+-                set_anim(&quot;st-stoneimpulse-hollow-anim2&quot;);
+-                break;
+-            }
+-        }
+-
+-        StoneResponse collision_response(const StoneContact &amp;/*sc*/) {
+-            return (state == IDLE) ? STONE_PASS : STONE_REBOUND;
+-        }
+-        void actor_inside(Actor *a) {
+-            if (state == PULSING || state == CLOSING)
+-                SendMessage(a, &quot;shatter&quot;);
+-        }
+-
+-        bool is_floating () const {
+-            return true;
+-        }
+-
+-        void processLight(Direction d) {
+-            // hollow StoneImpulseStones cannot be activated using lasers
+-        }
+-    };
+-    DEF_TRAITS(HollowStoneImpulseStone, &quot;st-stoneimpulse-hollow&quot;,
+-               st_stoneimpulse_hollow);
+-
+-    class MovableImpulseStone : public StoneImpulse_Base {
+-        CLONEOBJ(MovableImpulseStone);
+-        DECL_TRAITS;
+-    public:
+-        MovableImpulseStone()
+-        : repulse(false)
+-        {}
+-
+-    private:
+-
+-        void notify_state(State st) {
+-            switch (st) {
+-            case IDLE:
+-                if (repulse) {
+-                    repulse = false;
+-                    change_state(PULSING);
+-                }
+-                else
+-                    init_model();
+-                break;
+-            case PULSING:
+-                set_anim(&quot;st-stoneimpulse-anim1&quot;);
+-                break;
+-            case CLOSING:
+-                set_anim(&quot;st-stoneimpulse-anim2&quot;);
+-                break;
+-            }
+-        }
+-
+-        void init_model() {
+-            set_model(&quot;st-stoneimpulse&quot;);
+-        }
+-
+-        // Stone interface:
+-
+-        void actor_hit(const StoneContact &amp;sc) {
+-            if (!maybe_push_stone (sc)) {
+-                incoming = NODIR; // bad, but no real problem!
+-                if (state == IDLE)
+-                    change_state(PULSING);
+-            }
+-        }
+-
+-        void on_impulse(const Impulse&amp; impulse) {
+-            State oldstate = state;
+-
+-            if (move_stone(impulse.dir)) {
+-                notify_state(oldstate); // restart anim if it was animated before move
+-
+-                Actor *hitman = dynamic_cast&lt;Actor*&gt;(impulse.sender);
+-                if (hitman &amp;&amp; player::WieldedItemIs (hitman, &quot;it_magicwand&quot;)) {
+-                    return;     // do not change state to PULSING
+-                }
+-            }
+-
+-            if (state == IDLE)
+-                change_state(PULSING);
+-        }
+-
+-        void on_move() {
+-            if (state != PULSING)
+-                repulse = true; // pulse again
+-            Stone::on_move();
+-        }
+-
+-        // Variables.
+-        bool repulse;
+-    };
+-    DEF_TRAITSM(MovableImpulseStone, &quot;st-stoneimpulse_movable&quot;,
+-                st_stoneimpulse_movable, MOVABLE_STANDARD);
+-}
+-
+-// --------------------------------------------------------------------------------
+-
+-void Init_complex()
+-{
+-    Register(new HollowStoneImpulseStone);
+-
+-    Register(new MovableImpulseStone);
+-
+-    Register(new StoneImpulseStone);
+-
+-}
+-
+-} // namespace enigma
+
+Modified: trunk/src/stones_internal.hh
+===================================================================
+--- trunk/src/stones_internal.hh	2008-09-29 22:13:33 UTC (rev 1345)
++++ trunk/src/stones_internal.hh	2008-09-29 22:28:00 UTC (rev 1346)
+@@ -41,7 +41,6 @@
+ namespace enigma {
+ 
+     void Init_simple();
+-    void Init_complex();
+ 
+ 
+ /* -------------------- Auxiliary Functions -------------------- */
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000774.html">[Enigma-game-svn] r1345 - team_levelpacks/team_test_new_api
+</A></li>
+	
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#775">[ date ]</a>
+              <a href="thread.html#775">[ thread ]</a>
+              <a href="subject.html#775">[ subject ]</a>
+              <a href="author.html#775">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

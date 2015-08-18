@@ -1,0 +1,286 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1137 - in trunk/src: . stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1137%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200805101055.m4AAt6VE026541%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000569.html">
+   <LINK REL="Next"  HREF="000571.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1137 - in trunk/src: . stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1137%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200805101055.m4AAt6VE026541%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1137 - in trunk/src: . stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat May 10 12:55:06 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000569.html">[Enigma-game-svn] r1136 - in homepage: images/lotm input/lotm
+</A></li>
+        <LI>Next message: <A HREF="000571.html">[Enigma-game-svn] r1138 - in trunk: data data/gfx32 data/gfx40	data/gfx48 src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#570">[ date ]</a>
+              <a href="thread.html#570">[ thread ]</a>
+              <a href="subject.html#570">[ subject ]</a>
+              <a href="author.html#570">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-05-10 12:55:05 +0200 (Sat, 10 May 2008)
+New Revision: 1137
+
+Modified:
+   trunk/src/GridObject.cc
+   trunk/src/GridObject.hh
+   trunk/src/stones/WindowStone.cc
+   trunk/src/stones/WindowStone.hh
+   trunk/src/world.cc
+Log:
+Trunk 1.1: Window Stone
+- fix problems of invisible actors moving from inside blue windows into
+  not transparent neighbors
+- move actors on face movements just as far as necessary
+- move even actors on neighbor grids that would otherwise intersect the face
+- replace item on window grid by a squashed on face move, if an item is on
+  the neighbor grid
+
+
+Modified: trunk/src/GridObject.cc
+===================================================================
+--- trunk/src/GridObject.cc	2008-05-09 22:02:55 UTC (rev 1136)
++++ trunk/src/GridObject.cc	2008-05-10 10:55:05 UTC (rev 1137)
+@@ -172,7 +172,7 @@
+             return NODIRBIT;
+     }
+     
+-    DirectionBits GridObject::getFaces() const {
++    DirectionBits GridObject::getFaces(bool actorUnvisible) const {
+         return DirectionBits(ALL_DIRECTIONS ^ getConnections());
+     }
+     
+
+Modified: trunk/src/GridObject.hh
+===================================================================
+--- trunk/src/GridObject.hh	2008-05-09 22:02:55 UTC (rev 1136)
++++ trunk/src/GridObject.hh	2008-05-10 10:55:05 UTC (rev 1137)
+@@ -106,7 +106,7 @@
+         display::Model *set_anim (const std::string &amp;mname);
+ 
+         DirectionBits getConnections() const;
+-        DirectionBits getFaces() const;
++        virtual DirectionBits getFaces(bool actorInvisible = false) const;
+         
+ 
+     protected:
+
+Modified: trunk/src/stones/WindowStone.cc
+===================================================================
+--- trunk/src/stones/WindowStone.cc	2008-05-09 22:02:55 UTC (rev 1136)
++++ trunk/src/stones/WindowStone.cc	2008-05-10 10:55:05 UTC (rev 1137)
+@@ -21,7 +21,8 @@
+ #include &quot;stones/WindowStone.hh&quot;
+ #include &quot;actors.hh&quot;
+ #include &quot;items.hh&quot;
+-//#include &quot;main.hh&quot;
++#include &quot;main.hh&quot;
++#include &quot;player.hh&quot;
+ #include &quot;server.hh&quot;
+ #include &quot;world.hh&quot;
+ #include &lt;vector&gt;
+@@ -88,6 +89,13 @@
+         // ignore any state access
+     }
+ 
++    DirectionBits WindowStone::getFaces(bool actorInvisible) const {
++        if (!actorInvisible || objFlags &amp; OBJBIT_SECURE)
++            return Stone::getFaces(actorInvisible);
++        else
++            return NODIRBIT;
++    }
++    
+     void WindowStone::init_model() {
+         if (state == IDLE) {   // anims will not be cleared 
+             if (getFaces() == NODIRBIT) {   // a tease of level author tried to set a faceless window!
+@@ -128,13 +136,13 @@
+             
+             else if (player::WieldedItemIs (sc.actor, &quot;it_wrench&quot;)) {
+                 if (sc.faces == WESTBIT &amp;&amp; sc.normal[0] &lt; 0){
+-                    tryInnerPull(EAST);
++                    tryInnerPull(EAST, a);
+                 } else if (sc.faces == EASTBIT &amp;&amp; sc.normal[0] &gt; 0) {
+-                    tryInnerPull(WEST);
++                    tryInnerPull(WEST, a);
+                 } else if (sc.faces == SOUTHBIT &amp;&amp; sc.normal[1] &gt; 0) {
+-                    tryInnerPull(NORTH);
++                    tryInnerPull(NORTH, a);
+                 } else if (sc.faces == NORTHBIT &amp;&amp; sc.normal[1] &lt; 0) {
+-                    tryInnerPull(SOUTH);
++                    tryInnerPull(SOUTH, a);
+                 }
+             } else if (player::WieldedItemIs (sc.actor, &quot;it-ring&quot;)) {
+                 objFlags |= (sc.faces &lt;&lt; 24);   // scratch face
+@@ -177,10 +185,13 @@
+             KillItem(get_pos());
+     }
+     
+-    bool WindowStone::tryInnerPull(Direction dir) {
++    bool WindowStone::tryInnerPull(Direction dir, Actor *initiator) {
+         DirectionBits faces = getFaces();
++        GridPos w_pos(get_pos());
++        GridPos w_pos_neighbor = move(w_pos, dir);
++        
+         if (!has_dir(faces, dir) &amp;&amp; has_dir(faces, reverse(dir))){
+-            Stone *stone = GetStone(move(get_pos(), dir));
++            Stone *stone = GetStone(w_pos_neighbor);
+             if (!stone || ((stone-&gt;get_traits().id == st_window) &amp;&amp;  
+                     !has_dir(stone-&gt;getFaces(), reverse(dir)))) {
+                 DirectionBits remainigFaces = (DirectionBits)((faces &amp; ~to_bits(reverse(dir)))
+@@ -193,24 +204,35 @@
+                 objFlags &amp;= ~(to_bits(reverse(dir)) &lt;&lt; 24);  // remove scratch mark from old position
+                 
+                 // move items
+-                Item *it = GetItem(get_pos());
++                Item *it = GetItem(w_pos);
++                Item *it_neighbor = GetItem(w_pos_neighbor);
+                 if (it != NULL &amp;&amp; !it-&gt;isStatic())
+-                    SetItem(move(get_pos(), dir), YieldItem(get_pos()));
++                    if (it_neighbor == NULL)
++                        SetItem(w_pos_neighbor, YieldItem(w_pos));
++                    else
++                        SetItem(w_pos, MakeItem(it_squashed));
+                 
+                 // move actors
+                 std::vector&lt;Actor*&gt; found_actors;
+-                const double range_one_field = 1.415; // approx. 1 field [ &gt; sqrt(1+1) ]
++                const double range_one_field = 1.415 + Actor::get_max_radius(); // approx. 1 field [ &gt; sqrt(1+1) ]
+                 GetActorsInRange(get_pos().center(), range_one_field, found_actors);
+                 std::vector&lt;Actor*&gt;::iterator e = found_actors.end();
+                 for (std::vector&lt;Actor*&gt;::iterator i = found_actors.begin(); i != e; ++i) {
+-                    Actor   *actor     = *i;
+-                    GridPos  actor_pos(actor-&gt;get_pos());
+-                    if (actor_pos == get_pos()) { // if the actor is in the field
+-                        V2 dest = actor-&gt;get_pos();
+-                        // we do not have to worry about the level border as no face can be pushed to the border
+-                        dest[0] += (dir == EAST) ? 1 : (dir == WEST) ? -1 : 0;
+-                        dest[1] += (dir == SOUTH) ? 1 : (dir == NORTH) ? -1 : 0;
+-                        WarpActor(actor, dest[0], dest[1], true);
++                    Actor *a = *i;
++                    if (a != initiator) {
++                        V2 dest = a-&gt;get_pos();
++                        GridPos a_pos(dest);
++                        double r = get_radius(a);
++                        if ((a_pos == w_pos)  // if the actor is in the field
++                                || ((dir == EAST) &amp;&amp; (dest[0] - r &lt; w_pos.x + 1) &amp;&amp; (a_pos == w_pos_neighbor))
++                                || ((dir == WEST) &amp;&amp; (dest[0] + r &gt; w_pos.x) &amp;&amp; (a_pos == w_pos_neighbor))
++                                || ((dir == SOUTH) &amp;&amp; (dest[1] - r &lt; w_pos.y + 1) &amp;&amp; (a_pos == w_pos_neighbor))
++                                || ((dir == NORTH) &amp;&amp; (dest[1] + r &gt; w_pos.y) &amp;&amp; (a_pos == w_pos_neighbor))) {
++                            // we do not have to worry about the level border as no face can be pushed to the border
++                            dest[0] = (dir == EAST) ? (w_pos.x + 1 + r) : ((dir == WEST) ? (w_pos.x - r) : dest[0]);
++                            dest[1] = (dir == SOUTH) ? (w_pos.y + 1 + r): ((dir == NORTH) ? (w_pos.y - r) : dest[1]);
++                            WarpActor(a, dest[0], dest[1], true);
++                        }
+                     }
+                 }
+                 
+
+Modified: trunk/src/stones/WindowStone.hh
+===================================================================
+--- trunk/src/stones/WindowStone.hh	2008-05-09 22:02:55 UTC (rev 1136)
++++ trunk/src/stones/WindowStone.hh	2008-05-10 10:55:05 UTC (rev 1137)
+@@ -21,12 +21,9 @@
+ #define WINDOWSTONE_HH_INCLUDED
+ 
+ #include &quot;stones.hh&quot;
+-#include &quot;stones/ConnectiveStone.hh&quot;
+ 
+ #include &quot;actors.hh&quot;
+-#include &quot;player.hh&quot;
+ #include &quot;stones_internal.hh&quot;
+-#include &quot;world.hh&quot;
+ 
+ /* -------------------- Window -------------------- */
+ 
+@@ -62,6 +59,7 @@
+         virtual void setState(int extState);
+        
+         // GridObject interface
++        virtual DirectionBits getFaces(bool actorInvisible = false) const;
+         virtual void init_model();
+ 
+         // ModelCallback interface
+@@ -77,7 +75,7 @@
+ 
+     private:
+         void breakFaces(DirectionBits faces);
+-        bool tryInnerPull(Direction dir);
++        bool tryInnerPull(Direction dir, Actor *initiator = NULL);
+     };
+ 
+ } // namespace enigma
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-05-09 22:02:55 UTC (rev 1136)
++++ trunk/src/world.cc	2008-05-10 10:55:05 UTC (rev 1137)
+@@ -631,7 +631,7 @@
+     bool isWindow = stone-&gt;get_traits().id == st_window;
+     DirectionBits wsides;
+     if (isWindow) {
+-        wsides = stone-&gt;getFaces();
++        wsides = stone-&gt;getFaces(a-&gt;is_invisible());
+     }
+     
+     const ActorInfo &amp;ai = *a-&gt;get_actorinfo();
+@@ -681,7 +681,7 @@
+             // the faces that the neighbour window owns
+             Stone * neighbour = GetStone(GridPos(x+xoff_neighbour, y+yoff_neighbour));
+             DirectionBits face_neighbour = (neighbour != NULL &amp;&amp; neighbour-&gt;get_traits().id == st_window) 
+-                    ? neighbour-&gt;getFaces() : NODIRBIT;
++                    ? neighbour-&gt;getFaces(a-&gt;is_invisible()) : NODIRBIT;
+             
+             
+             if ((winFacesActorStone&amp;face) &amp;&amp; !(face_neighbour&amp;face)) {
+@@ -947,7 +947,7 @@
+     // contacts within the grid
+     Stone * actorWinStone = GetStone(g);
+     DirectionBits winFacesActorStone = (actorWinStone != NULL &amp;&amp; actorWinStone-&gt;get_traits().id == st_window)
+-            ? actorWinStone-&gt;getFaces() : NODIRBIT;
++            ? actorWinStone-&gt;getFaces(a-&gt;is_invisible()) : NODIRBIT;
+     
+     // distinguish 9 squares within gridpos that may cause contacts
+     // low cost reduction of cases that need to be examined in detail:
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000569.html">[Enigma-game-svn] r1136 - in homepage: images/lotm input/lotm
+</A></li>
+	<LI>Next message: <A HREF="000571.html">[Enigma-game-svn] r1138 - in trunk: data data/gfx32 data/gfx40	data/gfx48 src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#570">[ date ]</a>
+              <a href="thread.html#570">[ thread ]</a>
+              <a href="subject.html#570">[ subject ]</a>
+              <a href="author.html#570">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,662 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1058 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1058%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200803021606.m22G6mHN005368%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000489.html">
+   <LINK REL="Next"  HREF="000491.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1058 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1058%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200803021606.m22G6mHN005368%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1058 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Mar  2 17:06:48 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000489.html">[Enigma-game-svn] r1057 - in trunk/data: . levels/enigma_cross	levels/enigma_i levels/enigma_ii levels/enigma_tutorial
+</A></li>
+        <LI>Next message: <A HREF="000491.html">[Enigma-game-svn] r1059 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#490">[ date ]</a>
+              <a href="thread.html#490">[ thread ]</a>
+              <a href="subject.html#490">[ subject ]</a>
+              <a href="author.html#490">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-03-02 17:06:46 +0100 (Sun, 02 Mar 2008)
+New Revision: 1058
+
+Added:
+   trunk/src/stones/PolarSwitchStone.cc
+   trunk/src/stones/PolarSwitchStone.hh
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/Object.cc
+   trunk/src/items.cc
+   trunk/src/stones.cc
+   trunk/src/stones.hh
+   trunk/src/stones_complex.cc
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1: new API reengineering PolarSwitch
+- reengineering polarswitch:
+  - rename to st_polarswitch
+  - made full StateObject instead of OnOff
+  - added performAction support
+- fix hammer, sword as wielded item
+- fix hollows filled with initial meditatist
+- fix support for DAT signals to not existing it_blocker 
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-03-02 14:07:22 UTC (rev 1057)
++++ trunk/data/api1init.lua	2008-03-02 16:06:46 UTC (rev 1058)
+@@ -69,6 +69,7 @@
+     st_laser_s = &quot;st-laser-s&quot;,
+     st_laser_e = &quot;st-laser-e&quot;,
+     st_laser_n = &quot;st-laser-n&quot;,
++    st_polarswitch = &quot;st-polarswitch&quot;,
+     st_oxyd = &quot;st-oxyd&quot;,
+     st_switch = &quot;st-switch&quot;,
+     st_switch_black = &quot;st-switch_black&quot;,
+@@ -177,7 +178,8 @@
+              or (_obj_name == &quot;st-floppy&quot;) 
+              or (_obj_name == &quot;it-magnet&quot;) or (_obj_name == &quot;it-magnet-on&quot;)
+              or (_obj_name == &quot;it-magnet-off&quot;) or (_obj_name == &quot;it-wormhole&quot;)
+-             or (_obj_name == &quot;it-wormhole-off&quot;) then
++             or (_obj_name == &quot;it-wormhole-off&quot;) or (_obj_name == &quot;st-laser&quot;)
++             or (_obj_name == &quot;st-polarswitch&quot;) then
+          if key == &quot;on&quot; then
+ 	     _key = &quot;state&quot;   -- new attr name
+ 	 end
+@@ -185,9 +187,9 @@
+      if key == &quot;dir&quot; then
+          _key = &quot;orientation&quot;
+      end
+-     if key == &quot;on&quot; then
+-         _key = &quot;state&quot;
+-     end
++--     if key == &quot;on&quot; then
++--         _key = &quot;state&quot;
++--     end
+      if key == &quot;targetx&quot; then
+          local d = enigma._GetAttrib(obj, &quot;destination&quot;)
+          if (en.usertype(d) == &quot;position&quot;) then
+@@ -241,7 +243,8 @@
+              or (_obj_name == &quot;st-floppy&quot;)
+              or (_obj_name == &quot;it-magnet&quot;) or (_obj_name == &quot;it-magnet-on&quot;)
+              or (_obj_name == &quot;it-magnet-off&quot;)  or (_obj_name == &quot;it-wormhole&quot;)
+-             or (_obj_name == &quot;it-wormhole-off&quot;) then
++             or (_obj_name == &quot;it-wormhole-off&quot;)  or (_obj_name == &quot;st-laser&quot;)
++             or (_obj_name == &quot;st-polarswitch&quot;) then
+          if key == &quot;on&quot; then
+ 	     _key = &quot;state&quot;
+ 	     end
+@@ -255,9 +258,9 @@
+      if key == &quot;dir&quot; then
+          _key = &quot;orientation&quot;
+      end
+-     if key == &quot;on&quot; then
+-         _key = &quot;state&quot;
+-     end
++--     if key == &quot;on&quot; then
++--         _key = &quot;state&quot;
++--     end
+ 
+      local val = enigma._GetAttrib(obj, _key)
+      
+@@ -341,6 +344,7 @@
+     [&quot;st-oxyd__trigger&quot;] = &quot;toggle&quot;,
+     [&quot;st-plain__trigger&quot;] = &quot;signal&quot;,
+     [&quot;st-plain_hole__trigger&quot;] = &quot;signal&quot;,
++    st_polarswitch__onoff = &quot;toggle&quot;,
+     st_switch__onoff = &quot;toggle&quot;,
+     [&quot;st-volcano__trigger&quot;] = &quot;toggle&quot;,
+     [&quot;st-white1__trigger&quot;] = &quot;signal&quot;,
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-03-02 14:07:22 UTC (rev 1057)
++++ trunk/data/schemas/objects.xml	2008-03-02 16:06:46 UTC (rev 1058)
+@@ -132,6 +132,11 @@
+     &lt;object name=&quot;st_laser_n&quot;&gt;
+       &lt;attr name=&quot;orientation&quot; value=&quot;3&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_polarswitch&quot;&gt;
++      &lt;msg name=&quot;on&quot;/&gt;
++      &lt;msg name=&quot;off&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_switch&quot;&gt;
+       &lt;attr name=&quot;color&quot;/&gt;
+       &lt;attr name=&quot;instant&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-03-02 14:07:22 UTC (rev 1057)
++++ trunk/src/Makefile.am	2008-03-02 16:06:46 UTC (rev 1058)
+@@ -215,6 +215,8 @@
+ 	stones/LaserStone.hh	\
+ 	stones/OxydStone.cc	\
+ 	stones/OxydStone.hh	\
++	stones/PolarSwitchStone.cc	\
++	stones/PolarSwitchStone.hh	\
+ 	stones/Switch.cc	\
+ 	stones/Switch.hh	\
+ 	stones/WindowStone.cc	\
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2008-03-02 14:07:22 UTC (rev 1057)
++++ trunk/src/Object.cc	2008-03-02 16:06:46 UTC (rev 1058)
+@@ -155,7 +155,7 @@
+     
+     void Object::setAttr(const std::string&amp; key, const Value&amp; val) {
+         if (val) {        // only set non-default values
+-            if (val.getType() == Value::NIL &amp;&amp; server::EnigmaCompatibility &gt;= 1.10)
++            if (val.getType() == Value::NIL /*&amp;&amp; server::EnigmaCompatibility &gt;= 1.10*/)
+                 // delete attribute
+                 attribs.remove_key(key);
+             else
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-03-02 14:07:22 UTC (rev 1057)
++++ trunk/src/items.cc	2008-03-02 16:06:46 UTC (rev 1058)
+@@ -713,6 +713,8 @@
+         DECL_TRAITS;
+     public:
+         Hollow(Type t = HOLLOW);
++        // Object interface.
++        virtual Value message(const Message &amp;m);
+         virtual void on_creation(GridPos p);
+         virtual void on_removal(GridPos p);
+     protected:
+@@ -823,10 +825,29 @@
+ 
+ // TODO handle set of essential attribute
+ 
+-Hollow::Hollow(Type t)
+-: HillHollow(t), whiteball(0)
+-{}
++Hollow::Hollow(Type t) : HillHollow(t), whiteball(0), enter_time (-1) {
++}
+ 
++Value Hollow::message(const Message &amp;m) {
++    Log &lt;&lt; &quot;Hollow - init time &quot; &lt;&lt; server::LevelTime &lt;&lt; &quot;\n&quot;;
++    if (m.message == &quot;_init&quot;) {
++        vector&lt;Actor*&gt; actors;
++        GetActorsInsideField(get_pos(), actors);
++        for (vector&lt;Actor*&gt;::iterator it = actors.begin(); it != actors.end(); ++it) {
++            Log &lt;&lt; &quot;Hollow - initial meditatist  typ &quot; &lt;&lt; get_id(*it) &lt;&lt; &quot;\n&quot;;
++            if (!(*it)-&gt;is_flying() &amp;&amp;  whiteball==NULL &amp;&amp; get_id(*it)==ac_meditation &amp;&amp; near_center_p(*it)) {
++                 // meditatist entered a free hollow
++                whiteball  = *it;
++                enter_time = server::LevelTime;
++                Log &lt;&lt; &quot;Hollow - initial meditatist time &quot; &lt;&lt; enter_time &lt;&lt; &quot;\n&quot;;
++                break;
++            }
++        }
++        return Value();
++    }
++    return HillHollow::message(m);
++}
++
+ void Hollow::on_creation(GridPos p) {
+     if (getDefaultedAttr(&quot;essential&quot;, 0) == 1)
+         ChangeMeditation(0, +1, 0, 0);
+@@ -858,15 +879,15 @@
+             if (!near_center_p(a)) {
+                 // meditatist left hollow
+                 whiteball = NULL;
+-                if (enter_time == 0) {   // meditatist is registered
++                if (enter_time == -1) {   // meditatist is registered
+                     bool indispensable = (getDefaultedAttr(&quot;essential&quot;, 0) == 1);
+                     ChangeMeditation(0, 0, indispensable ? -1 : 0, indispensable ? 0 : -1);
+                 }
+-            } else  if (enter_time != 0 &amp;&amp; (server::LevelTime - enter_time) &gt;= MINTIME) {
++            } else  if (enter_time != -1 &amp;&amp; (server::LevelTime - enter_time) &gt;= MINTIME) {
+                     // just meditated enough to mark hollow as engaged
+                     bool indispensable = (getDefaultedAttr(&quot;essential&quot;, 0) == 1);
+                     ChangeMeditation(0, 0, indispensable ? +1 : 0, indispensable ? 0 : +1);
+-                    enter_time = 0;  // mark as registered
++                    enter_time = -1;  // mark as registered
+             }
+         }
+     }
+@@ -878,7 +899,7 @@
+     if (whiteball == a) {
+         // meditatist left hollow (warp, ...)
+         whiteball = NULL;
+-        if (enter_time == 0) {   // meditatist is registered
++        if (enter_time == -1) {   // meditatist is registered
+             bool indispensable = (getDefaultedAttr(&quot;essential&quot;, 0) == 1);
+             ChangeMeditation(0, 0, indispensable ? -1 : 0, indispensable ? 0 : -1);
+         }
+
+Added: trunk/src/stones/PolarSwitchStone.cc
+===================================================================
+--- trunk/src/stones/PolarSwitchStone.cc	2008-03-02 14:07:22 UTC (rev 1057)
++++ trunk/src/stones/PolarSwitchStone.cc	2008-03-02 16:06:46 UTC (rev 1058)
+@@ -0,0 +1,70 @@
++/*
++ * Copyright (C) 2006 Andreas Lochmann
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/PolarSwitchStone.hh&quot;
++#include &quot;laser.hh&quot;
++
++
++namespace enigma {
++    PolarSwitchStone::PolarSwitchStone() : Stone () {
++    }
++
++    void PolarSwitchStone::setState(int extState) {
++        if (isDisplayable()) {
++            if (extState != state) {
++                state = ON - state;
++                MaybeRecalcLight(get_pos());
++                init_model();
++                performAction(state == ON);
++            }
++        } else
++            state = extState;
++    }
++
++    void PolarSwitchStone::init_model() {
++        set_model(ecl::strf(&quot;st-glass%s&quot;, state == ON ? &quot;1&quot; : &quot;2&quot;));
++    }
++
++    bool PolarSwitchStone::is_transparent (Direction d) const {
++        return state == ON;
++    }
++    
++    bool PolarSwitchStone::is_sticky(const Actor *actor) const {
++        return !actor-&gt;is_invisible();
++    }
++    
++    StoneResponse PolarSwitchStone::collision_response(const StoneContact &amp;sc) {
++        if (sc.actor-&gt;is_invisible())
++            return STONE_PASS;
++        return Stone::collision_response(sc);
++    }
++    
++    void PolarSwitchStone::actor_hit(const StoneContact &amp;sc) {
++        toggleState();
++    }
++
++
++    DEF_TRAITS(PolarSwitchStone, &quot;st_polarswitch&quot;, st_polarswitch);
++
++    BOOT_REGISTER_START
++        BootRegister(new PolarSwitchStone(), &quot;st_polarswitch&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/PolarSwitchStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/PolarSwitchStone.hh
+===================================================================
+--- trunk/src/stones/PolarSwitchStone.hh	2008-03-02 14:07:22 UTC (rev 1057)
++++ trunk/src/stones/PolarSwitchStone.hh	2008-03-02 16:06:46 UTC (rev 1058)
+@@ -0,0 +1,54 @@
++/*
++ * Copyright (C) 2006 Andreas Lochmann
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef POLARSWITCH_HH
++#define POLARSWITCH_HH
++
++#include &quot;stones.hh&quot;
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class PolarSwitchStone : public Stone {
++        CLONEOBJ(PolarSwitchStone);
++        DECL_TRAITS;
++    private:
++        enum iState { OFF, ON };
++    public:
++        PolarSwitchStone();
++
++        // StateObject interface
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++
++        // Stone interface
++        virtual bool is_transparent (Direction d) const;
++        virtual bool is_sticky(const Actor *a) const;
++        virtual StoneResponse collision_response(const StoneContact &amp;sc);
++        virtual void actor_hit(const StoneContact &amp;sc);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/PolarSwitchStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-03-02 14:07:22 UTC (rev 1057)
++++ trunk/src/stones.cc	2008-03-02 16:06:46 UTC (rev 1058)
+@@ -756,7 +756,7 @@
+             return Stone::message(m);
+         }
+         void actor_hit (const StoneContact &amp;sc) {
+-            if (player::WieldedItemIs (sc.actor, &quot;it-hammer&quot;)) {
++            if (player::WieldedItemIs (sc.actor, &quot;it_hammer&quot;)) {
+                 break_me();
+             }
+         }
+@@ -784,7 +784,7 @@
+         }
+ 
+         void actor_hit (const StoneContact &amp;sc) {
+-            if (player::WieldedItemIs (sc.actor, &quot;it-hammer&quot;)) {
++            if (player::WieldedItemIs (sc.actor, &quot;it_hammer&quot;)) {
+                 break_me();
+             }
+         }
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2008-03-02 14:07:22 UTC (rev 1057)
++++ trunk/src/stones.hh	2008-03-02 16:06:46 UTC (rev 1058)
+@@ -194,12 +194,12 @@
+         virtual bool   is_floating() const { return false; }
+         
+         /*! Can laser beams pass through stone? Return is_floating() by default. */
+-        virtual bool   is_transparent (Direction) const { 
++        virtual bool   is_transparent (Direction d) const { 
+             return is_floating();
+         }
+         
+         /*! Do actors get stuck in this stone? */
+-        virtual bool is_sticky(const Actor *) const { 
++        virtual bool is_sticky(const Actor *a) const { 
+             return !is_floating(); 
+         }
+ 
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-03-02 14:07:22 UTC (rev 1057)
++++ trunk/src/stones_complex.cc	2008-03-02 16:06:46 UTC (rev 1058)
+@@ -528,7 +528,7 @@
+         void actor_hit(const StoneContact &amp;sc) {
+             Actor *a = sc.actor;
+ 
+-            if( state == ACTIVE &amp;&amp; player::WieldedItemIs (a, &quot;it-hammer&quot;)) {
++            if( state == ACTIVE &amp;&amp; player::WieldedItemIs (a, &quot;it_hammer&quot;)) {
+                 state = BREAKING;
+                 init_model();
+             }
+@@ -2929,7 +2929,7 @@
+         }
+         void actor_hit(const StoneContact &amp;sc) {
+             Actor *a = sc.actor;
+-            if(a &amp;&amp; state == BLINK &amp;&amp; player::WieldedItemIs(a, &quot;it-hammer&quot;)) {
++            if(a &amp;&amp; state == BLINK &amp;&amp; player::WieldedItemIs(a, &quot;it_hammer&quot;)) {
+                 state = BREAK;
+                 init_model();
+             }
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-03-02 14:07:22 UTC (rev 1057)
++++ trunk/src/stones_simple.cc	2008-03-02 16:06:46 UTC (rev 1058)
+@@ -626,7 +626,7 @@
+         Stone_break(const char *kind) : BreakableStone(kind) { }
+     private:
+         bool may_be_broken_by(Actor *a) const {
+-            return player::WieldedItemIs (a, &quot;it-hammer&quot;);
++            return player::WieldedItemIs (a, &quot;it_hammer&quot;);
+         }
+     };
+     DEF_TRAITSM(Stone_break, &quot;INVALID&quot;, st_INVALID, MOVABLE_BREAKABLE);
+@@ -674,7 +674,7 @@
+         {}
+     private:
+         bool may_be_broken_by(Actor *a) const {
+-            return player::WieldedItemIs (a, &quot;it-hammer&quot;);
++            return player::WieldedItemIs (a, &quot;it_hammer&quot;);
+         }
+         virtual Value message(const Message &amp;m) {
+             if (m.message == &quot;_trigger&quot;) {
+@@ -719,7 +719,7 @@
+             return &quot;st-rock3_break-anim&quot;;
+         }
+         bool may_be_broken_by(Actor *a) const {
+-            return player::WieldedItemIs (a, &quot;it-hammer&quot;);
++            return player::WieldedItemIs (a, &quot;it_hammer&quot;);
+         }
+ 
+         void actor_hit(const StoneContact &amp;sc) {
+@@ -766,7 +766,7 @@
+         bool may_be_broken_by(Actor *a) const {
+             Value color = a-&gt;getAttr(&quot;color&quot;);
+             return color &amp;&amp; color == WHITE &amp;&amp;
+-                player::WieldedItemIs (a, &quot;it-hammer&quot;);
++                player::WieldedItemIs (a, &quot;it_hammer&quot;);
+         }
+     };
+     DEF_TRAITSM(Break_acwhite, &quot;st-break_acwhite&quot;, st_break_acwhite, MOVABLE_BREAKABLE);
+@@ -800,7 +800,7 @@
+         bool may_be_broken_by(Actor *a) const {
+             Value color = a-&gt;getAttr(&quot;color&quot;);
+             return color &amp;&amp; color == BLACK &amp;&amp;
+-                player::WieldedItemIs (a, &quot;it-hammer&quot;);
++                player::WieldedItemIs (a, &quot;it_hammer&quot;);
+         }
+     };
+     DEF_TRAITSM(Break_acblack, &quot;st-break_acblack&quot;, st_break_acblack, MOVABLE_BREAKABLE);
+@@ -916,7 +916,7 @@
+                 }
+             }
+             else if (state == BRUSH) {
+-                if (player::WieldedItemIs (sc.actor, &quot;it-hammer&quot;)) {
++                if (player::WieldedItemIs (sc.actor, &quot;it_hammer&quot;)) {
+                     sound_event (&quot;stonedestroy&quot;);
+                     state = DESTROY;
+                     set_anim(&quot;st-stone_break-anim&quot;);
+@@ -1410,7 +1410,7 @@
+ 
+ void FartStone::actor_hit(const StoneContact &amp;sc) 
+ {
+-    if (player::WieldedItemIs (sc.actor, &quot;it-hammer&quot;))
++    if (player::WieldedItemIs (sc.actor, &quot;it_hammer&quot;))
+         change_state(BREAKING);
+     else
+         change_state(FARTING);
+@@ -2169,7 +2169,7 @@
+         void actor_hit(const StoneContact &amp;sc)
+         {
+             if (subtype != MAX_SUBTYPE) {
+-                if (player::WieldedItemIs (sc.actor, &quot;it-sword&quot;)) {
++                if (player::WieldedItemIs (sc.actor, &quot;it_sword&quot;)) {
+                     subtype += 1;
+                     if (subtype == MAX_SUBTYPE) {
+                         client::Msg_ShowText (&quot;All right, we'll call it a draw&quot;, false, 4.0);
+@@ -2191,32 +2191,6 @@
+ }
+ 
+ 
+-/* -------------------- Polarization Switch stone -------------------- */
+-namespace
+-{
+-    class PolarSwitchStone : public OnOffStone {
+-        CLONEOBJ(PolarSwitchStone);
+-        DECL_TRAITS;
+-    public:
+-        PolarSwitchStone() : OnOffStone(&quot;st-polarswitch&quot;) {}
+-    private:
+-        void actor_hit(const StoneContact &amp;sc) { set_on(!is_on()); }
+-        void init_model() { set_model(is_on() ? &quot;st-glass1&quot; : &quot;st-glass2&quot;); }
+-        bool is_transparent(Direction) const { return this-&gt;is_on(); }
+-        void notify_onoff(bool) { MaybeRecalcLight(this-&gt;get_pos()); }
+-
+-        StoneResponse collision_response(const StoneContact &amp;sc) {
+-            if (sc.actor-&gt;is_invisible())
+-                return STONE_PASS;
+-            return Stone::collision_response(sc);
+-        }
+-
+-        bool is_sticky (const Actor *actor) const { return !actor-&gt;is_invisible(); }
+-    };
+-    DEF_TRAITS(PolarSwitchStone, &quot;st-polarswitch&quot;, st_polarswitch);
+-}
+-
+-
+ /* -------------------- Fire breakable stones -------------------- */
+ 
+ /* These stones mimic the behaviour of the plain-looking stones in
+@@ -2385,8 +2359,6 @@
+     Register(new YinYangStone2);
+     Register(new YinYangStone3);
+ 
+-    Register(new PolarSwitchStone);
+-
+     Register(new Stone_firebreak);
+     Register(new Stone_movefirebreak);
+ }
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-03-02 14:07:22 UTC (rev 1057)
++++ trunk/src/world.cc	2008-03-02 16:06:46 UTC (rev 1058)
+@@ -350,7 +350,7 @@
+         unname(old);
+     
+     std::string unique_name = name;
+-    if (server::EnigmaCompatibility &gt;= 1.10 &amp;&amp; name.size() &gt; 0 &amp;&amp; name[name.size() - 1] == '#') {
++    if (name.size() &gt; 0 &amp;&amp; name[name.size() - 1] == '#') {
+         // auto name object with a unique name
+         int i;
+         for (i = 1; get_named(name + ecl::strf(&quot;%d&quot;,i)) != NULL; i++);
+@@ -365,7 +365,7 @@
+     ASSERT(obj, XLevelRuntime, &quot;unname: no object given&quot;);
+     if (Value v = obj-&gt;getAttr(&quot;name&quot;)) {
+         m_objnames.remove(v.to_string());
+-        obj-&gt;setAttr(&quot;name&quot;, &quot;&quot;);   // TODO alist.hh add delete op
++        obj-&gt;setAttr(&quot;name&quot;, Value());
+     }
+ }
+ 
+@@ -1816,6 +1816,15 @@
+     }
+     
+     
++    if (dst == NULL &amp;&amp; dstloc.layer == GRID_ITEMS) {
++        GridLoc altloc(GRID_STONES, dstloc.pos);
++        dst = GetObject(altloc);
++        if (!(dst-&gt;is_kind(&quot;st_blocker&quot;)))
++            // just use blocker stone instead of blocker item as substitution
++            dst = NULL;
++    }
++        
++        
+     if (dst == NULL) {
+         Log &lt;&lt; ecl::strf(&quot;AddSignal: Invalid signal destination src=%i/%i-%d dest=%i/%i-%d msg='%s'\n&quot;,
+             srcloc.pos.x, srcloc.pos.y, srcloc.layer, dstloc.pos.x, dstloc.pos.y, dstloc.layer, msg.c_str());
+@@ -1827,9 +1836,10 @@
+     Value dstValue(dst);
+     
+     if (dst-&gt;is_kind(&quot;st_blocker&quot;) || dst-&gt;is_kind(&quot;st_blocker_new&quot;) ||
+-            dst-&gt;is_kind(&quot;it-blocker&quot;)) {
+-        if (!dst-&gt;getAttr(&quot;name&quot;))
++            dst-&gt;is_kind(&quot;it_blocker&quot;)) {
++        if (!dst-&gt;getAttr(&quot;name&quot;)) {
+             NameObject(dst, ecl::strf(&quot;$!oxyd!blocker%d&quot;, dst-&gt;getId()));
++        }
+         dstValue = dst-&gt;getAttr(&quot;name&quot;);
+     }
+     
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000489.html">[Enigma-game-svn] r1057 - in trunk/data: . levels/enigma_cross	levels/enigma_i levels/enigma_ii levels/enigma_tutorial
+</A></li>
+	<LI>Next message: <A HREF="000491.html">[Enigma-game-svn] r1059 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#490">[ date ]</a>
+              <a href="thread.html#490">[ thread ]</a>
+              <a href="subject.html#490">[ subject ]</a>
+              <a href="author.html#490">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

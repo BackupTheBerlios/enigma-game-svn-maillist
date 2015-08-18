@@ -1,0 +1,233 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1046 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1046%20-%20trunk/src&In-Reply-To=%3C200802222359.m1MNxAob032611%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000477.html">
+   <LINK REL="Next"  HREF="000479.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1046 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1046%20-%20trunk/src&In-Reply-To=%3C200802222359.m1MNxAob032611%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1046 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Feb 23 00:59:10 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000477.html">[Enigma-game-svn] r1045 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000479.html">[Enigma-game-svn] r1047 - in trunk: data data/schemas src src/lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#478">[ date ]</a>
+              <a href="thread.html#478">[ thread ]</a>
+              <a href="subject.html#478">[ subject ]</a>
+              <a href="author.html#478">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-02-23 00:59:09 +0100 (Sat, 23 Feb 2008)
+New Revision: 1046
+
+Modified:
+   trunk/src/laser.cc
+Log:
+Trunk 1.1: Performance Tuning 
+- LaserBeam replace algorithms with O(n^2) and O(n log n) with O(n) ones,
+  n being number LaserBeam items
+- LaserBeam efficient beam lists management
+Note/TODO:
+- static lists should be ivars of world
+- in case of assertions within laser calc some beam items might not be freed
+
+
+Modified: trunk/src/laser.cc
+===================================================================
+--- trunk/src/laser.cc	2008-02-22 22:16:54 UTC (rev 1045)
++++ trunk/src/laser.cc	2008-02-22 23:59:09 UTC (rev 1046)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -16,6 +17,7 @@
+  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+  *
+  */
++#include &quot;errors.hh&quot;
+ #include &quot;laser.hh&quot;
+ #include &quot;sound.hh&quot;
+ #include &quot;stones_internal.hh&quot;
+@@ -65,9 +67,11 @@
+ 
+         // Variables
+         DirectionBits directions;
+-
+-        static vector&lt;LaserBeam*&gt; instances;
+-        static map&lt;GridPos, int&gt;  old_laser_positions;
++        
++        static list&lt;LaserBeam *&gt; beamList1;
++        static list&lt;LaserBeam *&gt; beamList2;
++        static list&lt;LaserBeam *&gt; *gridBeams;
++        static list&lt;LaserBeam *&gt; *lastBeams;
+     };
+     ItemTraits LaserBeam::traits = {&quot;it-laserbeam&quot;, it_laserbeam, 
+                                     itf_static | itf_indestructible, 0.0 };
+@@ -248,8 +252,10 @@
+ //   when the laser goes on or off, use the `PhotoStone'
+ //   mixin.
+ 
+-vector&lt;LaserBeam*&gt; LaserBeam::instances;
+-map&lt;GridPos, int&gt;  LaserBeam::old_laser_positions;
++list&lt;LaserBeam *&gt; LaserBeam::beamList1;
++list&lt;LaserBeam *&gt; LaserBeam::beamList2;
++list&lt;LaserBeam *&gt; *LaserBeam::gridBeams = &amp;LaserBeam::beamList1;
++list&lt;LaserBeam *&gt; *LaserBeam::lastBeams = &amp;LaserBeam::beamList2;
+ 
+ void LaserBeam::init_model()
+ {
+@@ -297,9 +303,9 @@
+         if (Item *it = GetItem(p))
+             it-&gt;on_laserhit (dir);
+         else {
+-            LaserBeam *lb = new LaserBeam (dir);
++            LaserBeam *lb = new LaserBeam(dir);
+             SetItem(p, lb);
+-            instances.push_back(lb);
++            gridBeams-&gt;push_back(lb);
+         }
+     }
+ }
+@@ -324,47 +330,46 @@
+ }
+ 
+ void LaserBeam::kill_all()
+-{
+-    assert(old_laser_positions.empty());
+-
+-    while (!instances.empty())
+-    {
+-        LaserBeam *lb  = instances[0];
+-        GridPos    pos = lb-&gt;get_pos();
+-
+-        old_laser_positions[pos] = static_cast&lt;int&gt;(lb-&gt;directions);
+-        KillItem(pos);
++{    
++    list&lt;LaserBeam *&gt; *tmpBeamList = lastBeams;
++    ASSERT(tmpBeamList-&gt;empty(), XLevelRuntime, &quot;Laser Beam - old list not empty&quot;);
++    lastBeams = gridBeams;
++    for (list&lt;LaserBeam *&gt;::iterator itr = lastBeams-&gt;begin(); itr != lastBeams-&gt;end(); ++itr) {
++        LaserBeam *beam = *itr;
++        GridPos pos = beam-&gt;get_pos();
++        YieldItem(pos);          // now we are the owner of the object!
++        beam-&gt;setOwnerPos(pos);  // remember old pos
+     }
++    gridBeams = tmpBeamList;
+ }
+ 
+ void LaserBeam::all_emitted()
+ {
+-    vector&lt;LaserBeam*&gt;::const_iterator end  = instances.end();
+-    map&lt;GridPos, int&gt;::iterator        none = old_laser_positions.end();
+-
+-    double x     = 0, y = 0;
++    double x = 0, y = 0;
+     int    count = 0;
+-
+-    for (vector&lt;LaserBeam*&gt;::const_iterator i = instances.begin(); i != end; ++i) {
+-        LaserBeam                   *lb    = *i;
+-        GridPos                      pos   = lb-&gt;get_pos();
+-        map&lt;GridPos, int&gt;::iterator  found = old_laser_positions.find(pos);
+-
+-        if (found != none) {
+-            // a beam was at the current position (during last kill_all())
+-            DirectionBits old_dir = static_cast&lt;DirectionBits&gt;(found-&gt;second);
+-
+-            if ((old_dir&amp;lb-&gt;directions) != lb-&gt;directions) {
++    
++    for (list&lt;LaserBeam *&gt;::iterator itr = lastBeams-&gt;begin(); itr != lastBeams-&gt;end(); ++itr) {
++        LaserBeam *oldBeam = *itr;
++        GridPos p = oldBeam-&gt;getOwnerPos();
++        Item * newItem = GetItem(p);
++        if (newItem != NULL &amp;&amp; newItem-&gt;get_traits().id == it_laserbeam) {
++            LaserBeam *newBeam = dynamic_cast&lt;LaserBeam *&gt;(newItem);
++            newBeam-&gt;state = 1; // mark as visited
++            if ((oldBeam-&gt;directions &amp; newBeam-&gt;directions) != newBeam-&gt;directions) {
+                 // a beam has been added here
+-                x += pos.x;
+-                y += pos.y;
++                x += p.x;
++                y += p.y;
+                 ++count;
+-            }
++            }            
+         }
+-        else {
+-            // store newly created LaserBeams
+-            x += pos.x;
+-            y += pos.y;
++        delete oldBeam;
++    }
++    for (list&lt;LaserBeam *&gt;::iterator itr = gridBeams-&gt;begin(); itr != gridBeams-&gt;end(); ++itr) {
++        LaserBeam *newBeam = *itr;
++        GridPos p = newBeam-&gt;get_pos();
++        if (newBeam-&gt;state == 0) {
++            x += p.x;
++            y += p.y;
+             ++count;
+         }
+     }
+@@ -373,13 +378,13 @@
+         sound::EmitSoundEvent (&quot;laseron&quot;, ecl::V2(x/count+.5, y/count+.5),
+                                getVolume(&quot;laseron&quot;, NULL));
+     }
+-
+-    old_laser_positions.clear();
++    
++    lastBeams-&gt;clear();
+ }
+ 
+ void LaserBeam::dispose()
+ {
+-    instances.erase(std::find(instances.begin(), instances.end(), this));
++    gridBeams-&gt;erase(std::find(gridBeams-&gt;begin(), gridBeams-&gt;end(), this));
+     delete this;
+ }
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000477.html">[Enigma-game-svn] r1045 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000479.html">[Enigma-game-svn] r1047 - in trunk: data data/schemas src src/lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#478">[ date ]</a>
+              <a href="thread.html#478">[ thread ]</a>
+              <a href="subject.html#478">[ subject ]</a>
+              <a href="author.html#478">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,233 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1806 - in trunk: data src src/items src/others
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1806%20-%20in%20trunk%3A%20data%20src%20src/items%20src/others&In-Reply-To=%3C200909122202.n8CM25YI010437%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001234.html">
+   <LINK REL="Next"  HREF="001236.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1806 - in trunk: data src src/items src/others</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1806%20-%20in%20trunk%3A%20data%20src%20src/items%20src/others&In-Reply-To=%3C200909122202.n8CM25YI010437%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1806 - in trunk: data src src/items src/others">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Sep 13 00:02:05 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001234.html">[Enigma-game-svn] r1805
+</A></li>
+        <LI>Next message: <A HREF="001236.html">[Enigma-game-svn] r1807 - in trunk/data/levels: enigma_cross	enigma_i enigma_iii enigma_tutorial enigma_v enigma_vii enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1235">[ date ]</a>
+              <a href="thread.html#1235">[ thread ]</a>
+              <a href="subject.html#1235">[ subject ]</a>
+              <a href="author.html#1235">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-09-13 00:02:03 +0200 (Sun, 13 Sep 2009)
+New Revision: 1806
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/api2init.lua
+   trunk/src/WorldProxy.cc
+   trunk/src/items/SimpleItems.cc
+   trunk/src/others/Rubberband.cc
+   trunk/src/server.cc
+   trunk/src/server.hh
+Log:
+Trunk 1.1: 
+- fix bool attribute &quot;scissor&quot; and &quot;static&quot; mapping old API to new API
+- fix ot_rubberband default attribute values
+- add global attribute &quot;SubSoil&quot;, values SUBSOIL_ABYSS (default), 
+    SUBSOIL_WATER, SUBSOIL_AUTO:
+    - bomb explosion dissolve floor to this subsoil floor
+    - auto dissolves to water if one of the 4 neighbour floors is water,
+      otherwise to abyss
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2009-09-11 22:58:14 UTC (rev 1805)
++++ trunk/data/api1init.lua	2009-09-12 22:02:03 UTC (rev 1806)
+@@ -896,6 +896,12 @@
+      if key == &quot;loop&quot; then
+          if val == 1 then _val = true else _val = false end
+      end
++     if key == &quot;scissor&quot; then
++         if val == 1 then _val = true else _val = false end
++     end
++     if key == &quot;static&quot; then
++         if val == 1 then _val = true else _val = false end
++     end
+      if key == &quot;orientation&quot; and _obj_name == &quot;st-mirror&quot; then
+          _val = (6 - val) % 4
+      end
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2009-09-11 22:58:14 UTC (rev 1805)
++++ trunk/data/api2init.lua	2009-09-12 22:02:03 UTC (rev 1806)
+@@ -192,6 +192,11 @@
+ COIN_IGNORE = -1
+ COIN_REJECT = -2
+ 
++-- subsoil
++SUBSOIL_ABYSS = 0
++SUBSOIL_WATER = 1
++SUBSOIL_AUTO  = 2
++
+ -- follower
+ FOLLOW_NO     = 0
+ FOLLOW_SCROLL = 1
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2009-09-11 22:58:14 UTC (rev 1805)
++++ trunk/src/WorldProxy.cc	2009-09-12 22:02:03 UTC (rev 1806)
+@@ -112,6 +112,8 @@
+             return server::RubberViolationStrength;
+         } else if (key == &quot;SlopeStrength&quot;) {
+             return server::SlopeForce;
++        } else if (key == &quot;SubSoil&quot;) {
++            return server::SubSoil;
+         } else if (key == &quot;SwampSinkTime&quot;) {
+             if (server::SwampSinkSpeed &gt; 0) {
+                 if (server::SwampSinkSpeed &gt;= 10000)
+@@ -221,6 +223,10 @@
+             server::RubberViolationStrength = val;
+         } else if (key == &quot;SlopeStrength&quot;) {
+             server::SlopeForce = val;
++        } else if (key == &quot;SubSoil&quot;) {
++            server::SubSoil = val;
++            ASSERT(server::SubSoil &gt;= 0 &amp;&amp; server::SubSoil &lt;= 2, XLevelRuntime,
++                    &quot;Attribute 'SubSoil' value is out of range.&quot;);
+         } else if (key == &quot;SwampSinkTime&quot;) {
+             if (val.getType() == Value::NIL)
+                 server::SwampSinkSpeed = 0;
+
+Modified: trunk/src/items/SimpleItems.cc
+===================================================================
+--- trunk/src/items/SimpleItems.cc	2009-09-11 22:58:14 UTC (rev 1805)
++++ trunk/src/items/SimpleItems.cc	2009-09-12 22:02:03 UTC (rev 1806)
+@@ -166,8 +166,21 @@
+                 replace(&quot;it_meditation_hollow&quot;);
+             else if (state == 2)
+                 replace(&quot;it_crack_m_water&quot;);
+-            else
+-                replace(&quot;it_debris&quot;);
++            else {
++                bool isAbyss = true;
++                if (server::SubSoil == 1)
++                    isAbyss = false;
++                else if (server::SubSoil == 2) {
++                    for (Direction d = NORTH; d != NODIR; d = previous(d)) {
++                        Floor *fl = GetFloor(move(get_pos(), d));
++                        if (fl != NULL &amp;&amp; fl-&gt;getClass() == &quot;fl_water&quot;) {
++                            isAbyss = false;
++                            break;
++                        }
++                    }
++                }
++                replace(isAbyss ? &quot;it_debris&quot; : &quot;it_debris_water&quot;);
++            }
+         else
+             kill();
+      }
+
+Modified: trunk/src/others/Rubberband.cc
+===================================================================
+--- trunk/src/others/Rubberband.cc	2009-09-11 22:58:14 UTC (rev 1805)
++++ trunk/src/others/Rubberband.cc	2009-09-12 22:02:03 UTC (rev 1806)
+@@ -25,7 +25,7 @@
+ #include &quot;world.hh&quot;
+ 
+ namespace enigma {
+-    Rubberband::Rubberband() {
++    Rubberband::Rubberband() : strength (10), outerThreshold (1), innerThreshold (0), minLength (0), maxLength (0) {
+     }
+     
+     std::string Rubberband::getClass() const {
+@@ -54,9 +54,9 @@
+             } else
+                 ASSERT(false, XLevelRuntime, &quot;Rubberband: 'anchor2' is neither actor nor stone&quot;);
+         } else if (key == &quot;strength&quot;) {
+-            strength = val;
++            strength =  (val.getType() == Value::NIL) ? 10.0 : (double)val;
+         } else if (key == &quot;length&quot;) {
+-            outerThreshold = val;
++            outerThreshold = (val.getType() == Value::NIL) ? 1.0 : (double)val;
+             ASSERT(outerThreshold &gt;= 0, XLevelRuntime, &quot;Rubberband: length is negative&quot;);
+         } else if (key == &quot;threshold&quot;) {
+             innerThreshold = val;
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2009-09-11 22:58:14 UTC (rev 1805)
++++ trunk/src/server.cc	2009-09-12 22:02:03 UTC (rev 1806)
+@@ -127,6 +127,7 @@
+ int32_t  server::RandomState;               // no Lua access
+ double   server::RubberViolationStrength;
+ double   server::SlopeForce;
++int      server::SubSoil;
+ double   server::SwampSinkSpeed;
+ double   server::WaterSinkSpeed;
+ double   server::WormholeForce;
+@@ -300,6 +301,7 @@
+     server::MagnetForce       = 30;
+     server::MagnetRange       = 10;
+     server::MaxOxydColor      = 7;    // for compatibility
++    server::SubSoil           = 0;
+     server::RubberViolationStrength = 50;
+     server::WormholeForce     = 30;
+     server::WormholeRange     = 10;
+
+Modified: trunk/src/server.hh
+===================================================================
+--- trunk/src/server.hh	2009-09-11 22:58:14 UTC (rev 1805)
++++ trunk/src/server.hh	2009-09-12 22:02:03 UTC (rev 1806)
+@@ -111,6 +111,7 @@
+     extern ecl::V2  ConstantForce;  // global gravitation
+     
+     extern int      MaxOxydColor;
++    extern int      SubSoil;
+ 
+     extern double   WaterSinkSpeed;
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001234.html">[Enigma-game-svn] r1805
+</A></li>
+	<LI>Next message: <A HREF="001236.html">[Enigma-game-svn] r1807 - in trunk/data/levels: enigma_cross	enigma_i enigma_iii enigma_tutorial enigma_v enigma_vii enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1235">[ date ]</a>
+              <a href="thread.html#1235">[ thread ]</a>
+              <a href="subject.html#1235">[ subject ]</a>
+              <a href="author.html#1235">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

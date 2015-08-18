@@ -1,0 +1,246 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1608 - in trunk: data lib-src/lua src/lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1608%20-%20in%20trunk%3A%20data%20lib-src/lua%20src/lev&In-Reply-To=%3C200904012300.n31N0VrA011657%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001037.html">
+   <LINK REL="Next"  HREF="001039.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1608 - in trunk: data lib-src/lua src/lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1608%20-%20in%20trunk%3A%20data%20lib-src/lua%20src/lev&In-Reply-To=%3C200904012300.n31N0VrA011657%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1608 - in trunk: data lib-src/lua src/lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Apr  2 01:00:31 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001037.html">[Enigma-game-svn] r1607 - in feature_branches/hp_lotm: images/lotm	input input/lotm
+</A></li>
+        <LI>Next message: <A HREF="001039.html">[Enigma-game-svn] r1609 - in trunk: data/schemas src src/floors	src/others src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1038">[ date ]</a>
+              <a href="thread.html#1038">[ thread ]</a>
+              <a href="subject.html#1038">[ subject ]</a>
+              <a href="author.html#1038">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-04-02 01:00:29 +0200 (Thu, 02 Apr 2009)
+New Revision: 1608
+
+Added:
+   trunk/lib-src/lua/lexerproxy.c
+   trunk/lib-src/lua/lexerproxy.h
+Modified:
+   trunk/data/api2init.lua
+   trunk/lib-src/lua/Makefile.am
+   trunk/lib-src/lua/llex.c
+   trunk/src/lev/Proxy.cc
+Log:
+Trunk 1.1:
+- make assert_bool and assert_type real debug assertions:
+  - they are executed if:
+    - level is in state &quot;test&quot;, &quot;experimental&quot;
+    - application has been started with option &quot;--assert&quot;
+  - otherwise they are skipped on compilation and do cost no single cpu cycle
+    during runtime
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2009-03-31 23:46:56 UTC (rev 1607)
++++ trunk/data/api2init.lua	2009-04-01 23:00:29 UTC (rev 1608)
+@@ -652,7 +652,7 @@
+     return t
+ end
+ 
+-function assert_type(object, objname, level, ...)
++assert_type = function (object, objname, level, ...)
+     -- assert_type throws an error if object does not fulfill one of the
+     -- conditions in &quot;...&quot;. Possible conditions are the lua- and usertype
+     -- names and &quot;map&quot; (i.e. the results of etype), plus the strings
+@@ -703,7 +703,7 @@
+     end
+ end
+ 
+-function assert_bool(bool, message, level)
++assert_bool = function (bool, message, level)
+     -- assert_bool throws an error with message MESSAGE if BOOL is false or nil.
+     if not bool then
+         if message and (type(message) == &quot;string&quot;) and (message ~= &quot;&quot;) then
+
+Modified: trunk/lib-src/lua/Makefile.am
+===================================================================
+--- trunk/lib-src/lua/Makefile.am	2009-03-31 23:46:56 UTC (rev 1607)
++++ trunk/lib-src/lua/Makefile.am	2009-04-01 23:00:29 UTC (rev 1608)
+@@ -4,7 +4,7 @@
+ 
+ # noinst_PROGRAMS = tolua
+ 
+-EXTRA_DIST = README
++EXTRA_DIST = README lexerproxy.c
+ 
+ liblua_a_SOURCES = \
+  lapi.c lauxlib.c lbaselib.c lcode.c ldblib.c ldebug.c \
+@@ -16,7 +16,8 @@
+  lopcodes.h lparser.h  lstate.h lstring.h ltable.h ltm.h lua.h \
+  luaconf.h lualib.h lundump.h lvm.h lzio.h tolua++.h \
+  tolua_event.c tolua_event.h tolua_is.c tolua_map.c tolua_push.c \
+- tolua_to.c
++ tolua_to.c \
++ lexerproxy.h
+ liblua_a_CFLAGS = $(AM_CFLAGS)
+ 
+ if LINUX
+
+Added: trunk/lib-src/lua/lexerproxy.c
+===================================================================
+--- trunk/lib-src/lua/lexerproxy.c	2009-03-31 23:46:56 UTC (rev 1607)
++++ trunk/lib-src/lua/lexerproxy.c	2009-04-01 23:00:29 UTC (rev 1608)
+@@ -0,0 +1,38 @@
++/*
++* lexerproxy.c
++* lexer proxy for Lua parser -- implements assert removal
++* Luiz Henrique de Figueiredo &lt;<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">lhf at tecgraf.puc-rio.br</A>&gt;
++* 11 May 2007 11:18:57
++* This code is hereby placed in the public domain.
++* Add &lt;&lt;#include &quot;proxy.c&quot;&gt;&gt; just before the definition of luaX_next in llex.c
++*/
++
++#include &lt;string.h&gt;
++
++bool lua_evaluate_assert = false;
++
++static int nexttoken(LexState *ls, SemInfo *seminfo)
++{
++ for (;;) {
++	int n;
++	int t=llex(ls,seminfo);
++	if (t!=TK_NAME) return t;
++	if (lua_evaluate_assert || (strcmp(getstr(seminfo-&gt;ts),&quot;assert_type&quot;)!=0
++			&amp;&amp; strcmp(getstr(seminfo-&gt;ts),&quot;assert_bool&quot;)!=0))
++		return t;
++	t=nexttoken(ls,&amp;ls-&gt;lookahead.seminfo);
++	if (t!='(') {
++		ls-&gt;lookahead.token = t;
++		return TK_NAME;
++	}
++	for (n=1; n&gt;0; ) {
++		t=llex(ls,seminfo);
++		if (t==TK_EOS) return t;
++		if (t=='(') n++;
++		if (t==')') n--;
++	}
++ }
++}
++
++#define llex nexttoken
++
+
+
+Property changes on: trunk/lib-src/lua/lexerproxy.c
+___________________________________________________________________
+Name: svn:executable
+   + *
+Name: svn:eol-style
+   + native
+
+Added: trunk/lib-src/lua/lexerproxy.h
+===================================================================
+--- trunk/lib-src/lua/lexerproxy.h	2009-03-31 23:46:56 UTC (rev 1607)
++++ trunk/lib-src/lua/lexerproxy.h	2009-04-01 23:00:29 UTC (rev 1608)
+@@ -0,0 +1,10 @@
++/*
++* lexerproxy.h
++* lexer proxy for Lua parser -- implements assert removal
++* external definitions
++*/
++
++
++extern bool lua_evaluate_assert;
++
++
+
+
+Property changes on: trunk/lib-src/lua/lexerproxy.h
+___________________________________________________________________
+Name: svn:executable
+   + *
+Name: svn:eol-style
+   + native
+
+Modified: trunk/lib-src/lua/llex.c
+===================================================================
+--- trunk/lib-src/lua/llex.c	2009-03-31 23:46:56 UTC (rev 1607)
++++ trunk/lib-src/lua/llex.c	2009-04-01 23:00:29 UTC (rev 1608)
+@@ -442,6 +442,7 @@
+   }
+ }
+ 
++#include &quot;lexerproxy.c&quot;
+ 
+ void luaX_next (LexState *ls) {
+   ls-&gt;lastline = ls-&gt;linenumber;
+
+Modified: trunk/src/lev/Proxy.cc
+===================================================================
+--- trunk/src/lev/Proxy.cc	2009-03-31 23:46:56 UTC (rev 1607)
++++ trunk/src/lev/Proxy.cc	2009-04-01 23:00:29 UTC (rev 1608)
+@@ -47,10 +47,12 @@
+ extern &quot;C&quot; {
+ #include &quot;lua.h&quot;
+ #include &quot;lauxlib.h&quot;
++#include &quot;lexerproxy.h&quot;
+ }
+ #else
+ #include &quot;lua.h&quot;
+ #include &quot;lauxlib.h&quot;
++#include &quot;lexerproxy.h&quot;
+ #endif 
+ 
+ 
+@@ -628,6 +630,8 @@
+             server::EnigmaCompatibility = getEnigmaCompatibility();
+             server::TwoPlayerGame = hasNetworkMode();
+             server::LevelStatus = getLevelStatus();
++            lua_evaluate_assert = (server::LevelStatus == STATUS_RELEASED || server::LevelStatus == STATUS_STABLE) 
++                    ? false || !noAssert : true;
+             if (server::EnigmaCompatibility &lt; 1.10) {
+                 server::AllowSingleOxyds = true;
+                 server::SurviveFinish = false;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001037.html">[Enigma-game-svn] r1607 - in feature_branches/hp_lotm: images/lotm	input input/lotm
+</A></li>
+	<LI>Next message: <A HREF="001039.html">[Enigma-game-svn] r1609 - in trunk: data/schemas src src/floors	src/others src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1038">[ date ]</a>
+              <a href="thread.html#1038">[ thread ]</a>
+              <a href="subject.html#1038">[ subject ]</a>
+              <a href="author.html#1038">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,424 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1493 - in trunk: data/schemas src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1493%20-%20in%20trunk%3A%20data/schemas%20src&In-Reply-To=%3C200901292350.n0TNokoB004550%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000921.html">
+   <LINK REL="Next"  HREF="000923.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1493 - in trunk: data/schemas src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1493%20-%20in%20trunk%3A%20data/schemas%20src&In-Reply-To=%3C200901292350.n0TNokoB004550%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1493 - in trunk: data/schemas src">ral at mail.berlios.de
+       </A><BR>
+    <I>Fri Jan 30 00:50:46 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000921.html">[Enigma-game-svn] r1492 - in trunk/data/levels: enigma_cross	enigma_iv enigma_v enigma_vii enigma_viii
+</A></li>
+        <LI>Next message: <A HREF="000923.html">[Enigma-game-svn] r1494 - in trunk: data/schemas src src/others
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#922">[ date ]</a>
+              <a href="thread.html#922">[ thread ]</a>
+              <a href="subject.html#922">[ subject ]</a>
+              <a href="author.html#922">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-01-30 00:50:37 +0100 (Fri, 30 Jan 2009)
+New Revision: 1493
+
+Modified:
+   trunk/data/schemas/objects.xml
+   trunk/src/Object.cc
+   trunk/src/Object.hh
+   trunk/src/Value.cc
+   trunk/src/Value.hh
+   trunk/src/world.cc
+   trunk/src/world.hh
+   trunk/src/world_internal.hh
+Log:
+Trunk 1.1:
+- add safe actions:
+  - new boolean attribute &quot;safeaction&quot;, default false
+  - on safeaction==true all action will be delayed and performed without the
+    sender being part of the call stack
+  - it is safe to kill the sender within the initiated safe action chain
+- target attribute with self reference:
+  - a string &quot;@&quot; as part of a target token evaluates to the sender object itself
+  - actions can be performed on sender object itself
+  - an object can kill itself (use safeaction=true)
+
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2009-01-29 01:38:01 UTC (rev 1492)
++++ trunk/data/schemas/objects.xml	2009-01-29 23:50:37 UTC (rev 1493)
+@@ -71,6 +71,7 @@
+     &lt;attr name=&quot;push_directions&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;range&quot; type=&quot;double&quot; default=&quot;1.0&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;rubbers&quot; type=&quot;group&quot; default=&quot;nil&quot; rw=&quot;r&quot;/&gt;
++    &lt;attr name=&quot;safeaction&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;secure&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;scissor&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;scratches&quot; type=&quot;string&quot; default=&quot;&quot; rw=&quot;rw&quot;/&gt;
+@@ -167,6 +168,7 @@
+       &lt;attr name=&quot;inverse&quot;/&gt;
+       &lt;attr name=&quot;name&quot;/&gt;
+       &lt;attr name=&quot;nopaction&quot;/&gt;
++      &lt;attr name=&quot;safeaction&quot;/&gt;
+       &lt;attr name=&quot;state&quot;/&gt;
+       &lt;attr name=&quot;target&quot;/&gt;
+       &lt;action type=&quot;bool&quot;/&gt;
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2009-01-29 01:38:01 UTC (rev 1492)
++++ trunk/src/Object.cc	2009-01-29 23:50:37 UTC (rev 1493)
+@@ -302,6 +302,7 @@
+         
+         TokenList::iterator ait = actions.begin();
+         std::string action;  // empty string as default
++        bool secure = getAttr(&quot;safeaction&quot;).to_bool();
+         for (TokenList::iterator tit = targets.begin(); tit != targets.end(); ++tit) {
+             action = (ait != actions.end()) ? ait-&gt;to_string() : &quot;&quot;;
+             
+@@ -310,8 +311,12 @@
+                 if ((action == &quot;callback&quot; || action.empty()) &amp;&amp; (tit-&gt;getType() == Value::STRING)) { 
+ //                        &amp;&amp; lua::IsFunc(lua::LevelState(), tit-&gt;get_string())) {
+                     // it is an existing callback function
+-                    if (lua::CallFunc(lua::LevelState(), tit-&gt;get_string(), messageValue, this, !action.empty()) != lua::NO_LUAERROR) {
+-                        throw XLevelRuntime(std::string(&quot;callback '&quot;) + tit-&gt;get_string() + &quot;' failed:\n&quot;+lua::LastError(lua::LevelState()));
++                    if (secure) {
++                        PerformSecureAction(this-&gt;getId(), true, !action.empty(), tit-&gt;get_string(), messageValue);
++                    } else {
++                        if (lua::CallFunc(lua::LevelState(), tit-&gt;get_string(), messageValue, this, !action.empty()) != lua::NO_LUAERROR) {
++                            throw XLevelRuntime(std::string(&quot;callback '&quot;) + tit-&gt;get_string() + &quot;' failed:\n&quot;+lua::LastError(lua::LevelState()));
++                        }
+                     }
+                 }
+                 // else ignore this no longer valid target
+@@ -331,7 +336,10 @@
+                         }
+                         // check if message is valid, otherwise ignore message
+                         if (obj_action != &quot;nop&quot; &amp;&amp; (*oit)-&gt;validateMessage(obj_action, messageValue))
+-                            SendMessage(*oit, Message(obj_action, messageValue, this));                    
++                            if (secure)
++                                PerformSecureAction(this-&gt;getId(), false, (*oit)-&gt;getId(), obj_action, messageValue);
++                            else
++                                SendMessage(*oit, Message(obj_action, messageValue, this));                    
+                     }
+                 }
+             }
+@@ -360,7 +368,7 @@
+      */
+     
+     
+-    bool Object::getDestinationByIndex(int idx, ecl::V2 &amp;dstpos) const {
++    bool Object::getDestinationByIndex(int idx, ecl::V2 &amp;dstpos) {
+         int i = 0;  // counter for destination candidates
+         TokenList tl = getAttr(&quot;destination&quot;);  // expand any tokens to a list of values 
+         for (TokenList::iterator tit = tl.begin(); tit != tl.end(); ++tit) {
+
+Modified: trunk/src/Object.hh
+===================================================================
+--- trunk/src/Object.hh	2009-01-29 01:38:01 UTC (rev 1492)
++++ trunk/src/Object.hh	2009-01-29 23:50:37 UTC (rev 1493)
+@@ -223,7 +223,7 @@
+          * @arg destpos  return value for position that is centered to a grid
+          * @return       validity of position at given index
+          */
+-        bool getDestinationByIndex(int idx, ecl::V2 &amp;dstpos) const;
++        bool getDestinationByIndex(int idx, ecl::V2 &amp;dstpos);
+         
+         /**
+          * A central managed container for 32 single bit flags to be used by 
+
+Modified: trunk/src/Value.cc
+===================================================================
+--- trunk/src/Value.cc	2009-01-29 01:38:01 UTC (rev 1492)
++++ trunk/src/Value.cc	2009-01-29 23:50:37 UTC (rev 1493)
+@@ -464,7 +464,7 @@
+         return ecl::V2(-1, -1);        
+     }
+     
+-    ObjectList Value::getObjectList(const Object *reference) const {
++    ObjectList Value::getObjectList(Object *reference) const {
+         ObjectList result;
+         switch (type) {
+             case STRING:
+@@ -472,6 +472,10 @@
+                     // wildcards in object name - we need to add all objects
+                     result = GetNamedGroup(val.str, reference);
+                     break;
++                } else if (std::string(val.str) == &quot;@&quot;) {
++                    // self reference
++                    result.push_back(reference);
++                    break;
+                 }
+                 // else it is a single object name - fall through
+             case NAMEDOBJECT:
+@@ -495,7 +499,7 @@
+         return result;
+     }
+     
+-    PositionList Value::getPositionList(const Object *reference) const {
++    PositionList Value::getPositionList(Object *reference) const {
+         PositionList result;
+         switch (type) {
+             case STRING:
+@@ -528,7 +532,7 @@
+         return result;
+     }
+     
+-    bool Value::finalizeNearestObjectReference(const Object *reference) {
++    bool Value::finalizeNearestObjectReference(Object *reference) {
+         if (type == STRING &amp;&amp; std::string(val.str).find(&quot;@@&quot;) != 0 &amp;&amp; std::string(val.str).find(&quot;@&quot;) == 0
+                 &amp;&amp; std::string(val.str).find_first_of(&quot;*?&quot;) != std::string::npos) {
+             //
+@@ -544,7 +548,7 @@
+                 }
+             }
+             // otherwise it resolves to no object
+-            type = NAMEDOBJECT;
++            type = OBJECT;
+             val.dval[0] = 0;
+             return true;
+         }
+
+Modified: trunk/src/Value.hh
+===================================================================
+--- trunk/src/Value.hh	2009-01-29 01:38:01 UTC (rev 1492)
++++ trunk/src/Value.hh	2009-01-29 23:50:37 UTC (rev 1493)
+@@ -248,9 +248,9 @@
+         /**
+          * 
+          */
+-        ObjectList getObjectList(const Object *reference = NULL) const;
+-        PositionList getPositionList(const Object *reference =NULL) const;
+-        bool finalizeNearestObjectReference(const Object *reference = NULL);
++        ObjectList getObjectList(Object *reference = NULL) const;
++        PositionList getPositionList(Object *reference =NULL) const;
++        bool finalizeNearestObjectReference(Object *reference = NULL);
+     private:
+         void clear();      ///&lt; Release resources and assign type NIL
+ 
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2009-01-29 01:38:01 UTC (rev 1492)
++++ trunk/src/world.cc	2009-01-29 23:50:37 UTC (rev 1493)
+@@ -279,7 +279,7 @@
+     return NULL;
+ }
+ 
+-std::list&lt;Object *&gt; World::get_group(const std::string &amp;tmpl, const Object *reference) {
++std::list&lt;Object *&gt; World::get_group(const std::string &amp;tmpl, Object *reference) {
+     std::list&lt;Object *&gt; result;
+     ecl::Dict&lt;Object *&gt;::iterator it = m_objnames.begin();
+     std::string pattern = tmpl;
+@@ -289,6 +289,10 @@
+         pattern.erase(0, 1); // erase the leading @
+         if (pattern.size() &gt; 0 &amp;&amp; pattern[0] == '@') {
+             pattern.erase(0, 1); // erase the leading @@
++        } else {
++            // a single &quot;@&quot; is a self reference
++            result.push_back(reference);
++            return result;
+         }
+         if (reference != NULL)
+             nearest = true;
+@@ -374,7 +378,7 @@
+     return Value(GridPos(-1, -1));
+ }
+ 
+-PositionList World::getPositionList(const std::string &amp;tmpl, const Object *reference) {
++PositionList World::getPositionList(const std::string &amp;tmpl, Object *reference) {
+     PositionList positions;
+     ObjectList objects = get_group(tmpl, reference);
+     for (ObjectList::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
+@@ -479,6 +483,7 @@
+ 
+     move_actors(dtime);
+     tick_sound_dampings();
++    doPerformPendingActions();
+ 
+     // Tell floors and items about new stones.
+     for (unsigned i=0; i&lt;changed_stones.size(); ++i)
+@@ -493,6 +498,7 @@
+     GameTimer.tick(dtime);
+ 
+     PerformRecalcLight(false);   // recalculate laser beams if necessary
++    doPerformPendingActions();
+     // do kill lasered actors in same time step
+     for (unsigned i=0; i &lt; actorlist.size(); ++i) {
+         Item *it = actorlist[i]-&gt;get_actorinfo()-&gt;field-&gt;item;
+@@ -502,6 +508,20 @@
+     }
+ }
+ 
++void World::doPerformPendingActions() {
++    for (std::list&lt;Action&gt;::iterator itr = actionList.begin(); itr != actionList.end(); ++itr) {
++        if ((*itr).isCallback) {
++            if (lua::CallFunc(lua::LevelState(), (*itr).name, (*itr).val, Object::getObject((*itr).senderId), (*itr).targetId) != lua::NO_LUAERROR) {
++                throw XLevelRuntime(std::string(&quot;delayed callback '&quot;) + (*itr).name + &quot;' failed:\n&quot;+lua::LastError(lua::LevelState()));
++            }
++        } else {
++            SendMessage(Object::getObject((*itr).targetId), 
++                    Message((*itr).name, (*itr).val, Object::getObject((*itr).senderId)));
++        }
++    }
++    actionList.clear();
++}
++
+ /* ---------- Puzzle scrambling -------------------- */
+ 
+ void World::add_scramble(GridPos p, Direction dir)
+@@ -1734,7 +1754,7 @@
+     return level-&gt;get_named(name);
+ }
+ 
+-std::list&lt;Object *&gt; GetNamedGroup(const std::string &amp;name, const Object *reference) {
++std::list&lt;Object *&gt; GetNamedGroup(const std::string &amp;name, Object *reference) {
+     return level-&gt;get_group(name, reference);
+ }
+ 
+@@ -1746,7 +1766,7 @@
+     return level-&gt;getNamedPosition(name);    
+ }
+ 
+-PositionList GetNamedPositionList(const string &amp;tmpl, const Object *reference) {
++PositionList GetNamedPositionList(const string &amp;tmpl, Object *reference) {
+     return level-&gt;getPositionList(tmpl, reference);    
+ }
+ 
+@@ -1951,6 +1971,9 @@
+     }
+ }
+ 
++void PerformSecureAction(int senderId, bool isCallback, int targetId, std::string name, Value val) {
++    level-&gt;actionList.push_back(Action(senderId, isCallback, targetId, name, val));
++}
+ 
+ namespace
+ {
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2009-01-29 01:38:01 UTC (rev 1492)
++++ trunk/src/world.hh	2009-01-29 23:50:37 UTC (rev 1493)
+@@ -57,6 +57,18 @@
+         }
+     };
+ 
++    struct Action {
++        int         senderId;
++        bool        isCallback;
++        int         targetId;  // target object id for message, flag expectFunction for callback
++        std::string name;      // action name for message, function name for callback
++        Value       val;
++        
++        Action(int senderId_, bool isCallback_, int targetId_, std::string name_, Value val_) : 
++                senderId (senderId_), isCallback (isCallback_), targetId (targetId_), name (name_), val (val_) {
++        }
++    };
++    
+     struct Message {
+         // Variables
+         std::string message;
+@@ -168,13 +180,13 @@
+     void    NameObject (Object *obj, const string &amp;name);
+     void    UnnameObject (Object *obj);
+     Object *GetNamedObject (const string &amp;name);
+-    std::list&lt;Object *&gt; GetNamedGroup(const std::string &amp;templ, const Object *reference = NULL);
++    std::list&lt;Object *&gt; GetNamedGroup(const std::string &amp;templ, Object *reference = NULL);
+ 
+ /* -------------------- Named Positions -------------------- */
+ 
+     void NamePosition(Value po, const string &amp;name);
+     Value GetNamedPosition(const string &amp;name);
+-    PositionList GetNamedPositionList(const std::string &amp;templ, const Object *reference = NULL);
++    PositionList GetNamedPositionList(const std::string &amp;templ, Object *reference = NULL);
+ 
+ /* -------------------- Force Fields -------------------- */
+ 
+@@ -213,7 +225,9 @@
+     Value SendMessage (Object *obj, const string &amp;msg, const Value&amp; value = Value(), Object *sender = NULL);
+     Value SendMessage (Object *obj, const Message &amp;m);
+ 
++/* -------------------- Secure Delayed Actions -------------------- */
+ 
++    void PerformSecureAction(int senderId, bool isCallback, int targetId, std::string name, Value val);
+ 
+ /* -------------------- Actors -------------------- */
+ 
+
+Modified: trunk/src/world_internal.hh
+===================================================================
+--- trunk/src/world_internal.hh	2009-01-29 01:38:01 UTC (rev 1492)
++++ trunk/src/world_internal.hh	2009-01-29 23:50:37 UTC (rev 1493)
+@@ -275,10 +275,10 @@
+         void    name_object (Object *obj, const string &amp;name);
+         void    unname (Object *);
+         Object *get_named (const string &amp;);
+-        std::list&lt;Object *&gt; get_group(const std::string &amp;tmpl, const Object *reference = NULL);
++        std::list&lt;Object *&gt; get_group(const std::string &amp;tmpl, Object *reference = NULL);
+         void namePosition(Value po, const std::string &amp;name);
+         Value getNamedPosition(const std::string &amp;name);
+-        PositionList getPositionList(const std::string &amp;tmpl, const Object *reference = NULL);
++        PositionList getPositionList(const std::string &amp;tmpl, Object *reference = NULL);
+         
+         void tick (double dtime);
+         void remove (ForceField *ff);
+@@ -319,6 +319,7 @@
+         void handle_stone_contacts(unsigned actoridx);
+         void stone_change (GridPos p);
+         void tick_sound_dampings ();
++        void doPerformPendingActions();
+ 
+     public:
+     
+@@ -348,6 +349,7 @@
+         std::vector&lt;GridPos&gt; changed_stones;
+         std::list&lt;GridPos&gt;   collisionCriticalPositions;  // stones set to positions after collision check
+         bool                 registerCriticalPositions;
++        std::list&lt;Action&gt; actionList;       // pending delayed actions for secure performance
+ 
+         SoundDampingList     sound_dampings; // see SoundEffectManager for details
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000921.html">[Enigma-game-svn] r1492 - in trunk/data/levels: enigma_cross	enigma_iv enigma_v enigma_vii enigma_viii
+</A></li>
+	<LI>Next message: <A HREF="000923.html">[Enigma-game-svn] r1494 - in trunk: data/schemas src src/others
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#922">[ date ]</a>
+              <a href="thread.html#922">[ thread ]</a>
+              <a href="subject.html#922">[ subject ]</a>
+              <a href="author.html#922">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

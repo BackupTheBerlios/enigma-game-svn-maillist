@@ -1,0 +1,250 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r969 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r969%20-%20trunk/src&In-Reply-To=%3C200801050104.m0514xLX026052%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000400.html">
+   <LINK REL="Next"  HREF="000402.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r969 - trunk/src</H1>
+    <B>dheck at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r969%20-%20trunk/src&In-Reply-To=%3C200801050104.m0514xLX026052%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r969 - trunk/src">dheck at mail.berlios.de
+       </A><BR>
+    <I>Sat Jan  5 02:04:59 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000400.html">[Enigma-game-svn] r968 - in trunk: . data data/fonts data/gfx data/gfx32 data/gfx40 data/gfx48 data/gfx64 data/levels data/levels/enigma_cross data/levels/enigma_esprit data/levels/enigma_experimental data/levels/enigma_i data/levels/enigma_ii data/levels/enigma_iii data/levels/enigma_iv data/levels/enigma_mas_microban data/levels/enigma_microban data/levels/enigma_oxyd data/levels/enigma_oxydextra data/levels/enigma_oxydmagnum data/levels/enigma_peroxyd data/levels/enigma_sokoban data/levels/enigma_stable data/levels/enigma_tutorial data/levels/enigma_v data/levels/enigma_vi data/levels/enigma_vii data/levels/lib data/levels/patches data/schemas data/sound data/soundsets data/soundsets/enigma data/thumbs doc doc/images doc/images/flags25x15 doc/manual doc/manual/images doc/reference doc/reference/images etc intl lib-src lib-src/enet lib-src/enet/include lib-src/enet/include/enet lib-src/enigma-core lib-src/lua lib-src/oxydlib lib-src/zipios++ lib-src/zipios++/src lib-src/zipios++/zi! pios++ m4 po src tools
+</A></li>
+        <LI>Next message: <A HREF="000402.html">[Enigma-game-svn] r970 - homepage/input/articles
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#401">[ date ]</a>
+              <a href="thread.html#401">[ thread ]</a>
+              <a href="subject.html#401">[ subject ]</a>
+              <a href="author.html#401">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: dheck
+Date: 2008-01-05 02:04:59 +0100 (Sat, 05 Jan 2008)
+New Revision: 969
+
+Modified:
+   trunk/src/sound.cc
+   trunk/src/sound_internal.hh
+Log:
+Implemented sound preloading
+
+- this adds SoundEngine::cache_sound() as a new virtual function that must
+be implemented in every subclass that wants to provide preloading
+- removed unused define_sound() variant
+- the current implementation is a little brittle because it relies on the
+naming conventions established by eventKey(); somewhat surprisingly,
+SoundSets do not contain a list of sound effects...
+
+Modified: trunk/src/sound.cc
+===================================================================
+--- trunk/src/sound.cc	2008-01-05 01:04:44 UTC (rev 968)
++++ trunk/src/sound.cc	2008-01-05 01:04:59 UTC (rev 969)
+@@ -274,6 +274,13 @@
+         return i-&gt;second;
+ }
+ 
++void SoundEngine_SDL::cache_sound(const SoundEffect &amp;s) 
++{
++    string filename = s.getFilename();
++    if (filename != &quot;&quot;)
++        cache_sound(filename);
++}
++
+ bool SoundEngine_SDL::play_sound (const SoundEvent &amp;s)
+ {
+     int channel = already_playing (s);
+@@ -317,14 +324,7 @@
+     }
+ }
+ 
+-
+ void SoundEngine_SDL::define_sound (
+-    const SoundName &amp;/*name*/,
+-    const std::string &amp;/*filename*/)
+-{
+-}
+-
+-void SoundEngine_SDL::define_sound (
+     const SoundName &amp;name, 
+     const SoundData &amp;data)
+ {
+@@ -534,7 +534,7 @@
+ 
+         float srcinc = float (len-1) / float (newlen); 
+         for (unsigned i=0; i&lt;newlen; ++i) {
+-            int srcidx = ecl::round_down &lt;int&gt; (i * srcinc); // srcpos);
++            int srcidx = ecl::round_down &lt;int&gt; (i * srcinc);
+             float a2 = i*srcinc - srcidx;
+             float a1 = 1.0f - a2;
+             dst[i] = static_cast&lt;Sint8&gt; ((a1*src[srcidx] + a2*src[srcidx+1])/2);
+@@ -634,7 +634,8 @@
+ 
+ /*! These functions fill in data for the sound sets, initialises and
+   activates them. Return false, if something went wrong, e.g. when an
+-  oxyd sound set is mentioned to not accessible oxyd version. */
++  oxyd sound set is mentioned, but the corresponding oxyd version
++  wasn't found. */
+ 
+ bool SoundEngine::defineSoundSet(string soundset_name, string soundset_key,
+                                  int button_position)
+@@ -666,6 +667,7 @@
+         return false;
+     if(isOxyd() &amp;&amp;  !oxyd::InitOxydSoundSet(getOxydVersion()))
+         return false;
++
+     sound_engine-&gt;setActiveSoundSetKey(getSoundSetKey());
+     return true;
+ }
+@@ -713,8 +715,10 @@
+     if (soundset_name == &quot;Default&quot;)
+         soundset_name = getDefaultSoundSet();
+     clear_cache();
+-    if (sound_sets[soundset_name].activate()) 
++    if (sound_sets[soundset_name].activate())  {
++        preloadSoundEffects();
+         Log &lt;&lt; &quot;Activated sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;'.\n&quot;;
++    }
+     else {
+         // Fallback, happens e.g. when oxyd sound set can't be established or 
+         // a user soundset is given which doesn't exist anymore.
+@@ -743,6 +747,7 @@
+     }
+     clear_cache();
+     if (sound_sets[soundset_name].activate()) {
++        preloadSoundEffects();
+         Log &lt;&lt; &quot;Switched to sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;' (key '&quot; 
+             &lt;&lt; soundset_key &lt;&lt; &quot;').\n&quot;;
+     } else
+@@ -750,6 +755,19 @@
+             &lt;&lt; soundset_key &lt;&lt; &quot;').\n&quot;;
+ }
+ 
++/*! Pre-cache all sound effects so that they can be played without lag
++  when the game is running. */
++void SoundEngine::preloadSoundEffects()
++{
++    SoundEffectRepository::iterator i = sound_effects.begin(), 
++        end = sound_effects.end();
++    string prefix = getActiveSoundSetKey() + &quot;#&quot;;
++    for (; i != end; ++i) {
++        if (i-&gt;first.compare(0, prefix.size(), prefix) == 0)
++            cache_sound(i-&gt;second);
++    }
++}
++
+ void sound::SetActiveSoundSet(string soundset_name)
+ {
+     sound_engine-&gt;setActiveSoundSet(soundset_name);
+@@ -816,7 +834,7 @@
+             &lt;&lt; pos[0] &lt;&lt; &quot;,&quot; &lt;&lt; pos[1] &lt;&lt; &quot;\n&quot;;
+         return false;
+     } else {
+-        return (*i).second.play(pos, volume, force_global);
++        return i-&gt;second.play(pos, volume, force_global);
+     }
+ }
+ 
+
+Modified: trunk/src/sound_internal.hh
+===================================================================
+--- trunk/src/sound_internal.hh	2008-01-05 01:04:44 UTC (rev 968)
++++ trunk/src/sound_internal.hh	2008-01-05 01:04:59 UTC (rev 969)
+@@ -53,6 +53,7 @@
+         }
+ 
+         void setFilename(string filename_) { filename = filename_; }
++        string getFilename() const { return filename; }
+         bool play(const ecl::V2 &amp;pos = ecl::V2(), double vol = 1.0, bool glob = false);
+         DampingData getDampingData() { return damp; }
+         string getSoundSetKey() { return soundset_key; }
+@@ -124,9 +125,9 @@
+         // ---------- Sound effects ----------
+ 
+         virtual void clear_cache() = 0;
+-        virtual void define_sound (const SoundName &amp;, const std::string &amp;filename)=0;
+         virtual void define_sound (const SoundName &amp;, const SoundData &amp;)=0;
+         virtual bool play_sound (const SoundEvent &amp;s) = 0;
++        virtual void cache_sound(const SoundEffect &amp;s) = 0;
+         virtual void set_listenerpos (ecl::V2 pos) = 0;
+         virtual void tick (double dtime) {}
+ 
+@@ -150,9 +151,13 @@
+         bool defineSoundSetOxyd(string soundset_name, string soundset_key,
+                                 OxydLib::OxydVersion oxyd_ver, int button_position);
+         string getOxydSoundSet(OxydLib::OxydVersion oxyd_ver);
++
+         int convertToOldSoundSetNumber(string soundset_name);
+         string convertFromOldSoundSetNumber(int soundset_number);
++
+         void setActiveSoundSet(string soundset_name);
++        void preloadSoundEffects();
++
+         void setSoundSetCount(int count) { sound_set_count = count; }
+         int getSoundSetCount() { return sound_set_count; }
+         int getButtonPosition(string soundset_name) {
+@@ -181,8 +186,9 @@
+         bool play_music (const std::string &amp;/*filename*/) { return false; }
+         void stop_music() {}
+         void fadeout_music() {}
++
+         bool play_sound (const SoundEvent &amp;) {}
+-        void define_sound (const SoundName &amp;, const std::string &amp;/*filename*/) {}
++        void cache_sound(const SoundEffect &amp;s) {}
+         void define_sound (const SoundName &amp;, const SoundData &amp;) {}
+         void set_listenerpos (ecl::V2 pos) {}
+     };
+@@ -205,11 +211,10 @@
+         void fadeout_music();
+ 
+         bool play_sound(const SoundEvent &amp;s);
++        void cache_sound(const SoundEffect &amp;s);
+         void clear_cache();
+-        void define_sound (const SoundName &amp;, const std::string &amp;filename);
+         void define_sound (const SoundName &amp;, const SoundData &amp;);
+ 
+-
+         void set_listenerpos (ecl::V2 pos) { m_listenerpos = pos; }
+         void tick (double dtime);
+     private:
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000400.html">[Enigma-game-svn] r968 - in trunk: . data data/fonts data/gfx data/gfx32 data/gfx40 data/gfx48 data/gfx64 data/levels data/levels/enigma_cross data/levels/enigma_esprit data/levels/enigma_experimental data/levels/enigma_i data/levels/enigma_ii data/levels/enigma_iii data/levels/enigma_iv data/levels/enigma_mas_microban data/levels/enigma_microban data/levels/enigma_oxyd data/levels/enigma_oxydextra data/levels/enigma_oxydmagnum data/levels/enigma_peroxyd data/levels/enigma_sokoban data/levels/enigma_stable data/levels/enigma_tutorial data/levels/enigma_v data/levels/enigma_vi data/levels/enigma_vii data/levels/lib data/levels/patches data/schemas data/sound data/soundsets data/soundsets/enigma data/thumbs doc doc/images doc/images/flags25x15 doc/manual doc/manual/images doc/reference doc/reference/images etc intl lib-src lib-src/enet lib-src/enet/include lib-src/enet/include/enet lib-src/enigma-core lib-src/lua lib-src/oxydlib lib-src/zipios++ lib-src/zipios++/src lib-src/zipios++/zi! pios++ m4 po src tools
+</A></li>
+	<LI>Next message: <A HREF="000402.html">[Enigma-game-svn] r970 - homepage/input/articles
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#401">[ date ]</a>
+              <a href="thread.html#401">[ thread ]</a>
+              <a href="subject.html#401">[ subject ]</a>
+              <a href="author.html#401">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

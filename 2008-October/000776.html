@@ -1,0 +1,126 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1347 - trunk/src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-October/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1347%20-%20trunk/src/stones&In-Reply-To=%3C200809302231.m8UMVxDC012543%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   
+   <LINK REL="Next"  HREF="000777.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1347 - trunk/src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1347%20-%20trunk/src/stones&In-Reply-To=%3C200809302231.m8UMVxDC012543%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1347 - trunk/src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Oct  1 00:31:59 CEST 2008</I>
+    <P><UL>
+        
+        <LI>Next message: <A HREF="000777.html">[Enigma-game-svn] r1348 - in homepage/input: . articles
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#776">[ date ]</a>
+              <a href="thread.html#776">[ thread ]</a>
+              <a href="subject.html#776">[ subject ]</a>
+              <a href="author.html#776">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-10-01 00:31:58 +0200 (Wed, 01 Oct 2008)
+New Revision: 1347
+
+Modified:
+   trunk/src/stones/StoneImpulse.cc
+Log:
+Trunk 1.1: new API reengineering Stoneimpulse
+- compatibility fixes:
+  - limit repulses to moves without other pulse
+  - send neighbour impulses in ccw sequence, but stick to fixed sequence
+    to avoid old ambiguities
+- fix double init crashes with pull stones
+
+
+Modified: trunk/src/stones/StoneImpulse.cc
+===================================================================
+--- trunk/src/stones/StoneImpulse.cc	2008-09-29 22:28:00 UTC (rev 1346)
++++ trunk/src/stones/StoneImpulse.cc	2008-09-30 22:31:58 UTC (rev 1347)
+@@ -155,7 +155,6 @@
+             else if (!(objFlags &amp; OBJBIT_STEADY) &amp;&amp; (objFlags &amp; OBJBIT_LIGHTNEWDIRS))
+                 objFlags |= OBJBIT_LASERIDLE;
+         }
+-        init_model();
+     }
+     
+     bool StoneImpulse::is_floating() const {
+@@ -182,16 +181,17 @@
+         if ((objFlags &amp; OBJBIT_MOVABLE) &amp;&amp; (impulse.dir != NODIR)) {
+             // move stone without disturbing a running animation
+             display::Model *yieldedModel = display::YieldModel(GridLoc(GRID_STONES, get_pos()));
+-            move_stone(impulse.dir);
++            bool didMove = move_stone(impulse.dir);
+             display::SetModel(GridLoc(GRID_STONES, get_pos()), yieldedModel);
+             
+             // pulse only if not pushed with a wand
+             Actor *hitman = dynamic_cast&lt;Actor*&gt;(impulse.sender);
+-            if (hitman == NULL || !player::WieldedItemIs (hitman, &quot;it_magicwand&quot;)) {
+-                if (state != IDLE)
++            if (hitman == NULL || !player::WieldedItemIs(hitman, &quot;it_magicwand&quot;)) {
++                if (state == IDLE)
++                    setIState(EXPANDING, NODIR);
++                else if (didMove &amp;&amp; state != EXPANDING)
++                    // ensure that an impulse to neighbors will be emitted when moved
+                     objFlags |= OBJBIT_REPULSE;
+-                else
+-                    setIState(EXPANDING, NODIR);
+             }
+         } else {
+             setIState(EXPANDING, impulse.dir);
+@@ -228,11 +228,14 @@
+                     sound_event(&quot;impulse&quot;);
+                     break;
+                 case SHRINKING:
++                    if (state != EXPANDING) {
++                        return;         // do not set new state
++                    }
+                     state = newState;
+                     init_model();
+                     GridPos p = get_pos();
+                     Direction origin = reverse((Direction)((objFlags &amp; OBJBIT_INCOMINGDIR) &gt;&gt; 29));
+-                    for (Direction d = NORTH; d != NODIR; d = previous(d)) {
++                    for (Direction d = WEST; d != NODIR; d = next(d)) {
+                         if (!(objFlags &amp; OBJBIT_NOBACKFIRE) || d != origin)
+                             send_impulse(move(p, d), d);
+                     }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	
+	<LI>Next message: <A HREF="000777.html">[Enigma-game-svn] r1348 - in homepage/input: . articles
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#776">[ date ]</a>
+              <a href="thread.html#776">[ thread ]</a>
+              <a href="subject.html#776">[ subject ]</a>
+              <a href="author.html#776">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

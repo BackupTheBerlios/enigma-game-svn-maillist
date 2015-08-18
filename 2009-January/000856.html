@@ -1,0 +1,183 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1427 - in trunk/src: . stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1427%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200901011416.n01EGaLg007152%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000855.html">
+   <LINK REL="Next"  HREF="000857.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1427 - in trunk/src: . stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1427%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200901011416.n01EGaLg007152%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1427 - in trunk/src: . stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Jan  1 15:16:36 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000855.html">[Enigma-game-svn] r1426 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000857.html">[Enigma-game-svn] r1428 - homepage/input
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#856">[ date ]</a>
+              <a href="thread.html#856">[ thread ]</a>
+              <a href="subject.html#856">[ subject ]</a>
+              <a href="author.html#856">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-01-01 15:16:36 +0100 (Thu, 01 Jan 2009)
+New Revision: 1427
+
+Modified:
+   trunk/src/Value.cc
+   trunk/src/stones/StoneImpulse.cc
+   trunk/src/stones/StoneImpulse.hh
+Log:
+Trunk 1.1:
+- st_stoneimpulse:
+  - another fix on handling of incoming impulse direction: not movable SI
+    will not propagate actor impulses per wire (like other unmovable stone)
+  - internally switched incoming dir from bit flags to internal attribute, to
+    be able to store NODIR values
+- Value - to_direction(): allow NODIR values
+
+
+Modified: trunk/src/Value.cc
+===================================================================
+--- trunk/src/Value.cc	2009-01-01 14:05:07 UTC (rev 1426)
++++ trunk/src/Value.cc	2009-01-01 14:16:36 UTC (rev 1427)
+@@ -493,7 +493,7 @@
+     }
+     
+     Direction to_direction (const Value &amp;v) {
+-        int val = Clamp(to_int(v), 0, 3);
++        int val = Clamp(to_int(v), -1, 3);
+         return static_cast&lt;Direction&gt;(val);
+     }
+     
+
+Modified: trunk/src/stones/StoneImpulse.cc
+===================================================================
+--- trunk/src/stones/StoneImpulse.cc	2009-01-01 14:05:07 UTC (rev 1426)
++++ trunk/src/stones/StoneImpulse.cc	2009-01-01 14:16:36 UTC (rev 1427)
+@@ -61,11 +61,8 @@
+                 objFlags &amp;= ~OBJBIT_STEADY;
+         } else if (key == &quot;orientation&quot;) {
+             if (!isDisplayable()) {
+-                objFlags &amp;= ~OBJBIT_INCOMINGDIR;
+-                Direction incoming = reverse(to_direction(val)); 
+-                if (incoming != NODIR ) {
+-                    objFlags |= (incoming &lt;&lt; 29) | OBJBIT_NOBACKFIRE;
+-                }
++                Stone::setAttr(&quot;$incoming&quot;, reverse(to_direction(val)));
++                objFlags |= OBJBIT_NOBACKFIRE;
+             }
+         } else
+             Stone::setAttr(key, val);
+@@ -200,7 +197,8 @@
+                     setIState(EXPANDING, impulse.dir);
+                 else if (didMove &amp;&amp; state != EXPANDING) {
+                     // ensure that an impulse to neighbors will be emitted when moved
+-                    objFlags = (objFlags &amp; ~OBJBIT_INCOMINGDIR) | (impulse.dir &lt;&lt; 29) | OBJBIT_REPULSE;
++                    Stone::setAttr(&quot;$incoming&quot;, impulse.dir); 
++                    objFlags |= OBJBIT_REPULSE;
+                 }
+             } else if (((objFlags &amp; OBJBIT_STEADY) &amp;&amp; (objFlags &amp; OBJBIT_LIGHTNEWDIRS) &amp;&amp; state == IDLE)) {
+                 setIState(EXPANDING, impulse.dir);
+@@ -231,7 +229,7 @@
+                     state = newState;
+                     if (objFlags &amp; OBJBIT_REPULSE) {
+                         objFlags &amp;= ~OBJBIT_REPULSE;
+-                        setIState(EXPANDING, (Direction)((objFlags &amp; OBJBIT_INCOMINGDIR) &gt;&gt; 29));
++                        setIState(EXPANDING, to_direction(getAttr(&quot;$incoming&quot;)));
+                     } else
+                         init_model();
+                     break;
+@@ -240,9 +238,7 @@
+                         return;         // do not set new state
+                     }
+                     objFlags &amp;= ~OBJBIT_LASERIDLE;
+-                    objFlags &amp;= ~OBJBIT_INCOMINGDIR;
+-                    if (incoming != NODIR)
+-                        objFlags |= (incoming &lt;&lt; 29);
++                    Stone::setAttr(&quot;$incoming&quot;, incoming);
+                     state = newState;
+                     init_model();
+                     sound_event(&quot;impulse&quot;);
+@@ -254,17 +250,16 @@
+                     state = newState;
+                     init_model();
+                     GridPos p = get_pos();
+-                    Direction origin = reverse((Direction)((objFlags &amp; OBJBIT_INCOMINGDIR) &gt;&gt; 29));
++                    Direction origin = reverse(to_direction(getAttr(&quot;$incoming&quot;)));
+                     for (Direction d = WEST; d != NODIR; d = next(d)) {
+                         if (!(objFlags &amp; OBJBIT_NOBACKFIRE) || d != origin)
+                             send_impulse(move(p, d), d);
+                     }
+                     if (!(objFlags &amp; OBJBIT_MOVABLE) || (objFlags &amp; OBJBIT_PROPAGATE)) {
+                         propagateImpulse(Impulse(this, GridPos(-1,-1), 
+-                                (Direction)((objFlags &amp; OBJBIT_INCOMINGDIR) &gt;&gt; 29)));
++                                to_direction(getAttr(&quot;$incoming&quot;))));
+                     }
+-                    if (objFlags &amp; OBJBIT_MOVABLE)
+-                        objFlags &amp;= ~OBJBIT_PROPAGATE;
++                    objFlags &amp;= ~OBJBIT_PROPAGATE;
+                     break;
+             }
+         }
+
+Modified: trunk/src/stones/StoneImpulse.hh
+===================================================================
+--- trunk/src/stones/StoneImpulse.hh	2009-01-01 14:05:07 UTC (rev 1426)
++++ trunk/src/stones/StoneImpulse.hh	2009-01-01 14:16:36 UTC (rev 1427)
+@@ -46,12 +46,11 @@
+         
+         enum ObjectPrivatFlagsBits {
+             OBJBIT_MOVABLE     =  1&lt;&lt;24,   ///&lt; Object is movable 
+-            OBJBIT_HOLLOW      =  1&lt;&lt;25,   ///&lt; hollow SI (exclusive usage with movalble feature!)
+-            OBJBIT_PROPAGATE   =  1&lt;&lt;25,   ///&lt; only for movable SI mark impulse propagation on shrinking 
++            OBJBIT_HOLLOW      =  1&lt;&lt;25,   ///&lt; hollow stoneimpulse
+             OBJBIT_STEADY      =  1&lt;&lt;26,   ///&lt; continuous laser light causes repeating impulses 
+             OBJBIT_REPULSE     =  1&lt;&lt;27,   ///&lt; pending impulse
+             OBJBIT_NOBACKFIRE  =  1&lt;&lt;28,   ///&lt; avoid sending impulse back into incoming direction
+-            OBJBIT_INCOMINGDIR =  3&lt;&lt;29,   ///&lt; incoming direction
++            OBJBIT_PROPAGATE   =  1&lt;&lt;29,   ///&lt; only for movable SI to  mark impulse propagation on shrinking 
+             OBJBIT_LASERIDLE   =  1&lt;&lt;31,   ///&lt; not steady stoneimpulse did run singleton pulse and is idle but still enlighted
+         };
+     public:
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000855.html">[Enigma-game-svn] r1426 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000857.html">[Enigma-game-svn] r1428 - homepage/input
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#856">[ date ]</a>
+              <a href="thread.html#856">[ thread ]</a>
+              <a href="subject.html#856">[ subject ]</a>
+              <a href="author.html#856">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,435 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1444 - in trunk: data data/schemas src	src/floors src/items
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1444%20-%20in%20trunk%3A%20data%20data/schemas%20src%0A%09src/floors%20src/items&In-Reply-To=%3C200901102325.n0ANPwd0025525%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000872.html">
+   <LINK REL="Next"  HREF="000874.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1444 - in trunk: data data/schemas src	src/floors src/items</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1444%20-%20in%20trunk%3A%20data%20data/schemas%20src%0A%09src/floors%20src/items&In-Reply-To=%3C200901102325.n0ANPwd0025525%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1444 - in trunk: data data/schemas src	src/floors src/items">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Jan 11 00:25:58 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000872.html">[Enigma-game-svn] r1443 - in trunk: data src
+</A></li>
+        <LI>Next message: <A HREF="000874.html">[Enigma-game-svn] r1445 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#873">[ date ]</a>
+              <a href="thread.html#873">[ thread ]</a>
+              <a href="subject.html#873">[ subject ]</a>
+              <a href="author.html#873">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-01-11 00:25:56 +0100 (Sun, 11 Jan 2009)
+New Revision: 1444
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/api2init.lua
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/floors.cc
+   trunk/src/floors/SimpleFloors.cc
+   trunk/src/floors/SimpleFloors.hh
+   trunk/src/items.cc
+   trunk/src/items/Crack.cc
+   trunk/src/ox_magnum.cc
+   trunk/src/ox_oxyd1.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/stones_simple.cc
+Log:
+Trunk 1.1: new API reengineering
+- fix crack: fragility just on first crack form INVISIBLE to SMALL,
+    all further cracks do happen for sure
+- temp. fix on st-chameleon: throw exception on missing floor
+- add lua constants:
+    YIN and YANG for actor attribute &quot;player&quot; - values 0, 1
+    CTRL_NONE, CTRL_YIN, CTRL_YANG, CTRL_YINYANG for actor &quot;controllers&quot; attr.
+- reengineering floors fl-acblack and fl-acwhite:
+  - new name fl_yinyang, fl_yinyang_yin, fl_yinyang_yang
+  - floor as Stateobject: state with values YIN and YANG, can be toggled, etc.
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2009-01-10 01:10:10 UTC (rev 1443)
++++ trunk/data/api1init.lua	2009-01-10 23:25:56 UTC (rev 1444)
+@@ -127,6 +127,8 @@
+     fl_wood_framed_h = &quot;fl-stwood1&quot;,
+     fl_wood_framed_v = &quot;fl-stwood2&quot;,
+     fl_woven = &quot;fl-woven&quot;,
++    fl_yinyang_yin = &quot;fl-acblack&quot;,
++    fl_yinyang_yang = &quot;fl-acwhite&quot;,    
+     it_banana = &quot;it-banana&quot;,
+     it_blocker = &quot;it-blocker&quot;,
+     it_blocker_new = &quot;it-blocker-new&quot;,
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2009-01-10 01:10:10 UTC (rev 1443)
++++ trunk/data/api2init.lua	2009-01-10 23:25:56 UTC (rev 1444)
+@@ -62,20 +62,22 @@
+ ----------------
+ 
+ -- state
+-OFF      = 0
+-ON       = 1
+-CLOSED   = 0
+-OPEN     = 1
+-IDLE     = 0
+-ACTIVE   = 1
+-OXYDPAIR = 2
+-LIGHT    = 0
+-MEDIUM   = 1
+-DARK     = 2
+-FLOODING = 1
++OFF       = 0
++ON        = 1
++CLOSED    = 0
++OPEN      = 1
++IDLE      = 0
++ACTIVE    = 1
++OXYDPAIR  = 2
++LIGHT     = 0
++MEDIUM    = 1
++DARK      = 2
++FLOODING  = 1
+ INVISIBLE = -1
+ SMALL     = 0
+ LARGE     = 2
++YIN       = 0
++YANG      = 1
+ 
+ -- color
+ BLACK  = 0
+@@ -84,6 +86,12 @@
+ YELLOW = 3
+ NOCOLOR = nil
+ 
++-- controllers
++CTRL_NONE    = 0
++CTRL_YIN     = 1
++CTRL_YANG    = 2
++CTRL_YINYANG = 3
++
+ -- rotation direction
+ CW  = 0
+ CCW = 1
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2009-01-10 01:10:10 UTC (rev 1443)
++++ trunk/data/models-2d.lua	2009-01-10 23:25:56 UTC (rev 1444)
+@@ -388,6 +388,9 @@
+     DefAlias(&quot;fl-space-force&quot;, &quot;fl_space&quot;)
+     DefAlias(&quot;fl_samba_h&quot;, &quot;fl_samba1&quot;)
+     DefAlias(&quot;fl_samba_v&quot;, &quot;fl_samba2&quot;)
++    DefAlias(&quot;fl_yinyang&quot;, &quot;fl-acblack&quot;)
++    DefAlias(&quot;fl_yinyang_yin&quot;, &quot;fl-acblack&quot;)
++    DefAlias(&quot;fl_yinyang_yang&quot;, &quot;fl-acwhite&quot;)
+ end
+ 
+ ----------------------
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2009-01-10 01:10:10 UTC (rev 1443)
++++ trunk/data/schemas/objects.xml	2009-01-10 23:25:56 UTC (rev 1444)
+@@ -361,6 +361,16 @@
+       &lt;msg name=&quot;_init&quot;/&gt;
+       &lt;msg name=&quot;_performaction&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;fl_yinyang&quot;&gt;
++      &lt;attr name=&quot;friction&quot; default=&quot;5.2&quot;/&gt;
++      &lt;attr name=&quot;adhesion&quot; default=&quot;2.0&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;fl_yinyang_yin&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;0&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;fl_yinyang_yang&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;1&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;it_blocker_new&quot; init=&quot;true&quot;&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;it_brake&quot;/&gt;
+
+Modified: trunk/src/floors/SimpleFloors.cc
+===================================================================
+--- trunk/src/floors/SimpleFloors.cc	2009-01-10 01:10:10 UTC (rev 1443)
++++ trunk/src/floors/SimpleFloors.cc	2009-01-10 23:25:56 UTC (rev 1444)
+@@ -22,6 +22,7 @@
+ 
+ //#include &quot;errors.hh&quot;
+ //#include &quot;main.hh&quot;
++#include &quot;player.hh&quot;
+ #include &quot;world.hh&quot;
+ 
+ namespace enigma {
+@@ -88,13 +89,37 @@
+         sink_speed = server::SwampSinkSpeed;
+         raise_speed = 6.0;
+     }
++
++/* -------------------- Yinyang -------------------- */
++
++    YinyangFloor::YinyangFloor(int initState) : Floor(&quot;fl_yinyang&quot;, 5.2, 2.0) {
++        state = initState;
++    }
+     
++    std::string YinyangFloor::getClass() const {
++        return &quot;fl_yinyang&quot;;
++    }
++        
++    void YinyangFloor::init_model()  {
++        set_model(std::string(&quot;fl_yinyang_&quot;) + ((state == YIN) ? &quot;yin&quot; : &quot;yang&quot;));
++    }
++    
++    ecl::V2 YinyangFloor::process_mouseforce (Actor *a, ecl::V2 force) {
++        if (player::CurrentPlayer() == state)
++            return getAdhesion() * force;
++        else
++            return ecl::V2();
++    }
++    
+     BOOT_REGISTER_START
+-        BootRegister(new Abyss(), &quot;fl_abyss&quot;);
+-        BootRegister(new IceFloor(), &quot;fl_ice&quot;);
+-        BootRegister(new Space(), &quot;fl_space&quot;);
++        BootRegister(new Abyss(),     &quot;fl_abyss&quot;);
++        BootRegister(new IceFloor(),  &quot;fl_ice&quot;);
++        BootRegister(new Space(),     &quot;fl_space&quot;);
+         BootRegister(new Space(true), &quot;fl_space_force&quot;);
+-        BootRegister(new Swamp(), &quot;fl_swamp&quot;);
++        BootRegister(new Swamp(),     &quot;fl_swamp&quot;);
++        BootRegister(new YinyangFloor(0), &quot;fl_yinyang&quot;);
++        BootRegister(new YinyangFloor(0), &quot;fl_yinyang_yin&quot;);
++        BootRegister(new YinyangFloor(1), &quot;fl_yinyang_yang&quot;);
+     BOOT_REGISTER_END
+ 
+ } // namespace enigma
+
+Modified: trunk/src/floors/SimpleFloors.hh
+===================================================================
+--- trunk/src/floors/SimpleFloors.hh	2009-01-10 01:10:10 UTC (rev 1443)
++++ trunk/src/floors/SimpleFloors.hh	2009-01-10 23:25:56 UTC (rev 1444)
+@@ -91,6 +91,31 @@
+         virtual bool is_destructible() const;
+         virtual void get_sink_speed (double &amp;sinkspeed, double &amp;raisespeed) const;        
+     };
++
++    /** 
++     * Yinyang
++     */
++    class YinyangFloor : public Floor {
++        CLONEOBJ(YinyangFloor);
++        
++    private:
++        enum iState {
++            YIN,       ///&lt; player 0 - black image
++            YANG       ///&lt; player 1 - white image
++        };
++
++    public:
++        YinyangFloor(int initState);
++
++        // Object interface
++        virtual std::string getClass() const;
++        
++        // GridObject interface
++        virtual void init_model();
++                
++        // Floor interface
++        virtual ecl::V2 process_mouseforce (Actor *a, ecl::V2 force);
++    };
+ } // namespace enigma
+ 
+ #endif
+
+Modified: trunk/src/floors.cc
+===================================================================
+--- trunk/src/floors.cc	2009-01-10 01:10:10 UTC (rev 1443)
++++ trunk/src/floors.cc	2009-01-10 23:25:56 UTC (rev 1444)
+@@ -741,46 +741,12 @@
+     return Floor::message(m);
+ }
+ 
+-//----------------------------------------
+-// Black and white tiles
+-//----------------------------------------
+-namespace
+-{
+-    class BlackTile : public Floor {
+-        CLONEOBJ(BlackTile);
+-    public:
+-        BlackTile() : Floor (&quot;fl-acblack&quot;, 5.2, 2.0) {}
+ 
+-        ecl::V2 process_mouseforce (Actor *, ecl::V2 force) {
+-            if (player::CurrentPlayer() == 0)
+-                return getAdhesion() * force;
+-            else
+-                return ecl::V2();
+-        }
+-    };
+-
+-    class WhiteTile : public Floor {
+-        CLONEOBJ(WhiteTile);
+-    public:
+-        WhiteTile() : Floor (&quot;fl-acwhite&quot;, 5.2, 2.0) {}
+-
+-        ecl::V2 process_mouseforce (Actor *, ecl::V2 force) {
+-            if (player::CurrentPlayer() == 1)
+-                return getAdhesion() * force;
+-            else
+-                return ecl::V2();
+-        }
+-    };
+-}
+-
+-
+ void InitFloors()
+ {
+     // Floors (most floors are defined in init.lua)
+     Register(new DummyFloor);
+     Register(new Thief);
+-    Register(new WhiteTile);
+-    Register(new BlackTile);
+ 
+     Register(new Gradient);
+     Register(&quot;fl-gradient1&quot;, new Gradient(1));
+
+Modified: trunk/src/items/Crack.cc
+===================================================================
+--- trunk/src/items/Crack.cc	2009-01-10 01:10:10 UTC (rev 1443)
++++ trunk/src/items/Crack.cc	2009-01-10 23:25:56 UTC (rev 1444)
+@@ -91,7 +91,7 @@
+         if (fl != NULL &amp;&amp; fl-&gt;is_destructible()) {
+             Value v = fl-&gt;getAttr(&quot;fragility&quot;);
+             double fragility = getDefaultedAttr(&quot;fragility&quot;, v ? v : Value(server::Fragility));
+-            if (state &lt; DISSOLVING &amp;&amp; DoubleRand(0, 0.9999) &lt; fragility) {
++            if (state &lt; DISSOLVING &amp;&amp; (state &gt; INVISIBLE || DoubleRand(0, 0.9999) &lt; fragility)) {
+                 toggleState();
+                 sound_event(&quot;crack&quot;);
+             }
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2009-01-10 01:10:10 UTC (rev 1443)
++++ trunk/src/items.cc	2009-01-10 23:25:56 UTC (rev 1444)
+@@ -1590,7 +1590,7 @@
+         void actor_leave (Actor *) {
+             if (server::TwoPlayerGame) {
+                 // two players: black / white tile
+-                exchange_floor (&quot;fl-acwhite&quot;, &quot;fl-acblack&quot;);
++                exchange_floor(&quot;fl_yinyang_yang&quot;, &quot;fl_yinyang_yin&quot;);
+             } else {
+                 // one player: left / right accel
+ //                exchange_floor (&quot;fl-
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2009-01-10 01:10:10 UTC (rev 1443)
++++ trunk/src/ox_magnum.cc	2009-01-10 23:25:56 UTC (rev 1444)
+@@ -47,8 +47,8 @@
+     &quot;fl_tigris&quot;,                // OxydMagnum floor 0x0a (common was 'fl-normal')
+     &quot;fl_tigris&quot;,                // OxydMagnum floor 0x0b (common was 'fl-stone')
+     &quot;fl_inverse&quot;,               // OxydMagnum floor 0x0c (common was 'fl_inverse')
+-    &quot;fl-acblack&quot;,               // OxydMagnum floor 0x0d
+-    &quot;fl-acwhite&quot;,               // OxydMagnum floor 0x0e
++    &quot;fl_yinyang_yin&quot;,           // OxydMagnum floor 0x0d
++    &quot;fl_yinyang_yang&quot;,          // OxydMagnum floor 0x0e
+     &quot;fl_swamp&quot;,                 // OxydMagnum floor 0x0f
+     UNUSED,                     // OxydMagnum floor 0x10
+     UNUSED,                     // OxydMagnum floor 0x11
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2009-01-10 01:10:10 UTC (rev 1443)
++++ trunk/src/ox_oxyd1.cc	2009-01-10 23:25:56 UTC (rev 1444)
+@@ -80,8 +80,8 @@
+     &quot;fl_himalaya&quot;,              // Oxyd1 floor 0x0a
+     &quot;fl_himalaya&quot;,              // Oxyd1 floor 0x0b
+     &quot;fl_inverse_gray&quot;,          // Oxyd1 floor 0x0c
+-    &quot;fl-acblack&quot;,               // Oxyd1 floor 0x0d
+-    &quot;fl-acwhite&quot;,               // Oxyd1 floor 0x0e
++    &quot;fl_yinyang_yin&quot;,           // Oxyd1 floor 0x0d
++    &quot;fl_yinyang_yang&quot;,          // Oxyd1 floor 0x0e
+     &quot;fl_swamp&quot;,                 // Oxyd1 floor 0x0f
+     UNUSED,                     // Oxyd1 floor 0x10
+     UNUSED,                     // Oxyd1 floor 0x11
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2009-01-10 01:10:10 UTC (rev 1443)
++++ trunk/src/ox_peroxyd.cc	2009-01-10 23:25:56 UTC (rev 1444)
+@@ -116,8 +116,8 @@
+     &quot;fl_blueslab&quot;,              // PerOxyd floor 0x0a
+     &quot;fl_redslab&quot;,               // PerOxyd floor 0x0b
+     &quot;fl_inverse&quot;,               // PerOxyd floor 0x0c
+-    &quot;fl-acblack&quot;,               // PerOxyd floor 0x0d
+-    &quot;fl-acwhite&quot;,               // PerOxyd floor 0x0e
++    &quot;fl_yinyang_yin&quot;,           // PerOxyd floor 0x0d
++    &quot;fl_yinyang_yang&quot;,          // PerOxyd floor 0x0e
+     &quot;fl_swamp&quot;,                 // PerOxyd floor 0x0f
+     UNUSED,                     // PerOxyd floor 0x10
+     UNUSED,                     // PerOxyd floor 0x11
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2009-01-10 01:10:10 UTC (rev 1443)
++++ trunk/src/stones_simple.cc	2009-01-10 23:25:56 UTC (rev 1444)
+@@ -355,10 +355,10 @@
+         }
+         
+         void init_model() {
+-            string modelname = &quot;fl-gray&quot;;
+-            if (Floor *fl = GetFloor(get_pos()))
+-                modelname = fl-&gt;get_kind();
+-            set_model(modelname);
++            if (Floor *fl = GetFloor(get_pos())) {
++                set_model(fl-&gt;get_kind());
++            } else
++                ASSERT(false, XLevelRuntime, &quot;Chameleon Stone: Floor must be set before stone&quot;);
+         }
+ 
+         bool is_floating() const 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000872.html">[Enigma-game-svn] r1443 - in trunk: data src
+</A></li>
+	<LI>Next message: <A HREF="000874.html">[Enigma-game-svn] r1445 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#873">[ date ]</a>
+              <a href="thread.html#873">[ thread ]</a>
+              <a href="subject.html#873">[ subject ]</a>
+              <a href="author.html#873">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

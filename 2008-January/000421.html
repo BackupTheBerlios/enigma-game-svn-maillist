@@ -1,0 +1,548 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r989 - in trunk/src: . stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r989%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200801192103.m0JL3A5Z030715%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000420.html">
+   <LINK REL="Next"  HREF="000422.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r989 - in trunk/src: . stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r989%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200801192103.m0JL3A5Z030715%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r989 - in trunk/src: . stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Jan 19 22:03:10 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000420.html">[Enigma-game-svn] r988 - trunk/data/levels/lib
+</A></li>
+        <LI>Next message: <A HREF="000422.html">[Enigma-game-svn] r990 - / team_levelpacks	team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#421">[ date ]</a>
+              <a href="thread.html#421">[ thread ]</a>
+              <a href="subject.html#421">[ subject ]</a>
+              <a href="author.html#421">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-01-19 22:03:09 +0100 (Sat, 19 Jan 2008)
+New Revision: 989
+
+Modified:
+   trunk/src/Object.cc
+   trunk/src/Value.cc
+   trunk/src/Value.hh
+   trunk/src/items.cc
+   trunk/src/lua.cc
+   trunk/src/stones/BlockerStone.cc
+   trunk/src/stones/BlockerStone.hh
+   trunk/src/stones/FourSwitch.cc
+   trunk/src/stones/OxydStone.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1: Reengineering
+- Value: prefer existing object name to id as reference for OBJECTs
+- Value: fix a few forgotten special handlings for other types
+- Fourswitch/Boulder react on second/falling _trigger instead of first
+- Blocker: add &quot;autoclose&quot; attribute and feature - close on passing actors
+- Blocker: add target/action, perform action on state change - react on
+     passing bloulder
+- Blocker: autoname all instances with internal names to avoid problems
+     with lost id references due to it/st transformations.
+- name Attribute: the key &quot;name&quot; can be omitted in object definitions like
+  ti[&quot;x&quot;] = {&quot;st_boulder&quot;, orientation=SOUTH, &quot;myboulder&quot;}
+
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2008-01-18 23:48:34 UTC (rev 988)
++++ trunk/src/Object.cc	2008-01-19 21:03:09 UTC (rev 989)
+@@ -180,9 +180,10 @@
+         if (Value v = getAttr(&quot;name&quot;)) {
+             std::string name(v);
+             UnnameObject(this);
+-            if (Value v = target-&gt;getAttr(&quot;name&quot;)) {
+-                target-&gt;warning(&quot;name '%s' overwritten by '%s'&quot;,
+-                                v.to_string().c_str(), name.c_str());
++            if (Value old = target-&gt;getAttr(&quot;name&quot;)) {
++                std::string oldname(old);
++                if ( oldname.size() &gt; 0 &amp;&amp; oldname[0] != '$' &amp;&amp; name.size() &gt; 0 &amp;&amp; name[0] != '$' )
++                    target-&gt;warning(&quot;name '%s' overwritten by '%s'&quot;, oldname.c_str(), name.c_str());
+                 UnnameObject(target);
+             }
+             NameObject(target, name);
+@@ -197,8 +198,10 @@
+             // copy user attributes starting with &quot;_&quot; and
+             // target and actions including their stated versions
+             if ( it-&gt;first.find(&quot;_&quot;) == 0 || it-&gt;first.find(&quot;target&quot;) == 0
+-                    || it-&gt;first.find(&quot;action&quot;) == 0)
++                    || it-&gt;first.find(&quot;action&quot;) == 0) {
+                 target-&gt;set_attrib(it-&gt;first, it-&gt;second);
++//                Log &lt;&lt; &quot;Identity transfer key &quot; &lt;&lt; it-&gt;first &lt;&lt; &quot; - value &quot; &lt;&lt; it-&gt;second.to_string() &lt;&lt; &quot;\n&quot;;
++            }
+         }
+     }
+     
+
+Modified: trunk/src/Value.cc
+===================================================================
+--- trunk/src/Value.cc	2008-01-18 23:48:34 UTC (rev 988)
++++ trunk/src/Value.cc	2008-01-19 21:03:09 UTC (rev 989)
+@@ -58,9 +58,15 @@
+     }
+     
+     Value::Value(Object *obj) : type (OBJECT) {
+-         if (obj != NULL)
+-             val.dval[0] = obj-&gt;getId();
+-         else
++        if (obj != NULL) {
++            Value v = obj-&gt;getAttr(&quot;name&quot;);
++            if (v &amp;&amp; v.type == STRING &amp;&amp; strcmp(v.val.str, &quot;&quot;) != 0) {
++                val.str = new char[strlen(v.val.str)+1];
++                strcpy(val.str, v.val.str);
++                type = NAMEDOBJECT;
++            } else
++                val.dval[0] = obj-&gt;getId();
++        } else
+              val.dval[0] = 0;
+     }
+     
+@@ -82,7 +88,7 @@
+         }
+         val.str =  new char[descriptor.size() + 1];
+         strcpy(val.str, descriptor.c_str());
+-    //    Log &lt;&lt; &quot;Value ObjectList '&quot; &lt;&lt; descriptor &lt;&lt; &quot;'\n&quot;;
++//        Log &lt;&lt; &quot;Value ObjectList '&quot; &lt;&lt; descriptor &lt;&lt; &quot;'\n&quot;;
+     }
+     
+     Value::Value(TokenList aList) : type (TOKENS) {
+@@ -91,6 +97,7 @@
+         for (it = aList.begin(); it != aList.end(); ++it) {
+             switch ((*it).type) {
+                 case STRING :
++                case NAMEDOBJECT :
+                     ASSERT((*it).val.str[0] != 0, XLevelRuntime, &quot;TokenList: illegal empty string value&quot;);                
+                     descriptor.append((*it).val.str);
+                     break;
+@@ -110,7 +117,7 @@
+         val.str =  new char[descriptor.size() + 1];
+         strcpy(val.str, descriptor.c_str());
+      
+-    //    Log &lt;&lt; &quot;Value TokenList '&quot; &lt;&lt; descriptor &lt;&lt; &quot;'\n&quot;;
++//        Log &lt;&lt; &quot;Value TokenList '&quot; &lt;&lt; descriptor &lt;&lt; &quot;'\n&quot;;
+     }
+     
+     Value::Value(ecl::V2 pos) : type (POSITION) {
+@@ -143,6 +150,10 @@
+             case OBJECT :
+                 val.dval[0] = (double) NULL;
+                 break;
++            case NAMEDOBJECT:
++                ASSERT(false, XLevelRuntime, &quot;Value: illegal type usage&quot;);
++                break;
++            default:;
+         }
+     }
+     
+@@ -170,6 +181,14 @@
+                     assign(other.val.str);
+                     type = GROUP;
+                     break;
++                case TOKENS:
++                    assign(other.val.str);
++                    type = TOKENS;
++                    break;
++                case NAMEDOBJECT:
++                    assign(other.val.str);
++                    type = NAMEDOBJECT;
++                    break;
+                 default:
+                     clear();
+                     type = other.type;
+@@ -191,6 +210,7 @@
+                 case STRING :
+                 case GROUP :
+                 case TOKENS :
++                case NAMEDOBJECT :
+                     return strcmp(val.str, other.val.str) == 0;
+                 case POSITION :
+                     return (val.dval[0] == other.val.dval[0]) &amp;&amp; (val.dval[1] == other.val.dval[1]);
+@@ -254,6 +274,7 @@
+         switch (type) {
+             case OBJECT:
+                 return Object::getObject(round_nearest&lt;int&gt;(val.dval[0]));
++            case NAMEDOBJECT:
+             case STRING:
+                 return GetNamedObject(val.str);            
+             default: 
+@@ -271,6 +292,7 @@
+                     break;
+                 }
+                 // else it is a single object name - fall through
++            case NAMEDOBJECT:
+             case OBJECT:
+                 result.push_back(*this);
+                 break;
+@@ -295,6 +317,7 @@
+         TokenList result;
+         switch (type) {
+             case OBJECT:
++            case NAMEDOBJECT:
+             case STRING:
+             case GROUP:
+                 result.push_back(*this);
+@@ -375,7 +398,9 @@
+     void Value::clear() {
+         switch (type) {
+             case STRING:
++            case NAMEDOBJECT:
+             case GROUP:
++            case TOKENS:
+                delete[] val.str;
+                break;
+         }
+@@ -383,7 +408,13 @@
+     }
+     
+     Value::Type Value::getType() const {
+-        return type;
++        switch (type) {
++            case NAMEDOBJECT :
++                return OBJECT;
++                break;
++            default:
++                return type;
++        }
+     }
+     
+     double Value::get_double() const throw(){
+
+Modified: trunk/src/Value.hh
+===================================================================
+--- trunk/src/Value.hh	2008-01-18 23:48:34 UTC (rev 988)
++++ trunk/src/Value.hh	2008-01-19 21:03:09 UTC (rev 989)
+@@ -93,7 +93,8 @@
+                       ///&lt; identifier.
+             GROUP,    ///&lt; Value is a group of objects.
+             POSITION, ///&lt; Value is a position
+-            TOKENS    ///&lt; Value is a list of token values
++            TOKENS,   ///&lt; Value is a list of token values
++            NAMEDOBJECT  ///&lt; internal Value type for named objects - public type is OBJECT
+         };
+ 
+         Value();                       ///&lt; Constructor for NIL value that 
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-01-18 23:48:34 UTC (rev 988)
++++ trunk/src/items.cc	2008-01-19 21:03:09 UTC (rev 989)
+@@ -2644,7 +2644,6 @@
+      * A BlockerItem can be killed by a BrakeItem being dropped.
+      */
+     class BlockerItem : public Item, public TimeHandler {
+-        CLONEOBJ(BlockerItem);
+         DECL_TRAITS;
+     private:
+         enum iState {
+@@ -2665,6 +2664,8 @@
+         ~BlockerItem();
+ 
+         // Object interface
++        virtual BlockerItem *clone();
++        virtual void dispose();
+         virtual Value message(const Message &amp;m);
+ 
+         // StateObject interface
+@@ -2676,6 +2677,7 @@
+         virtual void on_creation(GridPos p);
+         virtual void on_removal(GridPos p);
+         virtual void init_model();
++        virtual void actor_leave(Actor *a);
+ 
+         // Item interface
+         virtual void stone_change(Stone *st);
+@@ -2699,6 +2701,16 @@
+         GameTimer.remove_alarm (this);
+     }
+ 
++    BlockerItem * BlockerItem::clone() {
++        BlockerItem * dup = new BlockerItem(*this);
++        NameObject(dup, &quot;$BlockerItem#&quot;);  // auto name object to avoid problems with object values
++        return dup;
++    }
++    
++    void BlockerItem::dispose() {
++        delete this;
++    }
++
+     Value BlockerItem::message(const Message &amp;m) {
+         if (m.message == &quot;_init&quot;) { 
+             if (Stone *st = GetStone(get_pos())) {
+@@ -2709,6 +2721,9 @@
+                         setIState(LOCKED);
+             }
+             return Item::message(m);    // pass on init message
++        } else if (m.message ==&quot;_performaction&quot;) {
++            performAction(true);
++            return Value();
+         }
+         return Item::message(m);
+     }
+@@ -2762,6 +2777,14 @@
+         set_model(&quot;it-blocker&quot;);
+     }
+     
++    void BlockerItem::actor_leave(Actor *a) {
++        if (Value v = getAttr(&quot;autoclose&quot;)) {
++            if (v.to_bool()) {
++                setState(0);     // close
++            }
++        }
++    }
++    
+     void BlockerItem::stone_change(Stone *st) {
+         if (st != NULL) {
+             if (st-&gt;is_kind(&quot;st_boulder&quot;)) { // boulder arrived
+@@ -2821,6 +2844,9 @@
+         Stone *st = MakeStone(&quot;st_blocker_new&quot;);
+         SetStone(get_pos(), st);
+         transferIdentity(st);
++        if (Value v = getAttr(&quot;autoclose&quot;))
++            st-&gt;set_attrib(&quot;autoclose&quot;, v); 
++        SendMessage(st, &quot;_performaction&quot;);
+         kill();
+     }
+ 
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-01-18 23:48:34 UTC (rev 988)
++++ trunk/src/lua.cc	2008-01-19 21:03:09 UTC (rev 989)
+@@ -1080,6 +1080,9 @@
+             } else {
+                 obj-&gt;set_attrib(key, to_value(L, -2));
+             }
++         } else if (lua_tointeger(L, -1) == 2) {  // second entry without a string key is taken as name
++             if (lua_isstring(L, -2))
++                 NameObject(obj, lua_tostring(L, -2));
+          }
+          lua_pop(L, 2);  // remove copy key + value, leave original key for loop
+     }    
+@@ -1088,6 +1091,12 @@
+ static int setAttributes(lua_State *L) {
+     // 
+     Object *obj = to_object(L, 1);
++    lua_rawgeti(L, -1, 1);  // check if any unnamed attribute exists
++    if (!lua_isnil(L, -1)) {
++        throwLuaError(L, &quot;Set attribute: encountered attribute without key name&quot;);
++        return 0;
++    }
++    lua_pop(L, 1);  // remove unnamed attribute or nil
+     setObjectAttributes(obj, L);
+     return 0;
+ }
+@@ -1684,13 +1693,13 @@
+         name = name.substr(1);
+     }
+     
+-    if (name == &quot;fl-nil&quot;) {
++    if (name == &quot;fl_nil&quot;) {
+         KillFloor(GridPos(xi, yi));
+         return 0;
+-    } else if (name == &quot;st-nil&quot;) {
++    } else if (name == &quot;st_nil&quot;) {
+         KillStone(GridPos(xi, yi));
+         return 0;
+-    } else if (name == &quot;it-nil&quot;) {
++    } else if (name == &quot;it_nil&quot;) {
+         KillItem(GridPos(xi, yi));
+         return 0;
+     }
+
+Modified: trunk/src/stones/BlockerStone.cc
+===================================================================
+--- trunk/src/stones/BlockerStone.cc	2008-01-18 23:48:34 UTC (rev 988)
++++ trunk/src/stones/BlockerStone.cc	2008-01-19 21:03:09 UTC (rev 989)
+@@ -29,10 +29,23 @@
+         state = solid ? SOLID : GROWING; 
+     }
+ 
++    BlockerStone * BlockerStone::clone() {
++        BlockerStone * dup = new BlockerStone(*this);
++        NameObject(dup, &quot;$BlockerStone#&quot;);  // auto name object to avoid problems with object values
++        return dup;
++    }
++    
++    void BlockerStone::dispose() {
++        delete this;
++    }
++
+     Value BlockerStone::message(const Message &amp;m) {
+         if (m.message == &quot;_trigger&quot;) {
+             setIState(SHRINKING);    // same as &quot;open&quot; -- no toggle to avoid race condition of boulders
+             return Value();
++        } else if (m.message ==&quot;_performaction&quot;) {
++            performAction(false);
++            return Value();
+         }
+         return Stone::message(m);
+     }
+@@ -80,6 +93,9 @@
+                 Item *it = MakeItem(&quot;it_blocker_new&quot;);
+                 SetItem(get_pos(), it);
+                 transferIdentity(it);
++                if (Value v = getAttr(&quot;autoclose&quot;))
++                    it-&gt;set_attrib(&quot;autoclose&quot;, v); 
++                SendMessage(it, &quot;_performaction&quot;);
+                 KillStone(get_pos());
+                 break;
+             }
+@@ -98,8 +114,9 @@
+     }
+ 
+     void BlockerStone::actor_contact(Actor *a) {
+-        if ((state == GROWING &amp;&amp; server::GameCompatibility != GAMET_PEROXYD) ||
+-                (state == SOLID &amp;&amp; server::GameCompatibility == GAMET_PEROXYD)) {
++        if (!(getDefaultedAttr(&quot;autoclose&quot;, false).to_bool()) &amp;&amp; (
++                (state == GROWING &amp;&amp; server::GameCompatibility != GAMET_PEROXYD) ||
++                (state == SOLID &amp;&amp; server::GameCompatibility == GAMET_PEROXYD))) {
+             SendMessage(a, &quot;shatter&quot;);
+         }
+     }
+
+Modified: trunk/src/stones/BlockerStone.hh
+===================================================================
+--- trunk/src/stones/BlockerStone.hh	2008-01-18 23:48:34 UTC (rev 988)
++++ trunk/src/stones/BlockerStone.hh	2008-01-19 21:03:09 UTC (rev 989)
+@@ -37,7 +37,6 @@
+      * TODO animation slowed down by a major factor for PerOxyd compatibility
+      */
+     class BlockerStone : public Stone {
+-        CLONEOBJ(BlockerStone);
+         DECL_TRAITS;
+     private:
+         enum iState {
+@@ -49,6 +48,8 @@
+         BlockerStone(bool solid);
+         
+         // Object interface
++        virtual BlockerStone *clone();
++        virtual void dispose();
+         virtual Value message(const Message &amp;m);
+         
+         // StateObject interface
+@@ -64,10 +65,8 @@
+         
+         // Stone interface
+         virtual StoneResponse collision_response(const StoneContact &amp;sc);
+-//        virtual void actor_hit(const StoneContact &amp;sc);
+-        virtual void actor_contact (Actor * a);
+-        virtual void actor_inside (Actor * a);
+-//        virtual const char *collision_sound();
++        virtual void actor_contact(Actor * a);
++        virtual void actor_inside(Actor * a);
+         
+     private:
+         void setIState(iState newState);
+
+Modified: trunk/src/stones/FourSwitch.cc
+===================================================================
+--- trunk/src/stones/FourSwitch.cc	2008-01-18 23:48:34 UTC (rev 988)
++++ trunk/src/stones/FourSwitch.cc	2008-01-19 21:03:09 UTC (rev 989)
+@@ -28,11 +28,15 @@
+     }
+     
+     Value FourSwitch::message(const Message &amp;m) {
+-        if (m.message == &quot;signal&quot; || m.message == &quot;_trigger&quot;) {
++        if (m.message == &quot;signal&quot;) {
+             if ((((int)(m.value)) % 2 == 1) || (server::GameCompatibility == enigma::GAMET_ENIGMA
+                     &amp;&amp; (server::EnigmaCompatibility &lt; 1.10))) // Enigma 1.00 did turn on 0, too
+                 turn();
+             return Value();
++        } else if (m.message == &quot;_trigger&quot;) {
++            if (m.value.to_bool() == false)
++                turn();
++            return Value();
+         }
+         return Stone::message(m);
+     }
+
+Modified: trunk/src/stones/OxydStone.cc
+===================================================================
+--- trunk/src/stones/OxydStone.cc	2008-01-18 23:48:34 UTC (rev 988)
++++ trunk/src/stones/OxydStone.cc	2008-01-19 21:03:09 UTC (rev 989)
+@@ -863,7 +863,7 @@
+             shuffleColors();
+             return Value();
+         }
+-        else if (m.message == &quot;_trigger&quot; || m.message == &quot;toggle&quot;|| m.message == &quot;spitter&quot;) {
++        else if ((m.message == &quot;_trigger&quot;  &amp;&amp; m.value.to_bool())|| m.message == &quot;toggle&quot;|| m.message == &quot;spitter&quot;) {
+             tryOpen();
+             return Value();
+         }
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-01-18 23:48:34 UTC (rev 988)
++++ trunk/src/world.cc	2008-01-19 21:03:09 UTC (rev 989)
+@@ -364,7 +364,7 @@
+     ASSERT(obj, XLevelRuntime, &quot;unname: no object given&quot;);
+     if (Value v = obj-&gt;getAttr(&quot;name&quot;)) {
+         m_objnames.remove(v.to_string());
+-        obj-&gt;set_attrib(&quot;name&quot;, &quot;&quot;);
++        obj-&gt;set_attrib(&quot;name&quot;, &quot;&quot;);   // TODO alist.hh add delete op
+     }
+ }
+ 
+@@ -1612,11 +1612,11 @@
+ 
+ void NameObject(Object *obj, const std::string &amp;name)
+ {
+-    string old_name;
++    string oldname;
+     if (Value v = obj-&gt;getAttr(&quot;name&quot;)) {
+-        old_name = v.to_string();
+-        obj-&gt;warning(&quot;name '%s' overwritten by '%s'&quot;,
+-                     old_name.c_str(), name.c_str());
++        oldname = v.to_string();
++        if ( oldname.size() &gt; 0 &amp;&amp; oldname[0] != '$' &amp;&amp; name.size() &gt; 0 &amp;&amp; name[0] != '$' )
++            obj-&gt;warning(&quot;name '%s' overwritten by '%s'&quot;, oldname.c_str(), name.c_str());
+         UnnameObject(obj);
+     }
+     level-&gt;name_object (obj, name);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000420.html">[Enigma-game-svn] r988 - trunk/data/levels/lib
+</A></li>
+	<LI>Next message: <A HREF="000422.html">[Enigma-game-svn] r990 - / team_levelpacks	team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#421">[ date ]</a>
+              <a href="thread.html#421">[ thread ]</a>
+              <a href="subject.html#421">[ subject ]</a>
+              <a href="author.html#421">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

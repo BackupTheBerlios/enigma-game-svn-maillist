@@ -1,0 +1,177 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1153 - in trunk: data src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1153%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200805192021.m4JKL3fh001255%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000585.html">
+   <LINK REL="Next"  HREF="000587.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1153 - in trunk: data src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1153%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200805192021.m4JKL3fh001255%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1153 - in trunk: data src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon May 19 22:21:03 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000585.html">[Enigma-game-svn] r1152 - trunk/doc/reference
+</A></li>
+        <LI>Next message: <A HREF="000587.html">[Enigma-game-svn] r1154 - in trunk/src: . stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#586">[ date ]</a>
+              <a href="thread.html#586">[ thread ]</a>
+              <a href="subject.html#586">[ subject ]</a>
+              <a href="author.html#586">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-05-19 22:21:02 +0200 (Mon, 19 May 2008)
+New Revision: 1153
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/src/WorldProxy.cc
+   trunk/src/server.cc
+   trunk/src/server.hh
+   trunk/src/stones/OxydStone.cc
+Log:
+Trunk 1.1: new API
+- new world attribute &quot;MaxOxydColor&quot; allows limitation of color usage,
+  defaults to 7 (BLACK), allows compatible addition of new oxydcolors
+- resolver autotile: range rule number chars starting with 1 for first char
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2008-05-18 13:22:55 UTC (rev 1152)
++++ trunk/data/api2init.lua	2008-05-19 20:21:02 UTC (rev 1153)
+@@ -249,7 +249,7 @@
+             if #key == #rule[1] and string.sub(key, 1, -2) == string.sub(rule[1], 1, -2)
+                     and first &lt;= candidate and candidate &lt;= last then
+                 if ti[key] == nil then
+-                    res.autotile_newtile(key, ti[rule[3]], candidate - first)
++                    res.autotile_newtile(key, ti[rule[3]], candidate - first + 1)
+                 end
+                 return ti[key]
+             end
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2008-05-18 13:22:55 UTC (rev 1152)
++++ trunk/src/WorldProxy.cc	2008-05-19 20:21:02 UTC (rev 1153)
+@@ -19,8 +19,10 @@
+ 
+ #include &quot;WorldProxy.hh&quot;
+ #include &quot;display.hh&quot;
++#include &quot;errors.hh&quot;
+ #include &quot;server.hh&quot;
+ #include &quot;world.hh&quot;
++#include &quot;stones/OxydStone.hh&quot;
+ 
+ namespace enigma {
+  
+@@ -77,6 +79,8 @@
+             return server::MagnetForce;
+         } else if (key == &quot;MagnetRange&quot;) {
+             return server::MagnetRange;
++        } else if (key == &quot;MaxOxydColor&quot;) {
++            return server::MaxOxydColor;
+         } else if (key == &quot;SlopeForce&quot;) {
+             return server::SlopeForce;
+         } else if (key == &quot;SwampSinkSpeed&quot;) {
+@@ -123,6 +127,10 @@
+         } else if (key == &quot;MagnetRange&quot;) {
+             server::MagnetRange = val;
+             BroadcastMessage(&quot;_updateglobals&quot;, &quot;it_magnet&quot;, GRID_ITEMS_BIT);
++        } else if (key == &quot;MaxOxydColor&quot;) {
++            server::MaxOxydColor = val;
++            ASSERT(server::MaxOxydColor &gt;= 0 &amp;&amp; server::MaxOxydColor &lt; OxydStone::COLORCOUNT, XLevelRuntime,
++                    &quot;Attribute 'MaxOxydColor' value is out of range.&quot;);
+         } else if (key == &quot;SlopeForce&quot;) {
+             server::SlopeForce = val;
+         } else if (key == &quot;SwampSinkSpeed&quot;) {
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2008-05-18 13:22:55 UTC (rev 1152)
++++ trunk/src/server.cc	2008-05-19 20:21:02 UTC (rev 1153)
+@@ -100,6 +100,7 @@
+ lev::levelStatusType   server::LevelStatus; // no Lua access
+ double   server::MagnetForce;
+ double   server::MagnetRange;
++int      server::MaxOxydColor;
+ int32_t  server::RandomState;               // no Lua access
+ double   server::SlopeForce;
+ double   server::SwampSinkSpeed;
+@@ -250,6 +251,7 @@
+     server::SwampSinkSpeed    = 4;
+     server::MagnetForce       = 30;
+     server::MagnetRange       = 10;
++    server::MaxOxydColor      = 7;    // for compatibility
+     server::WormholeForce     = 30;
+     server::WormholeRange     = 10;
+     server::HoleForce         = 1.0;
+
+Modified: trunk/src/server.hh
+===================================================================
+--- trunk/src/server.hh	2008-05-18 13:22:55 UTC (rev 1152)
++++ trunk/src/server.hh	2008-05-19 20:21:02 UTC (rev 1153)
+@@ -89,6 +89,8 @@
+     // Really: probability that a floor tile will crack when an actor
+     // enters or leaves it.
+     extern double   Brittleness;
++    
++    extern int      MaxOxydColor;
+ 
+     extern double   WaterSinkSpeed;
+ 
+
+Modified: trunk/src/stones/OxydStone.cc
+===================================================================
+--- trunk/src/stones/OxydStone.cc	2008-05-18 13:22:55 UTC (rev 1152)
++++ trunk/src/stones/OxydStone.cc	2008-05-19 20:21:02 UTC (rev 1153)
+@@ -46,7 +46,7 @@
+     unsigned int OxydStone::logBadFrameCount;
+     
+     unsigned short OxydStone::numColorsAvailable() {
+-        return COLORCOUNT;  // may dependent on enigma compatibility in future!
++        return  server::MaxOxydColor + 1;
+     }
+     
+     void OxydStone::addShuffleRule(RuleType type, unsigned short limit, Value group1, Value group2) {
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000585.html">[Enigma-game-svn] r1152 - trunk/doc/reference
+</A></li>
+	<LI>Next message: <A HREF="000587.html">[Enigma-game-svn] r1154 - in trunk/src: . stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#586">[ date ]</a>
+              <a href="thread.html#586">[ thread ]</a>
+              <a href="subject.html#586">[ subject ]</a>
+              <a href="author.html#586">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,651 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1312 - in trunk: data data/levels/enigma_vii	data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1312%20-%20in%20trunk%3A%20data%20data/levels/enigma_vii%0A%09data/schemas%20src%20src/stones&In-Reply-To=%3C200809082246.m88MkeY4013127%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000741.html">
+   <LINK REL="Next"  HREF="000743.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1312 - in trunk: data data/levels/enigma_vii	data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1312%20-%20in%20trunk%3A%20data%20data/levels/enigma_vii%0A%09data/schemas%20src%20src/stones&In-Reply-To=%3C200809082246.m88MkeY4013127%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1312 - in trunk: data data/levels/enigma_vii	data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Sep  9 00:46:40 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000741.html">[Enigma-game-svn] r1311 - trunk/data/levels/enigma_viii
+</A></li>
+        <LI>Next message: <A HREF="000743.html">[Enigma-game-svn] r1313 - trunk/src/floors
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#742">[ date ]</a>
+              <a href="thread.html#742">[ thread ]</a>
+              <a href="subject.html#742">[ subject ]</a>
+              <a href="author.html#742">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-09-09 00:46:29 +0200 (Tue, 09 Sep 2008)
+New Revision: 1312
+
+Added:
+   trunk/src/floors/
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/levels/enigma_vii/duffy151_3.xml
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/floors.cc
+   trunk/src/floors.hh
+   trunk/src/ox_extra.cc
+   trunk/src/ox_magnum.cc
+   trunk/src/ox_oxyd1.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/stones.cc
+   trunk/src/stones/WindowStone.cc
+   trunk/src/stones/WindowStone.hh
+   trunk/src/stones_complex.cc
+Log:
+Trunk 1.1: new API reengineering
+- bridge floor - complete rewrite:
+  - rename to fl_bridge, fl_bridge_gc, fl_bridge_bw, fl_bridge_bn
+  - attribute flavor, values &quot;gc&quot; (grey centered), &quot;bw&quot; (brown from west),
+    &quot;bn&quot; (brown form north)
+  - full StateObject support: state attribute of OPEN, CLOSED
+  - default state is OPEN
+  - message &quot;signal&quot; now with values 0/1
+  - message &quot;toggle&quot; instead &quot;openclose&quot;
+  - stones not floating on bridges do fully close it - actors can pass
+  - snapshot principle: stones on bridges are evaluated on initialization
+    and on any set operation, closing the bridge according to the float feature
+- fix Floor: do set attributes in class hierarchy - not directly on Object
+- fix Window: do not shatter marbles on move
+- change Puzzle: hollow puzzle is no longer floating - thus pressing triggers
+    and bridges, too
+- fix level &quot;Temple of Gold&quot; - usage of bridge message &quot;signal&quot;
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-09-08 13:04:11 UTC (rev 1311)
++++ trunk/data/api1init.lua	2008-09-08 22:46:29 UTC (rev 1312)
+@@ -45,6 +45,7 @@
+ }
+ 
+ RenamingObjectsNew2Old = {
++    fl_bridge = &quot;fl-bridge&quot;,
+     it_blocker = &quot;it-blocker&quot;,
+     it_blocker_new = &quot;it-blocker-new&quot;,
+     it_brake = &quot;it-brake&quot;,
+@@ -255,7 +256,14 @@
+ end
+ 
+ function enigma.MakeObject(name)
+-    if name == &quot;st-key&quot; then
++    if name == &quot;fl-bridge-open&quot; then
++        local obj = enigma._MakeObject(&quot;fl_bridge&quot;)
++        return obj
++    elseif name == &quot;fl-bridge-closed&quot; then
++        local obj = enigma._MakeObject(&quot;fl_bridge&quot;)
++        enigma._SetAttrib(obj, &quot;state&quot;, 0)
++        return obj
++    elseif name == &quot;st-key&quot; then
+         local obj = enigma._MakeObject(&quot;st_key&quot;)
+         -- Old API keycode default was 0 for st-key, but 1 for it-key!
+         enigma._SetAttrib(obj, &quot;code&quot;, 0)
+@@ -541,6 +549,13 @@
+          _key = &quot;faces&quot;
+          if val == &quot;h&quot; then _val = &quot;ns&quot; else _val = &quot;ew&quot; end
+      end
++     if key == &quot;type&quot; and _obj_name == &quot;fl-bridge&quot; then
++         _key = &quot;flavor&quot;
++         if val == &quot;x&quot; then _val = &quot;bw&quot;
++         elseif val == &quot;y&quot; then _val = &quot;bn&quot;
++         else _val = &quot;gc&quot;
++         end
++     end
+      enigma._SetAttrib(obj, _key, _val)
+ end
+ 
+@@ -585,10 +600,17 @@
+          _key = &quot;state&quot;
+      end
+      if key == &quot;type&quot; and _obj_name == &quot;st-door&quot; then
+-         faces = enigma._GetAttrib(obj, &quot;faces&quot;)
++         local faces = enigma._GetAttrib(obj, &quot;faces&quot;)
+          if faces == &quot;ns&quot; then val = &quot;h&quot; else val = &quot;v&quot; end
+          return val
+      end
++     if key == &quot;type&quot; and _obj_name == &quot;fl-bridge&quot; then
++         local flavor = enigma._GetAttrib(obj, &quot;flavor&quot;)
++         if flavor == &quot;bw&quot; then return &quot;x&quot;
++         elseif flavor == &quot;bn&quot; then return &quot;y&quot;
++         else return &quot;a&quot;
++         end
++     end
+ 
+      local val = enigma._GetAttrib(obj, _key)
+      
+@@ -661,6 +683,7 @@
+ end
+ 
+ MessageRenaming = {
++    fl_bridge__openclose = &quot;toggle&quot;,
+     it_blocker__trigger = &quot;toggle&quot;,
+     it_blocker__openclose = &quot;toggle&quot;,
+     [&quot;it-burnable__trigger&quot;] = &quot;ignite&quot;,
+
+Modified: trunk/data/levels/enigma_vii/duffy151_3.xml
+===================================================================
+--- trunk/data/levels/enigma_vii/duffy151_3.xml	2008-09-08 13:04:11 UTC (rev 1311)
++++ trunk/data/levels/enigma_vii/duffy151_3.xml	2008-09-08 22:46:29 UTC (rev 1312)
+@@ -3,7 +3,7 @@
+   &lt;el:protected&gt;
+     &lt;el:info el:type=&quot;level&quot;&gt;
+       &lt;el:identity el:title=&quot;Temple of Gold&quot; el:subtitle=&quot;&quot; el:id=&quot;duffy151&quot;/&gt;
+-      &lt;el:version el:score=&quot;3&quot; el:release=&quot;3&quot; el:revision=&quot;6&quot; el:status=&quot;released&quot;/&gt;
++      &lt;el:version el:score=&quot;3&quot; el:release=&quot;3&quot; el:revision=&quot;7&quot; el:status=&quot;released&quot;/&gt;
+       &lt;el:author  el:name=&quot;Jacob Scott&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
+       &lt;el:copyright&gt;Copyright &#169; 2007 Jacob Scott&lt;/el:copyright&gt;
+       &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
+@@ -248,7 +248,7 @@
+ 
+ function showbridges(value, sender)
+     for i = 1,bridgecount do
+-        SendMessage(enigma.GetNamedObject(&quot;bridge#&quot;..i), &quot;signal&quot;, value)
++        SendMessage(enigma.GetNamedObject(&quot;bridge#&quot;..i), &quot;toggle&quot;, value)
+     end
+ end
+ 
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-09-08 13:04:11 UTC (rev 1311)
++++ trunk/data/schemas/objects.xml	2008-09-08 22:46:29 UTC (rev 1312)
+@@ -112,6 +112,23 @@
+       &lt;msg name=&quot;kill&quot;/&gt;
+       &lt;msg name=&quot;toggle&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;fl&quot; abstract=&quot;true&quot;/&gt;
++    &lt;object name=&quot;fl_bridge&quot;&gt;
++      &lt;attr name=&quot;flavor&quot; default=&quot;gc&quot;/&gt;
++      &lt;msg name=&quot;close&quot;/&gt;
++      &lt;msg name=&quot;open&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++      &lt;msg name=&quot;_init&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;fl_bridge_gc&quot;&gt;
++      &lt;attr name=&quot;flavor&quot; value=&quot;gc&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;fl_bridge_bw&quot;&gt;
++      &lt;attr name=&quot;flavor&quot; value=&quot;bw&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;fl_bridge_bn&quot;&gt;
++      &lt;attr name=&quot;flavor&quot; value=&quot;bn&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;it&quot; abstract=&quot;true&quot;/&gt;
+     &lt;object name=&quot;it_blocker&quot;&gt;
+       &lt;attr name=&quot;autoclose&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-09-08 13:04:11 UTC (rev 1311)
++++ trunk/src/Makefile.am	2008-09-08 22:46:29 UTC (rev 1312)
+@@ -145,6 +145,8 @@
+ 	XMLtoLocal.hh		\
+ 	XMLtoUtf8.cc		\
+ 	XMLtoUtf8.hh		\
++	floors/BridgeFloor.cc	\
++	floors/BridgeFloor.hh	\
+ 	gui/ErrorMenu.cc	\
+ 	gui/ErrorMenu.hh	\
+ 	gui/GameMenu.cc		\
+@@ -185,18 +187,6 @@
+ 	gui/TextField.hh	\
+ 	gui/widgets.cc		\
+ 	gui/widgets.hh		\
+-	lev/Index.cc		\
+-	lev/Index.hh		\
+-	lev/RatingManager.cc	\
+-	lev/RatingManager.hh	\
+-	lev/PersistentIndex.cc	\
+-	lev/PersistentIndex.hh	\
+-	lev/Proxy.cc		\
+-	lev/Proxy.hh		\
+-	lev/ScoreManager.cc	\
+-	lev/ScoreManager.hh	\
+-	lev/VolatileIndex.cc	\
+-	lev/VolatileIndex.hh	\
+ 	items/BrakeItem.cc	\
+ 	items/BrakeItem.hh	\
+ 	items/BlockerItem.cc	\
+@@ -225,6 +215,18 @@
+ 	items/Vortex.hh		\
+ 	items/WormHole.cc	\
+ 	items/WormHole.hh	\
++	lev/Index.cc		\
++	lev/Index.hh		\
++	lev/RatingManager.cc	\
++	lev/RatingManager.hh	\
++	lev/PersistentIndex.cc	\
++	lev/PersistentIndex.hh	\
++	lev/Proxy.cc		\
++	lev/Proxy.hh		\
++	lev/ScoreManager.cc	\
++	lev/ScoreManager.hh	\
++	lev/VolatileIndex.cc	\
++	lev/VolatileIndex.hh	\
+ 	others/Other.cc		\
+ 	others/Other.hh		\
+ 	others/Rubberband.cc	\
+
+Modified: trunk/src/floors.cc
+===================================================================
+--- trunk/src/floors.cc	2008-09-08 13:04:11 UTC (rev 1311)
++++ trunk/src/floors.cc	2008-09-08 22:46:29 UTC (rev 1312)
+@@ -95,7 +95,7 @@
+         var_floorforce[0] = to_double(val);
+     else if (key == &quot;force_y&quot;)
+         var_floorforce[1] = to_double(val);
+-    Object::setAttr(key, val);
++    GridObject::setAttr(key, val);
+ }
+ 
+ void Floor::get_sink_speed (double &amp;sinkspeed, double &amp;raisespeed) const {
+@@ -675,174 +675,7 @@
+     Floor::add_force(a, f);
+ }
+ 
+-
+-/* -------------------- Bridge -------------------- */
+ 
+-/** \page fl-bridge Bridge Floor
+-
+-This Floor can be opened and closed much like a bridge.
+-The actor can move over this floor if the bridge is closed,
+-and will fall into abyss when the bridge is open.
+-
+-\subsection bridgea Attributes
+-
+-- \b type	The type of the bridge, currently only 'a' is possible
+-
+-\subsection bridgem Messages
+-- \b open	open the bridge so actors cannot pass it
+-- \b close	close the bridge so actors can pass it
+-- \b openclose	toggle the state of the bridge
+-- \b signal     same as \b openclose
+-
+-*/
+-namespace
+-{
+-    class Bridge : public Floor {
+-        CLONEOBJ(Bridge);
+-    public:
+-        Bridge(bool open=true);
+-        virtual Value message(const Message &amp;m);
+-    private:
+-        enum State {
+-            OPEN, CLOSED, OPENING, CLOSING, // normal states
+-            CLOSING_BYSTONE, CLOSED_BYSTONE // when stones are moved onto the bridge
+-        } state;
+-        // the BYSTONE-states look like closed, but act like open
+-
+-        char get_type() const {
+-            string type = &quot;a&quot;;
+-            if (Value v = getAttr(&quot;type&quot;)) type = v.get_string();
+-            return type[0];
+-        }
+-
+-//         void actor_enter(Actor *);
+-        void actor_contact (Actor* a) {if (state!=CLOSED) SendMessage(a, &quot;fall&quot;);}
+-        void init_model();
+-        void stone_change(Stone *st);
+-
+-        void change_state( State newstate);
+-        void animcb();
+-    };
+-}
+-
+-Bridge::Bridge(bool open) : Floor(&quot;fl-bridge&quot;, 5, 1)
+-{
+-    setAttr(&quot;type&quot;, &quot;a&quot;);
+-    state=open ? OPEN : CLOSED;
+-}
+-
+-void Bridge::stone_change(Stone *st) {
+-    if (st &amp;&amp; !st-&gt;is_floating()) {
+-        if (state == OPEN || state == OPENING) {
+-            change_state(CLOSING_BYSTONE);
+-        }
+-    }
+-    else {
+-        if (state == CLOSED_BYSTONE || state == CLOSING_BYSTONE) {
+-            change_state(OPENING);
+-        }
+-    }
+-}
+-
+-Value Bridge::message(const Message &amp;m)
+-{
+-    if (m.message == &quot;open&quot; &amp;&amp; (state==CLOSED || state==CLOSING|| state==OPENING)) {
+-        change_state(OPENING);
+-        return Value();
+-    } else if (m.message == &quot;close&quot;) {
+-        switch (state) {
+-            case OPEN:
+-            case OPENING:
+-            case CLOSING_BYSTONE:
+-                change_state(CLOSING);
+-                break;
+-            case CLOSED_BYSTONE:
+-                change_state(CLOSED);
+-                break;
+-            case CLOSED:
+-            case CLOSING:
+-                break; // already closed
+-        }
+-        return Value();
+-    } else if (m.message == &quot;openclose&quot; || m.message == &quot;signal&quot;) {
+-        switch (state) {
+-            case OPEN:
+-            case OPENING:
+-            case CLOSING_BYSTONE:
+-                change_state(CLOSING);
+-                break;
+-            case CLOSED_BYSTONE:
+-                change_state(CLOSED);
+-                break;
+-            case CLOSED:
+-            case CLOSING:
+-                change_state(OPENING);
+-                break;
+-        }
+-        return Value();
+-    }
+-    return Floor::message(m);
+-}
+-
+-void Bridge::init_model()
+-{
+-    set_model(ecl::strf(&quot;fl-bridge%c-%s&quot;, get_type(),
+-                       (state==OPEN) ? &quot;open&quot; : &quot;closed&quot;));
+-}
+-
+-void Bridge::change_state( State newstate)
+-{
+-    if (state != newstate) {
+-        string mname = string(&quot;fl-bridge&quot;)+get_type();
+-
+-        switch( newstate) {
+-        case OPENING: {
+-            Stone *st = GetStone(get_pos());
+-            if (st &amp;&amp; !st-&gt;is_floating()) {
+-                if (state == CLOSED || state == CLOSED_BYSTONE)
+-                    newstate = CLOSED_BYSTONE;
+-                else if (state == CLOSING || state == CLOSING_BYSTONE)
+-                    newstate = CLOSING_BYSTONE;
+-                // here the model is already correct!
+-            }
+-            else { // no stone or floating stone :
+-                if( state == CLOSING || state == CLOSING_BYSTONE)
+-                    get_model()-&gt;reverse();
+-                else
+-                    set_anim(mname+&quot;-opening&quot;);
+-            }
+-            break;
+-        }
+-        case CLOSING:
+-        case CLOSING_BYSTONE:
+-            if( state == OPENING)
+-                get_model()-&gt;reverse();
+-            else if (state != CLOSING &amp;&amp; state != CLOSING_BYSTONE)
+-                set_anim(mname+&quot;-closing&quot;);
+-            break;
+-        case OPEN:
+-        case CLOSED:
+-        case CLOSED_BYSTONE:
+-            state = newstate;
+-            init_model();
+-            break;
+-        }
+-        state = newstate;
+-    }
+-}
+-
+-void Bridge::animcb()
+-{
+-    switch (state) {
+-        case OPENING: change_state(OPEN); break;
+-        case CLOSING: change_state(CLOSED); break;
+-        case CLOSING_BYSTONE: change_state(CLOSED_BYSTONE); break;
+-        default :
+-            ASSERT(0, XLevelRuntime, &quot;Bridge: animcb called after unknown animation&quot;);
+-            break;
+-    }
+-}
+-
+ /* -------------------- Thief Floor -------------------- */
+ namespace{
+     class Thief : public Floor {
+@@ -1014,9 +847,6 @@
+     Register(new FallenBox(&quot;fl-stwood&quot;));
+     Register(new FallenBox(&quot;fl-stwood1&quot;));
+     Register(new FallenBox(&quot;fl-stwood2&quot;));
+-    Register(new Bridge);
+-    Register(&quot;fl-bridge-open&quot;, new Bridge(true));
+-    Register(&quot;fl-bridge-closed&quot;, new Bridge(false));
+     Register(new Thief);
+     Register(new WhiteTile);
+     Register(new BlackTile);
+
+Modified: trunk/src/floors.hh
+===================================================================
+--- trunk/src/floors.hh	2008-09-08 13:04:11 UTC (rev 1311)
++++ trunk/src/floors.hh	2008-09-08 22:46:29 UTC (rev 1312)
+@@ -105,7 +105,7 @@
+         virtual void on_pickup (Item *) {}
+ 
+         virtual void stone_change(Stone *) {}
+-        virtual void actor_contact (Actor *) {}
++        virtual void actor_contact(Actor *) {}
+ 
+         virtual double get_friction() const;
+         virtual double get_mousefactor() const;
+
+Modified: trunk/src/ox_extra.cc
+===================================================================
+--- trunk/src/ox_extra.cc	2008-09-08 13:04:11 UTC (rev 1311)
++++ trunk/src/ox_extra.cc	2008-09-08 22:46:29 UTC (rev 1312)
+@@ -110,7 +110,7 @@
+     UNUSED,              // OxydExtra floor 0x49
+     UNUSED,              // OxydExtra floor 0x4a
+     UNUSED,              // OxydExtra floor 0x4b
+-    &quot;fl-bridge&quot;,         // OxydExtra floor 0x4c
++    &quot;fl_bridge&quot;,         // OxydExtra floor 0x4c
+     UNUSED,              // OxydExtra floor 0x4d
+     UNUSED,              // OxydExtra floor 0x4e
+     UNUSED,              // OxydExtra floor 0x4f
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2008-09-08 13:04:11 UTC (rev 1311)
++++ trunk/src/ox_magnum.cc	2008-09-08 22:46:29 UTC (rev 1312)
+@@ -116,7 +116,7 @@
+     UNUSED,                     // OxydMagnum floor 0x4f
+     UNUSED,                     // OxydMagnum floor 0x50
+     UNUSED,                     // OxydMagnum floor 0x51
+-    &quot;fl-bridge&quot;,                // OxydMagnum floor 0x52 (common was 'fl-bridge')
++    &quot;fl_bridge&quot;,                // OxydMagnum floor 0x52 (common was 'fl-bridge')
+     &quot;fl-springboard&quot;,           // OxydMagnum floor 0x53
+     &quot;fl-light&quot;,                 // OxydMagnum floor 0x54
+     &quot;fl-lightgray&quot;,             // OxydMagnum floor 0x55
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2008-09-08 13:04:11 UTC (rev 1311)
++++ trunk/src/ox_oxyd1.cc	2008-09-08 22:46:29 UTC (rev 1312)
+@@ -149,7 +149,7 @@
+     UNUSED,                     // Oxyd1 floor 0x4f
+     UNUSED,                     // Oxyd1 floor 0x50
+     UNUSED,                     // Oxyd1 floor 0x51
+-    &quot;fl-bridge&quot;,                // Oxyd1 floor 0x52
++    &quot;fl_bridge&quot;,                // Oxyd1 floor 0x52
+     &quot;fl-springboard&quot;,           // Oxyd1 floor 0x53
+     UNUSED,                     // Oxyd1 floor 0x54
+     &quot;fl-gray&quot;,                  // Oxyd1 floor 0x55
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-09-08 13:04:11 UTC (rev 1311)
++++ trunk/src/ox_peroxyd.cc	2008-09-08 22:46:29 UTC (rev 1312)
+@@ -179,7 +179,7 @@
+     UNUSED,                     // PerOxyd floor 0x49
+     UNUSED,                     // PerOxyd floor 0x4a
+     UNUSED,                     // PerOxyd floor 0x4b
+-    &quot;fl-bridge-open&quot;,           // PerOxyd floor 0x4c
++    &quot;fl_bridge&quot;,                // PerOxyd floor 0x4c
+     UNUSED,                     // PerOxyd floor 0x4d
+     &quot;fl-gray&quot;,                  // PerOxyd floor 0x4e
+     &quot;fl-gradient13&quot;,            // PerOxyd floor 0x4f (flat force up, beige)        (maybe gradient22?)
+
+Modified: trunk/src/stones/WindowStone.cc
+===================================================================
+--- trunk/src/stones/WindowStone.cc	2008-09-08 13:04:11 UTC (rev 1311)
++++ trunk/src/stones/WindowStone.cc	2008-09-08 22:46:29 UTC (rev 1312)
+@@ -182,6 +182,10 @@
+         return false;
+     }
+     
++    void WindowStone::on_move() {
++        // do not shatter actors
++    }
++    
+     StoneResponse WindowStone::collision_response(const StoneContact &amp;sc) {
+         const double face_width = 3.0/32.0; 
+         
+
+Modified: trunk/src/stones/WindowStone.hh
+===================================================================
+--- trunk/src/stones/WindowStone.hh	2008-09-08 13:04:11 UTC (rev 1311)
++++ trunk/src/stones/WindowStone.hh	2008-09-08 22:46:29 UTC (rev 1312)
+@@ -73,6 +73,7 @@
+         virtual bool is_transparent (Direction) const { return true; }
+         virtual bool is_floating() const { return state != IDLE; }
+         virtual bool is_sticky(const Actor *a) const;
++        virtual void on_move();
+ 
+     private:
+         void breakFaces(DirectionBits faces);
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-09-08 13:04:11 UTC (rev 1311)
++++ trunk/src/stones.cc	2008-09-08 22:46:29 UTC (rev 1312)
+@@ -58,15 +58,14 @@
+ }
+ 
+ 
+-Stone::Stone()
+-: freeze_check_running (false)
+-{}
++Stone::Stone() : freeze_check_running (false) {
++}
+ 
+-Stone::Stone(const char * kind)
+-: GridObject (kind), freeze_check_running (false)
+-{}
++Stone::Stone(const char * kind) : GridObject (kind), freeze_check_running (false) {
++}
+ 
+-Stone::~Stone() {  }
++Stone::~Stone() {
++}
+ 
+ const StoneTraits &amp;Stone::get_traits() const
+ {
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-09-08 13:04:11 UTC (rev 1311)
++++ trunk/src/stones_complex.cc	2008-09-08 22:46:29 UTC (rev 1312)
+@@ -117,7 +117,10 @@
+         PuzzleStone(int connections, bool oxyd1_compatible_);  
+         
+         virtual void lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs);
+-        
++        virtual bool is_transparent(Direction d) const;
++        virtual bool is_sticky(const Actor *a) const;
++        virtual bool allowsSpreading(Direction dir) const;
++        virtual void on_move();
+     protected:
+         virtual ~PuzzleStone() {
+             GameTimer.remove_alarm (this);
+@@ -164,8 +167,6 @@
+         void on_creation (GridPos p);
+         void on_impulse (const Impulse&amp; impulse);
+ 
+-        bool is_floating() const;
+-
+         StoneResponse collision_response(const StoneContact &amp;sc);
+         void actor_hit (const StoneContact &amp;sc);
+         void actor_contact (Actor *a);
+@@ -590,10 +591,23 @@
+     return exploded;
+ }
+ 
+-bool PuzzleStone::is_floating() const {
++bool PuzzleStone::is_transparent(Direction d) const {
+     return get_connections() == 0;
+ }
+ 
++bool PuzzleStone::is_sticky(const Actor *a) const {
++    return get_connections() != 0;
++}
++
++bool PuzzleStone::allowsSpreading(Direction dir) const {
++    return get_connections() == 0;
++}
++
++void PuzzleStone::on_move() {
++    if (get_connections() != 0) 
++        ShatterActorsInsideField (get_pos());
++}
++
+ void PuzzleStone::maybe_rotate_cluster(Direction dir) 
+ {
+     if (dir != NODIR) {
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000741.html">[Enigma-game-svn] r1311 - trunk/data/levels/enigma_viii
+</A></li>
+	<LI>Next message: <A HREF="000743.html">[Enigma-game-svn] r1313 - trunk/src/floors
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#742">[ date ]</a>
+              <a href="thread.html#742">[ thread ]</a>
+              <a href="subject.html#742">[ subject ]</a>
+              <a href="author.html#742">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

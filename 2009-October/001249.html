@@ -1,0 +1,323 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1820 - in trunk: data src src/items src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-October/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1820%20-%20in%20trunk%3A%20data%20src%20src/items%20src/stones&In-Reply-To=%3C200910052144.n95Li79I008834%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001248.html">
+   <LINK REL="Next"  HREF="001250.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1820 - in trunk: data src src/items src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1820%20-%20in%20trunk%3A%20data%20src%20src/items%20src/stones&In-Reply-To=%3C200910052144.n95Li79I008834%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1820 - in trunk: data src src/items src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon Oct  5 23:44:07 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001248.html">[Enigma-game-svn] r1819 - homepage/input
+</A></li>
+        <LI>Next message: <A HREF="001250.html">[Enigma-game-svn] r1821 - in trunk/data: . levels/enigma_cross	levels/enigma_iv levels/enigma_v levels/enigma_vii	levels/enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1249">[ date ]</a>
+              <a href="thread.html#1249">[ thread ]</a>
+              <a href="subject.html#1249">[ subject ]</a>
+              <a href="author.html#1249">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-10-05 23:44:03 +0200 (Mon, 05 Oct 2009)
+New Revision: 1820
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/src/items/WormHole.cc
+   trunk/src/stones/GhostStone.cc
+   trunk/src/stones/GhostStone.hh
+   trunk/src/stones/MagicStone.cc
+   trunk/src/stones/MagicStone.hh
+   trunk/src/world.cc
+Log:
+Trunk 1.1: 
+- assert on make of objects without existing kind template
+- wormhole: no sparkles if no destination
+- st_magic, st_ghost: allow set of attribute &quot;flavor&quot;
+- add detection of Lua typos in global constants (e.g. 'INDISPENSIBLE' instead
+    of 'INDISPENSABLE', or 'on' instead of 'ON', ...)
+- eliminate outdated Lua function &quot;Tick&quot;, &quot;PrintTable&quot;, &quot;Require&quot;
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2009-10-05 20:53:17 UTC (rev 1819)
++++ trunk/data/api2init.lua	2009-10-05 21:44:03 UTC (rev 1820)
+@@ -21,7 +21,6 @@
+ -- Level API 2 as of Enigma 1.10 compatibility --
+ -------------------------------------------------
+ 
+-
+ -----------------------------------------------
+ -- Use Enigma internal random implementation --
+ -----------------------------------------------
+@@ -31,32 +30,47 @@
+ -- randseed is issued by Enigma application and must not be disturbed
+ math.randomseed = function () end
+ 
+------------------------------
+--- old stuff to be checked --
+------------------------------
+-
+--- TODO remove Tick
+-function Tick (deltatime)
+-    -- do nothing by default
+-end
+-
+-
+-
+-function PrintTable(t)
+-    for i,v in pairs(t) do
+-        if type(v)==&quot;table&quot; then
+-            print (i..&quot; - &quot;..v[1]..&quot;,&quot;..v[2])
+-        else
+-            print (i..&quot; - &quot;..v)
++-----------------------------------------------
++-- Semi strict Lua - global typo detection   --
++-----------------------------------------------
++-- Limit Lua code read access to prior 'declared' global variables,
++-- that have been registered by a regular assignment (even assigning nil will
++-- do). C code will read access globals without check.
++-- This section is a slightly modified version of Lua's etc/strict.lua.
++-- We call it semi strict, as we still allow level authors to declare new
++-- globals inside a function. We just want to catch typos in global constants.
++do
++    local mt = getmetatable(_G)
++    if mt == nil then
++        mt = {}
++        setmetatable(_G, mt)
++    end
++    
++    mt.__declared = {}
++    
++    local function what ()
++      local d = debug.getinfo(3, &quot;S&quot;)
++      return d and d.what or &quot;C&quot;
++    end
++    
++    mt.__newindex = function (t, n, v)
++        if not mt.__declared[n] then
++            mt.__declared[n] = true
+         end
++        rawset(t, n, v)
+     end
++      
++    mt.__index = function (t, n)
++        if not mt.__declared[n]  and what() ~= &quot;C&quot;  then
++            error(&quot;variable '&quot;..n..&quot;' is not declared&quot;, 2)
++        end
++        return rawget(t, n)
++    end
+ end
++-----------------------------
++-- Helper functions        --
++-----------------------------
+ 
+-
+-function Require(filename)
+-    enigma.LoadLib(string.sub(filename,8,string.len(filename)-4))
+-end
+-
+ function enigma.settile(key, pos)
+     wo[pos] = en.ti[key]
+ end
+
+Modified: trunk/src/items/WormHole.cc
+===================================================================
+--- trunk/src/items/WormHole.cc	2009-10-05 20:53:17 UTC (rev 1819)
++++ trunk/src/items/WormHole.cc	2009-10-05 21:44:03 UTC (rev 1820)
+@@ -106,12 +106,12 @@
+     bool WormHole::actor_hit(Actor *actor) {
+         ASSERT((state &amp; 4) == 0, XLevelRuntime, &quot;WormHole:: Recursion detected!&quot;);
+         if ((state &amp; 2) == 0 &amp;&amp; near_center_p(actor)) {   // may teleport
+-            client::Msg_Sparkle (get_pos().center());
+             ecl::V2 targetpos;
+             if (getDestinationByIndex(0, targetpos)) {
+-                sound_event (&quot;warp&quot;);
++                client::Msg_Sparkle(get_pos().center());
++                sound_event(&quot;warp&quot;);
+                 double latency = getAttr(&quot;interval&quot;);
+-                if(latency &gt; 0) {
++                if (latency &gt; 0) {
+                     state |= 2;  // mark engaged
+                     GameTimer.set_alarm(this, latency, false);
+                     init_model();
+
+Modified: trunk/src/stones/GhostStone.cc
+===================================================================
+--- trunk/src/stones/GhostStone.cc	2009-10-05 20:53:17 UTC (rev 1819)
++++ trunk/src/stones/GhostStone.cc	2009-10-05 21:44:03 UTC (rev 1820)
+@@ -19,6 +19,7 @@
+  */
+ 
+ #include &quot;stones/GhostStone.hh&quot;
++#include &quot;errors.hh&quot;
+ //#include &quot;main.hh&quot;
+ #include &quot;player.hh&quot;
+ 
+@@ -31,6 +32,21 @@
+         return &quot;st_ghost&quot;;
+     }
+     
++    void GhostStone::setAttr(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;flavor&quot;) {
++            std::string fl = val.to_string();
++            if (fl == &quot;purplemarble&quot;) state = PURPLEMARBLE;
++            else if (fl == &quot;greenbrown&quot;) state = GREENBROWN;
++            else if (fl == &quot;break&quot;) state = BREAK;
++            else
++                ASSERT(false, XLevelRuntime, ecl::strf(&quot;Ghost stone with illegal flavor value: %s&quot;, fl.c_str()).c_str());
++            if (isDisplayable())
++                init_model();
++            return;
++        } else
++            Stone::setAttr(key, val);
++    }
++    
+     Value GhostStone::getAttr(const std::string &amp;key) const {
+         if (key == &quot;flavor&quot;) {
+             std::string kind = get_traits().name;
+
+Modified: trunk/src/stones/GhostStone.hh
+===================================================================
+--- trunk/src/stones/GhostStone.hh	2009-10-05 20:53:17 UTC (rev 1819)
++++ trunk/src/stones/GhostStone.hh	2009-10-05 21:44:03 UTC (rev 1820)
+@@ -43,6 +43,7 @@
+         
+         // Object interface
+         virtual std::string getClass() const;        
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
+         virtual Value getAttr(const std::string &amp;key) const;
+         
+         // StateObject interface
+
+Modified: trunk/src/stones/MagicStone.cc
+===================================================================
+--- trunk/src/stones/MagicStone.cc	2009-10-05 20:53:17 UTC (rev 1819)
++++ trunk/src/stones/MagicStone.cc	2009-10-05 21:44:03 UTC (rev 1820)
+@@ -19,6 +19,7 @@
+  */
+ 
+ #include &quot;stones/MagicStone.hh&quot;
++#include &quot;errors.hh&quot;
+ //#include &quot;main.hh&quot;
+ #include &quot;player.hh&quot;
+ 
+@@ -31,6 +32,21 @@
+         return &quot;st_magic&quot;;
+     }
+     
++    void MagicStone::setAttr(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;flavor&quot;) {
++            std::string fl = val.to_string();
++            if (fl == &quot;brick&quot;) state = BRICK;
++            else if (fl == &quot;oxyda&quot;) state = OXYDA;
++            else if (fl == &quot;oxydc&quot;) state = OXYDC;
++            else
++                ASSERT(false, XLevelRuntime, ecl::strf(&quot;Magic stone with illegal flavor value: %s&quot;, fl.c_str()).c_str());
++            if (isDisplayable())
++                init_model();
++            return;
++        } else
++            Stone::setAttr(key, val);
++    }
++    
+     Value MagicStone::getAttr(const std::string &amp;key) const {
+         if (key == &quot;flavor&quot;) {
+             std::string kind = get_traits().name;
+
+Modified: trunk/src/stones/MagicStone.hh
+===================================================================
+--- trunk/src/stones/MagicStone.hh	2009-10-05 20:53:17 UTC (rev 1819)
++++ trunk/src/stones/MagicStone.hh	2009-10-05 21:44:03 UTC (rev 1820)
+@@ -43,6 +43,7 @@
+         
+         // Object interface
+         virtual std::string getClass() const;        
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
+         virtual Value getAttr(const std::string &amp;key) const;
+         
+         // StateObject interface
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2009-10-05 20:53:17 UTC (rev 1819)
++++ trunk/src/world.cc	2009-10-05 21:44:03 UTC (rev 1820)
+@@ -374,7 +374,7 @@
+     ecl::Dict&lt;Value&gt;::iterator found = namedPositions.find(wanted);
+     if (found != namedPositions.end()) 
+         return found-&gt;second;
+-    Log &lt;&lt; &quot;Did not find named position: &quot; &lt;&lt; name &lt;&lt; '\n';
++//    Log &lt;&lt; &quot;Did not find named position: &quot; &lt;&lt; name &lt;&lt; '\n';
+     return Value(GridPos(-1, -1));
+ }
+ 
+@@ -2514,7 +2514,7 @@
+ }
+ 
+ Object * MakeObject(const char *kind) {
+-    static Object *last_templ = 0;
++    static Object *last_templ = NULL;
+     static string last_kind;
+ 
+     if (last_kind != kind) {
+@@ -2522,12 +2522,11 @@
+         last_templ = repos-&gt;get_template(kind);
+     }
+ 
+-    Object *o = 0;
++    Object *obj = NULL;
+     if (last_templ)
+-        o=last_templ-&gt;clone();
+-    if (!o)
+-        fprintf(stderr, &quot;MakeObject: unkown object name `%s'\n&quot;,kind);
+-    return o;
++        obj = last_templ-&gt;clone();
++    ASSERT(obj != NULL, XLevelRuntime, ecl::strf(&quot;MakeObject: unkown object name `%s'\n&quot;,kind).c_str());
++    return obj;
+ }
+ 
+ Object * GetObjectTemplate(const std::string &amp;kind) {
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001248.html">[Enigma-game-svn] r1819 - homepage/input
+</A></li>
+	<LI>Next message: <A HREF="001250.html">[Enigma-game-svn] r1821 - in trunk/data: . levels/enigma_cross	levels/enigma_iv levels/enigma_v levels/enigma_vii	levels/enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1249">[ date ]</a>
+              <a href="thread.html#1249">[ thread ]</a>
+              <a href="subject.html#1249">[ subject ]</a>
+              <a href="author.html#1249">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

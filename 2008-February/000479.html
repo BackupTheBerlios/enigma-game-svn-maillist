@@ -1,0 +1,623 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1047 - in trunk: data data/schemas src src/lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1047%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/lev&In-Reply-To=%3C200802232050.m1NKo4H4007624%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000478.html">
+   <LINK REL="Next"  HREF="000480.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1047 - in trunk: data data/schemas src src/lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1047%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/lev&In-Reply-To=%3C200802232050.m1NKo4H4007624%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1047 - in trunk: data data/schemas src src/lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Feb 23 21:50:04 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000478.html">[Enigma-game-svn] r1046 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="000480.html">[Enigma-game-svn] r1048 - in trunk: data data/schemas src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#479">[ date ]</a>
+              <a href="thread.html#479">[ thread ]</a>
+              <a href="subject.html#479">[ subject ]</a>
+              <a href="author.html#479">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-02-23 21:50:03 +0100 (Sat, 23 Feb 2008)
+New Revision: 1047
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/items.cc
+   trunk/src/lev/Proxy.cc
+   trunk/src/stones_internal.hh
+Log:
+Trunk 1.1: new API reengineering wormhole
+- rename it-wormhole to it_wormhole
+- added missing it_wormhole_on variant
+- wormhole as StateObject - on,off,signal,toggle,state support
+- wormhole as direct multiinherited ForceField instead of FF helper object
+- wormhole range and strength can be reset during the game
+- wormhole slight performance optimization
+- wormhole added scissor attribute to cut rubberbands
+- remove OnOffItem
+- fix r1042 crashes on load of dat files
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-02-22 23:59:09 UTC (rev 1046)
++++ trunk/data/api1init.lua	2008-02-23 20:50:03 UTC (rev 1047)
+@@ -51,6 +51,8 @@
+     it_magnet_on = &quot;it-magnet-on&quot;,
+     it_magnet_off = &quot;it-magnet-off&quot;,
+     it_trigger = &quot;it-trigger&quot;,
++    it_wormhole_on = &quot;it-wormhole&quot;,
++    it_wormhole_off = &quot;it-wormhole-off&quot;,
+     st_blocker = &quot;st-blocker&quot;,
+     st_blocker_new = &quot;st-blocker-growing&quot;,
+     st_boulder = &quot;st-bolder&quot;,
+@@ -62,9 +64,9 @@
+     st_floppy = &quot;st-floppy&quot;,
+     st_fourswitch = &quot;st-fourswitch&quot;,
+     st_oxyd = &quot;st-oxyd&quot;,
+-    st_switch_instant = &quot;st-switch&quot;,
+-    st_switch_black_instant = &quot;st-switch_black&quot;,
+-    st_switch_white_instant = &quot;st-switch_white&quot;,
++    st_switch = &quot;st-switch&quot;,
++    st_switch_black = &quot;st-switch_black&quot;,
++    st_switch_white = &quot;st-switch_white&quot;,
+     st_window = &quot;st-window&quot;
+ }
+ 
+@@ -90,6 +92,26 @@
+         local obj = enigma._MakeObject(&quot;st_key&quot;)
+         enigma._SetAttrib(obj, &quot;keycode&quot;, 3)
+         return obj
++    elseif name == &quot;st-switch&quot; then
++        local obj = enigma._MakeObject(&quot;st_switch&quot;)
++        enigma._SetAttrib(obj, &quot;instant&quot;, true)
++        return obj
++    elseif name == &quot;st-switch_black&quot; then
++        local obj = enigma._MakeObject(&quot;st_switch_black&quot;)
++        enigma._SetAttrib(obj, &quot;instant&quot;, true)
++        return obj
++    elseif name == &quot;st-switch_white&quot; then
++        local obj = enigma._MakeObject(&quot;st_switch_white&quot;)
++        enigma._SetAttrib(obj, &quot;instant&quot;, true)
++        return obj
++    elseif name == &quot;it-wormhole&quot; then
++        local obj = enigma._MakeObject(&quot;it_wormhole_on&quot;)
++        enigma._SetAttrib(obj, &quot;scissor&quot;, false)
++        return obj
++    elseif name == &quot;it-wormhole-off&quot; then
++        local obj = enigma._MakeObject(&quot;it_wormhole_off&quot;)
++        enigma._SetAttrib(obj, &quot;scissor&quot;, false)
++        return obj
+     end
+ 
+     newname = RenamingObjectsOld2New[name]
+@@ -140,7 +162,8 @@
+              or (_obj_name == &quot;st-switch_white&quot;) 
+              or (_obj_name == &quot;st-floppy&quot;) 
+              or (_obj_name == &quot;it-magnet&quot;) or (_obj_name == &quot;it-magnet-on&quot;)
+-             or (_obj_name == &quot;it-magnet-off&quot;) then
++             or (_obj_name == &quot;it-magnet-off&quot;) or (_obj_name == &quot;it-wormhole&quot;)
++             or (_obj_name == &quot;it-wormhole-off&quot;) then
+          if key == &quot;on&quot; then
+ 	     _key = &quot;state&quot;   -- new attr name
+ 	 end
+@@ -197,7 +220,8 @@
+              or (_obj_name == &quot;st-switch_white&quot;) 
+              or (_obj_name == &quot;st-floppy&quot;)
+              or (_obj_name == &quot;it-magnet&quot;) or (_obj_name == &quot;it-magnet-on&quot;)
+-             or (_obj_name == &quot;it-magnet-off&quot;) then
++             or (_obj_name == &quot;it-magnet-off&quot;)  or (_obj_name == &quot;it-wormhole&quot;)
++             or (_obj_name == &quot;it-wormhole-off&quot;) then
+          if key == &quot;on&quot; then
+ 	     _key = &quot;state&quot;
+ 	     end
+@@ -267,6 +291,7 @@
+     [&quot;it-tinyhollow__trigger&quot;] = &quot;flip&quot;,
+     [&quot;it-vortex-open__trigger&quot;] = &quot;toggle&quot;,
+     [&quot;it-vortex-closed__trigger&quot;] = &quot;toggle&quot;,
++    it_wormhole__onoff = &quot;toggle&quot;,
+     [&quot;st-black1__trigger&quot;] = &quot;signal&quot;,
+     [&quot;st-black2__trigger&quot;] = &quot;signal&quot;,
+     [&quot;st-black3__trigger&quot;] = &quot;signal&quot;,
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-02-22 23:59:09 UTC (rev 1046)
++++ trunk/data/schemas/objects.xml	2008-02-23 20:50:03 UTC (rev 1047)
+@@ -5,9 +5,13 @@
+     &lt;attr name=&quot;autoclose&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;color&quot; type=&quot;int&quot; default=&quot;nil&quot; min=&quot;0&quot; max=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;counterclock&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;destination&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;instant&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;interval&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;inverse&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;name&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;range&quot; type=&quot;double&quot; default=&quot;1.0&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;scissor&quot; type=&quot;bool&quot; default=&quot;true&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;state&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;strength&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;target&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+@@ -67,6 +71,22 @@
+     &lt;object name=&quot;it_magnet_on&quot;&gt;
+       &lt;attr name=&quot;state&quot; value=&quot;1&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;it_wormhole&quot;&gt;
++      &lt;attr name=&quot;destination&quot;/&gt;
++      &lt;attr name=&quot;interval&quot; default=&quot;0&quot;/&gt;
++      &lt;attr name=&quot;range&quot; default=&quot;nil&quot;/&gt;
++      &lt;attr name=&quot;scissor&quot; default=&quot;true&quot;/&gt;
++      &lt;attr name=&quot;strength&quot; default=&quot;nil&quot;/&gt;
++      &lt;msg name=&quot;on&quot;/&gt;
++      &lt;msg name=&quot;off&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_wormhole_off&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;0&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_wormhole_on&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;1&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st&quot; abstract=&quot;true&quot;/&gt;
+     &lt;object name=&quot;st_blocker&quot;&gt;
+       &lt;attr name=&quot;autoclose&quot;/&gt;
+@@ -91,6 +111,7 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;st_switch&quot;&gt;
+       &lt;attr name=&quot;color&quot;/&gt;
++      &lt;attr name=&quot;instant&quot;/&gt;
+       &lt;msg name=&quot;on&quot;/&gt;
+       &lt;msg name=&quot;off&quot;/&gt;
+       &lt;msg name=&quot;signal&quot;/&gt;
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-02-22 23:59:09 UTC (rev 1046)
++++ trunk/src/items.cc	2008-02-23 20:50:03 UTC (rev 1047)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2007 Ronald Lamprecht
++ * Copyright (C) 2007,2008 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -172,53 +172,6 @@
+     }
+ }
+ 
+-
+-/* -------------------- OnOffItem -------------------- */
+-namespace
+-{
+-    class OnOffItem : public Item {
+-    protected:
+-        OnOffItem (bool onoff = false)
+-        {
+-            setAttr(&quot;on&quot;, onoff);
+-        }
+-
+-        bool is_on() const {
+-            return getAttr(&quot;on&quot;) == 1;
+-        }
+-
+-        void set_on (bool newon) {
+-            if (newon != is_on()) {
+-                setAttr(&quot;on&quot;, Value(newon));
+-                init_model();
+-                notify_onoff(newon);
+-            }
+-        }
+-
+-        virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;onoff&quot;) {
+-                set_on(!is_on());
+-                return Value();
+-            } else if (m.message == &quot;signal&quot;) {
+-                set_on (m.value != 0);
+-                return Value();
+-            } else if (m.message == &quot;on&quot;) {
+-                set_on(true);
+-                return Value();
+-            } else if (m.message == &quot;off&quot;) {
+-                set_on(false);
+-                return Value();
+-            }
+-            return Item::message(m);
+-        }
+-
+-        // OnOffItem interface
+-        virtual void notify_onoff (bool /*on*/) {}
+-    };
+-}
+-
+-
+-
+ /* -------------------- Various simple items -------------------- */
+ 
+ namespace
+@@ -1638,7 +1591,7 @@
+         CLONEOBJ(Magnet);
+         DECL_TRAITS_ARRAY(2, state);
+ 
+-        Magnet(bool onoff);
++        Magnet(bool isOn);
+         
+         // Object interface
+         virtual std::string getClass() const;
+@@ -1728,159 +1681,161 @@
+ \endverbatim
+ */
+ 
+-namespace
+-{
+-    class WormHole_FF : public ForceField {
+-    public:
+-        WormHole_FF() : strength(0.6 * 50), rangesquared(1000000) {}
+ 
+-        void set_pos(GridPos p) { center = p.center(); }
+-        void set_range (double r) { rangesquared = r*r; }
+-        void set_strength (double s) { strength = 0.6 * s; }
+-
+-        void add_force(Actor *a, V2 &amp;f) {
+-            V2 b = center - a-&gt;get_pos();
+-            double bb = square(b);
+-            if (bb &lt; rangesquared &amp;&amp; bb&gt;0)
+-                f += (strength/bb)*b;
+-        }
+-
+-        V2     center;          // Center of the force field
+-        double strength;        // Strength of the force
+-        double rangesquared;    // Range of the force squared
+-    };
+-
+-    class WormHole : public OnOffItem, public enigma::TimeHandler {
+-        CLONEOBJ(WormHole);
+-        DECL_TRAITS_ARRAY(2, is_on());
++    class WormHole : public Item, public ForceField, public enigma::TimeHandler {
++    private:
++        /**
++         * warping as bit 2 of state
++         */
++        enum iState {
++            OFF_IDLE,        ///&lt; force off, ready to teleport
++            ON_IDLE,         ///&lt; force on,  ready to teleport
++            OFF_ENGAGED,     ///&lt; force off, rejecting teleport
++            ON_ENGAGED       ///&lt; force on,  rejecting teleport
++        };
++        
+     public:
+-        WormHole(bool onoff_) : OnOffItem(onoff_) {
+-            state = TELEPORT_IDLE;
+-            justWarping = false;
+-        }
++        CLONEOBJ(WormHole);
++        DECL_TRAITS_ARRAY(2, state &amp; 1);
++        
++        WormHole(bool isOn);
++        virtual ~WormHole();
++        
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const std::string &amp;key, const Value &amp;val);
+ 
+-        void init_model();
+-        bool actor_hit(Actor *a);
+-        void notify_onoff (bool /* onoff */) { set_forcefield();  }
+-        void alarm();
++        // StateObject interface
++        virtual int externalState() const;
++        virtual void setState(int extState);
+ 
+-    protected:
+-        virtual ~WormHole() {
+-            GameTimer.remove_alarm (this);
+-        }
++        // GridObject interface
++        virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
++        virtual void init_model();
++        
++        // Item interface
++        virtual bool actor_hit(Actor *a);
++
++        // ForceField interface
++        virtual void add_force(Actor *a, V2 &amp;f);
++        
++        // TimeHandler interface
++        virtual void alarm();
++        
+     private:
+-        enum State { TELEPORT_IDLE, TELEPORT_WAITING } state;
+-        // Note that there're two notions of on and off for this object:
+-        // The OnOffItem-part is only used to operate the force field,
+-        // whereas the teleport ability is controlled by the state-variable.
+-        // Animation is turned off when either one of them is off.
++        bool near_center_p(Actor *a);
+ 
+-        void on_creation (GridPos p) {
+-            Item::on_creation (p);
+-            set_forcefield();
+-        }
+-        void on_removal (GridPos p);
+-
+-        void set_forcefield() {
+-            if (is_on()) {
+-                ff.set_pos(get_pos());
+-                double range = getDefaultedAttr(&quot;range&quot;, server::WormholeRange);
+-                ff.set_range (range);
+-
+-                double s = getDefaultedAttr(&quot;strength&quot;, server::WormholeForce);
+-                ff.set_strength (s);
+-
+-                AddForceField(&amp;ff);
+-            } else {
+-                RemoveForceField(&amp;ff);
+-            }
+-        }
+-
+-        V2 vec_to_center (V2 v) {return v-get_pos().center();}
+-        bool near_center_p (Actor *a) {
+-            return (length(vec_to_center(a-&gt;get_pos())) &lt; 0.5/4);   // TODO use square!
+-        }
+-        bool get_target (V2 &amp;targetpos);
+-
+-        double get_interval() const {
+-            return getAttr(&quot;interval&quot;);
+-        }
+-
+-        // Variables.
+-        WormHole_FF ff;
+-        bool        justWarping;  // to avoid recursions
++        double correctedStrength;     ///&lt; 0.6 * strength
++        double squareRange;           ///&lt; range of the force squared
+     };
+ 
+-    ItemTraits WormHole::traits[2] = {
+-        { &quot;it-wormhole-off&quot;, it_wormhole_off, itf_static, 0.0 },
+-        { &quot;it-wormhole&quot;,     it_wormhole_on,  itf_static, 0.0 }
+-    };
+-}
+-
+-bool WormHole::get_target(V2 &amp;targetpos) {
+-    Value dest = getAttr(&quot;destination&quot;);
+-    if (dest.getType() == Value::POSITION) {
+-        // arbitrary precision position as destination
+-        targetpos = dest;
+-        return true;
+-    } else {
+-        // evaluate the first object 
+-        TokenList tl = dest;  // convert any object type value to a tokenlist 
+-        if (tl.empty())
+-            return false;
+-        ObjectList ol = tl.front();  // convert first token to a objectlist
+-        if (ol.empty())
+-            return false;
+-        GridObject *go = dynamic_cast&lt;GridObject *&gt;(ol.front());  // get first object
+-        if (go != NULL) {   // no actors as destination!
+-            GridPos p = go-&gt;get_pos();
+-            if (IsInsideLevel(p)) {   // no objects in inventory,...
+-                targetpos = p.center();
+-                return true;
++    WormHole::WormHole(bool isOn) : Item(), correctedStrength (0.6 * 30), squareRange (1000 * 1000) {
++        state = isOn ? ON_IDLE : OFF_IDLE;    // includes warping false
++    }
++    
++    WormHole::~WormHole() {
++        GameTimer.remove_alarm(this);
++    }
++    
++    std::string WormHole::getClass() const {
++        return &quot;it_wormhole&quot;;
++    }
++    
++    void WormHole::setAttr(const std::string &amp;key, const Value &amp;val) {
++        if (key == &quot;range&quot;) {
++            double range = (val.getType() == Value::NIL) ? server::WormholeRange : (double)val;
++            squareRange = range * range;
++        } else if (key == &quot;strength&quot;) {
++            correctedStrength = 0.6 * ((val.getType() == Value::NIL) ? server::WormholeForce : (double)val);
++        } else
++            Item::setAttr(key, val);
++    }
++    
++    int WormHole::externalState() const {
++        return state % 2;
++    }
++    
++    void WormHole::setState(int extState) {
++        // switch force on and off
++        if (extState != state % 2) {          // react only on force changes
++            state = (state &amp; ~1) + extState;  // keep other flags
++            if (isDisplayable()) {
++                if (extState == 1)
++                    AddForceField(this);
++                else
++                    RemoveForceField(this);
+             }
+         }
+     }
+-    return false;
+-}
++    
++    void WormHole::on_creation (GridPos p) {
++        Item::on_creation (p);
++        if (state % 2 == 1)
++            AddForceField(this);
++    }
+ 
+-bool WormHole::actor_hit(Actor *actor)
+-{
+-    ASSERT(!justWarping, XLevelRuntime, &quot;WormHole:: Recursion detected!&quot;);
+-    if (state == TELEPORT_IDLE &amp;&amp; near_center_p(actor)) {
+-        client::Msg_Sparkle (get_pos().center());
+-        V2 targetpos;
+-        if (get_target (targetpos)) {
+-            sound_event (&quot;warp&quot;);
+-            if(get_interval() &gt; 0) {
+-                state = TELEPORT_WAITING;
+-                GameTimer.set_alarm(this, get_interval(), false);
+-                init_model();
++    void WormHole::on_removal(GridPos p) {
++        if (state % 2 == 1)
++            RemoveForceField(this);
++        Item::on_removal(p);
++        ASSERT((state &amp; 4) == 0, XLevelRuntime, &quot;Tried to kill a busy wormhole. Please use another way.&quot;);
++    }
++    
++    void WormHole::init_model() {
++        if ((state &amp; 3) == ON_IDLE)
++            set_anim(&quot;it-wormhole&quot;);
++        else
++            set_model(&quot;it-wormhole-off&quot;);
++    }
++    
++    bool WormHole::actor_hit(Actor *actor) {
++        ASSERT((state &amp; 4) == 0, XLevelRuntime, &quot;WormHole:: Recursion detected!&quot;);
++        if ((state &amp; 2) == 0 &amp;&amp; near_center_p(actor)) {   // may teleport
++            client::Msg_Sparkle (get_pos().center());
++            V2 targetpos;
++            if (getDestinationByIndex(0, targetpos)) {
++                sound_event (&quot;warp&quot;);
++                double latency = getAttr(&quot;interval&quot;);
++                if(latency &gt; 0) {
++                    state |= 2;  // mark engaged
++                    GameTimer.set_alarm(this, latency, false);
++                    init_model();
++                }
++                state |= 4;  // mark warping
++                bool isScissor = to_bool(getAttr(&quot;scissor&quot;)) || server::GameCompatibility != GAMET_ENIGMA;
++                if (isScissor)
++                    KillRubberBands(actor);
++                WarpActor(actor, targetpos[0], targetpos[1], false);
++                state &amp;= ~4; // release warping
+             }
+-            justWarping = true;
+-            WarpActor(actor, targetpos[0], targetpos[1], false);
+-            justWarping = false;
+         }
++        return false;
+     }
+-    return false;
+-}
++    
++    void WormHole::add_force(Actor *a, V2 &amp;f) {
++        V2 dv = get_pos().center() - a-&gt;get_pos_force();
++        double squareDist = square(dv);
+ 
+-void WormHole::alarm() {
+-    state = TELEPORT_IDLE;
+-    init_model();
+-}
++        if (squareDist &gt;= 0.025 &amp;&amp; squareDist &lt; squareRange)
++            f += (correctedStrength / squareDist) * dv;
++    }
++    
++    void WormHole::alarm() {
++        state &amp;= ~2;  // remove teleport engaged flag
++        init_model();
++    }
++    
++    bool WormHole::near_center_p(Actor *a) {
++        return (square(a-&gt;get_pos() - get_pos().center()) &lt; 0.015625);  // 0.125 ^ 2
++    }
++    
++    ItemTraits WormHole::traits[2] = {
++        { &quot;it_wormhole_off&quot;, it_wormhole_off, itf_static, 0.0 },
++        { &quot;it_wormhole_on&quot;,  it_wormhole_on,  itf_static, 0.0 }
++    };
+ 
+-void WormHole::init_model() {
+-    if(state == TELEPORT_IDLE)
+-        OnOffItem::init_model();
+-    else
+-        set_anim(&quot;it-wormhole-off&quot;);
+-}
+ 
+-void WormHole::on_removal(GridPos p) {
+-    RemoveForceField(&amp;ff);
+-    Item::on_removal(p);
+-    ASSERT(!justWarping, XLevelRuntime, &quot;Tried to kill a busy wormhole. Please use another way.&quot;);
+-}
+ 
+ /* -------------------- Vortex -------------------- */
+ 
+@@ -3842,6 +3797,7 @@
+     RegisterItem (new Wrench);
+     RegisterItem (new WormHole(false));
+     RegisterItem (new WormHole(true));
++    Register (&quot;it_wormhole&quot;, new WormHole(true));
+     RegisterItem (new YinYang);
+     RegisterItem (new Rubberband);
+ }
+
+Modified: trunk/src/lev/Proxy.cc
+===================================================================
+--- trunk/src/lev/Proxy.cc	2008-02-22 23:59:09 UTC (rev 1046)
++++ trunk/src/lev/Proxy.cc	2008-02-23 20:50:03 UTC (rev 1047)
+@@ -445,6 +445,7 @@
+             server::LevelStatus = getLevelStatus();
+             if (server::EnigmaCompatibility &lt; 1.10)
+                 server::AllowSingleOxyds = true;
++            server::PrepareLua();
+             // use oxyd loader
+             std::string::size_type posSecondHash = normLevelPath.find('#',1);
+             if (posSecondHash == string::npos)
+
+Modified: trunk/src/stones_internal.hh
+===================================================================
+--- trunk/src/stones_internal.hh	2008-02-22 23:59:09 UTC (rev 1046)
++++ trunk/src/stones_internal.hh	2008-02-23 20:50:03 UTC (rev 1047)
+@@ -20,6 +20,7 @@
+ #define STONES_INTERNAL_HH_INCLUDED
+ 
+ #include &quot;world.hh&quot;
++#include &quot;main.hh&quot;
+ 
+ #define DECL_TRAITS                                              \
+         static StoneTraits traits;                               \
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000478.html">[Enigma-game-svn] r1046 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="000480.html">[Enigma-game-svn] r1048 - in trunk: data data/schemas src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#479">[ date ]</a>
+              <a href="thread.html#479">[ thread ]</a>
+              <a href="subject.html#479">[ subject ]</a>
+              <a href="author.html#479">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

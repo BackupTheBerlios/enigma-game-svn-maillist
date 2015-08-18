@@ -1,0 +1,925 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1103 - in trunk: . data data/music	data/music/menu src src/gui
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1103%20-%20in%20trunk%3A%20.%20data%20data/music%0A%09data/music/menu%20src%20src/gui&In-Reply-To=%3C200804162207.m3GM7Oag029022%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000535.html">
+   <LINK REL="Next"  HREF="000537.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1103 - in trunk: . data data/music	data/music/menu src src/gui</H1>
+    <B>andreasl at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1103%20-%20in%20trunk%3A%20.%20data%20data/music%0A%09data/music/menu%20src%20src/gui&In-Reply-To=%3C200804162207.m3GM7Oag029022%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1103 - in trunk: . data data/music	data/music/menu src src/gui">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Thu Apr 17 00:07:24 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000535.html">[Enigma-game-svn] r1102 - in trunk: doc/reference etc
+</A></li>
+        <LI>Next message: <A HREF="000537.html">[Enigma-game-svn] r1104 - in trunk/src: . gui lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#536">[ date ]</a>
+              <a href="thread.html#536">[ thread ]</a>
+              <a href="subject.html#536">[ subject ]</a>
+              <a href="author.html#536">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2008-04-17 00:06:28 +0200 (Thu, 17 Apr 2008)
+New Revision: 1103
+
+Added:
+   trunk/data/music/
+   trunk/data/music/Makefile.am
+   trunk/data/music/menu/
+   trunk/data/music/menu/Makefile.am
+   trunk/data/music/menu/esprit.ogg
+   trunk/data/music/menu/menu.s3m
+Removed:
+   trunk/data/sound/
+Modified:
+   trunk/configure.ac
+   trunk/data/Makefile.am
+   trunk/src/client.cc
+   trunk/src/gui/LevelMenu.cc
+   trunk/src/gui/MainMenu.cc
+   trunk/src/gui/Menu.cc
+   trunk/src/gui/OptionsMenu.cc
+   trunk/src/gui/OptionsMenu.hh
+   trunk/src/main.cc
+   trunk/src/server.cc
+   trunk/src/sound.cc
+   trunk/src/sound.hh
+   trunk/src/sound_internal.hh
+Log:
+Menu music part 1:
+ - data structures for music files and music queues
+ - looping of Ogg-Vorbis and mp3 (mp3 not tested)
+ - added esprit.ogg
+Notes:
+ - You can access the loop test in the options menu,
+   third entry in &quot;Menu music&quot;.
+ - Changes to the current music queues and loops
+   are temporarily possible in SoundEngine::init_music().
+ - Music might be noisy when music volume is &lt; 10.
+   Possibly my sdl_mixer is outdated? Please feedback.
+Todo (probably in this sequence):
+ - split sound.cc into three files:
+     SoundEngine, SoundEffectManager, MusicManager
+ - reorganize options menu
+ - loop for mod-files (like &quot;Pentagonal Dreams&quot;)
+ - xml-files for meta data input, correct load/save
+   of menu music choice.
+ - activate/deactivate single music files
+ - random queue
+ - download of music files with gui
+
+
+Modified: trunk/configure.ac
+===================================================================
+--- trunk/configure.ac	2008-04-12 11:16:59 UTC (rev 1102)
++++ trunk/configure.ac	2008-04-16 22:06:28 UTC (rev 1103)
+@@ -381,7 +381,8 @@
+            data/levels/lib/Makefile
+            data/levels/patches/Makefile
+            data/fonts/Makefile
+-           data/sound/Makefile
++           data/music/Makefile
++           data/music/menu/Makefile
+            data/soundsets/Makefile
+            data/soundsets/enigma/Makefile
+            data/schemas/Makefile
+
+Modified: trunk/data/Makefile.am
+===================================================================
+--- trunk/data/Makefile.am	2008-04-12 11:16:59 UTC (rev 1102)
++++ trunk/data/Makefile.am	2008-04-16 22:06:28 UTC (rev 1103)
+@@ -1,4 +1,4 @@
+-SUBDIRS = gfx fonts schemas levels sound soundsets gfx16 gfx32 gfx40 gfx48 gfx64
++SUBDIRS = gfx fonts schemas levels music soundsets gfx16 gfx32 gfx40 gfx48 gfx64
+ 
+ pkgdata_DATA = \
+ 	api1init.lua \
+
+
+Property changes on: trunk/data/music
+___________________________________________________________________
+Name: svn:ignore
+   + Makefile
+Makefile.in
+
+
+Added: trunk/data/music/Makefile.am
+===================================================================
+--- trunk/data/music/Makefile.am	2008-04-12 11:16:59 UTC (rev 1102)
++++ trunk/data/music/Makefile.am	2008-04-16 22:06:28 UTC (rev 1103)
+@@ -0,0 +1,6 @@
++SUBDIRS = menu
++
++pkgdatadir = $(datadir)/@PACKAGE@/music
++pkgdata_DATA = 
++
++EXTRA_DIST = $(pkgdata_DATA)
+
+
+Property changes on: trunk/data/music/menu
+___________________________________________________________________
+Name: svn:ignore
+   + Makefile
+Makefile.in
+
+
+Added: trunk/data/music/menu/Makefile.am
+===================================================================
+--- trunk/data/music/menu/Makefile.am	2008-04-12 11:16:59 UTC (rev 1102)
++++ trunk/data/music/menu/Makefile.am	2008-04-16 22:06:28 UTC (rev 1103)
+@@ -0,0 +1,5 @@
++pkgdatadir = $(datadir)/@PACKAGE@/menu
++pkgdata_DATA = menu.s3m \
++               esprit.ogg
++
++EXTRA_DIST = $(pkgdata_DATA)
+
+Added: trunk/data/music/menu/esprit.ogg
+===================================================================
+(Binary files differ)
+
+
+Property changes on: trunk/data/music/menu/esprit.ogg
+___________________________________________________________________
+Name: svn:mime-type
+   + application/octet-stream
+
+Added: trunk/data/music/menu/menu.s3m
+===================================================================
+(Binary files differ)
+
+
+Property changes on: trunk/data/music/menu/menu.s3m
+___________________________________________________________________
+Name: svn:mime-type
+   + application/octet-stream
+
+Modified: trunk/src/client.cc
+===================================================================
+--- trunk/src/client.cc	2008-04-12 11:16:59 UTC (rev 1102)
++++ trunk/src/client.cc	2008-04-16 22:06:28 UTC (rev 1103)
+@@ -840,12 +840,7 @@
+         }
+     }
+ 
+-    sound::FadeoutMusic();
+-    if (options::GetBool(&quot;InGameMusic&quot;)) {
+-        sound::PlayMusic (options::GetString(&quot;LevelMusicFile&quot;));
+-    } else {
+-        sound::StopMusic();
+-    }
++    sound::StartLevelMusic();
+ 
+     // start screen transition
+     GC gc(video::BackBuffer());
+
+Modified: trunk/src/gui/LevelMenu.cc
+===================================================================
+--- trunk/src/gui/LevelMenu.cc	2008-04-12 11:16:59 UTC (rev 1102)
++++ trunk/src/gui/LevelMenu.cc	2008-04-16 22:06:28 UTC (rev 1103)
+@@ -422,7 +422,7 @@
+         const video::VMInfo *vminfo = video::GetInfo();
+         
+         video::SetCaption((&quot;Enigma - Level Menu&quot;));
+-        sound::PlayMusic (options::GetString(&quot;MenuMusicFile&quot;));
++        sound::StartMenuMusic();
+     
+         blit(gc, vminfo-&gt;mbg_offsetx, vminfo-&gt;mbg_offsety, enigma::GetImage(&quot;menu_bg&quot;, &quot;.jpg&quot;));
+     }
+
+Modified: trunk/src/gui/MainMenu.cc
+===================================================================
+--- trunk/src/gui/MainMenu.cc	2008-04-12 11:16:59 UTC (rev 1102)
++++ trunk/src/gui/MainMenu.cc	2008-04-16 22:06:28 UTC (rev 1103)
+@@ -230,7 +230,7 @@
+         const video::VMInfo *vminfo = video::GetInfo();
+     
+         video::SetCaption ((&quot;Enigma - Main Menu&quot;));
+-        sound::PlayMusic (options::GetString(&quot;MenuMusicFile&quot;));
++        sound::StartMenuMusic();
+     
+         blit(gc, vminfo-&gt;mbg_offsetx, vminfo-&gt;mbg_offsety, enigma::GetImage(&quot;menu_bg&quot;, &quot;.jpg&quot;));
+     
+
+Modified: trunk/src/gui/Menu.cc
+===================================================================
+--- trunk/src/gui/Menu.cc	2008-04-12 11:16:59 UTC (rev 1102)
++++ trunk/src/gui/Menu.cc	2008-04-16 22:06:28 UTC (rev 1103)
+@@ -86,7 +86,8 @@
+             SDL_Delay(10);
+             if(active_widget) active_widget-&gt;tick(0.01);
+             if(key_focus_widget &amp;&amp; (key_focus_widget != active_widget)) key_focus_widget-&gt;tick(0.01);
+-            tick (0.01);
++            tick(0.01);
++            sound::MusicTick(0.01);
+             refresh();
+         }
+         sound::EmitSoundEvent (&quot;menuexit&quot;);
+
+Modified: trunk/src/gui/OptionsMenu.cc
+===================================================================
+--- trunk/src/gui/OptionsMenu.cc	2008-04-12 11:16:59 UTC (rev 1102)
++++ trunk/src/gui/OptionsMenu.cc	2008-04-16 22:06:28 UTC (rev 1103)
+@@ -182,7 +182,26 @@
+         return _(sound::GetOptionSoundSetText(value).c_str());
+     }
+ 
++    /* -------------------- MenuMusicButton -------------------- */
++    
++    MenuMusicButton::MenuMusicButton() : ValueButton(0, 1) {
++        int numAvail = sound::GetOptionMenuMusicCount();
++        setMaxValue(numAvail - 1);
++        init();
++    }
+ 
++    int MenuMusicButton::get_value() const {
++        return sound::GetOptionMenuMusic();
++    }
++
++    void MenuMusicButton::set_value(int value) {
++        sound::SetOptionMenuMusic(value);
++    }
++
++    string MenuMusicButton::get_text(int value) const {
++        return _(sound::GetOptionMenuMusicText(value).c_str());
++    }
++
+     /* -------------------- StereoButton -------------------- */
+     
+     StereoButton::StereoButton() : ValueButton(-1, 1)
+@@ -377,6 +396,7 @@
+         bottomlabels.add (new Label(N_(&quot;User name: &quot;), HALIGN_RIGHT));
+         bottomlabels.add (new Label(N_(&quot;User path: &quot;), HALIGN_RIGHT));
+         bottomlabels.add (new Label(N_(&quot;User image path: &quot;), HALIGN_RIGHT));
++        bottomlabels.add (new Label(N_(&quot;Menu music: &quot;), HALIGN_RIGHT));
+         userNameTF = new TextField(app.state-&gt;getString(&quot;UserName&quot;));
+         userNameTF-&gt;setMaxChars(20);
+         userNameTF-&gt;setInvalidChars(&quot;+&quot;);
+@@ -385,6 +405,7 @@
+         bottom.add (userPathTF);
+         userImagePathTF = new TextField(XMLtoUtf8(LocalToXML(app.userImagePath.c_str()).x_str()).c_str());
+         bottom.add (userImagePathTF);
++        bottom.add (new MenuMusicButton);
+ 
+ //            add (m_restartinfo, Rect (l.x, l.y + 15, 400, 20));
+ //            m_restartinfo-&gt;set_alignment (HALIGN_LEFT);
+
+Modified: trunk/src/gui/OptionsMenu.hh
+===================================================================
+--- trunk/src/gui/OptionsMenu.hh	2008-04-12 11:16:59 UTC (rev 1102)
++++ trunk/src/gui/OptionsMenu.hh	2008-04-16 22:06:28 UTC (rev 1103)
+@@ -50,6 +50,7 @@
+         gui::TextField *userNameTF;
+         gui::TextField *userPathTF;
+         gui::TextField *userImagePathTF;
++        gui::TextField *menuMusicTF;
+         gui::Label  *m_restartinfo;
+         ecl::Surface *background;
+         std::string  previous_caption;
+@@ -88,6 +89,14 @@
+         std::string get_text(int value) const;
+     };
+ 
++    class MenuMusicButton : public ValueButton {
++    public:
++        MenuMusicButton();
++        int get_value() const;
++        void set_value(int value);
++        std::string get_text(int value) const;
++    };
++    
+     class LanguageButton : public ValueButton {
+         int get_value() const;
+         void set_value(int value);
+
+Modified: trunk/src/main.cc
+===================================================================
+--- trunk/src/main.cc	2008-04-12 11:16:59 UTC (rev 1102)
++++ trunk/src/main.cc	2008-04-16 22:06:28 UTC (rev 1103)
+@@ -377,6 +377,9 @@
+     // ----- Initialize sound tables -- needs sound, oxyd, video (error messages!)
+     sound::InitSoundSets();
+ 
++    // ----- Initialize music -- needs application state
++    sound::InitMusic();
++    
+ #if MACOSX
+     updateMac1_00();
+ #endif
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2008-04-12 11:16:59 UTC (rev 1102)
++++ trunk/src/server.cc	2008-04-16 22:06:28 UTC (rev 1103)
+@@ -553,7 +553,10 @@
+     else if (cmd == &quot;cheats&quot;) {
+         client::Msg_ShowText(&quot;god, collision  -- Be aware: you'll get no medals!&quot;, true);
+     }
+-
++    else if (cmd == &quot;April 1st&quot;) {
++        client::Msg_ShowText(&quot;No pizza, and a cloudless sky.&quot;, true);
++    }
++   
+     else {
+         enigma::Log &lt;&lt; &quot;Warning: Server received unknown command '&quot; &lt;&lt; cmd &lt;&lt; &quot;'\n&quot;;
+     }
+
+Modified: trunk/src/sound.cc
+===================================================================
+--- trunk/src/sound.cc	2008-04-12 11:16:59 UTC (rev 1102)
++++ trunk/src/sound.cc	2008-04-16 22:06:28 UTC (rev 1103)
+@@ -69,6 +69,12 @@
+ }
+ 
+ 
++SoundEngine::SoundEngine()
++: sound_sets(), sound_effects(), active_sound_set_key(&quot;&quot;),
++  default_sound_set(&quot;&quot;), sound_set_count(0), music_singles(),
++  music_queues(), active_music_queue(&quot;&quot;), music_context(MUSIC_NONE)
++{}
++
+ 
+ /* -------------------- SoundEngine_SDL implementation -------------------- */
+ 
+@@ -180,13 +186,18 @@
+     m_current_music = 0;
+ }
+ 
+-bool SoundEngine_SDL::play_music (const std::string &amp;filename) 
++bool SoundEngine_SDL::play_music (const std::string &amp;filename, double position) 
+ {
+     if (Mix_Music *music = Mix_LoadMUS(filename.c_str())) {
+         if (m_current_music)
+             Mix_FreeMusic (m_current_music);
+         m_current_music = music;
+-        Mix_PlayMusic (m_current_music, -1);
++        Mix_PlayMusic (m_current_music, 1);
++        if(position &gt; 0) {
++          Log &lt;&lt; &quot;Start music at position &quot; &lt;&lt; position &lt;&lt; &quot;\n&quot;;
++          if(Mix_SetMusicPosition(position) == -1)
++          Log &lt;&lt; &quot;Mix_SetMusicPosition: &quot; &lt;&lt; Mix_GetError() &lt;&lt; &quot;\n&quot;;
++        }
+         Mix_VolumeMusic (m_musicvolume);
+         return true;
+     }
+@@ -385,6 +396,7 @@
+ void sound::Tick (double dtime)
+ {
+     sound_engine-&gt;tick (dtime);
++    sound::MusicTick(dtime);
+ }
+ 
+ void sound::DisableSound() {
+@@ -454,19 +466,23 @@
+     sound_engine-&gt;fadeout_music();
+ }
+ 
+-void sound::PlayMusic (const std::string &amp;name) 
++bool sound::PlayMusic (const std::string &amp;name, double position) 
+ {
+-    if (!sound_enabled || !music_enabled || name==current_music_name)
+-        return;
+-
++    if(name == current_music_name)
++        return true;
++    if(!sound_enabled || !music_enabled || name==&quot;&quot;)
++        return false;
++    
+     FadeoutMusic();
+ 
+     string fname;
+-    if (app.resourceFS-&gt;findFile (name, fname) &amp;&amp; sound_engine-&gt;play_music (fname))
++    if (app.resourceFS-&gt;findFile (name, fname) &amp;&amp; sound_engine-&gt;play_music(fname, position)) {
+         current_music_name = name;
+-    else
++        return true;
++    } else {
+         current_music_name = &quot;&quot;;
+-
++        return false;
++    }
+ }
+ 
+ void sound::StopMusic() {
+@@ -479,6 +495,95 @@
+         StopMusic();
+ }
+ 
++bool sound::StartMenuMusic()
++{
++    if(sound_engine-&gt;getMusicContext() != MUSIC_MENU) {
++        sound::FadeoutMusic();
++        sound_engine-&gt;setMusicContext(MUSIC_MENU);
++    }
++}
++
++bool sound::StartLevelMusic()
++{
++    if(sound_engine-&gt;getMusicContext() != MUSIC_GAME) {
++        sound::FadeoutMusic();
++        sound_engine-&gt;setMusicContext(MUSIC_GAME);
++    }
++}
++
++void sound::MusicTick(double dtime)
++{
++    sound_engine-&gt;music_tick(dtime);
++}
++
++void SoundEngine::music_tick(double dtime)
++{
++    static double cumulated_dtime = 0;
++    cumulated_dtime += dtime;
++    if(cumulated_dtime &gt; 0.2) {
++      if((!Mix_PlayingMusic()) &amp;&amp; (!Mix_PausedMusic())) {
++        // Music has ended or not even begun
++        current_music_name = &quot;&quot;;
++        switch(sound_engine-&gt;getMusicContext()) {
++            case MUSIC_MENU:
++                music_queues[active_music_queue].next();                
++                //sound::PlayMusic (&quot;music/menu/esprit.ogg&quot;);
++                //sound::PlayMusic (options::GetString(&quot;MenuMusicFile&quot;));
++                break;
++            case MUSIC_GAME:
++                if (options::GetBool(&quot;InGameMusic&quot;)) {
++                    //sound::PlayMusic (&quot;music/menu/esprit.ogg&quot;);
++                    //sound::PlayMusic (options::GetString(&quot;LevelMusicFile&quot;));
++                } else
++                    sound::StopMusic();
++                break;
++        }
++      } else {
++        // Music is still running. Check if we should reloop.
++        if(active_music_queue != &quot;&quot;) {
++            string current_title = music_queues[active_music_queue].getCurrentMusicTitle();
++            if(current_title != &quot;&quot;) {
++                music_singles[current_title].maybeLoopBack();
++            }
++        }
++      }
++      cumulated_dtime = 0;
++    }
++}
++
++void sound::InitMusic()
++{
++    sound_engine-&gt;init_music();
++}
++
++void SoundEngine::init_music()
++{
++    // TODO: This is only temporary. Information will come 
++    // from an xml file later.
++    music_singles[&quot;Esprit Loop&quot;] =
++        MusicSingle(&quot;Esprit Loop&quot;, &quot;music/menu/esprit.ogg&quot;, 178180, 10690, 21600, true);
++    music_singles[&quot;Esprit&quot;] =
++        MusicSingle(&quot;Esprit&quot;, &quot;music/menu/esprit.ogg&quot;, 178180, 10690, 21600, false);
++    music_singles[&quot;Pentagonal Dreams&quot;] =
++        MusicSingle(&quot;Pentagonal Dreams&quot;, &quot;music/menu/menu.s3m&quot;);
++
++    music_queues[&quot;Default&quot;] = MusicQueue(&quot;Default&quot;, 0);
++    music_queues[&quot;Default&quot;].appendSingle(&quot;Esprit&quot;);
++    music_queues[&quot;Default&quot;].appendSingle(&quot;Pentagonal Dreams&quot;);
++
++    music_queues[&quot;Esprit&quot;] = MusicQueue(&quot;Esprit&quot;, 1);
++    music_queues[&quot;Esprit&quot;].appendSingle(&quot;Esprit&quot;);
++
++    music_queues[&quot;Pentagonal Dreams&quot;] = MusicQueue(&quot;Pentagonal Dreams&quot;, 2);
++    music_queues[&quot;Pentagonal Dreams&quot;].appendSingle(&quot;Pentagonal Dreams&quot;);
++
++    music_queues[&quot;Loop test&quot;] = MusicQueue(&quot;Loop test&quot;, 3);
++    music_queues[&quot;Loop test&quot;].appendSingle(&quot;Esprit Loop&quot;);
++
++    app.state-&gt;setProperty(&quot;MenuMusicQueue&quot;, &quot;Default&quot;);
++    active_music_queue = &quot;Default&quot;;
++}
++
+ void sound::ClearCache()
+ {
+     sound_engine-&gt;clear_cache();
+@@ -894,6 +999,131 @@
+     return (factor &lt;= damp.mini);
+ }
+ 
++/* -------------------- MusicSingle -------------------- */
++
++void sound::DefineMusicSingle(string title, string filename) {
++    // TODO: include play_till, replay_from, volume etc
++    assert(sound_engine.get());
++    if(filename == &quot;&quot;) {
++        Log &lt;&lt; &quot;Warning: Tried to define music single '&quot; &lt;&lt; title
++            &lt;&lt; &quot;' without file name. Skipped.\n&quot;;
++        return;
++    }
++    sound_engine-&gt;defineMusicSingle(title, filename);
++}
++
++bool SoundEngine::defineMusicSingle(string title, string filename)
++{
++    music_singles[title] = MusicSingle(title, filename);
++    Log &lt;&lt; &quot;Added music single '&quot; &lt;&lt; title &lt;&lt; &quot;'.\n&quot;;
++    return true;
++}
++
++bool MusicSingle::start()
++{
++    start_time = SDL_GetTicks();
++    return PlayMusic(filename);
++}
++
++bool MusicSingle::maybeLoopBack()
++{
++    Uint32 current_ticks = SDL_GetTicks();
++    if(allows_loop) {
++        if(current_ticks &gt;= start_time + loop_end) {
++            Uint32 position = loop_start + current_ticks - start_time - loop_end;
++            start_time = current_ticks - position;
++            StopMusic();
++            return PlayMusic(filename, position/1000.0);
++        } else
++            return false;
++    } else
++        return false;
++}
++
++bool SoundEngine::playMusicSingle(string title)
++{
++    return ((sound_engine-&gt;music_singles)[title]).start();
++}
++
++/* -------------------- Music Queue -------------------- */
++
++string MusicQueue::getCurrentMusicTitle()
++{
++    if(current_position_in_queue == -1)
++        return &quot;&quot;;
++    else
++        return single_title[current_position_in_queue];
++}
++
++void MusicQueue::appendSingle(string title)
++{
++    single_title.push_back(title);
++}
++
++bool MusicQueue::start()
++{
++    if(single_title.size() &gt; 0) {
++        current_position_in_queue = 0;
++        return sound_engine-&gt;playMusicSingle(single_title[0]);
++    } else
++        return false;
++}
++
++bool MusicQueue::next()
++{
++    if(current_position_in_queue == -1)
++        // Queue did not start yet. Request first title instead.
++        return start();
++    else {
++        // TODO: Add random
++        current_position_in_queue++;
++        if(current_position_in_queue &gt;= single_title.size())
++            current_position_in_queue = 0;
++        Log &lt;&lt; &quot;Play next in queue &quot; &lt;&lt; title &lt;&lt; &quot;.\n&quot;;
++        return sound_engine-&gt;playMusicSingle(single_title[current_position_in_queue]);
++    }
++}
++
++bool SoundEngine::setActiveMusicQueue(string music_queue_title)
++{
++    if (music_queue_title == &quot;&quot;) {
++        Log &lt;&lt; &quot;Warning: Tried to choose empty music queue title as menu music queue.\n&quot;;
++        return false;
++    }
++    if (music_queue_title == getActiveMusicQueueTitle()) {
++        // Current queue is aready running.
++        return true;
++    }
++    sound::FadeoutMusic();
++    if (music_queues[music_queue_title].start()) {
++        active_music_queue = music_queue_title;
++        Log &lt;&lt; &quot;Switched to menu music queue '&quot; &lt;&lt; music_queue_title &lt;&lt; &quot;'.\n&quot;;
++        return true;
++    } else {
++        Log &lt;&lt; &quot;Warning: Problems loading menu music queue '&quot; &lt;&lt; music_queue_title &lt;&lt; &quot;'.\n&quot;;
++        return false;
++    }
++}
++
++string SoundEngine::getMusicQueueByPosition(int button_position)
++{
++    for (MusicQueueRepository::iterator i = music_queues.begin();
++             i != music_queues.end(); ++i)
++        if((*i).second.getButtonPosition() == button_position)
++            return (*i).first;
++    return &quot;&quot;;
++}
++
++int SoundEngine::getMenuMusicQueueCount()
++{
++    int count = 0;
++    for (MusicQueueRepository::iterator i = music_queues.begin();
++             i != music_queues.end(); ++i)
++        if((*i).second.getButtonPosition() != -1)
++            count++;
++    return count;
++}
++
+ /* -------------------- Sound option helpers -------------------- */
+ 
+ /*! These functions are used in OptionsMenu.cc for the Soundset-Button. */
+@@ -908,7 +1138,7 @@
+     string soundSet = app.state-&gt;getString(&quot;SoundSetName&quot;);
+     if (soundSet == &quot;Default&quot;)
+         return 0;
+-    int pos = sound_engine-&gt;getButtonPosition(soundSet);
++    int pos = sound_engine-&gt;getSoundSetButtonPosition(soundSet);
+     assert(pos &gt; 0);
+     return pos;
+ }
+@@ -943,3 +1173,31 @@
+     return soundset_name;
+ }
+ 
++/*! These functions are used in OptionsMenu.cc for the MenuMusicButton. */
++
++int sound::GetOptionMenuMusicCount()
++{        
++    return sound_engine-&gt;getMenuMusicQueueCount();
++}
++
++int sound::GetOptionMenuMusic()
++{
++    string music_queue = app.state-&gt;getString(&quot;MenuMusicQueue&quot;);
++    int pos = sound_engine-&gt;getMusicQueueButtonPosition(music_queue);
++    assert(pos &gt;= 0);
++    return pos;
++}
++
++void sound::SetOptionMenuMusic(int value)
++{
++    string music_queue = sound_engine-&gt;getMusicQueueByPosition(value);
++    Log &lt;&lt; &quot;Try to set mmq '&quot; &lt;&lt; music_queue &lt;&lt; &quot;' from position &quot; &lt;&lt; value &lt;&lt; &quot;.\n&quot;;
++    app.state-&gt;setProperty(&quot;MenuMusicQueue&quot;, music_queue);
++    sound_engine-&gt;setActiveMusicQueue(music_queue);
++}
++
++string sound::GetOptionMenuMusicText(int value)
++{
++    return sound_engine-&gt;getMusicQueueByPosition(value);
++}
++
+
+Modified: trunk/src/sound.hh
+===================================================================
+--- trunk/src/sound.hh	2008-04-12 11:16:59 UTC (rev 1102)
++++ trunk/src/sound.hh	2008-04-16 22:06:28 UTC (rev 1103)
+@@ -193,7 +193,7 @@
+                     double relative_volume = 1.0, int priority=0);
+     bool PlaySoundGlobal (const SoundName &amp;, double relative_volume = 1.0, int priority=0);
+ 
+-    void PlayMusic (const std::string &amp;name);
++    bool PlayMusic (const std::string &amp;name, double position = 0.0);
+     void FadeoutMusic();
+ 
+     /*! Stop any music currently playing. */
+@@ -203,6 +203,12 @@
+       continue playing. */
+     void StopMusic (const std::string &amp;name);
+ 
++    void DefineMusicSingle(std::string title, std::string filename);
++    bool StartMenuMusic();
++    bool StartLevelMusic();
++    void MusicTick(double dtime);
++    void InitMusic();
++    
+     void ClearCache();
+     void DefineSound (const SoundName &amp;, const SoundData &amp;);
+     void SetSoundVolume (double vol);
+@@ -236,6 +242,10 @@
+     int GetOptionSoundSet();
+     void SetOptionSoundSet(int value);
+     std::string GetOptionSoundSetText(int value);
++    int GetOptionMenuMusicCount();
++    int GetOptionMenuMusic();
++    void SetOptionMenuMusic(int value);
++    std::string GetOptionMenuMusicText(int value);
+ }
+ 
+ #endif
+
+Modified: trunk/src/sound_internal.hh
+===================================================================
+--- trunk/src/sound_internal.hh	2008-04-12 11:16:59 UTC (rev 1102)
++++ trunk/src/sound_internal.hh	2008-04-16 22:06:28 UTC (rev 1103)
+@@ -98,14 +98,86 @@
+         OxydLib::OxydVersion oxyd_ver;
+         int button_position;
+     };
+-
++    
+     typedef map&lt;string, SoundEffect&gt; SoundEffectRepository;
+     typedef map&lt;string, SoundSet&gt; SoundSetRepository;
++
++/* -------------------- Music and MusicQueue -------------------- */
++
++/*! The class &quot;MusicSingle&quot; holds filename and default playing information
++    for a single music file. Several music files can be combined into
++    a &quot;MusicQueue&quot; to play in a given or random sequence. MusicQueues are
++    used for menu music. One MusicQueue corresponds to one choice on the
++    option menu's button. */
++
++    class MusicSingle {
++    public:
++        MusicSingle(string title_, string filename_, Uint32 length_,
++                    Uint32 loop_start_, Uint32 loop_end_, bool allows_loop_)
++        : title(title_), filename(filename_), length(length_),
++          loop_start(loop_start_), loop_end(loop_end_),
++          allows_loop(allows_loop_), start_time() {}
++
++        MusicSingle(string title_, string filename_)
++        : title(title_), filename(filename_), length(0),
++          loop_start(0), loop_end(0), allows_loop(false), start_time() {}
++
++        MusicSingle()
++        : title(&quot;&quot;), filename(&quot;&quot;), length(0), loop_start(0), loop_end(0),
++          allows_loop(false) {}
++
++        bool start();
++        bool maybeLoopBack();
++
++    private:
++        string title;
++        string filename;
++        Uint32 length;      // in milliseconds
++        Uint32 loop_start;  // where the loop starts
++        Uint32 loop_end;    // where the loop should end (but continues playing until next tick)
++        Uint32 start_time;  // number of milliseconds since SDL init
++        bool allows_loop;
++    };
++
++    class MusicQueue {
++    public:
++        MusicQueue(string title_, int button_position_)
++        : title(title_), button_position(button_position_),
++          current_position_in_queue(-1), single_title() {}
++
++        MusicQueue()
++        : title(&quot;&quot;), button_position(-1),
++          current_position_in_queue(-1), single_title() {}
++
++        bool start();
++        bool next();
++        string getCurrentMusicTitle();
++        int getButtonPosition() { return button_position; }
++        void setButtonPosition(int pos) { button_position = pos; }
++        void appendSingle(string title);
++
++    private:
++        int current_position_in_queue;
++        string title;
++        int button_position;
++        vector&lt;string&gt; single_title;
++    };
++
++    typedef map&lt;string, MusicSingle&gt; MusicSingleRepository;
++    typedef map&lt;string, MusicQueue&gt; MusicQueueRepository;
++
++    /*! MusicContext is a nominal condition to change the
++      music during the next tick.
++      NONE: during initialisation (don't play music now),
++      MENU/GAME: play music suitable for menu or during game. */
++    enum MusicContext { MUSIC_NONE, MUSIC_MENU, MUSIC_GAME };
++
+         
+ /* -------------------- SoundEngine -------------------- */
+ 
+     class SoundEngine {
+     public:
++        SoundEngine();
+         virtual ~SoundEngine() {}
+         
+         //! Returns true if successful.
+@@ -116,20 +188,33 @@
+         virtual void set_sound_volume (double soundvol) = 0;
+         virtual void set_music_volume (double musicvol) = 0;
+ 
+-        // ---------- Music ----------
++        // ---------- Music and music repository ----------
+ 
+-        virtual bool play_music (const std::string &amp;filename) = 0;
++        virtual bool play_music(const std::string &amp;filename, double position) = 0;
+         virtual void stop_music() = 0;
+         virtual void fadeout_music() = 0;
+-
++        void setMusicContext(MusicContext context) { music_context = context; }
++        MusicContext getMusicContext() { return music_context; }
++        bool defineMusicSingle(string title, string filename);
++        bool playMusicSingle(string title);
++        bool setActiveMusicQueue(string music_queue_title);
++        string getActiveMusicQueueTitle() { return active_music_queue; }
++        void music_tick(double dtime);
++        void init_music();
++        string getMusicQueueByPosition(int button_position);
++        int getMenuMusicQueueCount();
++        int getMusicQueueButtonPosition(string music_queue_title) {
++            return music_queues[music_queue_title].getButtonPosition();
++        }
++        
+         // ---------- Sound effects ----------
+ 
+         virtual void clear_cache() = 0;
+-        virtual void define_sound (const SoundName &amp;, const SoundData &amp;)=0;
+-        virtual bool play_sound (const SoundEvent &amp;s) = 0;
++        virtual void define_sound(const SoundName &amp;, const SoundData &amp;)=0;
++        virtual bool play_sound(const SoundEvent &amp;s) = 0;
+         virtual void cache_sound(const SoundEffect &amp;s) = 0;
+-        virtual void set_listenerpos (ecl::V2 pos) = 0;
+-        virtual void tick (double dtime) {}
++        virtual void set_listenerpos(ecl::V2 pos) = 0;
++        virtual void tick(double dtime) {}
+ 
+         // ---------- Sound effect repository and sound sets ----------
+ 
+@@ -160,7 +245,8 @@
+ 
+         void setSoundSetCount(int count) { sound_set_count = count; }
+         int getSoundSetCount() { return sound_set_count; }
+-        int getButtonPosition(string soundset_name) {
++        
++        int getSoundSetButtonPosition(string soundset_name) {
+             return sound_sets[soundset_name].getButtonPosition();
+         }
+         string getSoundSetByPosition(int button_position);
+@@ -171,6 +257,10 @@
+         string                   active_sound_set_key;
+         string                   default_sound_set;
+         int                      sound_set_count;
++        MusicSingleRepository    music_singles;
++        MusicQueueRepository     music_queues;
++        string                   active_music_queue;
++        MusicContext             music_context;
+     };
+ 
+     class SoundEngine_Null : public SoundEngine {
+@@ -183,7 +273,7 @@
+         bool is_initialized() const { return true; }
+         void set_sound_volume(double /*soundvol*/) {}
+         void set_music_volume(double /*musicvol*/) {}
+-        bool play_music (const std::string &amp;/*filename*/) { return false; }
++        bool play_music (const std::string &amp;/*filename*/, double /*position*/) { return false; }
+         void stop_music() {}
+         void fadeout_music() {}
+ 
+@@ -206,7 +296,7 @@
+         void set_sound_volume(double soundvol);
+         void set_music_volume(double musicvol);
+ 
+-        bool play_music (const std::string &amp;filename);
++        bool play_music (const std::string &amp;filename, double position);
+         void stop_music();
+         void fadeout_music();
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000535.html">[Enigma-game-svn] r1102 - in trunk: doc/reference etc
+</A></li>
+	<LI>Next message: <A HREF="000537.html">[Enigma-game-svn] r1104 - in trunk/src: . gui lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#536">[ date ]</a>
+              <a href="thread.html#536">[ thread ]</a>
+              <a href="subject.html#536">[ subject ]</a>
+              <a href="author.html#536">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

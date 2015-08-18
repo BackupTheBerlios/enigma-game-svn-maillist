@@ -1,0 +1,164 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r872 - branches/1.0/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r872%20-%20branches/1.0/src&In-Reply-To=%3C200709081331.l88DVrrV001157%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000303.html">
+   <LINK REL="Next"  HREF="000305.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r872 - branches/1.0/src</H1>
+    <B>raoul at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r872%20-%20branches/1.0/src&In-Reply-To=%3C200709081331.l88DVrrV001157%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r872 - branches/1.0/src">raoul at mail.berlios.de
+       </A><BR>
+    <I>Sat Sep  8 15:31:53 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000303.html">[Enigma-game-svn] r871 - branches
+</A></li>
+        <LI>Next message: <A HREF="000305.html">[Enigma-game-svn] r873 - branches/1.01/lib-src/zipios++/zipios++
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#304">[ date ]</a>
+              <a href="thread.html#304">[ thread ]</a>
+              <a href="subject.html#304">[ subject ]</a>
+              <a href="author.html#304">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: raoul
+Date: 2007-09-08 15:31:52 +0200 (Sat, 08 Sep 2007)
+New Revision: 872
+
+Modified:
+   branches/1.0/src/items.cc
+   branches/1.0/src/world.cc
+Log:
+-&gt; Rubberband fixes from trunk (rev. 867/868)
+
+
+
+Modified: branches/1.0/src/items.cc
+===================================================================
+--- branches/1.0/src/items.cc	2007-09-08 12:12:14 UTC (rev 871)
++++ branches/1.0/src/items.cc	2007-09-08 13:31:52 UTC (rev 872)
+@@ -3587,8 +3587,12 @@
+                 world::KillRubberBands (a);
+ 
+             sound_event (&quot;rubberband&quot;);
+-            if (target_actor)
+-                world::AddRubberBand (a,target_actor,rbd);
++            if (target_actor) {
++                // It's not allowed to connect a rubberband to self.
++                if (target_actor != a)
++                    world::AddRubberBand (a,target_actor,rbd);
++                else
++                    return ITEM_DROP; }
+             else
+                 world::AddRubberBand (a,target_stone,rbd);
+ 
+
+Modified: branches/1.0/src/world.cc
+===================================================================
+--- branches/1.0/src/world.cc	2007-09-08 12:12:14 UTC (rev 871)
++++ branches/1.0/src/world.cc	2007-09-08 13:31:52 UTC (rev 872)
+@@ -234,20 +234,20 @@
+ /* -------------------- RubberBand -------------------- */
+ 
+ RubberBand::RubberBand (Actor *a1, Actor *a2, const RubberBandData &amp;d)
+-: actor(a1), actor2(a2), stone(0),
+-  model(display::AddRubber(get_p1(),get_p2())),
+-  data (d)
++: actor(a1), actor2(a2), stone(0), model(0), data (d)
+ {
+     ASSERT(actor, XLevelRuntime, &quot;RubberBand: no actor defined&quot;);
+     ASSERT(d.length &gt;= 0, XLevelRuntime, &quot;RubberBand: length negative&quot;);
++    ASSERT(d.length &gt;= d.minlength, XLevelRuntime, &quot;RubberBand: minlength &gt; length&quot;);
++    model = display::AddRubber(get_p1(),get_p2());
+ }
+ 
+ RubberBand::RubberBand (Actor *a1, Stone *st, const RubberBandData &amp;d)
+-: actor(a1), actor2(0), stone(st), model(0),
+-  data (d)
++: actor(a1), actor2(0), stone(st), model(0), data (d)
+ {
+     ASSERT(actor, XLevelRuntime, &quot;RubberBand: no actor defined&quot;);
+     ASSERT(d.length &gt;= 0, XLevelRuntime, &quot;RubberBand: length negative&quot;);
++    ASSERT(d.length &gt;= d.minlength, XLevelRuntime, &quot;RubberBand: minlength &gt; length&quot;);
+     model = display::AddRubber(get_p1(), get_p2());
+ }
+ 
+@@ -259,22 +259,21 @@
+ {
+     V2 v = get_p2()-get_p1();
+     double vv = ecl::length(v);
+-
+-    if (vv &gt; data.length) {
+-        V2 force = v * data.strength*(vv-data.length)/vv;
++    V2 force;
++    
++    if (vv == 0) {
++        force = V2(0, 0);
++    } else if (vv &lt; data.minlength) {
++        force = v*data.strength*(vv-data.minlength)/vv;
+         force /= 6;
+-        actor-&gt;add_force(force);
+-        if (actor2)
+-            actor2-&gt;add_force(-force);
+-    } 
+-    else if (vv &lt; data.minlength) {
+-        V2 force = v * data.strength * (vv-data.minlength) / vv;
++    } else if (vv &gt; data.length) {
++        force = v*data.strength*(vv-data.length)/vv;
+         force /= 6;
+-        actor-&gt;add_force(force);
+-        if (actor2)
+-            actor2-&gt;add_force(-force);
+     }
+-
++    
++    actor-&gt;add_force(force);
++    if (actor2)
++        actor2-&gt;add_force(-force);
+ }
+ 
+ V2 RubberBand::get_p1() const
+@@ -2111,4 +2110,3 @@
+ Item * world::MakeItem(const char *kind) {
+     return dynamic_cast&lt;Item*&gt;(MakeObject(kind));
+ }
+-
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000303.html">[Enigma-game-svn] r871 - branches
+</A></li>
+	<LI>Next message: <A HREF="000305.html">[Enigma-game-svn] r873 - branches/1.01/lib-src/zipios++/zipios++
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#304">[ date ]</a>
+              <a href="thread.html#304">[ thread ]</a>
+              <a href="subject.html#304">[ subject ]</a>
+              <a href="author.html#304">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

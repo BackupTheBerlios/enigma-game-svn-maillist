@@ -1,0 +1,296 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1039 - team_levelpacks/team_test_new_api
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1039%20-%20team_levelpacks/team_test_new_api&In-Reply-To=%3C200802151949.m1FJnad3029818%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000470.html">
+   <LINK REL="Next"  HREF="000472.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1039 - team_levelpacks/team_test_new_api</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1039%20-%20team_levelpacks/team_test_new_api&In-Reply-To=%3C200802151949.m1FJnad3029818%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1039 - team_levelpacks/team_test_new_api">ral at mail.berlios.de
+       </A><BR>
+    <I>Fri Feb 15 20:49:36 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000470.html">[Enigma-game-svn] r1038 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="000472.html">[Enigma-game-svn] r1040 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#471">[ date ]</a>
+              <a href="thread.html#471">[ thread ]</a>
+              <a href="subject.html#471">[ subject ]</a>
+              <a href="author.html#471">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-02-15 20:49:35 +0100 (Fri, 15 Feb 2008)
+New Revision: 1039
+
+Modified:
+   team_levelpacks/team_test_new_api/ralT034_1.xml
+   team_levelpacks/team_test_new_api/ralT035_1.xml
+Log:
+Test Level new API:
+- resolver testlevel updates
+
+Modified: team_levelpacks/team_test_new_api/ralT034_1.xml
+===================================================================
+--- team_levelpacks/team_test_new_api/ralT034_1.xml	2008-02-15 19:45:10 UTC (rev 1038)
++++ team_levelpacks/team_test_new_api/ralT034_1.xml	2008-02-15 19:49:35 UTC (rev 1039)
+@@ -19,11 +19,13 @@
+ 
+ wo[&quot;ConserveLevel&quot;] = true
+ 
++ti[&quot;_&quot;] = {&quot;fl-sahara&quot;}
+ ti[&quot;r&quot;] = {&quot;fl-rough-red&quot;}
+ ti[&quot;b&quot;] = {&quot;fl-rough-blue&quot;}
+ ti[&quot;.&quot;] = ti({&quot;fl-rough-blue&quot;, checkerboard=0}) .. {&quot;fl-rough-red&quot;, checkerboard=1}
+ 
+ ti[&quot; &quot;] = ti[&quot;.&quot;] .. {&quot;it_blocker&quot;}
++ti[&quot;n&quot;] = {}       -- just nothing
+ ti[&quot;w&quot;] = {&quot;st-wood&quot;}
+ ti[&quot;s&quot;] = {&quot;st_switch&quot;, target=&quot;rmfloor&quot;}
+ ti[&quot;i&quot;] = {&quot;st_switch&quot;, target=&quot;icefloor&quot;}
+@@ -33,7 +35,7 @@
+ 
+ function myresolver(key, x, y)
+     if key == &quot; &quot; then
+-        if math.random() &gt;= 0.5 then
++        if math.random() &gt;= 0.3 then
+             return ti[&quot;b&quot;]
+         else
+             return ti[&quot;r&quot;]
+@@ -43,9 +45,97 @@
+     end
+ end
+ 
++res = {}
++
++function res.random_implementation(context, evaluator, key, x, y)
++    for hit_itr, hit_pair in ipairs(context[3]) do
++        if key == hit_pair[1] then
++            local super = nil
++            if hit_pair[2] ~= nil then
++                super = evaluator(context[2], hit_pair[2], x, y)
++            end
++            local repl_key
++            -- dummy test implementation with 2 keys
++            local r = math.random(context[5])
++            local i = 1
++            local s = context[4][i][2]
++            while s &lt; r do
++                i = i + 1
++                s = s + context[4][i][2]
++            end
++            repl_key = context[4][i][1]
++            local replacement = evaluator(context[2], repl_key, x, y)
++            if super == nil then
++                return replacement
++            elseif type(super) == &quot;table&quot; then
++                return ti(super) .. replacement
++            else
++                return super .. replacement
++            end
++        end
++    end
++    -- key not found
++    return evaluator(context[2], key, x, y)
++end
++
++function res.random(subresolver, hits, replacements)
++    -- syntax: hits = key | {key, [key]*, [{key, superkey}]*}
++    --         replacements = {key, [key]*, [{key, frequency}]*}
++    -- TODO check args!
++    
++    local hit_table = {}
++    if type(hits) == &quot;string&quot; then
++        hit_table[1] = {hits, nil}
++    else
++        for i, v in ipairs(hits) do
++            if type(v) == &quot;string&quot; then
++                hit_table[i] = {v, nil}
++            elseif type(v) == &quot;table&quot; then
++                hit_table[i] = v
++            end
++        end
++    end
++    
++    local repl_table = {}
++    for i, v in ipairs(replacements) do
++        if type(v) == &quot;string&quot; then
++            repl_table[i] = {v, 1}
++        elseif type(v) == &quot;table&quot; then
++            repl_table[i] = v
++        end
++    end
++    local repl_sum = 0
++    for i, v in ipairs(repl_table) do
++        repl_sum = repl_sum + v[2]
++    end
++    local context = {res.random_implementation, subresolver, hit_table, 
++                      repl_table, repl_sum}
++    return context
++end
++
++
++function fullresolver_implementation(context, evaluator, key, x, y)
++    if key == &quot;b&quot; then
++        return ti[&quot;r&quot;]
++    elseif key == &quot;r&quot; then
++        return ti[&quot;b&quot;]
++    else
++        return evaluator(context[2], key, x, y)
++    end
++end
++
++function fullresolver(subresolver)
++    local context = {fullresolver_implementation, subresolver}
++    return context
++end
++
+ resolver = ti
+ if wo[&quot;IsDifficult&quot;] then
+-    resolver = myresolver
++--    resolver = fullresolver(myresolver)
++--    resolver = res.random(ti, &quot; &quot;, {&quot;r&quot;,&quot;b&quot;})
++--    resolver = res.random(ti, &quot; &quot;, {&quot;r&quot;,{&quot;b&quot;, 4},&quot;_&quot;})
++--    resolver = res.random(ti, {&quot; &quot;,&quot;w&quot;}, {&quot;r&quot;,{&quot;b&quot;, 4},&quot;_&quot;})
++    resolver = res.random(ti, {&quot; &quot;,{&quot;w&quot;,&quot;w&quot;}}, {&quot;r&quot;,{&quot;b&quot;, 2},{&quot;_&quot;,4}})
+ end
+ 
+ w, h = wo(resolver, &quot; &quot;, {
+@@ -61,7 +151,7 @@
+ &quot;   bbrr.....rrbb    &quot;,
+ &quot;    b2brrrrrb1b     &quot;,
+ &quot;       bbbbb        &quot;,
+-&quot;si                  &quot;
++&quot;si             n    &quot;
+ })
+ 
+ function icefloor(value, sender)
+
+Modified: team_levelpacks/team_test_new_api/ralT035_1.xml
+===================================================================
+--- team_levelpacks/team_test_new_api/ralT035_1.xml	2008-02-15 19:45:10 UTC (rev 1038)
++++ team_levelpacks/team_test_new_api/ralT035_1.xml	2008-02-15 19:49:35 UTC (rev 1039)
+@@ -16,16 +16,15 @@
+     &lt;/el:info&gt;
+     &lt;el:luamain&gt;&lt;![CDATA[
+ 
+-
+ wo[&quot;ConserveLevel&quot;] = true
+ 
+-ti[&quot; &quot;] = {&quot;fl-sahara&quot;}
+-ti[&quot;1&quot;] = ti[&quot; &quot;] .. {&quot;#ac-blackball&quot;}
++ti[&quot;  &quot;] = {&quot;fl-sahara&quot;}
++ti[&quot; 1&quot;] = ti[&quot;  &quot;] .. {&quot;#ac-blackball&quot;}
+ 
+ -- sample of create world without a given map - just default floors
+-w, h = wo(ti, &quot; &quot;, 20, 13)
++w, h = wo(ti, &quot;  &quot;, 20, 13)
+ 
+-wo[{14, 7}] = ti[&quot;1&quot;]
++wo[{14, 7}] = ti[&quot; 1&quot;]
+ 
+ -- sample of registry of a world lib function and its usage
+ function hurra(world, pos)
+@@ -36,21 +35,37 @@
+ 
+ wo:hurra(po({2,3}))
+ 
+--- first version of a general draw map
+--- TODO distinguish resolver ti/function, call function
+--- TODO accept key length greater 1 (detect on ignore string length)
+--- TODO check behaviour on errors and add usable reports
++-- second version of a general draw map
++-- TODO argument check with error on faults
+ 
+-ti[&quot;#&quot;] = {&quot;it_blocker&quot;}
++ti[&quot;..&quot;] = {&quot;it_blocker&quot;}
++ti[&quot;::&quot;] = {&quot;it-cross&quot;}
+ 
+-function drawmap(world, origin, resolver, ignore, map)
++function myresolver(key, x, y)
++    if key == &quot;##&quot; then
++        if math.random() &gt;= 0.5 then
++            return ti[&quot;..&quot;]
++        else
++            return ti[&quot;::&quot;]
++        end
++    else
++        return ti[key]
++    end
++end
++
++function drawmap(world, resolver, origin, ignore, map)
+     local len = string.len(ignore)
+     for y=1, #map do
+         local linelen = string.len(map[y])
+-        for x = 1, linelen do
+-            local key = string.sub(map[y], x, x)
++        if math.fmod(linelen, len) ~= 0 then
++            error(&quot;drawmap map line &quot;.. y .. &quot; with odd length&quot;, 2)
++        end
++        for x = 1, linelen/len do
++            local key = string.sub(map[y], len*(x-1)+1, len*x)
+             if key ~= ignore then
+-                world[origin + {x-1, y-1}] = resolver[key]
++                world[origin + {x-1, y-1}] =  
++                        world:_evaluate(resolver, key, origin.x + x - 1, 
++                                origin.y + y-1)
+             end
+         end
+     end
+@@ -58,10 +73,10 @@
+ 
+ wo:_register(&quot;drawmap&quot;, drawmap)
+ 
+-wo:drawmap(po({wo.Width-10, wo.Height-5}), ti, &quot;-&quot;, {
+-  &quot;--###&quot;,
+-  &quot;###--###&quot;,
+-  &quot;---###&quot;
++wo:drawmap(myresolver, po({wo.Width-10, wo.Height-5}), &quot;--&quot;, {
++  &quot;----######&quot;,
++  &quot;######----######&quot;,
++  &quot;------######&quot;
+ })
+ 
+   ]]&gt;&lt;/el:luamain&gt;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000470.html">[Enigma-game-svn] r1038 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="000472.html">[Enigma-game-svn] r1040 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#471">[ date ]</a>
+              <a href="thread.html#471">[ thread ]</a>
+              <a href="subject.html#471">[ subject ]</a>
+              <a href="author.html#471">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

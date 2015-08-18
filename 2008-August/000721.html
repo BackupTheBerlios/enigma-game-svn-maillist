@@ -1,0 +1,2202 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1291 - in trunk: data data/schemas src src/items	src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-August/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1291%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/items%0A%09src/stones&In-Reply-To=%3C200808272145.m7RLj3u2012344%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000720.html">
+   <LINK REL="Next"  HREF="000722.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1291 - in trunk: data data/schemas src src/items	src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1291%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/items%0A%09src/stones&In-Reply-To=%3C200808272145.m7RLj3u2012344%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1291 - in trunk: data data/schemas src src/items	src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Aug 27 23:45:03 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000720.html">[Enigma-game-svn] r1290 - in trunk/data: . levels/enigma_cross	levels/enigma_vi
+</A></li>
+        <LI>Next message: <A HREF="000722.html">[Enigma-game-svn] r1292 - in trunk/src: items stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#721">[ date ]</a>
+              <a href="thread.html#721">[ thread ]</a>
+              <a href="subject.html#721">[ subject ]</a>
+              <a href="author.html#721">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-08-27 23:44:59 +0200 (Wed, 27 Aug 2008)
+New Revision: 1291
+
+Added:
+   trunk/src/items/BrakeItem.cc
+   trunk/src/items/BrakeItem.hh
+   trunk/src/items/PipeItem.cc
+   trunk/src/items/PipeItem.hh
+   trunk/src/items/RubberbandItem.cc
+   trunk/src/items/RubberbandItem.hh
+   trunk/src/stones/BrakeStone.cc
+   trunk/src/stones/BrakeStone.hh
+   trunk/src/stones/FartStone.cc
+   trunk/src/stones/FartStone.hh
+   trunk/src/stones/MailStone.cc
+   trunk/src/stones/MailStone.hh
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/api2init.lua
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/items.cc
+   trunk/src/items.hh
+   trunk/src/ox_magnum.cc
+   trunk/src/ox_oxyd1.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/stones/CoinSlot.cc
+   trunk/src/stones/ShogunStone.cc
+   trunk/src/stones/VolcanoStone.cc
+   trunk/src/stones_complex.cc
+   trunk/src/stones_simple.cc
+Log:
+Trunk 1.1: new API reengineering
+- volcano:
+  - rename incactive variant to st_volcano_idle
+- fart stone:
+  - rename to st_fart
+  - StateObject with 3 states: IDLE, ACTIVE, BREAKING
+  - prepared for full swap capability
+- brake:
+  - rename to it_brake, st_brake
+  - transfer identity between both representations on application
+- shogun stone:
+  - disallow wire impulses to push larger shoguns on top of smaller ones
+- rubberband item:
+  - extracted from items.cc
+- coinslot stone:
+  support of 2 new interval_s/m/l values:
+  - COIN_IGNORE: accept coin but do not act
+  - COIN_REJECT: do not accecpt coin
+- pipe item
+  - rename to it_pipe_w,... it_pipe_ns, it_pipe_nw, it_pipe_ew
+    (instead of ... it-pipe-v, it-pipe-wn, it-pipe-h) 
+- mail stone
+  - rename to st_mail_n,...
+  - attribute orientation added
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/data/api1init.lua	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -47,6 +47,7 @@
+ RenamingObjectsNew2Old = {
+     it_blocker = &quot;it-blocker&quot;,
+     it_blocker_new = &quot;it-blocker-new&quot;,
++    it_brake = &quot;it-brake&quot;,
+     it_brush = &quot;it-brush&quot;,
+     it_coin_s = &quot;it-coin1&quot;,
+     it_coin_m = &quot;it-coin2&quot;,
+@@ -62,6 +63,16 @@
+     it_magicwand = &quot;it-magicwand&quot;,
+     it_magnet = &quot;it-magnet&quot;,
+     it_magnet_on = &quot;it-magnet-on&quot;,
++    it_pipe_w = &quot;it-pipe-w&quot;,
++    it_pipe_s = &quot;it-pipe-s&quot;,
++    it_pipe_sw = &quot;it-pipe-sw&quot;,
++    it_pipe_e = &quot;it-pipe-e&quot;,
++    it_pipe_ew = &quot;it-pipe-h&quot;,
++    it_pipe_es = &quot;it-pipe-es&quot;,
++    it_pipe_n = &quot;it-pipe-n&quot;,
++    it_pipe_nw = &quot;it-pipe-nw&quot;,
++    it_pipe_ns = &quot;it-pipe-v&quot;,
++    it_pipe_ne = &quot;it-pipe-ne&quot;,
+     it_magnet_off = &quot;it-magnet-off&quot;,
+     it_rubberband = &quot;it-rubberband&quot;,
+     it_seed = &quot;it-seed&quot;,
+@@ -107,6 +118,7 @@
+     st_boulder_e = &quot;st-bolder-e&quot;,
+     st_boulder_s = &quot;st-bolder-s&quot;,
+     st_boulder_w = &quot;st-bolder-w&quot;,
++    st_brake = &quot;st-brake&quot;,
+     st_brick = &quot;st-brick&quot;,
+     st_brick_w = &quot;st-bigbrick-w&quot;,
+     st_brick_s = &quot;st-bigbrick-s&quot;,
+@@ -132,6 +144,7 @@
+     st_door_a = &quot;st-door_a&quot;,
+     st_door_b = &quot;st-door_b&quot;,
+     st_door_c = &quot;st-door_c&quot;,
++    st_fart = &quot;st-fart&quot;,
+     st_floppy = &quot;st-floppy&quot;,
+     st_fourswitch = &quot;st-fourswitch&quot;,
+     st_knight = &quot;st-knight&quot;,
+@@ -143,6 +156,10 @@
+     st_laserflop = &quot;st-lasertimeswitch&quot;,
+     st_lightpassenger = &quot;st-lightpassenger&quot;,
+     st_lightpassenger_off = &quot;st-lightpassenger_off&quot;,
++    st_mail_w = &quot;st-mail-w&quot;,
++    st_mail_s = &quot;st-mail-s&quot;,
++    st_mail_e = &quot;st-mail-e&quot;,
++    st_mail_n = &quot;st-mail-n&quot;,
+     
+     st_mirror_slab_n = &quot;st-mirror-p|&quot;,
+     st_mirror_slab_e = &quot;st-mirror-p/&quot;,
+@@ -225,7 +242,7 @@
+     st_volcano = &quot;st-volcano&quot;,
+     st_volcano_new = &quot;st-volcano-growing&quot;,
+     st_volcano_active = &quot;st-volcano_active&quot;,
+-    st_volcano_inactive = &quot;st-volcano_inactive&quot;,
++    st_volcano_idle = &quot;st-volcano_inactive&quot;,
+     st_window = &quot;st-window&quot;
+ }
+ 
+@@ -666,7 +683,7 @@
+     st_blocker_new__trigger = &quot;toggle&quot;,
+     st_boulder__direction = &quot;orientate&quot;,
+     st_door__openclose = &quot;toggle&quot;,
+-    [&quot;st-fart__trigger&quot;] = &quot;toggle&quot;,
++    st_fart__trigger = &quot;toggle&quot;,
+     st_fourswitch__trigger = &quot;toggle&quot;,
+     st_floppy__onoff = &quot;toggle&quot;,
+     st_key__onoff = &quot;toggle&quot;,
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/data/api2init.lua	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -66,6 +66,8 @@
+ ON       = 1
+ CLOSED   = 0
+ OPEN     = 1
++IDLE     = 0
++ACTIVE   = 1
+ OXYDPAIR = 2
+ 
+ -- color
+@@ -131,6 +133,10 @@
+ SPOT_LIGHTPASSENGER =  16
+ SPOT_TRAP           =  32
+ 
++-- coinslot
++COIN_IGNORE = -1
++COIN_REJECT = -2
++
+ -- follower
+ FOLLOW_NO     = 0
+ FOLLOW_SCROLL = 1
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/data/models-2d.lua	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -479,8 +479,8 @@
+ 
+ -- it-pipe --
+ do
+-    DefTiles(&quot;it-pipe&quot;, {&quot;it-pipe-e&quot;, &quot;it-pipe-s&quot;, &quot;it-pipe-es&quot;, &quot;it-pipe-sw&quot;, &quot;it-pipe-h&quot;,
+-                            &quot;it-pipe-w&quot;, &quot;it-pipe-n&quot;, &quot;it-pipe-ne&quot;, &quot;it-pipe-wn&quot;, &quot;it-pipe-v&quot;})
++    DefTiles(&quot;it-pipe&quot;, {&quot;it_pipe_e&quot;, &quot;it_pipe_s&quot;, &quot;it_pipe_es&quot;, &quot;it_pipe_sw&quot;, &quot;it_pipe_ew&quot;,
++                            &quot;it_pipe_w&quot;, &quot;it_pipe_n&quot;, &quot;it_pipe_ne&quot;, &quot;it_pipe_nw&quot;, &quot;it_pipe_ns&quot;})
+ end
+ 
+ -- it-trigger --
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/data/schemas/objects.xml	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -120,6 +120,7 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;it_blocker_new&quot; init=&quot;true&quot;&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;it_brake&quot;/&gt;
+     &lt;object name=&quot;it_brush&quot;/&gt;
+     &lt;object name=&quot;it_coin&quot;&gt;
+       &lt;attr name=&quot;coin_value&quot; default=&quot;3&quot;/&gt;
+@@ -169,6 +170,49 @@
+     &lt;object name=&quot;it_magnet_on&quot;&gt;
+       &lt;attr name=&quot;state&quot; value=&quot;1&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;it_pipe&quot;&gt;
++      &lt;attr name=&quot;connections&quot;/&gt;
++      &lt;msg name=&quot;_explosion&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_pipe_w&quot;&gt;
++      &lt;attr name=&quot;connections&quot; value=&quot;w&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_pipe_s&quot;&gt;
++      &lt;attr name=&quot;connections&quot; value=&quot;s&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_pipe_sw&quot;&gt;
++      &lt;attr name=&quot;connections&quot; value=&quot;sw&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_pipe_e&quot;&gt;
++      &lt;attr name=&quot;connections&quot; value=&quot;e&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_pipe_ew&quot;&gt;
++      &lt;attr name=&quot;connections&quot; value=&quot;ew&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_pipe_es&quot;&gt;
++      &lt;attr name=&quot;connections&quot; value=&quot;es&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_pipe_n&quot;&gt;
++      &lt;attr name=&quot;connections&quot; value=&quot;n&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_pipe_nw&quot;&gt;
++      &lt;attr name=&quot;connections&quot; value=&quot;nw&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_pipe_ns&quot;&gt;
++      &lt;attr name=&quot;connections&quot; value=&quot;ns&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_pipe_ne&quot;&gt;
++      &lt;attr name=&quot;connections&quot; value=&quot;ne&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_rubberband&quot;&gt;
++      &lt;attr name=&quot;anchor2&quot;/&gt;
++      &lt;attr name=&quot;strength&quot; default=&quot;10&quot;/&gt;
++      &lt;attr name=&quot;length&quot;/&gt;
++      &lt;attr name=&quot;threshold&quot;/&gt;
++      &lt;attr name=&quot;max&quot;/&gt;
++      &lt;attr name=&quot;min&quot;/&gt;
++      &lt;attr name=&quot;scissor&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;it_seed&quot;&gt;
+       &lt;attr name=&quot;flavor&quot;/&gt;
+       &lt;attr name=&quot;secure&quot;/&gt;
+@@ -203,15 +247,6 @@
+     &lt;object name=&quot;it_shogun_l&quot;&gt;
+       &lt;attr name=&quot;flavor&quot; value=&quot;l&quot;/&gt;
+     &lt;/object&gt;
+-    &lt;object name=&quot;it_rubberband&quot;&gt;
+-      &lt;attr name=&quot;anchor2&quot;/&gt;
+-      &lt;attr name=&quot;strength&quot; default=&quot;10&quot;/&gt;
+-      &lt;attr name=&quot;length&quot;/&gt;
+-      &lt;attr name=&quot;threshold&quot;/&gt;
+-      &lt;attr name=&quot;max&quot;/&gt;
+-      &lt;attr name=&quot;min&quot;/&gt;
+-      &lt;attr name=&quot;scissor&quot;/&gt;
+-    &lt;/object&gt;
+     &lt;object name=&quot;it_strip&quot;&gt;
+       &lt;attr name=&quot;connections&quot;/&gt;
+       &lt;attr name=&quot;friction&quot;/&gt;
+@@ -427,6 +462,9 @@
+     &lt;object name=&quot;st_boulder_n&quot;&gt;
+       &lt;attr name=&quot;orientation&quot; value=&quot;3&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_brake&quot;&gt;
++      &lt;msg name=&quot;_explosion&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_brick&quot; super=&quot;st_clusterstone&quot;/&gt;
+     &lt;object name=&quot;st_brick_w&quot;&gt;
+       &lt;attr name=&quot;connections&quot; value=&quot;w&quot;/&gt;
+@@ -523,6 +561,12 @@
+     &lt;object name=&quot;st_door_d&quot;&gt;
+       &lt;attr name=&quot;flavor&quot; value=&quot;d&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_fart&quot; states=&quot;3&quot;&gt;
++      &lt;msg name=&quot;ignite&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++      &lt;msg name=&quot;_explosion&quot;/&gt;
++      &lt;msg name=&quot;_trigger&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_floppy&quot;&gt;
+       &lt;msg name=&quot;on&quot;/&gt;
+       &lt;msg name=&quot;off&quot;/&gt;
+@@ -543,6 +587,21 @@
+     &lt;object name=&quot;st_knight&quot;&gt;
+       &lt;attr name=&quot;state&quot; max=&quot;4&quot; rw=&quot;r&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_mail&quot;&gt;
++      &lt;attr name=&quot;orientation&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_mail_w&quot;&gt;
++      &lt;attr name=&quot;orientation&quot; value=&quot;0&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_mail_s&quot;&gt;
++      &lt;attr name=&quot;orientation&quot; value=&quot;1&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_mail_e&quot;&gt;
++      &lt;attr name=&quot;orientation&quot; value=&quot;2&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_mail_n&quot;&gt;
++      &lt;attr name=&quot;orientation&quot; value=&quot;3&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_laser&quot;&gt;
+       &lt;attr name=&quot;counterclock&quot;/&gt;
+       &lt;attr name=&quot;orientation&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/Makefile.am	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -197,12 +197,18 @@
+ 	lev/ScoreManager.hh	\
+ 	lev/VolatileIndex.cc	\
+ 	lev/VolatileIndex.hh	\
++	items/BrakeItem.cc	\
++	items/BrakeItem.hh	\
+ 	items/BlockerItem.cc	\
+ 	items/BlockerItem.hh	\
+ 	items/GlassesItem.cc	\
+ 	items/GlassesItem.hh	\
+ 	items/Magnet.cc		\
+ 	items/Magnet.hh		\
++	items/PipeItem.cc	\
++	items/PipeItem.hh	\
++	items/RubberbandItem.cc	\
++	items/RubberbandItem.hh	\
+ 	items/SeedItem.cc	\
+ 	items/SeedItem.hh	\
+ 	items/Sensor.cc		\
+@@ -229,6 +235,8 @@
+ 	stones/BlockerStone.hh	\
+ 	stones/BoulderStone.cc	\
+ 	stones/BoulderStone.hh	\
++	stones/BrakeStone.cc	\
++	stones/BrakeStone.hh	\
+ 	stones/ChessStone.cc	\
+ 	stones/ChessStone.hh	\
+ 	stones/ClusterStone.cc	\
+@@ -241,6 +249,8 @@
+ 	stones/DeathStone.hh	\
+ 	stones/Door.cc		\
+ 	stones/Door.hh		\
++	stones/FartStone.cc	\
++	stones/FartStone.hh	\
+ 	stones/FloppySwitch.cc   \
+ 	stones/FloppySwitch.hh   \
+ 	stones/FourSwitch.cc	\
+@@ -255,6 +265,8 @@
+ 	stones/LaserSwitch.hh	\
+ 	stones/LightPassengerStone.cc	\
+ 	stones/LightPassengerStone.hh	\
++	stones/MailStone.cc	\
++	stones/MailStone.hh	\
+ 	stones/MirrorStone.cc	\
+ 	stones/MirrorStone.hh	\
+ 	stones/MonoFlopStone.cc	\
+
+Added: trunk/src/items/BrakeItem.cc
+===================================================================
+--- trunk/src/items/BrakeItem.cc	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/items/BrakeItem.cc	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -0,0 +1,60 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;items/BrakeItem.hh&quot;
++
++//#include &quot;main.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    BrakeItem::BrakeItem() {
++    }
++    
++    void BrakeItem::on_creation(GridPos p) {
++        SetStone(p, MakeStone(&quot;st_brake&quot;));
++        kill();
++    }
++    
++    std::string BrakeItem::get_inventory_model() {
++        return &quot;st-brake&quot;;
++    }
++    
++    ItemAction BrakeItem::activate(Actor* a, GridPos p) {
++        return ITEM_DROP;
++    }
++    
++    bool BrakeItem::can_drop_at(GridPos p) {
++        return GetStone(p) == NULL;
++    }
++    
++    void BrakeItem::drop (Actor *a, GridPos p) {
++        Stone *st = MakeStone(&quot;st_brake&quot;);
++        SetStone(p, st);
++        transferIdentity(st);
++        kill();
++    }
++    
++    DEF_ITEMTRAITS(BrakeItem, &quot;it_brake&quot;, it_brake);
++    
++    BOOT_REGISTER_START
++        BootRegister(new BrakeItem(), &quot;it_brake&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/items/BrakeItem.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/BrakeItem.hh
+===================================================================
+--- trunk/src/items/BrakeItem.hh	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/items/BrakeItem.hh	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -0,0 +1,48 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef BRAKEITEM_HH
++#define BRAKEITEM_HH
++
++#include &quot;items.hh&quot;
++
++#include &quot;actors.hh&quot;
++#include &quot;stones.hh&quot;
++
++namespace enigma {
++    class BrakeItem : public Item {
++        CLONEOBJ(BrakeItem);
++        DECL_ITEMTRAITS;
++
++    public:                
++        BrakeItem();
++        
++        // GridObject interface
++        virtual void on_creation(GridPos p);
++        
++        // Items interface
++        virtual std::string get_inventory_model();
++        virtual ItemAction activate(Actor* a, GridPos p);
++        virtual bool can_drop_at(GridPos p);
++        virtual void drop(Actor *a, GridPos p);
++    };
++    
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/items/BrakeItem.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/PipeItem.cc
+===================================================================
+--- trunk/src/items/PipeItem.cc	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/items/PipeItem.cc	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -0,0 +1,121 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;items/PipeItem.hh&quot;
++
++//#include &quot;main.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * About recursion detection while finding the end of a mailpipe
++     *  
++     * Since there are no possibilities for forking a mailpipe, there is only one 
++     * cause that may lead to a closed, circular mailpipe. This is if a pipeitem is
++     * placed exactly under the mailstone. But not every pipepiece is dangerous,
++     * there are some that can be placed under the mailstone without problems.
++     * 
++     * The mailpipe is only closed to a circular one if the pipepiece under the
++     * mailstone has the same 'output'-direction as the stone.
++     */
++    GridPos PipeItem::findPipeEndpoint(GridPos start, Direction dir) {
++        GridPos p = start;
++        Direction move_dir = dir;
++    
++        while (move_dir != NODIR) {
++            p.move(move_dir);
++            if (Item *it = GetItem(p)) {
++                if (it-&gt;getClass() == &quot;it_pipe&quot;) {
++                    DirectionBits dbits = it-&gt;getConnections();
++                    if (has_dir(dbits, reverse(move_dir))) {
++                        dbits = (DirectionBits) (dbits &amp; ~to_bits(reverse(move_dir)));
++                        switch (dbits) {
++                            case WESTBIT : move_dir = WEST; break;
++                            case SOUTHBIT : move_dir = SOUTH; break;
++                            case EASTBIT : move_dir = EAST; break;
++                            case NORTHBIT : move_dir = NORTH; break;
++                            default : move_dir = NODIR; break;
++                        }
++                    } else
++                        move_dir = NODIR;
++                }
++            } else
++                move_dir = NODIR;
++    
++            if (p == start &amp;&amp; move_dir == dir)  // recursion detection
++                return GridPos(-1, -1);         // illegal position outside of world
++        }
++        return p;
++    }
++
++    PipeItem::PipeItem(std::string connections) {
++        setAttr(&quot;connections&quot;, connections);
++    }
++    
++    std::string PipeItem::getClass() const {
++        return &quot;it_pipe&quot;;
++    }
++    
++    Value PipeItem::message(const Message &amp;m) {
++        if (m.message == &quot;_explosion&quot;) {
++            transform(&quot;it-explosion1&quot;);
++            return Value();
++        }
++        return Item::message(m);
++    }
++    
++    std::string PipeItem::getModelName() const {
++        return &quot;it_pipe_&quot;;
++    }
++    
++    int PipeItem::traitsIdx() const {
++        static int idx[] = { 0, 0, 1, 2, 3, 4, 5, 0, 6, 7, 8, 0, 9, 0, 0, 0};
++        return idx[getConnections()];
++    }
++    
++    ItemTraits PipeItem::traits[10] = {
++        {&quot;it_pipe_w&quot;,  it_pipe_w,  itf_none, 0.0},
++        {&quot;it_pipe_s&quot;,  it_pipe_s,  itf_none, 0.0},
++        {&quot;it_pipe_sw&quot;, it_pipe_sw, itf_none, 0.0},
++        {&quot;it_pipe_e&quot;,  it_pipe_e,  itf_none, 0.0},
++        {&quot;it_pipe_ew&quot;, it_pipe_ew, itf_none, 0.0},
++        {&quot;it_pipe_es&quot;, it_pipe_es, itf_none, 0.0},
++        {&quot;it_pipe_n&quot;,  it_pipe_n,  itf_none, 0.0},
++        {&quot;it_pipe_nw&quot;, it_pipe_nw, itf_none, 0.0},
++        {&quot;it_pipe_ns&quot;, it_pipe_ns, itf_none, 0.0},
++        {&quot;it_pipe_ne&quot;, it_pipe_ne, itf_none, 0.0}
++    };
++    
++    BOOT_REGISTER_START
++        BootRegister(new PipeItem(&quot;ew&quot;), &quot;it_pipe&quot;);
++        BootRegister(new PipeItem(&quot;w&quot;),  &quot;it_pipe_w&quot;);
++        BootRegister(new PipeItem(&quot;s&quot;),  &quot;it_pipe_s&quot;);
++        BootRegister(new PipeItem(&quot;sw&quot;), &quot;it_pipe_sw&quot;);
++        BootRegister(new PipeItem(&quot;e&quot;),  &quot;it_pipe_e&quot;);
++        BootRegister(new PipeItem(&quot;ew&quot;), &quot;it_pipe_ew&quot;);
++        BootRegister(new PipeItem(&quot;es&quot;), &quot;it_pipe_es&quot;);
++        BootRegister(new PipeItem(&quot;n&quot;),  &quot;it_pipe_n&quot;);
++        BootRegister(new PipeItem(&quot;nw&quot;), &quot;it_pipe_nw&quot;);
++        BootRegister(new PipeItem(&quot;ns&quot;), &quot;it_pipe_ns&quot;);
++        BootRegister(new PipeItem(&quot;ne&quot;), &quot;it_pipe_ne&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/items/PipeItem.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/PipeItem.hh
+===================================================================
+--- trunk/src/items/PipeItem.hh	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/items/PipeItem.hh	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -0,0 +1,51 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef PIPEITEM_HH
++#define PIPEITEM_HH
++
++#include &quot;items.hh&quot;
++
++
++namespace enigma {
++    class PipeItem : public Item {
++        CLONEOBJ(PipeItem);
++        DECL_ITEMTRAITS_ARRAY(10, traitsIdx());
++
++    public:
++        static GridPos findPipeEndpoint(GridPos start, Direction dir);
++    
++        PipeItem(std::string connections);
++
++        // Object interface
++        virtual std::string getClass() const;
++        virtual Value message(const Message &amp;m);
++
++        // Gridobject interface
++        virtual std::string getModelName() const;
++        
++        // Item interface
++        
++    private:
++        int traitsIdx() const;
++    };
++    
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/items/PipeItem.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/RubberbandItem.cc
+===================================================================
+--- trunk/src/items/RubberbandItem.cc	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/items/RubberbandItem.cc	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -0,0 +1,80 @@
++/*
++ * Copyright (C) 2006,2007 Raoul Bourquin
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;items/RubberbandItem.hh&quot;
++
++//#include &quot;main.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    RubberbandItem::RubberbandItem() {
++    }
++    
++    std::string RubberbandItem::getClass() const {
++        return &quot;it_rubberband&quot;;
++    }
++    
++    ItemAction RubberbandItem::activate(Actor *a, GridPos p) {
++        // TODO: Multiple Targets!
++        // TODO: Target for black and target for white marble?
++        // TODO: MultiplayerGame: Defaulttarget is second actor!
++
++        // Get actor or stone with the name, given in &quot;connect_to&quot;:
++        ObjectList ol = getAttr(&quot;anchor2&quot;).getObjectList(a);
++        
++        // Target does NOT exist, Drop Item
++        if (ol.size() == 0)
++            return ITEM_DROP;
++
++        Object *anchor2 = ol.front();
++            
++        // The mode attribute &quot;scissor&quot; defines, if when using an it-rubberband,
++        // other rubberbands to the actor will be cut of or not, true means they will. false is default.
++        bool isScissor = to_bool(getAttr(&quot;scissor&quot;));
++
++        if (isScissor)
++            SendMessage(a, &quot;disconnect&quot;);
++
++        sound_event (&quot;rubberband&quot;);
++        
++        if (anchor2 != a) { // It's not allowed to connect a rubberband to self.
++            Object *obj = MakeObject(&quot;ot_rubberband&quot;);
++            obj-&gt;setAttr(&quot;anchor1&quot;, a);
++            obj-&gt;setAttr(&quot;anchor2&quot;, anchor2);
++            obj-&gt;setAttr(&quot;strength&quot;, getAttr(&quot;strength&quot;));
++            obj-&gt;setAttr(&quot;length&quot;, getAttr(&quot;length&quot;));
++            obj-&gt;setAttr(&quot;threshold&quot;, getAttr(&quot;threshold&quot;));
++            obj-&gt;setAttr(&quot;max&quot;, getAttr(&quot;max&quot;));
++            obj-&gt;setAttr(&quot;min&quot;, getAttr(&quot;min&quot;));
++            AddOther(dynamic_cast&lt;Other *&gt;(obj));
++            transferIdentity(obj);
++            SendMessage(obj, &quot;_performaction&quot;);
++        }
++
++        return ITEM_KILL;
++    }
++    
++    DEF_ITEMTRAITS(RubberbandItem, &quot;it_rubberband&quot;, it_rubberband);
++    
++    BOOT_REGISTER_START
++        BootRegister(new RubberbandItem(), &quot;it_rubberband&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/items/RubberbandItem.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/RubberbandItem.hh
+===================================================================
+--- trunk/src/items/RubberbandItem.hh	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/items/RubberbandItem.hh	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -0,0 +1,44 @@
++/*
++ * Copyright (C) 2006,2007 Raoul Bourquin
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef RUBBERBANDITEM_HH
++#define RUBBERBANDITEM_HH
++
++#include &quot;items.hh&quot;
++
++#include &quot;actors.hh&quot;
++
++namespace enigma {
++    class RubberbandItem : public Item {
++        CLONEOBJ(RubberbandItem);
++        DECL_ITEMTRAITS;
++
++    public:
++        RubberbandItem();
++
++        // Object interface
++        virtual std::string getClass() const;
++
++        // Item interface
++        virtual ItemAction activate(Actor* a, GridPos p);
++    };
++    
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/items/RubberbandItem.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/items.cc	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -1048,46 +1048,6 @@
+     DEF_ITEMTRAITSF(Springboard, &quot;it-springboard&quot;, it_springboard, itf_static);
+ }
+ 
+-
+-/* -------------------- Brake -------------------- */
+-
+-// Brake is only used to hold st-brake while it is in an inventory
+-
+-// TODO transfer identity !!
+-namespace
+-{
+-    class Brake : public Item {
+-        CLONEOBJ(Brake);
+-        DECL_ITEMTRAITS;
+-    public:
+-        Brake() {}
+-
+-        void on_creation (GridPos p) {
+-            SetStone(p, MakeStone(&quot;st-brake&quot;));
+-            kill();
+-        }
+-
+-        bool can_drop_at (GridPos p) {
+-            return GetStone(p) == 0;
+-        }
+-
+-        void drop (Actor *, GridPos p) {
+-            SetStone(p, MakeStone(&quot;st-brake&quot;));
+-            kill();
+-        }
+-
+-        string get_inventory_model() {
+-            return &quot;st-brake&quot;;
+-        }
+-
+-        ItemAction activate(Actor *, GridPos) {
+-            return ITEM_DROP;
+-        }
+-    };
+-    DEF_ITEMTRAITS(Brake, &quot;it-brake&quot;, it_brake);
+-}
+-
+-
+ /* -------------------- Explosion -------------------- */
+ namespace
+ {
+@@ -1469,45 +1429,6 @@
+     DEF_ITEMTRAITS(Spade, &quot;it-spade&quot;, it_spade);
+ }
+ 
+-
+-/* -------------------- Pipes -------------------- */
+-namespace
+-{
+-    class Pipe : public Item {
+-        CLONEOBJ(Pipe);
+-        int subtype;
+-        DECL_ITEMTRAITS_ARRAY(10, subtype);
+-
+-        Pipe(int stype) : subtype(stype) {}
+-        virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;_explosion&quot;) {
+-                replace(&quot;it-explosion1&quot;);
+-                return Value();
+-            }
+-            return Item::message(m);
+-        }
+-    public:
+-        static void setup() {
+-            for (int i=0; i&lt;10; ++i)
+-                RegisterItem (new Pipe (i));
+-        }
+-    };
+-
+-    ItemTraits Pipe::traits[] = {
+-        {&quot;it-pipe-e&quot;,  it_pipe_e,  itf_none, 0.0 },
+-        {&quot;it-pipe-w&quot;,  it_pipe_w,  itf_none, 0.0 },
+-        {&quot;it-pipe-s&quot;,  it_pipe_s,  itf_none, 0.0 },
+-        {&quot;it-pipe-n&quot;,  it_pipe_n,  itf_none, 0.0 },
+-        {&quot;it-pipe-es&quot;, it_pipe_es, itf_none, 0.0 },
+-        {&quot;it-pipe-ne&quot;, it_pipe_ne, itf_none, 0.0 },
+-        {&quot;it-pipe-sw&quot;, it_pipe_sw, itf_none, 0.0 },
+-        {&quot;it-pipe-wn&quot;, it_pipe_wn, itf_none, 0.0 },
+-        {&quot;it-pipe-h&quot;,  it_pipe_h,  itf_none, 0.0 },
+-        {&quot;it-pipe-v&quot;,  it_pipe_v,  itf_none, 0.0 },
+-    };
+-}
+-
+-
+ /* -------------------- Pullers -------------------- */
+ namespace
+ {
+@@ -2609,71 +2530,6 @@
+     DEF_ITEMTRAITS(Drop, &quot;it-drop&quot;, it_drop);
+ }
+ 
+-/* -------------------- Rubberband Item-------------------- */
+-    class RubberbandItem : public Item {
+-        CLONEOBJ(RubberbandItem);
+-        DECL_ITEMTRAITS;
+-
+-    public:
+-        RubberbandItem();
+-
+-        // Object interface
+-        virtual std::string getClass() const;
+-
+-        // Item interface
+-        virtual ItemAction activate(Actor* a, GridPos p);
+-};
+-    
+-    RubberbandItem::RubberbandItem() {
+-    }
+-    
+-    std::string RubberbandItem::getClass() const {
+-        return &quot;it_rubberband&quot;;
+-    }
+-    
+-    ItemAction RubberbandItem::activate(Actor *a, GridPos p) {
+-        // TODO: Multiple Targets!
+-        // TODO: Target for black and target for white marble?
+-        // TODO: MultiplayerGame: Defaulttarget is second actor!
+-
+-        // Get actor or stone with the name, given in &quot;connect_to&quot;:
+-        ObjectList ol = getAttr(&quot;anchor2&quot;).getObjectList(a);
+-        
+-        // Target does NOT exist, Drop Item
+-        if (ol.size() == 0)
+-            return ITEM_DROP;
+-
+-        Object *anchor2 = ol.front();
+-            
+-        // The mode attribute &quot;scissor&quot; defines, if when using an it-rubberband,
+-        // other rubberbands to the actor will be cut of or not, true means they will. false is default.
+-        bool isScissor = to_bool(getAttr(&quot;scissor&quot;));
+-
+-        if (isScissor)
+-            SendMessage(a, &quot;disconnect&quot;);
+-
+-        sound_event (&quot;rubberband&quot;);
+-        
+-        if (anchor2 != a) { // It's not allowed to connect a rubberband to self.
+-            Object *obj = MakeObject(&quot;ot_rubberband&quot;);
+-            obj-&gt;setAttr(&quot;anchor1&quot;, a);
+-            obj-&gt;setAttr(&quot;anchor2&quot;, anchor2);
+-            obj-&gt;setAttr(&quot;strength&quot;, getAttr(&quot;strength&quot;));
+-            obj-&gt;setAttr(&quot;length&quot;, getAttr(&quot;length&quot;));
+-            obj-&gt;setAttr(&quot;threshold&quot;, getAttr(&quot;threshold&quot;));
+-            obj-&gt;setAttr(&quot;max&quot;, getAttr(&quot;max&quot;));
+-            obj-&gt;setAttr(&quot;min&quot;, getAttr(&quot;min&quot;));
+-            AddOther(dynamic_cast&lt;Other *&gt;(obj));
+-            transferIdentity(obj);
+-            SendMessage(obj, &quot;_performaction&quot;);
+-        }
+-
+-        return ITEM_KILL;
+-    }
+-    
+-    DEF_ITEMTRAITS(RubberbandItem, &quot;it_rubberband&quot;, it_rubberband);
+-
+-
+ /* -------------------- Functions -------------------- */
+ 
+ void InitItems()
+@@ -2683,7 +2539,6 @@
+     RegisterItem (new BlackBomb);
+     RegisterItem (new BlackBombBurning);
+     RegisterItem (new Booze);
+-    RegisterItem (new Brake);
+     RegisterItem (new BrokenBooze);
+     RegisterItem (new Brush);
+     Burnable::setup();
+@@ -2724,10 +2579,8 @@
+     RegisterItem (new OxydBridgeActive);
+     RegisterItem (new Pencil);
+     RegisterItem (new Pin);
+-    Pipe::setup();
+     Puller::setup();
+     RegisterItem (new Ring);
+-    RegisterItem (new RubberbandItem);
+     RegisterItem (new Spade);
+     RegisterItem (new Spoon);
+     RegisterItem (new Spring1);
+
+Modified: trunk/src/items.hh
+===================================================================
+--- trunk/src/items.hh	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/items.hh	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -92,8 +92,8 @@
+         it_pencil,
+         it_pin,
+         it_pipe_e, it_pipe_w, it_pipe_s, it_pipe_n,
+-        it_pipe_es, it_pipe_ne, it_pipe_sw, it_pipe_wn,
+-        it_pipe_h, it_pipe_v,
++        it_pipe_es, it_pipe_ne, it_pipe_sw, it_pipe_nw,
++        it_pipe_ew, it_pipe_ns,
+         it_puller_n,
+         it_puller_e,
+         it_puller_s,
+@@ -214,9 +214,9 @@
+           register a ForceField in the world. */
+         virtual void add_force(Actor *a, ecl::V2 &amp;f);
+ 
+-        virtual bool can_drop_at (GridPos p);
++        virtual bool can_drop_at(GridPos p);
+ 
+-        virtual void drop (Actor *a, GridPos p);
++        virtual void drop(Actor *a, GridPos p);
+ 
+         /*! Called when item is dropped by actor `a' */
+         virtual void on_drop(Actor *a);
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/ox_magnum.cc	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -227,10 +227,10 @@
+     &quot;st_shogun_s&quot;,              // OxydMagnum stone 0x6c
+     &quot;st-stoneimpulse&quot;,          // OxydMagnum stone 0x6d
+     &quot;st_laserflop&quot;,             // OxydMagnum stone 0x6e
+-    &quot;st-mail-n&quot;,                // OxydMagnum stone 0x6f
+-    &quot;st-mail-w&quot;,                // OxydMagnum stone 0x70
+-    &quot;st-mail-e&quot;,                // OxydMagnum stone 0x71
+-    &quot;st-mail-s&quot;,                // OxydMagnum stone 0x72
++    &quot;st_mail_n&quot;,                // OxydMagnum stone 0x6f
++    &quot;st_mail_w&quot;,                // OxydMagnum stone 0x70
++    &quot;st_mail_e&quot;,                // OxydMagnum stone 0x71
++    &quot;st_mail_s&quot;,                // OxydMagnum stone 0x72
+     &quot;st_door_d&quot;,                // OxydMagnum stone 0x73
+     &quot;st_door_d_ew&quot;,             // OxydMagnum stone 0x74
+     &quot;st-metal&quot;,                 // OxydMagnum stone 0x75
+@@ -318,12 +318,12 @@
+     &quot;it-flagwhite&quot;,     // OxydMagnum item 0x19
+     &quot;it-flagblack&quot;,     // OxydMagnum item 0x1a
+     &quot;it-ring&quot;,          // OxydMagnum item 0x1b
+-    &quot;it-pipe-wn&quot;,       // OxydMagnum item 0x1c
+-    &quot;it-pipe-sw&quot;,       // OxydMagnum item 0x1d
+-    &quot;it-pipe-ne&quot;,       // OxydMagnum item 0x1e
+-    &quot;it-pipe-es&quot;,       // OxydMagnum item 0x1f
+-    &quot;it-pipe-v&quot;,        // OxydMagnum item 0x20
+-    &quot;it-pipe-h&quot;,        // OxydMagnum item 0x21
++    &quot;it_pipe_nw&quot;,       // OxydMagnum item 0x1c
++    &quot;it_pipe_sw&quot;,       // OxydMagnum item 0x1d
++    &quot;it_pipe_ne&quot;,       // OxydMagnum item 0x1e
++    &quot;it_pipe_es&quot;,       // OxydMagnum item 0x1f
++    &quot;it_pipe_ns&quot;,        // OxydMagnum item 0x20
++    &quot;it_pipe_ew&quot;,        // OxydMagnum item 0x21
+     &quot;it-spade&quot;,         // OxydMagnum item 0x22
+     UNUSED,        // OxydMagnum item 0x23
+     &quot;it-pin&quot;,           // OxydMagnum item 0x24
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/ox_oxyd1.cc	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -259,10 +259,10 @@
+     &quot;st_shogun_s&quot;,              // Oxyd1 stone 0x6c
+     &quot;st-stoneimpulse&quot;,          // Oxyd1 stone 0x6d
+     &quot;st_laserflop&quot;,             // Oxyd1 stone 0x6e
+-    &quot;st-mail-n&quot;,                // Oxyd1 stone 0x6f
+-    &quot;st-mail-w&quot;,                // Oxyd1 stone 0x70
+-    &quot;st-mail-e&quot;,                // Oxyd1 stone 0x71
+-    &quot;st-mail-s&quot;,                // Oxyd1 stone 0x72
++    &quot;st_mail_n&quot;,                // Oxyd1 stone 0x6f
++    &quot;st_mail_w&quot;,                // Oxyd1 stone 0x70
++    &quot;st_mail_e&quot;,                // Oxyd1 stone 0x71
++    &quot;st_mail_s&quot;,                // Oxyd1 stone 0x72
+     &quot;st_door_d&quot;,                // Oxyd1 stone 0x73
+     &quot;st_door_d_ew&quot;,             // Oxyd1 stone 0x74
+     &quot;st-metal&quot;,                 // Oxyd1 stone 0x75
+@@ -334,12 +334,12 @@
+     &quot;it-flagwhite&quot;,               // 0x19
+     &quot;it-flagblack&quot;,               // 0x1a
+     &quot;it-ring&quot;,                    // 0x1b
+-    &quot;it-pipe-wn&quot;,                 // 0x1c
+-    &quot;it-pipe-sw&quot;,                 // 0x1d
+-    &quot;it-pipe-ne&quot;,                 // 0x1e
+-    &quot;it-pipe-es&quot;,                 // 0x1f
+-    &quot;it-pipe-v&quot;,                  // 0x20
+-    &quot;it-pipe-h&quot;,                  // 0x21
++    &quot;it_pipe_nw&quot;,                 // 0x1c
++    &quot;it_pipe_sw&quot;,                 // 0x1d
++    &quot;it_pipe_ne&quot;,                 // 0x1e
++    &quot;it_pipe_es&quot;,                 // 0x1f
++    &quot;it_pipe_ns&quot;,                 // 0x20
++    &quot;it_pipe_ew&quot;,                 // 0x21
+     &quot;it-spade&quot;,                   // 0x22
+     &quot;it-surprise&quot;,                // 0x23
+     &quot;it-pin&quot;,                     // 0x24
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/ox_peroxyd.cc	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -299,10 +299,10 @@
+     &quot;st_shogun_sm&quot;,             // PerOxyd stone 0x6c
+     &quot;st-stoneimpulse&quot;,          // PerOxyd stone 0x6d
+     &quot;st_laserflop&quot;,             // PerOxyd stone 0x6e
+-    &quot;st-mail-n&quot;,                // PerOxyd stone 0x6f
+-    &quot;st-mail-w&quot;,                // PerOxyd stone 0x70
+-    &quot;st-mail-e&quot;,                // PerOxyd stone 0x71
+-    &quot;st-mail-s&quot;,                // PerOxyd stone 0x72
++    &quot;st_mail_n&quot;,                // PerOxyd stone 0x6f
++    &quot;st_mail_w&quot;,                // PerOxyd stone 0x70
++    &quot;st_mail_e&quot;,                // PerOxyd stone 0x71
++    &quot;st_mail_s&quot;,                // PerOxyd stone 0x72
+     &quot;st_door_d&quot;,                // PerOxyd stone 0x73
+     &quot;st_door_d_ew&quot;,             // PerOxyd stone 0x74
+     &quot;st-metal&quot;,                 // PerOxyd stone 0x75
+@@ -345,7 +345,7 @@
+     &quot;st-grate1&quot;,                // PerOxyd stone 0x9a
+     &quot;st-metal_hole&quot;,            // PerOxyd stone 0x9b
+     &quot;st-stone1&quot;,                // PerOxyd stone 0x9c
+-    &quot;st-fart&quot;,                  // PerOxyd stone 0x9d
++    &quot;st_fart&quot;,                  // PerOxyd stone 0x9d
+     &quot;st_turnstile_red&quot;,         // PerOxyd stone 0x9e
+     &quot;st_turnstilearm_n&quot;,        // PerOxyd stone 0x9f
+     &quot;st_turnstilearm_s&quot;,        // PerOxyd stone 0xa0
+@@ -406,12 +406,12 @@
+     &quot;it-flagwhite&quot;,               // 0x18
+     &quot;it-flagblack&quot;,               // 0x19
+     &quot;it-ring&quot;,                    // 0x1a
+-    &quot;it-pipe-wn&quot;,                 // 0x1b
+-    &quot;it-pipe-sw&quot;,                 // 0x1c
+-    &quot;it-pipe-ne&quot;,                 // 0x1d
+-    &quot;it-pipe-es&quot;,                 // 0x1e
+-    &quot;it-pipe-v&quot;,                  // 0x1f
+-    &quot;it-pipe-h&quot;,                  // 0x20
++    &quot;it_pipe_nw&quot;,                 // 0x1b
++    &quot;it_pipe_sw&quot;,                 // 0x1c
++    &quot;it_pipe_ne&quot;,                 // 0x1d
++    &quot;it_pipe_es&quot;,                 // 0x1e
++    &quot;it_pipe_ns&quot;,                  // 0x1f
++    &quot;it_pipe_ew&quot;,                  // 0x20
+     &quot;it-spade&quot;,                   // 0x21
+     &quot;it-surprise&quot;,                // 0x22
+     &quot;it-pin&quot;,                     // 0x23
+@@ -447,7 +447,7 @@
+     &quot;it_brush&quot;,                   // 0x41
+     &quot;it-banana&quot;,                  // 0x42
+     &quot;it-pencil&quot;,                  // 0x43
+-    &quot;it-brake&quot;,                   // 0x44
++    &quot;it_brake&quot;,                   // 0x44
+     &quot;it-squashed&quot;,                // 0x45
+     &quot;it_blocker&quot;,                 // 0x46
+     &quot;it_magicwand&quot;,               // 0x47
+
+Added: trunk/src/stones/BrakeStone.cc
+===================================================================
+--- trunk/src/stones/BrakeStone.cc	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/stones/BrakeStone.cc	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -0,0 +1,93 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/BrakeStone.hh&quot;
++#include &quot;player.hh&quot;
++#include &quot;world.hh&quot;
++//#include &quot;main.hh&quot;
++
++namespace enigma {
++    BrakeStone::BrakeStone() {
++    }
++    
++    std::string BrakeStone::getClass() const {
++        return &quot;st_brake&quot;;
++    }
++    
++    Value BrakeStone::message(const Message &amp;m) {
++        if (m.message == &quot;_explosion&quot;) {
++            explode();
++            return Value();
++        }
++        return Stone::message(m);
++    }
++
++    void BrakeStone::init_model() {
++        set_model(&quot;st-brake&quot;);
++    }
++    
++    void BrakeStone::on_creation (GridPos p) {
++        Stone::on_creation(p);
++
++        Item    *it = GetItem(p);
++        if (it &amp;&amp; it-&gt;is_kind(&quot;it_blocker&quot;)) {
++            KillItem(p);
++        }
++    }
++    
++    void BrakeStone::processLight(Direction d) {
++        explode();
++    }
++
++    bool BrakeStone::is_sticky(const Actor *a) const {
++        return false;
++    }
++    
++    StoneResponse BrakeStone::collision_response(const StoneContact &amp;sc) {
++        return STONE_PASS;
++    }
++    
++    void BrakeStone::actor_inside(Actor *a) {
++        static const double BRAKE_RADIUS = 0.3;
++        GridPos p = get_pos();
++        double dist = ecl::length(a-&gt;get_pos() - p.center());
++
++        if (dist &lt; BRAKE_RADIUS) {
++            player::PickupStoneAsItem(a, p);
++        }
++    }
++    
++    void BrakeStone::on_move() {
++        // we are not floating, but we do not shatter actors when swapped or pulled
++    }
++    
++    void BrakeStone::explode() {
++        GridPos p = get_pos();
++        KillStone(p);
++        SetItem(p, MakeItem(&quot;it-explosion1&quot;));
++    }
++            
++    DEF_TRAITSM(BrakeStone, &quot;st_brake&quot;, st_brake, MOVABLE_BREAKABLE);
++    
++    BOOT_REGISTER_START
++        BootRegister(new BrakeStone(), &quot;st_brake&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/BrakeStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/BrakeStone.hh
+===================================================================
+--- trunk/src/stones/BrakeStone.hh	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/stones/BrakeStone.hh	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -0,0 +1,59 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef BRAKESTONE_HH
++#define BRAKESTONE_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class BrakeStone : public Stone {
++        CLONEOBJ(BrakeStone);
++        DECL_TRAITS;
++        
++    public:
++        BrakeStone();
++
++        // Object interface
++        virtual std::string getClass() const;
++        virtual Value message(const Message &amp;m);
++        
++        // GridObject interface
++        virtual void init_model();
++        virtual void on_creation(GridPos p);
++        virtual void processLight(Direction d);
++        
++        // Stone interface
++        virtual bool is_sticky(const Actor *a) const;
++        virtual StoneResponse collision_response(const StoneContact &amp;sc);
++        virtual void actor_inside(Actor *a);
++        virtual void on_move();
++         
++    private:
++        void explode();
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/BrakeStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones/CoinSlot.cc
+===================================================================
+--- trunk/src/stones/CoinSlot.cc	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/stones/CoinSlot.cc	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -113,7 +113,7 @@
+                     double interval;
+                     if (server::EnigmaCompatibility &lt; 1.10) 
+                         interval = it-&gt;getAttr(&quot;coin_value&quot;);
+-                    else 
++                    else {
+                         switch (id) {
+                             case it_coin1:
+                                 interval = getAttr(&quot;interval_s&quot;); break;
+@@ -122,20 +122,25 @@
+                             case it_coin4:
+                                 interval = getAttr(&quot;interval_l&quot;); break;
+                         }
+-                    
+-                    if (objFlags &amp; OBJBIT_INSTANT) {
+-                        // start or update timer
+-                        double rest = GameTimer.remove_alarm(this);
+-                        GameTimer.set_alarm(this, interval + rest, false);
+-                    } else {
+-                        // remember time value for animcb evaluation
+-                        setAttr(&quot;$addTime&quot;, (double)getAttr(&quot;$addTime&quot;) + interval);
++                        if (interval == -2)  // reject coin
++                            return;
+                     }
++                    if (interval &gt; 0) {
++                        if (objFlags &amp; OBJBIT_INSTANT) {
++                            // start or update timer
++                            double rest = GameTimer.remove_alarm(this);
++                            GameTimer.set_alarm(this, interval + rest, false);
++                        } else {
++                            // remember time value for animcb evaluation
++                            setAttr(&quot;$addTime&quot;, (double)getAttr(&quot;$addTime&quot;) + interval);
++                        }
++                    }
+                     inv-&gt;yield_first();
+                     player::RedrawInventory(inv);
+                     delete it;
+                     
+-                    setIState((objFlags &amp; OBJBIT_INSTANT) ? INSERT_ON : (iState)(state + 2));
++                    if (interval &gt; 0)
++                        setIState((objFlags &amp; OBJBIT_INSTANT) ? INSERT_ON : (iState)(state + 2));
+                 }
+             }
+         }
+
+Added: trunk/src/stones/FartStone.cc
+===================================================================
+--- trunk/src/stones/FartStone.cc	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/stones/FartStone.cc	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -0,0 +1,119 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/FartStone.hh&quot;
++#include &quot;player.hh&quot;
++#include &quot;world.hh&quot;
++//#include &quot;main.hh&quot;
++
++namespace enigma {
++    FartStone::FartStone() {
++    }
++    
++    std::string FartStone::getClass() const {
++        return &quot;st_fart&quot;;
++    }
++    
++    Value FartStone::message(const Message &amp;m) {
++        if (m.message == &quot;toggle&quot; || (m.message == &quot;signal&quot; &amp;&amp; m.value != 0) ||
++                (m.message == &quot;_trigger&quot; &amp;&amp; m.value.to_bool())) {
++            setState(ACTIVE);
++            return Value();
++        } else if (m.message == &quot;ignite&quot; || m.message == &quot;_explosion&quot;) { 
++            setState(BREAKING);
++            return Value();
++        }
++        return Stone::message(m);
++    }
++
++    int FartStone::maxState() const {
++        return BREAKING;
++    }
++    
++    int FartStone::externalState() const {
++        return (state == ACTIVEBREAKING) ? BREAKING : state;
++    }
++    
++    void FartStone::setState(int extState) {
++        if (state == extState)
++            return;
++            
++        if ((state == IDLE &amp;&amp; extState == BREAKING) || (state == ACTIVEBREAKING &amp;&amp; extState == IDLE)) {
++            state = BREAKING;
++            if (isDisplayable()) {
++                fart();
++                sound_event(&quot;stonedestroy&quot;);
++            }
++        } else if (state == IDLE &amp;&amp; extState == ACTIVE) {
++            state = ACTIVE;
++            if (isDisplayable())            
++                fart();
++        } else if (state == ACTIVE &amp;&amp; extState == IDLE) {
++            state = IDLE;
++        } else if (state == ACTIVE &amp;&amp; extState == BREAKING) {
++            state = ACTIVEBREAKING;
++        } else
++            return;
++        
++        if (isDisplayable())
++            init_model();
++    }
++    
++    void FartStone::init_model() {
++        switch (state) {
++            case IDLE:     set_model(&quot;st-fart&quot;); break;
++            case ACTIVEBREAKING:
++            case ACTIVE:   set_anim(&quot;st-farting&quot;); break;
++            case BREAKING: set_anim(&quot;st-fartbreak-anim&quot;); break;
++        }
++    }
++    
++    void FartStone::processLight(Direction d) {
++        setState(BREAKING);
++    }
++
++    void FartStone::animcb() {
++        if (state == ACTIVE || state == ACTIVEBREAKING)
++            setState(IDLE);
++        else if (state == BREAKING)
++            KillStone(get_pos());
++    }
++
++    void FartStone::actor_hit(const StoneContact &amp;sc) {
++        if (player::WieldedItemIs(sc.actor, &quot;it_hammer&quot;))
++            setState(BREAKING);
++        else
++            setState(ACTIVE);
++    }
++    
++    void FartStone::fart() {
++        Object *ox = GetObjectTemplate(&quot;st_oxyd&quot;);
++        SendMessage(ox, &quot;closeall&quot;);
++        sound_event(&quot;fart&quot;);
++    }
++    
++        
++    DEF_TRAITSM(FartStone, &quot;st_fart&quot;, st_fart, MOVABLE_BREAKABLE);
++    
++    BOOT_REGISTER_START
++        BootRegister(new FartStone(), &quot;st_fart&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/FartStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/FartStone.hh
+===================================================================
+--- trunk/src/stones/FartStone.hh	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/stones/FartStone.hh	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -0,0 +1,71 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef FARTSTONE_HH
++#define FARTSTONE_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class FartStone : public Stone {
++        CLONEOBJ(FartStone);
++        DECL_TRAITS;
++    private:
++        enum iState {
++            IDLE,           ///&lt; 
++            ACTIVE,         ///&lt; 
++            BREAKING,       ///&lt; 
++            ACTIVEBREAKING  ///&lt; active state with a pending breaking 
++        };
++        
++    public:
++        FartStone();
++        
++        // Object interface
++        virtual std::string getClass() const;        
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual int maxState() const;
++        virtual int externalState() const;
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        virtual void processLight(Direction d);
++        
++        // ModelCallback interface
++        virtual void animcb();
++        
++        // Stone interface
++        virtual void actor_hit(const StoneContact &amp;sc);
++
++    private:
++        void fart();
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/FartStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/MailStone.cc
+===================================================================
+--- trunk/src/stones/MailStone.cc	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/stones/MailStone.cc	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -0,0 +1,77 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/MailStone.hh&quot;
++#include &quot;Inventory.hh&quot;
++#include &quot;player.hh&quot;
++#include &quot;world.hh&quot;
++#include &quot;items/PipeItem.hh&quot;
++//#include &quot;main.hh&quot;
++
++namespace enigma {
++    MailStone::MailStone(Direction dir) : Stone(&quot;st_mail&quot;) {
++        setAttr(&quot;orientation&quot;, Value(dir));
++    }
++    
++    std::string MailStone::getClass() const {
++        return &quot;st_mail&quot;;
++    }
++    
++    void MailStone::setAttr(const string&amp; key, const Value &amp;val) {
++        if (isDisplayable())
++            if (key == &quot;orientation&quot;) {
++                Stone::setAttr(key, val);
++                init_model();
++                return;
++            }
++        Stone::setAttr(key, val);
++    }
++
++    void MailStone::init_model() {
++        string mname = &quot;st-mail&quot; ;
++        set_model(mname + to_suffix(getOrientation()));
++    }
++    
++    void MailStone::actor_hit(const StoneContact &amp;sc) {
++        if (enigma::Inventory *inv = player::GetInventory(sc.actor)) {
++            if (Item *it = inv-&gt;get_item(0)) {
++                GridPos p = PipeItem::findPipeEndpoint(get_pos(), getOrientation());
++                if (IsInsideLevel(p) &amp;&amp; it-&gt;can_drop_at (p)) {
++                    it = inv-&gt;yield_first();
++                    player::RedrawInventory (inv);
++                    it-&gt;drop(sc.actor, p);
++                }
++            }
++        }
++    }
++    
++    Direction MailStone::getOrientation() const {
++        return to_direction(getAttr(&quot;orientation&quot;));
++    }
++        
++    BOOT_REGISTER_START
++        BootRegister(new MailStone(NORTH), &quot;st_mail&quot;);
++        BootRegister(new MailStone(NORTH), &quot;st_mail_n&quot;);
++        BootRegister(new MailStone(EAST),  &quot;st_mail_e&quot;);
++        BootRegister(new MailStone(SOUTH), &quot;st_mail_s&quot;);
++        BootRegister(new MailStone(WEST),  &quot;st_mail_w&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/MailStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/MailStone.hh
+===================================================================
+--- trunk/src/stones/MailStone.hh	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/stones/MailStone.hh	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -0,0 +1,54 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef MAILSTONE_HH
++#define MAILSTONE_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class MailStone : public Stone {
++        CLONEOBJ(MailStone);
++//        DECL_TRAITS;
++        
++    public:
++        MailStone(Direction dir);
++
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++        
++        // GridObject interface
++        virtual void init_model();
++        
++        // Stone interface
++        virtual void actor_hit(const StoneContact &amp;sc);
++         
++    private:
++        Direction getOrientation() const;
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/MailStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones/ShogunStone.cc
+===================================================================
+--- trunk/src/stones/ShogunStone.cc	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/stones/ShogunStone.cc	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -168,7 +168,7 @@
+                 fitsNeighborShogun = (nss-&gt;getHoles() &amp; (2*ownHole() -1)) == 0;
+         }
+         
+-        if ((st == NULL) || fitsNeighborShogun) {  // can we move?
++        if ((subShogun == NULL) &amp;&amp; ((st == NULL) || fitsNeighborShogun)) {  // can we move?
+             // first remove from current position
+             if (!yieldShogun())
+                 return;            // being swapped or pulled
+
+Modified: trunk/src/stones/VolcanoStone.cc
+===================================================================
+--- trunk/src/stones/VolcanoStone.cc	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/stones/VolcanoStone.cc	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -188,7 +188,7 @@
+     
+     BOOT_REGISTER_START
+         BootRegister(new VolcanoStone(0), &quot;st_volcano&quot;);
+-        BootRegister(new VolcanoStone(0), &quot;st_volcano_inactive&quot;);
++        BootRegister(new VolcanoStone(0), &quot;st_volcano_idle&quot;);
+         BootRegister(new VolcanoStone(1), &quot;st_volcano_active&quot;);
+         BootRegister(new VolcanoStone(2), &quot;st_volcano_new&quot;);
+         BootRegister(new VolcanoStone(3), &quot;st_volcano_growing&quot;);
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/stones_complex.cc	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -947,121 +947,12 @@
+                 st_stoneimpulse_movable, MOVABLE_STANDARD);
+ }
+ 
+-
+-/* -------------------- Mail stone -------------------- */
+-
+-namespace
+-{
+-    class MailStone : public Stone {
+-        CLONEOBJ(MailStone);
+-        Direction m_dir;
+-
+-
+-        MailStone (const char *kind, Direction dir);
+-        void actor_hit (const StoneContact &amp;sc);
+-
+-        GridPos find_pipe_endpoint();
+-    public:
+-        static void setup();
+-    };
+-}
+-
+-void MailStone::setup()
+-{
+-    Register (new MailStone (&quot;st-mail-n&quot;, NORTH));
+-    Register (new MailStone (&quot;st-mail-e&quot;, EAST));
+-    Register (new MailStone (&quot;st-mail-s&quot;, SOUTH));
+-    Register (new MailStone (&quot;st-mail-w&quot;, WEST));
+-}
+-
+-MailStone::MailStone (const char *kind, Direction dir)
+-: Stone(kind), m_dir(dir)
+-{}
+-
+-
+-void MailStone::actor_hit (const StoneContact &amp;sc) 
+-{
+-    if (enigma::Inventory *inv = player::GetInventory(sc.actor)) {
+-        if (Item *it = inv-&gt;get_item(0)) {
+-            GridPos p = find_pipe_endpoint();
+-            if (IsInsideLevel(p) &amp;&amp; it-&gt;can_drop_at (p)) {
+-                it = inv-&gt;yield_first();
+-                player::RedrawInventory (inv);
+-                it-&gt;drop(sc.actor, p);
+-            }
+-        }
+-    }
+-}
+-
+-/** About recursion detection while finding the end of a mailpipe
+- *  
+- *  Since there are no possibilities for forking a mailpipe, there is only one 
+- *  cause that may lead to a closed, circular mailpipe. This is if a pipeitem is
+- *  placed exactly under the mailstone. But not every pipepiece is dangerous,
+- *  there are some that can be placed under the mailstone without problems.
+- * 
+- *  The mailpipe is only closed to a circular one if the pipepiece under the
+- *  mailstone has the same 'output'-direction as the stone.
+- */
+-GridPos MailStone::find_pipe_endpoint() 
+-{
+-    GridPos p = get_pos();
+-    Direction move_dir = m_dir;
+-    GridPos q = p; // Store the stonepos for recursion detection.
+-
+-    while (move_dir != NODIR) {
+-        p.move (move_dir);
+-        if (Item *it = GetItem(p)) {
+-            switch (get_id(it)) {
+-            case it_pipe_h:
+-                if (!(move_dir == EAST || move_dir == WEST))
+-                    move_dir = NODIR;
+-                break;
+-            case it_pipe_v:
+-                if (!(move_dir == SOUTH || move_dir == NORTH))
+-                    move_dir = NODIR;
+-                break;
+-            case it_pipe_ne:
+-                if (move_dir == SOUTH)     move_dir = EAST;
+-                else if (move_dir == WEST) move_dir = NORTH;
+-                else                       move_dir = NODIR;
+-                break;
+-            case it_pipe_es:
+-                if (move_dir == NORTH)     move_dir = EAST;
+-                else if (move_dir == WEST) move_dir = SOUTH;
+-                else                       move_dir = NODIR;
+-                break;
+-            case it_pipe_sw:
+-                if (move_dir == NORTH)     move_dir = WEST;
+-                else if (move_dir == EAST) move_dir = SOUTH;
+-                else                       move_dir = NODIR;
+-                break;
+-            case it_pipe_wn:
+-                if (move_dir == SOUTH)     move_dir = WEST;
+-                else if (move_dir == EAST) move_dir = NORTH;
+-                else                       move_dir = NODIR;
+-                break;
+-            default:
+-                move_dir = NODIR;; // end of pipe reached
+-            }
+-        } else
+-            move_dir = NODIR;
+-
+-        if (p == q)
+-            ASSERT(move_dir != m_dir, XLevelRuntime, &quot;Mailpipe is circular! Recursion detected!&quot;);   
+-    }
+-    return p;
+-}
+-
+-
+ // --------------------------------------------------------------------------------
+ 
+ void Init_complex()
+ {
+     Register(new HollowStoneImpulseStone);
+ 
+-    MailStone::setup();
+-
+     Register(new MovableImpulseStone);
+ 
+     // PerOxyd/Enigma compatible puzzle stones:
+@@ -1106,4 +997,3 @@
+ }
+ 
+ } // namespace enigma
+-
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-08-25 22:21:57 UTC (rev 1290)
++++ trunk/src/stones_simple.cc	2008-08-27 21:44:59 UTC (rev 1291)
+@@ -971,107 +971,6 @@
+ 
+ }
+ 
+-
+-
+-/* -------------------- FartStone -------------------- */
+-
+-/** \page st-fart Fart Stone
+-
+-The fart stone has the unpleasant habit of &quot;blowing off&quot; when
+-triggered (by actor contact or signal) and will close all oxyd stones.
+-
+-\subsection fartm Messages
+-
+-- \b trigger: as usual
+-
+-*/
+-
+-namespace
+-{
+-    class FartStone : public Stone {
+-        CLONEOBJ(FartStone);
+-        DECL_TRAITS;
+-
+-        enum State { IDLE, FARTING, BREAKING };
+-        State state;
+-        bool rememberBreaking;  // set true if an explosion or break-message
+-                                // or such occured while farting
+-
+-        void change_state(State newstate);
+-        void animcb();
+-        void actor_hit(const StoneContact &amp;sc);
+-        virtual Value message(const Message &amp;m);
+-
+-        void processLight(Direction d) {
+-            change_state(BREAKING);
+-        }
+-    public:
+-        FartStone() : state(IDLE), rememberBreaking(false) 
+-        {}
+-    };
+-    DEF_TRAITSM(FartStone, &quot;st-fart&quot;, st_fart, MOVABLE_BREAKABLE);
+-}
+-
+-void FartStone::change_state(State newstate) 
+-{
+-    if (state == newstate)
+-        return;
+-
+-    switch (newstate) {
+-    case IDLE:
+-        state = IDLE;
+-        init_model();
+-        if (rememberBreaking)
+-            change_state(BREAKING);
+-        break;
+-    case FARTING:
+-    case BREAKING:
+-        if (state == IDLE) {
+-            Object *ox = GetObjectTemplate(&quot;st_oxyd&quot;);
+-            SendMessage(ox, &quot;closeall&quot;);
+-            sound_event(&quot;fart&quot;);
+-            if (newstate == BREAKING) {
+-                sound_event (&quot;stonedestroy&quot;);
+-                set_anim (&quot;st-fartbreak-anim&quot;);
+-            }
+-            else
+-                set_anim(&quot;st-farting&quot;);
+-            state = newstate;
+-        } else if (state == FARTING &amp;&amp; newstate == BREAKING)
+-            rememberBreaking = true;
+-        break;
+-    }
+-}
+-
+-void FartStone::animcb() 
+-{
+-    if (state == FARTING)
+-        change_state(IDLE);
+-    else if (state == BREAKING)
+-        KillStone(get_pos());
+-}
+-
+-void FartStone::actor_hit(const StoneContact &amp;sc) 
+-{
+-    if (player::WieldedItemIs (sc.actor, &quot;it_hammer&quot;))
+-        change_state(BREAKING);
+-    else
+-        change_state(FARTING);
+-}
+-Value FartStone::message(const Message &amp;m) 
+-{
+-    if (m.message == &quot;toggle&quot; || (m.message == &quot;signal&quot; &amp;&amp; m.value != 0) ||
+-            (m.message == &quot;_trigger&quot; &amp;&amp; m.value.to_bool())) {
+-        change_state(FARTING);
+-        return Value();
+-    } else if (m.message == &quot;ignite&quot; || m.message == &quot;_explosion&quot;) { 
+-        change_state(BREAKING);
+-        return Value();
+-    }
+-    return Stone::message(m);
+-}
+-
+-
+ /* -------------------- Thief -------------------- */
+ namespace
+ {
+@@ -1435,78 +1334,6 @@
+     DEF_TRAITSM(MagicStone, &quot;st-magic&quot;, st_magic, MOVABLE_BREAKABLE);
+ }
+ 
+-
+-/* -------------------- Brake stone -------------------- */
+-
+-/** \page st-brake Brake
+-
+-Blocks bolder stones and other movable stones.  Can be picked up.
+-
+-\image html st-brake.png
+-*/
+-
+-namespace
+-{
+-    class BrakeStone : public Stone {
+-        CLONEOBJ(BrakeStone);
+-        DECL_TRAITS;
+-    public:
+-        BrakeStone()
+-        {}
+-
+-        void on_creation (GridPos p) {
+-            Stone::on_creation(p);
+-
+-            Item    *it = GetItem(p);
+-            if (it &amp;&amp; it-&gt;is_kind(&quot;it_blocker&quot;)) {
+-                KillItem(p);
+-//                sound_event (&quot;explosion1&quot;);
+-            }
+-        }
+-
+-        StoneResponse collision_response(const StoneContact &amp;/*sc*/) {
+-            return STONE_PASS;
+-        }
+-
+-        void actor_inside(Actor *a) {
+-            const double BRAKE_RADIUS = 0.3;
+-            GridPos      p            = get_pos();
+-            double       dist         = length(a-&gt;get_pos() - p.center());
+-
+-            if (dist &lt; BRAKE_RADIUS) {
+-                player::PickupStoneAsItem(a, p);
+-            }
+-        }
+-
+-        void explode() {
+-            GridPos p = get_pos();
+-            KillStone(p);
+-            SetItem(p, MakeItem(&quot;it-explosion1&quot;));
+-        }
+-
+-        void processLight(Direction d) {
+-            explode();
+-        }
+-
+-        virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;_explosion&quot;) {
+-                explode();
+-                return Value();
+-            }
+-            return Stone::message(m);
+-        }
+-
+-        bool is_sticky(const Actor *) const 
+-        { return false; }
+-        
+-        void on_move() {
+-            // we are not floating, but we do not shatter actors when swapped or pulled
+-        }
+-    };
+-    DEF_TRAITSM(BrakeStone, &quot;st-brake&quot;, st_brake, MOVABLE_BREAKABLE);
+-}
+-
+-
+ /* -------------------- Disco stones -------------------- */
+ namespace
+ {
+@@ -1716,7 +1543,6 @@
+     Register(new BombStone(&quot;st-bombs&quot;, &quot;it-blackbomb&quot;));
+     //Register(new BombStone(&quot;st-dynamite&quot;, &quot;it-dynamite&quot;));
+     //Register(new BombStone(&quot;st-whitebombs&quot;, &quot;it-whitebomb&quot;));
+-    Register(new BrakeStone);
+ 
+     Register(new Break_acblack);
+     Register(new Break_acwhite);
+@@ -1733,7 +1559,6 @@
+     Register(new DummyStone);
+     Register(new EasyModeStone);
+     Register(new FakeOxydStone);
+-    Register(new FartStone);
+     Register(new Grate1);
+     Register(new Grate2);
+     Register(new Grate3);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000720.html">[Enigma-game-svn] r1290 - in trunk/data: . levels/enigma_cross	levels/enigma_vi
+</A></li>
+	<LI>Next message: <A HREF="000722.html">[Enigma-game-svn] r1292 - in trunk/src: items stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#721">[ date ]</a>
+              <a href="thread.html#721">[ thread ]</a>
+              <a href="subject.html#721">[ subject ]</a>
+              <a href="author.html#721">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

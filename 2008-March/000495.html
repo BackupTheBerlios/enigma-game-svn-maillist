@@ -1,0 +1,643 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1063 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1063%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200803132327.m2DNRVvl011426%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000494.html">
+   <LINK REL="Next"  HREF="000496.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1063 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1063%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200803132327.m2DNRVvl011426%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1063 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Fri Mar 14 00:27:31 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000494.html">[Enigma-game-svn] r1062 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000496.html">[Enigma-game-svn] r1064 - in homepage: images/lotm input input/lotm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#495">[ date ]</a>
+              <a href="thread.html#495">[ thread ]</a>
+              <a href="subject.html#495">[ subject ]</a>
+              <a href="author.html#495">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-03-14 00:27:30 +0100 (Fri, 14 Mar 2008)
+New Revision: 1063
+
+Added:
+   trunk/src/stones/TimerStone.cc
+   trunk/src/stones/TimerStone.hh
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/items.cc
+   trunk/src/oxyd.cc
+   trunk/src/stones/LaserStone.cc
+   trunk/src/stones_complex.cc
+   trunk/src/stones_internal.hh
+   trunk/src/stones_simple.cc
+Log:
+Trunk 1.1: new API reengineering TimerStone
+- reengineering timer:
+  - rename to st_timer
+  - made full StateObject instead off OnOffStone
+- remove OnOffStone
+- fix sending initial actions on pressed triggers for DAT 
+  (doit just on Enigma for &lt; 1.10)
+- fix wormhole, magnet: add update of global range, strength values on
+  grid set
+- fix stoneimpulse for compatibility != ENIGMA: accept signals
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-03-09 14:09:50 UTC (rev 1062)
++++ trunk/data/api1init.lua	2008-03-13 23:27:30 UTC (rev 1063)
+@@ -75,6 +75,7 @@
+     st_switch = &quot;st-switch&quot;,
+     st_switch_black = &quot;st-switch_black&quot;,
+     st_switch_white = &quot;st-switch_white&quot;,
++    st_timer = &quot;st-timer&quot;,
+     st_window = &quot;st-window&quot;
+ }
+ 
+@@ -180,7 +181,7 @@
+              or (_obj_name == &quot;it-magnet&quot;) or (_obj_name == &quot;it-magnet-on&quot;)
+              or (_obj_name == &quot;it-magnet-off&quot;) or (_obj_name == &quot;it-wormhole&quot;)
+              or (_obj_name == &quot;it-wormhole-off&quot;) or (_obj_name == &quot;st-laser&quot;)
+-             or (_obj_name == &quot;st-polarswitch&quot;) then
++             or (_obj_name == &quot;st-polarswitch&quot;) or (_obj_name == &quot;st-timer&quot;) then
+          if key == &quot;on&quot; then
+ 	     _key = &quot;state&quot;   -- new attr name
+ 	 end
+@@ -233,6 +234,9 @@
+         _key = &quot;destination&quot;
+         _val = d
+      end
++     if key == &quot;invisible&quot; then
++         if val == 1 then _val = true else _val = false end
++     end
+      enigma._SetAttrib(obj, _key, _val)
+ end
+ 
+@@ -245,7 +249,7 @@
+              or (_obj_name == &quot;it-magnet&quot;) or (_obj_name == &quot;it-magnet-on&quot;)
+              or (_obj_name == &quot;it-magnet-off&quot;)  or (_obj_name == &quot;it-wormhole&quot;)
+              or (_obj_name == &quot;it-wormhole-off&quot;)  or (_obj_name == &quot;st-laser&quot;)
+-             or (_obj_name == &quot;st-polarswitch&quot;) then
++             or (_obj_name == &quot;st-polarswitch&quot;)  or (_obj_name == &quot;st-timer&quot;) then
+          if key == &quot;on&quot; then
+ 	     _key = &quot;state&quot;
+ 	     end
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-03-09 14:09:50 UTC (rev 1062)
++++ trunk/data/schemas/objects.xml	2008-03-13 23:27:30 UTC (rev 1063)
+@@ -9,6 +9,8 @@
+     &lt;attr name=&quot;instant&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;interval&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;inverse&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;invisible&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;loop&quot; type=&quot;bool&quot; default=&quot;true&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;name&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;orientation&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;3&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;range&quot; type=&quot;double&quot; default=&quot;1.0&quot; rw=&quot;rw&quot;/&gt;
+@@ -155,5 +157,14 @@
+     &lt;object name=&quot;st_switch_white&quot;&gt;
+       &lt;attr name=&quot;color&quot; value=&quot;1&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_timer&quot;&gt;
++      &lt;attr name=&quot;invisible&quot;/&gt;
++      &lt;attr name=&quot;interval&quot;/&gt;
++      &lt;attr name=&quot;loop&quot;/&gt;
++      &lt;attr name=&quot;state&quot; default=&quot;1&quot;/&gt;
++      &lt;msg name=&quot;on&quot;/&gt;
++      &lt;msg name=&quot;off&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++    &lt;/object&gt;
+   &lt;/zoo&gt;
+ &lt;/objects&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-03-09 14:09:50 UTC (rev 1062)
++++ trunk/src/Makefile.am	2008-03-13 23:27:30 UTC (rev 1063)
+@@ -221,6 +221,8 @@
+ 	stones/PolarSwitchStone.hh	\
+ 	stones/Switch.cc	\
+ 	stones/Switch.hh	\
++	stones/TimerStone.cc	\
++	stones/TimerStone.hh	\
+ 	stones/WindowStone.cc	\
+ 	stones/WindowStone.hh
+ 
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-03-09 14:09:50 UTC (rev 1062)
++++ trunk/src/items.cc	2008-03-13 23:27:30 UTC (rev 1063)
+@@ -1426,7 +1426,7 @@
+             
+             // old Enigma versions did issue performAction what is incompatible
+             updateIState(countActors(),
+-                    server::EnigmaCompatibility &gt;= 1.10 &amp;&amp; server::GameCompatibility == GAMET_ENIGMA); 
++                    server::EnigmaCompatibility &gt;= 1.10 || server::GameCompatibility != GAMET_ENIGMA); 
+             return Value();
+         } else if (m.message == &quot;_jumping&quot; ) {
+             updateIState(m.value.to_bool() ? -1 : +1);
+@@ -1738,9 +1738,12 @@
+     }
+     
+     void Magnet::on_creation(GridPos p) {
+-        double range = getDefaultedAttr(&quot;range&quot;, server::MagnetRange);
+-        squareRange = range * range;
+-        correctedStrength = 0.6 * (double)getDefaultedAttr(&quot;strength&quot;, server::MagnetForce);
++        if (getAttr(&quot;range&quot;).getType() == Value::NIL) {
++            squareRange = server::MagnetRange * server::MagnetRange;
++        }
++        if (getAttr(&quot;strength&quot;).getType() == Value::NIL) {
++            correctedStrength = 0.6 * server::MagnetForce;
++        }
+ 
+         AddForceField(this);
+         Item::on_creation(p);
+@@ -1848,8 +1851,8 @@
+             squareRange = range * range;
+         } else if (key == &quot;strength&quot;) {
+             correctedStrength = 0.6 * ((val.getType() == Value::NIL) ? server::WormholeForce : (double)val);
+-        } else
+-            Item::setAttr(key, val);
++        }
++        Item::setAttr(key, val);
+     }
+     
+     int WormHole::externalState() const {
+@@ -1871,6 +1874,12 @@
+     
+     void WormHole::on_creation (GridPos p) {
+         Item::on_creation (p);
++        if (getAttr(&quot;range&quot;).getType() == Value::NIL) {
++            squareRange = server::WormholeRange * server::WormholeRange;
++        }
++        if (getAttr(&quot;strength&quot;).getType() == Value::NIL) {
++            correctedStrength = 0.6 * server::WormholeForce;
++        }
+         if (state % 2 == 1)
+             AddForceField(this);
+     }
+
+Modified: trunk/src/oxyd.cc
+===================================================================
+--- trunk/src/oxyd.cc	2008-03-09 14:09:50 UTC (rev 1062)
++++ trunk/src/oxyd.cc	2008-03-13 23:27:30 UTC (rev 1063)
+@@ -279,14 +279,14 @@
+ Stone *OxydLoader::make_timer (int x, int y)
+ {
+     const OscillatorMap &amp;oscillators = level.getOscillators(config.gamemode);
+-    Stone *st = MakeStone (&quot;st-timer&quot;);
++    Stone *st = MakeStone (&quot;st_timer&quot;);
+     st-&gt;setAttr(&quot;interval&quot;, Value(0.2));
+ 
+     Block block(x, y);
+     OscillatorMap::const_iterator i = oscillators.find(block);
+     if (i != oscillators.end()) {
+         const Oscillator &amp;o = i-&gt;second;
+-        st-&gt;setAttr(&quot;on&quot;, Value(o.getOn()));
++        st-&gt;setAttr(&quot;state&quot;, Value(o.getOn()) ? 1 : 0);
+         double interval = (1 + o.getPeriod()) * config.timer_factor;
+         st-&gt;setAttr(&quot;interval&quot;, Value(interval));
+     }
+
+Modified: trunk/src/stones/LaserStone.cc
+===================================================================
+--- trunk/src/stones/LaserStone.cc	2008-03-09 14:09:50 UTC (rev 1062)
++++ trunk/src/stones/LaserStone.cc	2008-03-13 23:27:30 UTC (rev 1063)
+@@ -132,6 +132,7 @@
+     void LaserStone::on_removal(GridPos p) {
+         GameTimer.remove_alarm(this);
+         state &amp;= 1;
++        Stone::on_removal(p);
+     }
+     
+     DirectionBits LaserStone::emissionDirections() const {
+
+Added: trunk/src/stones/TimerStone.cc
+===================================================================
+--- trunk/src/stones/TimerStone.cc	2008-03-09 14:09:50 UTC (rev 1062)
++++ trunk/src/stones/TimerStone.cc	2008-03-13 23:27:30 UTC (rev 1063)
+@@ -0,0 +1,93 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/TimerStone.hh&quot;
++
++//#include &quot;main.hh&quot;
++#include &quot;util.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    
++    TimerStone::TimerStone() : Stone(&quot;st_timer&quot;) {
++        state = ON_TRUE;
++    }
++    
++    std::string TimerStone::getClass() const {
++        return &quot;st_timer&quot;;
++    }
++    
++    int TimerStone::externalState() const {
++        return state == 0 ? 0 : 1;
++    }
++    
++    void TimerStone::setState(int extState) {
++        if (isDisplayable()) {
++            if (extState != externalState()) {
++                state = extState;
++                if (extState == 1) {
++                    updateAlarm();
++                } else {
++                    GameTimer.remove_alarm(this);
++                }
++            }
++        } else
++            state = extState;
++    }
++    
++    void TimerStone::init_model() {
++        if (getAttr(&quot;invisible&quot;).to_bool()) {
++            set_model(&quot;invisible&quot;);
++        } else {
++            set_model(state == 0 ? &quot;st-timeroff&quot; : &quot;st-timer&quot;);
++        }
++    }
++    
++    void TimerStone::on_creation (GridPos p) {
++        updateAlarm();
++        Stone::on_creation(p);
++    }
++    
++    void TimerStone::on_removal(GridPos p) {
++        GameTimer.remove_alarm(this);
++        state = OFF;
++        Stone::on_removal(p);
++    }
++    
++    void TimerStone::alarm() {
++        bool actionValue = (state == ON_TRUE);
++        state = 3 - state;   // toggle between ON_TRUE and ON_FALSE
++        if(!getAttr(&quot;loop&quot;).to_bool())
++            setState(OFF);
++            
++        performAction(actionValue);
++    }
++    
++    void TimerStone::updateAlarm() {
++        if (state &gt; 0)
++            GameTimer.set_alarm(this, (double)getAttr(&quot;interval&quot;), getAttr(&quot;loop&quot;).to_bool());
++    }
++
++
++    BOOT_REGISTER_START
++        BootRegister(new TimerStone(), &quot;st_timer&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/TimerStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/TimerStone.hh
+===================================================================
+--- trunk/src/stones/TimerStone.hh	2008-03-09 14:09:50 UTC (rev 1062)
++++ trunk/src/stones/TimerStone.hh	2008-03-13 23:27:30 UTC (rev 1063)
+@@ -0,0 +1,64 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef TIMERSTONE_HH
++#define TIMERSTONE_HH
++
++#include &quot;stones.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     * 
++     * 
++     */
++    class TimerStone : public Stone, public TimeHandler {
++        CLONEOBJ(TimerStone);
++    private:
++        enum iState {
++            OFF, 
++            ON_TRUE,      ///&lt; timer is active, next action value is true
++            ON_FALSE      ///&lt; timer is active, next action value is false
++        };
++
++    public:
++        TimerStone();
++
++        // Object interface
++        virtual std::string getClass() const;
++        
++        // StateObject interface
++        virtual int externalState() const;
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
++        
++        // TimeHandler interface
++        virtual void alarm();
++
++    private:
++        void updateAlarm();
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/TimerStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-03-09 14:09:50 UTC (rev 1062)
++++ trunk/src/stones_complex.cc	2008-03-13 23:27:30 UTC (rev 1063)
+@@ -1680,7 +1680,7 @@
+                 return Value();
+             }
+             else if (m.message == &quot;signal&quot; &amp;&amp; (to_double(m.value) != 0 || 
+-                    (server::EnigmaCompatibility &lt; 1.10 &amp;&amp; m.value.getType() == Value::NIL))) { // hack for old trigger without value
++                    (server::EnigmaCompatibility &lt; 1.10 /*&amp;&amp; m.value.getType() == Value::NIL*/))) { // hack for old trigger without value
+                 incoming = NODIR;
+                 change_state (PULSING);
+                 return Value();
+
+Modified: trunk/src/stones_internal.hh
+===================================================================
+--- trunk/src/stones_internal.hh	2008-03-09 14:09:50 UTC (rev 1062)
++++ trunk/src/stones_internal.hh	2008-03-13 23:27:30 UTC (rev 1063)
+@@ -76,53 +76,6 @@
+         void dispose();
+     };
+ 
+-/* -------------------- OnOffStone -------------------- */
+-
+-    /*! Base class for all stones that can be on and off.  Understands
+-      the messages &quot;on&quot;, &quot;off&quot;, and &quot;onoff&quot;.  Whenever the &quot;on&quot;
+-      attribute changes, the object's init_model() method is invoked */
+-    class OnOffStone : public Stone {
+-    protected:
+-        OnOffStone(const char *kind) 
+-        : Stone (kind) 
+-        { 
+-            setAttr(&quot;on&quot;, 0.0); 
+-        }
+-
+-        bool is_on() const { 
+-            return getAttr(&quot;on&quot;) == 1; 
+-        }
+-
+-        virtual void set_on(bool newon) {
+-            if (newon != is_on()) {
+-                setAttr(&quot;on&quot;, enigma::Value(newon));
+-                init_model();
+-                notify_onoff(newon);
+-            }
+-        }
+-
+-        virtual void notify_onoff(bool /*on*/) {}
+-
+-        virtual Value message(const Message &amp;m)
+-        {
+-            const std::string &amp;msg = m.message;
+-            if (m.message == &quot;onoff&quot;) {
+-                set_on(!is_on());
+-                return Value(); 
+-            } else if (m.message == &quot;signal&quot;) {
+-                set_on (to_int(m.value) != 0);
+-                return Value(); 
+-            } else if (m.message == &quot;on&quot;) {
+-                set_on(true);
+-                return Value(); 
+-            } else if (m.message == &quot;off&quot;) {
+-                set_on(false);
+-                return Value();
+-            }
+-            return Object::message(m); 
+-        }
+-    };
+-
+ } // namespace enigma
+ 
+ #endif
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-03-09 14:09:50 UTC (rev 1062)
++++ trunk/src/stones_simple.cc	2008-03-13 23:27:30 UTC (rev 1063)
+@@ -1225,111 +1225,6 @@
+     DEF_TRAITSM(RubberBandStone, &quot;st-rubberband&quot;, st_rubberband, MOVABLE_STANDARD);
+ }
+ 
+-
+-/* -------------------- Timer stone -------------------- */
+-
+-// Attributes:
+-//
+-// :interval        seconds between two &quot;ticks&quot;
+-// :loop
+-// :action,target   as usual
+-// :invisible
+-
+-/** \page st-timer Timer Stone
+-
+-This stone can be used to trigger periodic events or to trigger one
+-single event after a certain amount of time.
+-
+-\subsection timera Attributes
+-
+-- \b on: 1 if the timer is running
+-- \b interval:  number of seconds before \b action is performed
+-- \b loop:      if 1, restart the timer after performing \b action
+-- \b action, \b target: as usual
+-- \b invisible : if 1, stone is invisible
+-
+-\subsection timerm Messages
+-
+-- \b on, \b off, \b onoff: as usual
+-
+-\subsection timere Example
+-
+-\verbatim
+--- activate a laser after 5 seconds
+-set_stone(&quot;st-laser&quot;, 10,11, {name=&quot;laser&quot;})
+-set_stone(&quot;st-timer&quot;, 10,10,
+-          {loop=0, action=&quot;onoff&quot;, target=&quot;laser&quot;, interval=5})
+-\endverbatim
+-*/
+-namespace
+-{
+-    class TimerStone : public OnOffStone, public TimeHandler
+-    {
+-        CLONEOBJ(TimerStone);
+-    public:
+-        TimerStone() : OnOffStone(&quot;st-timer&quot;), m_signalvalue(1) {
+-            setAttr(&quot;interval&quot;, 1.0);
+-            setAttr(&quot;loop&quot;, true);
+-            setAttr(&quot;on&quot;, 1.0);
+-            setAttr(&quot;invisible&quot;, false);
+-
+-            // set_on(true);   DOESN'T WORK! calls init_model()
+-        }
+-        
+-        virtual ~TimerStone();
+-    private:
+-        int m_signalvalue;
+-
+-        double get_interval() const {
+-            return getDefaultedAttr(&quot;interval&quot;, 100);
+-        }
+-
+-        bool get_is_looped() const {
+-            return to_bool(getAttr(&quot;loop&quot;));
+-        }
+-
+-        void init_model() {
+-            if (getAttr(&quot;invisible&quot;).to_bool()) {
+-                set_model(&quot;invisible&quot;);
+-            }
+-            else {
+-                set_model(is_on() ? &quot;st-timer&quot; : &quot;st-timeroff&quot;);
+-            }
+-        }
+-
+-        void on_creation (GridPos p) {
+-            set_alarm();
+-            Stone::on_creation (p);
+-        }
+-
+-        void set_alarm() {
+-            if (is_on())
+-                GameTimer.set_alarm(this, get_interval(), get_is_looped());
+-        }
+-
+-        void alarm() {
+-            if (is_on()) {
+-//                 sound::PlaySound(&quot;st-timer&quot;);
+-                performAction(m_signalvalue != 0);
+-                m_signalvalue = 1-m_signalvalue;
+-                if(!get_is_looped())
+-                    set_on(false); // Switch to &quot;off&quot;-model.
+-            }
+-        }
+-
+-        void notify_onoff (bool newon) {
+-            if (newon)
+-                set_alarm();
+-            else
+-                GameTimer.remove_alarm(this);
+-        }
+-    };
+-
+-    TimerStone::~TimerStone() {
+-        GameTimer.remove_alarm(this);
+-    }
+-}
+-
+ /* -------------------- FartStone -------------------- */
+ 
+ /** \page st-fart Fart Stone
+@@ -2344,7 +2239,6 @@
+     Register(new SwapStone);
+ 
+     Register(new ThiefStone);
+-    Register(new TimerStone);
+ 
+     Register(new RandomWoodenStone); // random flavor
+     Register(new WoodenStone(&quot;st-wood1&quot;, &quot;fl-stwood1&quot;)); // horizontal planks
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000494.html">[Enigma-game-svn] r1062 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000496.html">[Enigma-game-svn] r1064 - in homepage: images/lotm input input/lotm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#495">[ date ]</a>
+              <a href="thread.html#495">[ thread ]</a>
+              <a href="subject.html#495">[ subject ]</a>
+              <a href="author.html#495">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

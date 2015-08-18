@@ -1,0 +1,339 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1652 - in trunk: data src src/floors src/items	src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1652%20-%20in%20trunk%3A%20data%20src%20src/floors%20src/items%0A%09src/stones&In-Reply-To=%3C200905012046.n41Kk4A4013887%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001081.html">
+   <LINK REL="Next"  HREF="001083.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1652 - in trunk: data src src/floors src/items	src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1652%20-%20in%20trunk%3A%20data%20src%20src/floors%20src/items%0A%09src/stones&In-Reply-To=%3C200905012046.n41Kk4A4013887%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1652 - in trunk: data src src/floors src/items	src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Fri May  1 22:46:04 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001081.html">[Enigma-game-svn] r1651 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="001083.html">[Enigma-game-svn] r1653 - in trunk: lib-src/lua tools
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1082">[ date ]</a>
+              <a href="thread.html#1082">[ thread ]</a>
+              <a href="subject.html#1082">[ subject ]</a>
+              <a href="author.html#1082">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-05-01 22:46:03 +0200 (Fri, 01 May 2009)
+New Revision: 1652
+
+Modified:
+   trunk/data/models-2d.lua
+   trunk/src/floors/SimpleFloors.cc
+   trunk/src/floors/SimpleFloors.hh
+   trunk/src/items.hh
+   trunk/src/items/Crack.cc
+   trunk/src/items/Extinguisher.cc
+   trunk/src/items/SimpleItems.cc
+   trunk/src/items/SimpleItems.hh
+   trunk/src/lua.cc
+   trunk/src/stones/IceBlock.cc
+Log:
+Trunk 1.1:
+- fl_yinyang - special support for bogus st_chameleon
+- it_debris - new variant it_debris_water, used by it_crack_water
+- position - make a pure value:
+  - disallow set of single coordinates - ASSERT on write attemps
+- st_ice: explode bombs on ice being pushed onto them
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2009-05-01 15:23:43 UTC (rev 1651)
++++ trunk/data/models-2d.lua	2009-05-01 20:46:03 UTC (rev 1652)
+@@ -647,6 +647,8 @@
+     DefAnim(&quot;it_crack_abyss_anim&quot;, frames)
+     
+     local images = DefSubimages(&quot;it_crack_water&quot;, {h=8})
++    local frames = BuildFrames(images,50)
++    DefAnim(&quot;it_debris_water&quot;, frames)
+ 
+     local frames = BuildFrames({&quot;it_crack_water4&quot;, &quot;it_crack_water5&quot;, &quot;it_crack_water6&quot;, &quot;it_crack_water7&quot;, &quot;it_crack_water8&quot;},120)
+     DefAnim(&quot;it_crack_water_anim&quot;, frames)
+
+Modified: trunk/src/floors/SimpleFloors.cc
+===================================================================
+--- trunk/src/floors/SimpleFloors.cc	2009-05-01 15:23:43 UTC (rev 1651)
++++ trunk/src/floors/SimpleFloors.cc	2009-05-01 20:46:03 UTC (rev 1652)
+@@ -117,6 +117,13 @@
+         return &quot;fl_yinyang&quot;;
+     }
+     
++    const char *YinyangFloor::get_kind() const {   //just for st_chameleon support
++        if (state == YIN)
++           return (objFlags &amp; OBJBIT_INVISIBLE) ? &quot;fl_yinyang_yin_invisible&quot; : &quot;fl_yinyang_yin&quot;;
++        else
++           return (objFlags &amp; OBJBIT_INVISIBLE) ? &quot;fl_yinyang_yang_invisible&quot; : &quot;fl_yinyang_yang&quot;;
++    }
++    
+     void YinyangFloor::setAttr(const std::string &amp;key, const Value &amp;val) {
+         if (key == &quot;invisible&quot;) {
+             objFlags = (objFlags &amp; ~OBJBIT_INVISIBLE) | (val.to_bool() ? OBJBIT_INVISIBLE : 0);
+
+Modified: trunk/src/floors/SimpleFloors.hh
+===================================================================
+--- trunk/src/floors/SimpleFloors.hh	2009-05-01 15:23:43 UTC (rev 1651)
++++ trunk/src/floors/SimpleFloors.hh	2009-05-01 20:46:03 UTC (rev 1652)
+@@ -129,6 +129,7 @@
+ 
+         // Object interface
+         virtual std::string getClass() const;
++        virtual const char *get_kind() const;
+         virtual void setAttr(const std::string &amp;key, const Value &amp;val);
+         virtual Value getAttr(const std::string &amp;key) const;
+         
+
+Modified: trunk/src/items/Crack.cc
+===================================================================
+--- trunk/src/items/Crack.cc	2009-05-01 15:23:43 UTC (rev 1651)
++++ trunk/src/items/Crack.cc	2009-05-01 20:46:03 UTC (rev 1652)
+@@ -64,7 +64,7 @@
+             return Value();
+         } else if (m.message == &quot;heat&quot; || m.message == &quot;_explosion&quot; || m.message == &quot;_cannonball&quot;) {
+             sound_event(&quot;crack&quot;);
+-            replace(&quot;it_debris&quot;);
++            replace(objFlags &amp; OBJBIT_TYP ? &quot;it_debris_water&quot; : &quot;it_debris&quot;);
+             return true;
+         } else if (m.message == &quot;_freeze&quot;) {
+             kill();   // The ice repairs the floor
+
+Modified: trunk/src/items/Extinguisher.cc
+===================================================================
+--- trunk/src/items/Extinguisher.cc	2009-05-01 15:23:43 UTC (rev 1651)
++++ trunk/src/items/Extinguisher.cc	2009-05-01 20:46:03 UTC (rev 1652)
+@@ -91,7 +91,7 @@
+     }
+     
+     int Extinguisher::traitsIdx() const {
+-        return state;
++        return ecl::Clamp&lt;int&gt;(state, 0, 2);
+     }
+     
+     ItemTraits Extinguisher::traits[3] = {
+
+Modified: trunk/src/items/SimpleItems.cc
+===================================================================
+--- trunk/src/items/SimpleItems.cc	2009-05-01 15:23:43 UTC (rev 1651)
++++ trunk/src/items/SimpleItems.cc	2009-05-01 20:46:03 UTC (rev 1652)
+@@ -107,11 +107,12 @@
+ 
+ /* -------------------- Debris -------------------- */
+ 
+-    Debris::Debris() {
++    Debris::Debris(int type) {
++        state = type;
+     }
+     
+     void Debris::animcb() { 
+-        SetFloor(get_pos(), MakeFloor(&quot;fl_abyss&quot;));
++        SetFloor(get_pos(), MakeFloor(state == 0 ? &quot;fl_abyss&quot; : &quot;fl_water&quot;));
+         kill();
+      }
+ 
+@@ -120,9 +121,15 @@
+         return false;
+     }
+ 
+-    DEF_ITEMTRAITSF(Debris, &quot;it_debris&quot;, it_debris,
+-                itf_static | itf_animation | itf_indestructible | itf_fireproof);
++    int Debris::traitsIdx() const {
++        return ecl::Clamp&lt;int&gt;(state, 0, 1);
++    }
+     
++    ItemTraits Debris::traits[2] = {
++        {&quot;it_debris&quot;, it_debris,  itf_static | itf_animation | itf_indestructible | itf_fireproof, 0.0},
++        {&quot;it_debris_water&quot;, it_debris_water,  itf_static | itf_animation | itf_indestructible | itf_fireproof, 0.0},
++    };
++    
+ /* -------------------- Explosion -------------------- */
+ 
+     Explosion::Explosion(int strength) {
+@@ -170,6 +177,10 @@
+         return false;
+     }
+      
++    int Explosion::traitsIdx() const {
++        return ecl::Clamp&lt;int&gt;(state, 0, 3);
++    }
++    
+     ItemTraits Explosion::traits[4] = {
+         {&quot;it_explosion_nil&quot;,  it_explosion_nil, itf_static | itf_animation | itf_indestructible | itf_norespawn | itf_fireproof, 0.0},
+         {&quot;it_explosion_hollow&quot;,  it_explosion_hollow, itf_static | itf_animation | itf_indestructible | itf_norespawn | itf_fireproof, 0.0},
+@@ -338,7 +349,7 @@
+     }
+     
+     int Spring::traitsIdx() const {
+-        return state;
++        return ecl::Clamp&lt;int&gt;(state, 0, 1);
+     }
+     
+     ItemTraits Spring::traits[2] = {
+@@ -455,7 +466,8 @@
+         BootRegister(new Cherry(), &quot;it_cherry&quot;);
+         BootRegister(new Coffee(), &quot;it_coffee&quot;);
+         BootRegister(new DeathItem(), &quot;it_death&quot;);
+-        BootRegister(new Debris(), &quot;it_debris&quot;);
++        BootRegister(new Debris(0), &quot;it_debris&quot;);
++        BootRegister(new Debris(1), &quot;it_debris_water&quot;);
+         BootRegister(new Explosion(0), &quot;it_explosion&quot;);
+         BootRegister(new Explosion(0), &quot;it_explosion_nil&quot;);
+         BootRegister(new Explosion(1), &quot;it_explosion_hollow&quot;);
+
+Modified: trunk/src/items/SimpleItems.hh
+===================================================================
+--- trunk/src/items/SimpleItems.hh	2009-05-01 15:23:43 UTC (rev 1651)
++++ trunk/src/items/SimpleItems.hh	2009-05-01 20:46:03 UTC (rev 1652)
+@@ -100,16 +100,19 @@
+      */
+     class Debris : public Item {
+         CLONEOBJ(Debris);
+-        DECL_ITEMTRAITS;
++        DECL_ITEMTRAITS_ARRAY(2, traitsIdx());
+ 
+     public:
+-        Debris();
++        Debris(int type);
+         
+         // ModelCallback interface
+         virtual void animcb();
+ 
+         // Item interface
+         virtual bool actor_hit(Actor *a);
++        
++    private:
++        int traitsIdx() const;
+     };
+ 
+     /**
+@@ -117,7 +120,7 @@
+      */
+     class Explosion : public Item {
+         CLONEOBJ(Explosion);
+-        DECL_ITEMTRAITS_ARRAY(4, state);
++        DECL_ITEMTRAITS_ARRAY(4, traitsIdx());
+ 
+     public:
+         Explosion(int strength);
+@@ -137,6 +140,9 @@
+         
+         // Item interface
+         virtual bool actor_hit(Actor *a);
++        
++    private:
++        int traitsIdx() const;
+     };
+     
+     /**
+
+Modified: trunk/src/items.hh
+===================================================================
+--- trunk/src/items.hh	2009-05-01 15:23:43 UTC (rev 1651)
++++ trunk/src/items.hh	2009-05-01 20:46:03 UTC (rev 1652)
+@@ -59,6 +59,7 @@
+         it_cross,
+         it_death,
+         it_debris,
++        it_debris_water,
+         it_document,
+         it_drop,
+         it_dynamite,
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2009-05-01 15:23:43 UTC (rev 1651)
++++ trunk/src/lua.cc	2009-05-01 20:46:03 UTC (rev 1652)
+@@ -1961,20 +1961,17 @@
+     }
+      
+     if ((keyType == LUA_TSTRING) &amp;&amp; ((keyStr == &quot;x&quot;) || (keyStr == &quot;y&quot;))) {
+-//    if (((keyType == LUA_TSTRING) &amp;&amp;
+-//            ((keyStr == &quot;x&quot;) || (keyStr == &quot;y&quot;))) || 
+-//            ((keyType == LUA_TNUMBER) &amp;&amp; ((keyNum == 1) || (keyNum == 2)))) {
+-        lua_getmetatable(L, 1);
+-        lua_pushvalue(L, -2);
+-        if (keyStr == &quot;x&quot;) {
+-//        if (((keyType == LUA_TSTRING) &amp;&amp; (keyStr == &quot;x&quot;)) ||
+-//                 ((keyType == LUA_TNUMBER) &amp;&amp; (keyNum == 1))) {
+-            lua_rawseti(L, -2, 1);
+-            return 0;
+-        } else {
+-            lua_rawseti(L, -2, 2);
+-            return 0;
+-        }
++        throwLuaError(L, &quot;Invalid position modification of x or y coordinate&quot;);
++        return 0;
++//        lua_getmetatable(L, 1);
++//        lua_pushvalue(L, -2);
++//        if (keyStr == &quot;x&quot;) {
++//            lua_rawseti(L, -2, 1);
++//            return 0;
++//        } else {
++//            lua_rawseti(L, -2, 2);
++//            return 0;
++//        }
+     }
+     
+     throwLuaError(L, &quot;Invalid position index&quot;);
+
+Modified: trunk/src/stones/IceBlock.cc
+===================================================================
+--- trunk/src/stones/IceBlock.cc	2009-05-01 15:23:43 UTC (rev 1651)
++++ trunk/src/stones/IceBlock.cc	2009-05-01 20:46:03 UTC (rev 1652)
+@@ -76,7 +76,10 @@
+             SetFloor(get_pos(), MakeFloor(&quot;fl_ice&quot;));
+         }
+         Stone::on_move(origin);
+-        return false;
++        
++        // deny all item actions on stone move besides bomb explosions
++        itd = GetItem(get_pos());
++        return (itd != NULL &amp;&amp; itd-&gt;isKind(&quot;it_bomb&quot;));
+     }
+     
+     void IceBlock::setNoAbyssFloor(const GridPos &amp;p, std::string kind) const {
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001081.html">[Enigma-game-svn] r1651 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="001083.html">[Enigma-game-svn] r1653 - in trunk: lib-src/lua tools
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1082">[ date ]</a>
+              <a href="thread.html#1082">[ thread ]</a>
+              <a href="subject.html#1082">[ subject ]</a>
+              <a href="author.html#1082">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

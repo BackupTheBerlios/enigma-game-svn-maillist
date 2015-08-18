@@ -1,0 +1,4543 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1104 - in trunk/src: . gui lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1104%20-%20in%20trunk/src%3A%20.%20gui%20lev&In-Reply-To=%3C200804182246.m3IMk354026351%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000536.html">
+   <LINK REL="Next"  HREF="000538.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1104 - in trunk/src: . gui lev</H1>
+    <B>andreasl at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1104%20-%20in%20trunk/src%3A%20.%20gui%20lev&In-Reply-To=%3C200804182246.m3IMk354026351%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1104 - in trunk/src: . gui lev">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Sat Apr 19 00:46:03 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000536.html">[Enigma-game-svn] r1103 - in trunk: . data data/music	data/music/menu src src/gui
+</A></li>
+        <LI>Next message: <A HREF="000538.html">[Enigma-game-svn] r1105 - in homepage: images input
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#537">[ date ]</a>
+              <a href="thread.html#537">[ thread ]</a>
+              <a href="subject.html#537">[ subject ]</a>
+              <a href="author.html#537">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2008-04-19 00:45:50 +0200 (Sat, 19 Apr 2008)
+New Revision: 1104
+
+Added:
+   trunk/src/MusicManager.cc
+   trunk/src/MusicManager.hh
+   trunk/src/SoundEffectManager.cc
+   trunk/src/SoundEffectManager.hh
+   trunk/src/SoundEngine.cc
+   trunk/src/SoundEngine.hh
+Removed:
+   trunk/src/sound.cc
+   trunk/src/sound.hh
+   trunk/src/sound_internal.hh
+Modified:
+   trunk/src/GridObject.cc
+   trunk/src/Makefile.am
+   trunk/src/Object.cc
+   trunk/src/actors.cc
+   trunk/src/client.cc
+   trunk/src/enigma-lua.pkg
+   trunk/src/game.cc
+   trunk/src/gui/LevelMenu.cc
+   trunk/src/gui/LevelPackComposer.cc
+   trunk/src/gui/LevelWidget.cc
+   trunk/src/gui/MainMenu.cc
+   trunk/src/gui/Menu.cc
+   trunk/src/gui/OptionsMenu.cc
+   trunk/src/gui/TextField.cc
+   trunk/src/gui/widgets.cc
+   trunk/src/items.cc
+   trunk/src/laser.cc
+   trunk/src/lev/Index.cc
+   trunk/src/lua-display.cc
+   trunk/src/lua-display.hh
+   trunk/src/lua-ecl.cc
+   trunk/src/lua-ecl.hh
+   trunk/src/lua-editor.cc
+   trunk/src/lua-editor.hh
+   trunk/src/lua-enigma.cc
+   trunk/src/lua-enigma.hh
+   trunk/src/lua-global.cc
+   trunk/src/lua-global.hh
+   trunk/src/lua.cc
+   trunk/src/main.cc
+   trunk/src/options.cc
+   trunk/src/oxyd.cc
+   trunk/src/player.cc
+   trunk/src/stones_complex.cc
+   trunk/src/world.cc
+   trunk/src/world_internal.hh
+Log:
+Menu music part 2:
+ - Splitted sound and sound_internal into:
+     SoundEngine, SoundEffectManager, MusicManager
+ - Stripped some blind functions, cleaned dependencies
+Note:
+ - SoundEffectManager and MusicManager don't have any references
+   to SDL anymore - only exception is the datatype Uint32 which
+   is still used by MusicManager.
+ - All SDL_mixer-calls are now located in SoundEngine_SDL.
+ - SoundEffectManager and MusicManager are singletons in the
+   same sense as RatingManager. sound_engine still is an
+   auto_ptr, as it has to reference different classes
+   (SoundEngine_SDL or _null).
+
+
+Modified: trunk/src/GridObject.cc
+===================================================================
+--- trunk/src/GridObject.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/GridObject.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -25,7 +25,7 @@
+ #include &quot;laser.hh&quot;
+ #include &quot;lua.hh&quot;
+ #include &quot;main.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
+ #include &quot;world.hh&quot;
+ 
+ #include &quot;ecl_util.hh&quot;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/Makefile.am	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -111,9 +111,12 @@
+ 	server.cc 		\
+ 	server.hh		\
+ 	server_internal.hh	\
+-	sound.cc 		\
+-	sound.hh 		\
+-	sound_internal.hh	\
++	SoundEffectManager.cc   \
++	SoundEffectManager.hh   \
++	SoundEngine.cc          \
++	SoundEngine.hh 		\
++	MusicManager.cc		\
++	MusicManager.hh         \
+ 	StateObject.cc		\
+ 	StateObject.hh		\
+ 	StateManager.cc		\
+
+Added: trunk/src/MusicManager.cc
+===================================================================
+--- trunk/src/MusicManager.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/MusicManager.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -0,0 +1,334 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007,2008 Andreas Lochmann
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#include &quot;errors.hh&quot;
++#include &quot;options.hh&quot;
++#include &quot;MusicManager.hh&quot;
++#include &quot;SoundEngine.hh&quot;
++#include &quot;main.hh&quot;
++
++#include &quot;SDL.h&quot;
++#include &quot;SDL_mixer.h&quot;
++
++#include &lt;string&gt;
++#include &lt;cassert&gt;
++
++using namespace std;
++using namespace enigma;
++using namespace sound;
++
++
++/* -------------------- Interface Functions -------------------- */
++
++bool sound::StartMenuMusic()
++{
++    if(MusicManager::instance()-&gt;getMusicContext() != MUSIC_MENU) {
++        sound::FadeoutMusic();
++        MusicManager::instance()-&gt;setMusicContext(MUSIC_MENU);
++    }
++}
++
++bool sound::StartLevelMusic()
++{
++    if(MusicManager::instance()-&gt;getMusicContext() != MUSIC_GAME) {
++        sound::FadeoutMusic();
++        MusicManager::instance()-&gt;setMusicContext(MUSIC_GAME);
++    }
++}
++
++void sound::SetInGameMusicActive(bool active)
++{
++    // TODO!
++    if (active)
++        sound::PlayMusic(options::GetString(&quot;LevelMusicFile&quot;));
++    else
++        sound::StopMusic();
++}
++
++void sound::MusicTick(double dtime)
++{
++    MusicManager::instance()-&gt;tick(dtime);
++}
++
++void sound::InitMusic()
++{
++    MusicManager::instance()-&gt;init();
++}
++
++void sound::DefineMusicSingle(string title, string filename) {
++    // TODO: include play_till, replay_from, volume etc
++    if(filename == &quot;&quot;) {
++        Log &lt;&lt; &quot;Warning: Tried to define music single '&quot; &lt;&lt; title
++            &lt;&lt; &quot;' without file name. Skipped.\n&quot;;
++        return;
++    }
++    MusicManager::instance()-&gt;defineMusicSingle(title, filename);
++}
++
++/* -------------------- Sound option helpers -------------------- */
++
++/*! These functions are used in OptionsMenu.cc for the MenuMusicButton. */
++
++int sound::GetOptionMenuMusicCount()
++{        
++    return MusicManager::instance()-&gt;getMenuMusicQueueCount();
++}
++
++int sound::GetOptionMenuMusic()
++{
++    string music_queue = app.state-&gt;getString(&quot;MenuMusicQueue&quot;);
++    int pos = MusicManager::instance()-&gt;getMusicQueueButtonPosition(music_queue);
++    assert(pos &gt;= 0);
++    return pos;
++}
++
++void sound::SetOptionMenuMusic(int value)
++{
++    string music_queue = MusicManager::instance()-&gt;getMusicQueueByPosition(value);
++    app.state-&gt;setProperty(&quot;MenuMusicQueue&quot;, music_queue);
++    MusicManager::instance()-&gt;setActiveMusicQueue(music_queue);
++}
++
++string sound::GetOptionMenuMusicText(int value)
++{
++    return MusicManager::instance()-&gt;getMusicQueueByPosition(value);
++}
++
++/* -------------------- MusicManager -------------------- */
++
++MusicManager *MusicManager::theSingleton = 0;
++    
++MusicManager* MusicManager::instance() {
++    if (theSingleton == 0) {
++        theSingleton = new MusicManager();
++    }
++    return theSingleton;
++}
++
++MusicManager::MusicManager()
++: music_singles(), music_queues(), active_music_queue(&quot;&quot;),
++  music_context(MUSIC_NONE)
++{}    
++
++void MusicManager::tick(double dtime)
++{
++    static double cumulated_dtime = 0;
++    cumulated_dtime += dtime;
++    if((cumulated_dtime &gt; 0.2) || (dtime &lt; 0.0)) {
++        if(!sound::IsMusicPlaying()) {
++            // Music has ended or not even begun
++            switch(MusicManager::instance()-&gt;getMusicContext()) {
++                case MUSIC_MENU:
++                    if(active_music_queue != &quot;&quot;)
++                        music_queues[active_music_queue].next();                
++                    break;
++                case MUSIC_GAME:
++                    // TODO
++                    //if (options::GetBool(&quot;InGameMusic&quot;)) {
++                    //}
++                    break;
++            }
++        } else {
++            // Music is still running. Check if we should reloop.
++            if(getCurrentMusicTitle() != &quot;&quot;) {
++                music_singles[getCurrentMusicTitle()].maybeLoopBack();
++            }
++        }
++        cumulated_dtime = 0;
++    }
++}
++
++void MusicManager::init()
++{
++    // TODO: This is only temporary. Information will come 
++    // from an xml file later.
++    music_singles[&quot;Esprit Loop&quot;] =
++        MusicSingle(&quot;Esprit Loop&quot;, &quot;music/menu/esprit.ogg&quot;, 178180, 10690, 21600, true);
++    music_singles[&quot;Esprit&quot;] =
++        MusicSingle(&quot;Esprit&quot;, &quot;music/menu/esprit.ogg&quot;, 178180, 10690, 21600, false);
++    music_singles[&quot;Pentagonal Dreams&quot;] =
++        MusicSingle(&quot;Pentagonal Dreams&quot;, &quot;music/menu/menu.s3m&quot;);
++
++    music_queues[&quot;Default&quot;] = MusicQueue(&quot;Default&quot;, 0);
++    music_queues[&quot;Default&quot;].appendSingle(&quot;Esprit&quot;);
++    music_queues[&quot;Default&quot;].appendSingle(&quot;Pentagonal Dreams&quot;);
++
++    music_queues[&quot;Esprit&quot;] = MusicQueue(&quot;Esprit&quot;, 1);
++    music_queues[&quot;Esprit&quot;].appendSingle(&quot;Esprit&quot;);
++
++    music_queues[&quot;Pentagonal Dreams&quot;] = MusicQueue(&quot;Pentagonal Dreams&quot;, 2);
++    music_queues[&quot;Pentagonal Dreams&quot;].appendSingle(&quot;Pentagonal Dreams&quot;);
++
++    music_queues[&quot;Loop test&quot;] = MusicQueue(&quot;Loop test&quot;, 3);
++    music_queues[&quot;Loop test&quot;].appendSingle(&quot;Esprit Loop&quot;);
++
++    app.state-&gt;setProperty(&quot;MenuMusicQueue&quot;, &quot;Default&quot;);
++    active_music_queue = &quot;Default&quot;;
++    setMusicContext(MUSIC_MENU);
++    tick(-1);
++}
++
++bool MusicManager::defineMusicSingle(string title, string filename)
++{
++    music_singles[title] = MusicSingle(title, filename);
++    Log &lt;&lt; &quot;Added music single '&quot; &lt;&lt; title &lt;&lt; &quot;'.\n&quot;;
++    return true;
++}
++
++bool MusicManager::playMusicSingle(string title)
++{
++    return music_singles[title].start();
++}
++
++bool MusicManager::setActiveMusicQueue(string music_queue_title)
++{
++    if (music_queue_title == &quot;&quot;) {
++        Log &lt;&lt; &quot;Warning: Tried to choose empty music queue title as menu music queue.\n&quot;;
++        return false;
++    }
++    if (music_queue_title == getActiveMusicQueueTitle()) {
++        // Current queue is aready running.
++        return true;
++    }
++    // Stop current music and leave this queue.
++    sound::FadeoutMusic();
++    if (active_music_queue != &quot;&quot;)
++        music_queues[active_music_queue].leave();
++    // Switch to new queue if possible.
++    if (music_queues[music_queue_title].next()) {
++        active_music_queue = music_queue_title;
++        Log &lt;&lt; &quot;Switched to menu music queue '&quot; &lt;&lt; music_queue_title &lt;&lt; &quot;'.\n&quot;;
++        return true;
++    } else {
++        active_music_queue = &quot;&quot;;
++        Log &lt;&lt; &quot;Warning: Problems loading menu music queue '&quot; &lt;&lt; music_queue_title &lt;&lt; &quot;'.\n&quot;;
++        return false;
++    }
++}
++
++string MusicManager::getMusicQueueByPosition(int button_position)
++{
++    for (MusicQueueRepository::iterator i = music_queues.begin();
++             i != music_queues.end(); ++i)
++        if((*i).second.getButtonPosition() == button_position)
++            return (*i).first;
++    return &quot;&quot;;
++}
++
++int MusicManager::getMenuMusicQueueCount()
++{
++    int count = 0;
++    for (MusicQueueRepository::iterator i = music_queues.begin();
++             i != music_queues.end(); ++i)
++        if((*i).second.getButtonPosition() != -1)
++            count++;
++    return count;
++}
++
++string MusicManager::getCurrentMusicTitle() {
++    if(sound::IsMusicPlaying() &amp;&amp; (active_music_queue != &quot;&quot;))
++        return music_queues[active_music_queue].getCurrentMusicTitle();
++    else
++        return &quot;&quot;;
++}
++
++
++/* -------------------- MusicSingle -------------------- */
++
++bool MusicSingle::start()
++{
++    if(title == MusicManager::instance()-&gt;getCurrentMusicTitle())
++        return true;
++    sound::FadeoutMusic();
++    if(sound::PlayMusic(filename)) {
++        start_time = SDL_GetTicks();
++        return true;
++    }
++    return false;
++}
++
++bool MusicSingle::maybeLoopBack()
++{
++    Uint32 current_ticks = SDL_GetTicks();
++    if((allows_loop) &amp;&amp; (current_ticks &gt;= start_time + loop_end)) {
++        Uint32 position = current_ticks + loop_start - start_time - loop_end;
++        if(loop_end &gt; loop_start)
++            while(position &gt;= loop_end)
++                position = position + loop_start - loop_end;
++        start_time = current_ticks - position;
++        sound::StopMusic();
++        if(sound::PlayMusic(filename, position/1000.0)) {
++            start_time = current_ticks - position;
++            return true;
++        } else
++            return false;
++    } else
++        return false;
++}
++
++/* -------------------- Music Queue -------------------- */
++
++string MusicQueue::getCurrentMusicTitle()
++{
++    if(current_position_in_queue == -1)
++        return &quot;&quot;;
++    else
++        return single_title[current_position_in_queue];
++}
++
++void MusicQueue::appendSingle(string title)
++{
++    single_title.push_back(title);
++}
++
++bool MusicQueue::start()
++{
++    if(single_title.size() &gt; 0) {
++        current_position_in_queue = 0;
++        return MusicManager::instance()-&gt;playMusicSingle(single_title[0]);
++    } else
++        return false;
++}
++
++bool MusicQueue::next()
++{
++    if(current_position_in_queue == -1)
++        // Queue did not start yet. Request first title instead.
++        return start();
++    else {
++        // TODO: Add random
++        current_position_in_queue++;
++        if(current_position_in_queue &gt;= single_title.size())
++            current_position_in_queue = 0;
++        string single = single_title[current_position_in_queue];
++        Log &lt;&lt; &quot;Play next in queue &quot; &lt;&lt; title &lt;&lt; &quot;: &quot; &lt;&lt; single &lt;&lt; &quot;.\n&quot;;
++        return MusicManager::instance()-&gt;playMusicSingle(single);
++    }
++}
++
++void MusicQueue::leave()
++{
++    /*! We have the following choices, to determine where
++      to start the queue next time. Remember that &quot;next&quot;
++      will be called and auto-increase current_position_in_queue.
++      Complete reset: current_position_in_queue = -1;
++      Start with second song: current_position_in_queue = 0;
++      Restart the current: decrease current_position_in_queue by one
++      Start the next position in queue: don't change anything. */
++}
+
+Added: trunk/src/MusicManager.hh
+===================================================================
+--- trunk/src/MusicManager.hh	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/MusicManager.hh	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -0,0 +1,161 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007,2008 Andreas Lochmann
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef MUSICMGR_HH_INCLUDED
++#define MUSICMGR_HH_INCLUDED
++
++#include &quot;SDL_mixer.h&quot;
++
++#include &lt;string&gt;
++#include &lt;vector&gt;
++#include &lt;map&gt;
++
++using namespace std;
++
++namespace sound
++{
++
++/* -------------------- Interface Functions -------------------- */
++
++    void DefineMusicSingle(string title, string filename);
++
++    bool StartMenuMusic();
++    bool StartLevelMusic();
++    void MusicTick(double dtime);
++    void InitMusic();
++    void SetInGameMusicActive(bool active);
++
++    /*! Helper functions for options menu */
++    int GetOptionMenuMusicCount();
++    int GetOptionMenuMusic();
++    void SetOptionMenuMusic(int value);
++    string GetOptionMenuMusicText(int value);
++
++/* -------------------- Music and MusicQueue -------------------- */
++
++/*! The class &quot;MusicSingle&quot; holds filename and default playing information
++    for a single music file. Several music files can be combined into
++    a &quot;MusicQueue&quot; to play in a given or random sequence. MusicQueues are
++    used for menu music. One MusicQueue corresponds to one choice on the
++    option menu's button. */
++
++    class MusicSingle {
++    public:
++        MusicSingle(string title_, string filename_, Uint32 length_,
++                    Uint32 loop_start_, Uint32 loop_end_, bool allows_loop_)
++        : title(title_), filename(filename_), length(length_),
++          loop_start(loop_start_), loop_end(loop_end_),
++          allows_loop(allows_loop_), start_time() {}
++
++        MusicSingle(string title_, string filename_)
++        : title(title_), filename(filename_), length(0),
++          loop_start(0), loop_end(0), allows_loop(false), start_time() {}
++
++        MusicSingle()
++        : title(&quot;&quot;), filename(&quot;&quot;), length(0), loop_start(0), loop_end(0),
++          allows_loop(false) {}
++
++        bool start();
++        bool maybeLoopBack();
++
++    private:
++        string title;
++        string filename;
++        Uint32 length;      // in milliseconds
++        Uint32 loop_start;  // where the loop starts
++        Uint32 loop_end;    // where the loop should end (but continues playing until next tick)
++        Uint32 start_time;  // number of milliseconds since SDL init
++        bool allows_loop;
++    };
++
++    class MusicQueue {
++    public:
++        MusicQueue(string title_, int button_position_)
++        : title(title_), button_position(button_position_),
++          current_position_in_queue(-1), single_title() {}
++
++        MusicQueue()
++        : title(&quot;&quot;), button_position(-1),
++          current_position_in_queue(-1), single_title() {}
++
++        bool start();
++        bool next();
++        void leave();
++        string getCurrentMusicTitle();
++        int getButtonPosition() { return button_position; }
++        void setButtonPosition(int pos) { button_position = pos; }
++        void appendSingle(string title);
++
++    private:
++        int current_position_in_queue;
++        string title;
++        int button_position;
++        vector&lt;string&gt; single_title;
++    };
++
++    typedef map&lt;string, MusicSingle&gt; MusicSingleRepository;
++    typedef map&lt;string, MusicQueue&gt; MusicQueueRepository;
++
++    /*! MusicContext is a nominal condition to change the
++      music during the next tick.
++      NONE: during initialisation (don't play music now),
++      MENU/GAME: play music suitable for menu or during game. */
++    enum MusicContext { MUSIC_NONE, MUSIC_MENU, MUSIC_GAME };
++
++/* -------------------- MusicManager -------------------- */
++
++    class MusicManager {
++    public:
++        static MusicManager* instance();
++        ~MusicManager() {}
++
++        void init();
++        void tick(double dtime);
++
++        // ---------- Music and music repository ----------
++
++        void setMusicContext(MusicContext context) { music_context = context; }
++        MusicContext getMusicContext() { return music_context; }
++
++        bool defineMusicSingle(string title, string filename);
++        bool playMusicSingle(string title);
++        string getCurrentMusicTitle();
++                
++        bool setActiveMusicQueue(string music_queue_title);
++        string getActiveMusicQueueTitle() { return active_music_queue; }
++        string getMusicQueueByPosition(int button_position);
++        int getMenuMusicQueueCount();
++        int getMusicQueueButtonPosition(string music_queue_title) {
++            return music_queues[music_queue_title].getButtonPosition();
++        }
++
++    protected:
++        MusicManager();
++        
++    private:
++        static MusicManager *theSingleton;
++        MusicSingleRepository    music_singles;
++        MusicQueueRepository     music_queues;
++        string                   active_music_queue;
++        MusicContext             music_context;
++    };
++    
++}
++
++#endif
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/Object.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -26,7 +26,6 @@
+ #include &quot;lua.hh&quot;
+ #include &quot;ObjectValidator.hh&quot;
+ #include &quot;server.hh&quot;
+-#include &quot;sound.hh&quot;
+ #include &quot;world.hh&quot;
+ 
+ #include &quot;ecl_util.hh&quot;
+
+Added: trunk/src/SoundEffectManager.cc
+===================================================================
+--- trunk/src/SoundEffectManager.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/SoundEffectManager.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -0,0 +1,433 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007,2008 Andreas Lochmann
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#include &quot;errors.hh&quot;
++#include &quot;options.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
++#include &quot;SoundEngine.hh&quot;
++#include &quot;main.hh&quot;
++#include &quot;oxyd.hh&quot;
++#include &quot;nls.hh&quot;
++#include &quot;client.hh&quot;
++
++#include &lt;string&gt;
++#include &lt;cassert&gt;
++#include &lt;memory&gt;
++
++using namespace std;
++using namespace enigma;
++using namespace sound;
++using namespace OxydLib;
++
++
++/* -------------------- Interface Functions -------------------- */
++
++string sound::GetOxydSoundSet(OxydVersion oxyd_ver)
++{
++    return SoundEffectManager::instance()-&gt;getOxydSoundSet(oxyd_ver);
++}
++
++void sound::InitSoundSets() {
++    SoundEffectManager::instance()-&gt;initSoundSets();
++}
++
++void sound::SetActiveSoundSet(string soundset_name)
++{
++    SoundEffectManager::instance()-&gt;setActiveSoundSet(soundset_name);
++}
++
++void sound::SetDefaultSoundSet(string soundset_name)
++{
++    SoundEffectManager::instance()-&gt;setDefaultSoundSet(soundset_name);
++    if(app.state-&gt;getString(&quot;SoundSetName&quot;) == &quot;Default&quot;)
++        SetActiveSoundSet(soundset_name);
++}
++
++/*! The following function is an interface to add sound events to Enigma.
++  It is accessed via sound-defaults.lua and user sound definitions. */
++void sound::DefineSoundEffect(string soundset_key, string name, string filename,
++                              double volume, bool loop, bool global, int priority,
++                              double damp_max, double damp_inc, double damp_mult,
++                              double damp_min, double damp_tick, string silence_string) {
++    if(soundset_key == &quot;&quot;) {
++        Log &lt;&lt; &quot;Warning: Tried to define sound event '&quot; &lt;&lt; name
++            &lt;&lt; &quot;' without sound set key. Skipped.\n&quot;;
++        return;
++    }
++    SoundEffectManager::instance()-&gt;defineSoundEffect(soundset_key, name,
++        SoundEffect(name, soundset_key, filename, volume, loop, global, priority,
++        damp_max, damp_inc, damp_mult, damp_min, damp_tick, silence_string));
++}
++
++
++bool sound::EmitSoundEvent (const string &amp;eventname, const ecl::V2 &amp;pos,
++                            double volume, bool force_global)
++{
++    return SoundEffectManager::instance()-&gt;emitSoundEvent(eventname, pos, volume, force_global);
++}
++
++bool sound::EmitSoundEventGlobal (const string &amp;eventname, double volume)
++{
++    return SoundEffectManager::instance()-&gt;emitSoundEvent(eventname, ecl::V2(), volume, true);
++}
++
++void sound::WriteSilenceString (const string &amp;eventname)
++{
++    SoundEffectManager::instance()-&gt;writeSilenceString(eventname);
++}
++
++
++/* -------------------- Sound option helpers -------------------- */
++
++/*! These functions are used in OptionsMenu.cc for the Soundset-Button. */
++
++int sound::GetOptionSoundSetCount()
++{        
++    return SoundEffectManager::instance()-&gt;getSoundSetCount() + 1;
++}
++
++int sound::GetOptionSoundSet()
++{
++    string soundSet = app.state-&gt;getString(&quot;SoundSetName&quot;);
++    if (soundSet == &quot;Default&quot;)
++        return 0;
++    int pos = SoundEffectManager::instance()-&gt;getSoundSetButtonPosition(soundSet);
++    assert(pos &gt; 0);
++    return pos;
++}
++
++void sound::SetOptionSoundSet(int value)
++{
++    if(value == 0) {
++        // setting to default sound set
++        if (app.state-&gt;getString(&quot;SoundSetName&quot;) == &quot;Default&quot;)
++            return;
++        app.state-&gt;setProperty(&quot;SoundSetName&quot;, &quot;Default&quot;);
++        options::SetOption(&quot;SoundSet&quot;, SoundEffectManager::instance()-&gt;convertToOldSoundSetNumber(&quot;Default&quot;));
++        SetActiveSoundSet(SoundEffectManager::instance()-&gt;getDefaultSoundSet());
++    } else {
++        string newSet = SoundEffectManager::instance()-&gt;getSoundSetByPosition(value);
++        assert(newSet != &quot;&quot;);
++        if (app.state-&gt;getString(&quot;SoundSetName&quot;) == newSet)
++            return;
++        app.state-&gt;setProperty(&quot;SoundSetName&quot;, newSet);
++        options::SetOption(&quot;SoundSet&quot;, SoundEffectManager::instance()-&gt;convertToOldSoundSetNumber(newSet));
++        SetActiveSoundSet(newSet);
++    }
++}
++
++string sound::GetOptionSoundSetText(int value)
++{
++    if(value == 0)
++        return N_(&quot;Default&quot;);
++    string soundset_name = SoundEffectManager::instance()-&gt;getSoundSetByPosition(value);
++    if(soundset_name == &quot;&quot;)
++        return &quot;INVALID&quot;;
++    return soundset_name;
++}
++
++/* -------------------- SoundEvent implementation -------------------- */
++
++SoundEvent::SoundEvent ()
++: name(&quot;&quot;), has_position(false), position(),
++  priority (0), volume (0.0),
++  left (0), right(0), active (false),
++  playing_time (0)
++{}
++
++/* -------------------- SoundEffectManager -------------------- */
++
++SoundEffectManager *SoundEffectManager::theSingleton = 0;
++    
++SoundEffectManager* SoundEffectManager::instance() {
++    if (theSingleton == 0) {
++        theSingleton = new SoundEffectManager();
++    }
++    return theSingleton;
++}
++
++SoundEffectManager::SoundEffectManager()
++: sound_sets(), sound_effects(), active_sound_set_key(&quot;&quot;),
++  default_sound_set(&quot;&quot;), sound_set_count(0)
++{}    
++
++/* ------------- Conversion and helper functions ------------- */
++
++/*! This function defines how to put soundset_key and eventname together to
++  create an eventkey. */
++
++string SoundEffectManager::effectKey(string effect_name, string soundset_name)
++{
++    if (soundset_name == &quot;&quot;)
++        return getActiveSoundSetKey() + &quot;#&quot; + effect_name;
++    else
++        return soundset_name + &quot;#&quot; + effect_name;
++}
++
++/*! This function searches the known sound sets for a sound set with given
++  oxyd version, and returns the sound set name (or empty string if none). */
++
++string SoundEffectManager::getOxydSoundSet(OxydVersion oxyd_ver)
++{
++    for (SoundSetRepository::iterator i = sound_sets.begin();
++             i != sound_sets.end(); ++i)
++        if((*i).second.getOxydVersion() == oxyd_ver)
++            return (*i).first;
++    return &quot;&quot;;
++}
++
++/*! Enigma 1.00 only knew the option &quot;SoundSet&quot;, which was an integer. This
++  was quite unhandy if one wanted to add additional sound sets. Since 1.01
++  Enigma features the option &quot;SoundSetName&quot;. Still, old &quot;SoundSet&quot; is needed
++  if user wants to switch to &lt;= 1.00 again; so here are the conversion
++  functions. Any user sound set is mapped to 0 (&quot;Default&quot;).  */
++
++int SoundEffectManager::convertToOldSoundSetNumber(string soundset_name)
++{
++    if(soundset_name == &quot;Default&quot;)  return 0;
++    if(soundset_name == &quot;Enigma&quot;)   return 1;
++    SoundSet sd = sound_sets[soundset_name];
++    if(sd.isOxyd())
++        return ((int) sd.getOxydVersion()) + 2;
++    return 0;
++}
++
++string SoundEffectManager::convertFromOldSoundSetNumber(int soundset_number)
++{
++    if(soundset_number == 0)  return &quot;Default&quot;;
++    if(soundset_number == 1)  return &quot;Enigma&quot;;
++    return getOxydSoundSet((OxydVersion) (soundset_number - 2));
++}
++
++/* -------------------- Sound set handling -------------------- */
++
++/*! These functions fill in data for the sound sets, initialises and
++  activates them. Return false, if something went wrong, e.g. when an
++  oxyd sound set is mentioned, but the corresponding oxyd version
++  wasn't found. */
++
++bool SoundEffectManager::defineSoundSet(string soundset_name, string soundset_key,
++                                 int button_position)
++{
++    sound_sets[soundset_name] = SoundSet(soundset_key, button_position);
++    Log &lt;&lt; &quot;Added sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;' (key '&quot; &lt;&lt; soundset_key
++        &lt;&lt; &quot;') on position &quot; &lt;&lt; button_position &lt;&lt; &quot;.\n&quot;;
++    return true;
++}
++
++bool SoundEffectManager::defineSoundSetOxyd(string soundset_name, string soundset_key,
++                                     OxydVersion oxyd_ver, int button_position)
++{
++    if(oxyd::FoundOxyd(oxyd_ver)) {
++        sound_sets[soundset_name] =
++            SoundSet(soundset_key, button_position, (OxydVersion) oxyd_ver);
++        Log &lt;&lt; &quot;Added sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;' (key '&quot; &lt;&lt; soundset_key
++            &lt;&lt; &quot;') on position &quot; &lt;&lt; button_position &lt;&lt; &quot;.\n&quot;;
++        return true;
++    } else {
++        Log &lt;&lt; &quot;Skipped sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;'.\n&quot;;
++        return false;
++    }
++}
++
++bool SoundSet::activate()
++{
++    if(getSoundSetKey() == &quot;&quot;)
++        return false;
++    if(isOxyd() &amp;&amp;  !oxyd::InitOxydSoundSet(getOxydVersion()))
++        return false;
++
++    SoundEffectManager::instance()-&gt;setActiveSoundSetKey(getSoundSetKey());
++    return true;
++}
++
++void SoundEffectManager::initSoundSets()
++{
++    // Define sound sets
++    sound_sets.clear();
++    assert(sound_sets.empty());
++    assert(defineSoundSet (&quot;Enigma&quot;,   &quot;Enigma&quot;,  1));
++    int pos = 2; // position in options menu button
++    if (defineSoundSetOxyd (&quot;Oxyd&quot;,     &quot;Oxyd*&quot;,   OxydVersion_Oxyd1,          pos))  pos++;
++    if (defineSoundSetOxyd (&quot;Magnum&quot;,   &quot;Magnum*&quot;, OxydVersion_OxydMagnum,     pos))  pos++;
++    if (defineSoundSetOxyd (&quot;Mag.Gold&quot;, &quot;Magnum*&quot;, OxydVersion_OxydMagnumGold, pos))  pos++;
++    if (defineSoundSetOxyd (&quot;Per.Oxyd&quot;, &quot;Oxyd*&quot;,   OxydVersion_PerOxyd,        pos))  pos++;
++    if (defineSoundSetOxyd (&quot;Extra&quot;,    &quot;Oxyd*&quot;,   OxydVersion_OxydExtra,      pos))  pos++;
++    // Define user sound sets, as given by sound_effects
++    for (SoundEffectRepository::iterator i = sound_effects.begin();
++         i != sound_effects.end(); ++i) {
++        string soundset_key = (*i).second.getSoundSetKey();
++        bool found = false;
++        // ignore Oxyd* and Magnum* sound effects, if no 
++        if ((soundset_key != &quot;Oxyd*&quot;) &amp;&amp; (soundset_key != &quot;Magnum*&quot;)) {
++            for (SoundSetRepository::iterator j = sound_sets.begin();
++                 j != sound_sets.end(); ++j)
++                if((*j).second.getSoundSetKey() == soundset_key)
++                    found = true;
++            if(!found)
++                if (defineSoundSet (soundset_key, soundset_key, pos))  pos++;
++        }
++    }
++    Log &lt;&lt; &quot;Found &quot; &lt;&lt; pos - 1 &lt;&lt; &quot; different sound sets.\n&quot;;
++    setSoundSetCount(pos - 1);
++    setDefaultSoundSet(&quot;Enigma&quot;);
++    // Extract sound set names and keys from options; activate!
++    string soundset_name = app.state-&gt;getString(&quot;SoundSetName&quot;);
++    if (soundset_name == &quot;&quot;) { // just switched from 1.00 to higher
++        soundset_name = convertFromOldSoundSetNumber(options::GetInt(&quot;SoundSet&quot;));
++        app.state-&gt;setProperty(&quot;SoundSetName&quot;, soundset_name);
++    }
++    if (soundset_name == &quot;Default&quot;)
++        soundset_name = getDefaultSoundSet();
++    ClearCache();
++    if (sound_sets[soundset_name].activate())  {
++        preloadSoundEffects();
++        Log &lt;&lt; &quot;Activated sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;'.\n&quot;;
++    }
++    else {
++        // Fallback, happens e.g. when oxyd sound set can't be established or 
++        // a user soundset is given which doesn't exist anymore.
++        Log &lt;&lt; &quot;Warning: Soundset '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;' not available.\n&quot;;
++        if (sound_sets[&quot;Enigma&quot;].activate()) {
++            app.state-&gt;setProperty(&quot;SoundSetName&quot;, &quot;Enigma&quot;);
++            options::SetOption(&quot;SoundSet&quot;, convertToOldSoundSetNumber(&quot;Enigma&quot;));
++        } else
++            ASSERT(false, XFrontend,
++                &quot;Soundsets defect and fallback 'Enigma' not available.&quot;);
++    }
++}
++
++void SoundEffectManager::setActiveSoundSet(string soundset_name)
++{
++    string soundset_key = sound_sets[soundset_name].getSoundSetKey();
++    if (soundset_key == getActiveSoundSetKey())
++        return;
++    if (soundset_key == &quot;Default&quot;) {
++        Log &lt;&lt; &quot;Warning: Tried to choose 'Default' as effective sound set.\n&quot;;
++        return;
++    }
++    if (soundset_key == &quot;&quot;) {
++        Log &lt;&lt; &quot;Warning: Tried to choose empty sound set key as effective sound set.\n&quot;;
++        return;
++    }
++    ClearCache();
++    if (sound_sets[soundset_name].activate()) {
++        preloadSoundEffects();
++        Log &lt;&lt; &quot;Switched to sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;' (key '&quot; 
++            &lt;&lt; soundset_key &lt;&lt; &quot;').\n&quot;;
++    } else
++        Log &lt;&lt; &quot;Warning: Problems loading sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;' (key'&quot;
++            &lt;&lt; soundset_key &lt;&lt; &quot;').\n&quot;;
++}
++
++/*! Pre-cache all sound effects so that they can be played without lag
++  when the game is running. */
++void SoundEffectManager::preloadSoundEffects()
++{
++    SoundEffectRepository::iterator i = sound_effects.begin(), 
++        end = sound_effects.end();
++    string prefix = getActiveSoundSetKey() + &quot;#&quot;;
++    for (; i != end; ++i) {
++        if (i-&gt;first.compare(0, prefix.size(), prefix) == 0)
++            CacheSound(i-&gt;second);
++    }
++}
++
++string SoundEffectManager::getSoundSetByPosition(int button_position)
++{
++    for (SoundSetRepository::iterator i = sound_sets.begin();
++             i != sound_sets.end(); ++i)
++        if((*i).second.getButtonPosition() == button_position)
++            return (*i).first;
++    return &quot;&quot;;
++}
++
++/* -------------------- Playing sound events -------------------- */
++
++/*! The following method is the interface between the formal SoundEffect
++  and the sound engine (via PlaySound[Global]). The last two functions
++  define the interface between level objects and SoundEffect. */
++
++bool SoundEffect::play(const ecl::V2 &amp;pos, double vol, bool glob)
++{
++    if (name == &quot;&quot;)
++        return false;
++    if (filename == &quot;&quot;) {
++        Log &lt;&lt; &quot;No soundfile given for sound event &quot; &lt;&lt; name &lt;&lt; &quot;.\n&quot;;
++        return false;
++    }
++    if (glob || global)
++        return PlaySoundGlobal (filename, volume * vol, priority);
++    else
++        return PlaySound (filename, pos, volume * vol, priority);
++}
++
++bool SoundEffectManager::emitSoundEvent (const string &amp;eventname, const ecl::V2 &amp;pos,
++                            double volume, bool force_global)
++{
++    string effectkey = effectKey(eventname);
++    SoundEffectRepository::iterator i = sound_effects.find(effectkey);
++    if (i == sound_effects.end()) {
++        Log &lt;&lt; &quot;Undefined sound event &quot; &lt;&lt; effectkey &lt;&lt; &quot; @ &quot; 
++            &lt;&lt; pos[0] &lt;&lt; &quot;,&quot; &lt;&lt; pos[1] &lt;&lt; &quot;\n&quot;;
++        return false;
++    } else {
++        return i-&gt;second.play(pos, volume, force_global);
++    }
++}
++
++void SoundEffectManager::writeSilenceString (const string &amp;eventname)
++{
++    string effectkey = effectKey(eventname);
++    SoundEffectRepository::iterator i = sound_effects.find(effectkey);
++    if (i != sound_effects.end()) {
++        string silence_string = (*i).second.getSilenceString();
++        if (silence_string != &quot;&quot;)
++            client::Msg_ShowText (silence_string, true);
++    }
++}
++
++/* -------------------- Sound damping implementation -------------------- */
++
++/*! These methods are connected to the sound damping mechanism, designed
++  to reduce the noise created by some objects like st-lightpassenger. */
++
++SoundDamping::SoundDamping(string effect_name_, const void *origin_)
++: effect_name(effect_name_), origin(origin_)
++{
++    damp = SoundEffectManager::instance()-&gt;getDampingData(effect_name_);
++    factor = damp.incr;
++    //Log &lt;&lt; &quot;New damping entry &quot; &lt;&lt; effect_name &lt;&lt; &quot; with &quot; &lt;&lt; damp.incr &lt;&lt; &quot;.\n&quot;;
++}
++
++float SoundDamping::get_volume(float def_volume) {
++    if (factor &lt; damp.maxi)
++        factor += damp.incr;
++    //Log &lt;&lt; &quot;  Found entry &quot; &lt;&lt; effect_name &lt;&lt; &quot;. Factor is now &quot; &lt;&lt; i-&gt;factor &lt;&lt; &quot;.\n&quot;;
++    float q = factor * damp.mult;
++    if (q &gt; 1.0)
++        return def_volume / q;
++    return def_volume;
++}
++
++bool SoundDamping::tick() {
++    // return true, if this entity is to be destroyed.
++    factor *= damp.tick;
++    return (factor &lt;= damp.mini);
++}
+
+Added: trunk/src/SoundEffectManager.hh
+===================================================================
+--- trunk/src/SoundEffectManager.hh	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/SoundEffectManager.hh	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -0,0 +1,370 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007,2008 Andreas Lochmann
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef SOUNDEFFECTMGR_HH_INCLUDED
++#define SOUNDEFFECTMGR_HH_INCLUDED
++
++#include &quot;ecl_math.hh&quot;
++#include &quot;oxydlib/OxydVersion.h&quot;
++
++#include &lt;string&gt;
++#include &lt;vector&gt;
++#include &lt;map&gt;
++
++using namespace std;
++
++/** ----------- Survey of the formal data structure -----------
++ *
++ *  The wav-files are not to be accessed directly. There are several layers
++ *  between the wav-data and the final EmitSoundEvent-function, to allow for the
++ *  following uses:
++ *    (a) Sound Sets, possibly user defined,
++ *    (b) Access to oxyd's sound data,
++ *    (c) Sound damping for loud objects with user defined data,
++ *    (d) A &quot;Default&quot; mode which switches the sound set between level packs.
++ *    (e) A &quot;silence string&quot; that can be written instead of playing the sound.
++ *  For this, six layers of sound information exist.
++ *  Note: A sound effect is given by a wav-file and several data how to play it.
++ *        An object may choose a sound effect to play. Then it becomes a sound
++ *        event (= sound effect + position etc.).
++ *
++ *    (1) SoundEngine
++ *         -&gt; Providing global information and methods for using SDL.
++ *    (2) SoundData
++ *         -&gt; Holding technical details about how to play the wav-files.
++ *    (3) SoundEffect
++ *         -&gt; Holding game-related information about how to play a sound
++ *            effect. This includes the effect's filename, default volume,
++ *            if it's looped, if it's played on a global scale by default,
++ *            the default damping information for this event, etc.
++ *    (4) SoundSet
++ *         -&gt; Holding the sound set key of a sound set (see below), and if
++ *            it is connected to Oxyd. It also provides methods to
++ *            activate a sound set.
++ *    (5) SoundEvent
++ *         -&gt; A struct to hold information about a sound event, like the
++ *            effect's name, position, priority, volume etc.
++ *    (6) SoundDamping
++ *         -&gt; Each time an object makes noise, a SoundDamping-record
++ *            is created with an entry of the objects address (as void *).
++ *            This class modulates the volume with which the next effect
++ *            connected to this object is played.
++ *
++ *  Sound events are normally invoked by &quot;EmitSoundEvent(EFFECTNAME, ...)&quot;.
++ *  EFFECTNAME can then be e.g. &quot;pickup&quot; or &quot;laseron&quot;. This effect name does not
++ *  yet define the sound effect completely. Instead, the actually activated sound
++ *  set is looked up. It holds a string called sound set key (e.g. &quot;Enigma&quot; or
++ *  &quot;Oxyd*&quot;), and together with the effect name they form the effect key, here
++ *  &quot;Enigma#pickup&quot; or &quot;Oxyd*#laseron&quot;. This effect key is looked up in the sound
++ *  effect repository and results in a SoundEffect-entry, which is then played.
++ *
++ */
++
++/** -------------- About the sound damping system --------------
++ *
++ *  The sound damping is not automatically used. Instead, it is called through
++ *  the &quot;World::getVolume&quot;-function:
++ *    sound::EmitSoundEvent (NAME, POS, getVolume(NAME, OBJECT_CALLING, DEF_VOLUME))
++ *  OBJECT_CALLING need not be a real address, it is never dereferenced. It just
++ *  holds as a representative of the calling object. The SoundDamping-records
++ *  are evaluated and finally erased by World::tick_sound_dampings. 
++ *
++ *  The values used in the sound damping systes can be user defined. In the
++ *  following, we use the defaults:
++ *
++ *  tick_sound_dampings is only to be evaluated every 10th tick (0.1s).
++ *  Each damping factor (the ivar connected to the noisy object and its sound
++ *  effect name) is reduced by 0.9. This is less than the 10th root of 0.5 (0.933),
++ *  so after 1s the damping factor is reduced by more than one half. If the factor
++ *  shrinks under 0.5, it is considered 0.
++ *
++ *  Examples:
++ *    1) Frequency less than one sound event per 0.6 seconds.
++ *       Then there is no damping at all.
++ *    2) N events per second. For each event, factor (F) is raised by
++ *       one. And each 0.1 seconds it is multiplied with 0.9. We now
++ *       have N/10 events per 0.1 seconds, hence in equilibrium f
++ *       oscillates between
++ *            f = (f + N/10) * 0.9   =&gt;   f = N
++ *       and  f + N/10 = N * 1.1 (geometric series!).
++ *  In particular, for large enough N, f is approximately proportional
++ *  to N with half-life of less than a second. This is then evaluated
++ *  in getVolume.
++ * 
++ *  World::getVolume returns the volume, if object OBJECT_CALLING wants
++ *  to play sound effect NAME with default volume DEF_VOLUME. Often played
++ *  sounds from always the same object are damped to reduce noise-level.
++ *  Note that OBJECT_CALLING == NULL is explicitly allowed and used e.g.
++ *  for all laser-sounds. The damping factor is increased by 1.0 for each
++ *  event, and multiplied with 0.9 each 0.1 seconds, thereby approximately
++ *  equals the average number of events per second.
++ *
++ */
++
++/** -------------- Compatibility with 1.00 --------------
++ *
++ *  Enigma 1.01 uses a new option &quot;SoundSetName&quot;, which replaces &quot;SoundSet&quot;.
++ *  To enable Enigma 1.00 to run on the same system, the &quot;SoundSet&quot; variable
++ *  still exists. It is set to 0 (= &quot;Default&quot;) for all user sound sets:
++ *  When exiting 1.01 with a user sound set and starting 1.00, the default
++ *  sound set will be activated for 1.00. Yet, as &quot;SoundSetName&quot; still shows
++ *  the old value, 1.01 will use it to find its user sound set. Even if
++ *  you change the sound set in 1.00, this will have no effect on the
++ *  chosen sound set for 1.01. In contrast to this, if you change the 1.01
++ *  sound set, the 1.00 &quot;SoundSet&quot;-variable will be adapted. Except for this
++ *  &quot;restriction&quot;, you can use two different sound sets for 1.00 and 1.01.
++ *
++ */
++
++namespace sound
++{
++/* -------------------- Data types -------------------- */
++
++    typedef string SoundName;
++
++    typedef vector &lt;unsigned char&gt; ByteVec;
++
++    struct SoundData {
++        ByteVec  buf;
++        unsigned freq;
++        size_t   samplesize;
++        bool     signedp;
++        int      nchannels;
++    };
++
++/* -------------------- Interface Functions -------------------- */
++
++    void DefineSound (const SoundName &amp;, const SoundData &amp;);
++    
++    /*! Helper function for oxyd.cc */
++    string GetOxydSoundSet(OxydLib::OxydVersion oxyd_ver);
++
++    /*! Sound set handling */
++    void InitSoundSets();
++    void SetActiveSoundSet(string soundset_name);
++    void SetDefaultSoundSet(string soundset_name);
++
++    /*! Define a new sound event. */
++    void DefineSoundEffect(string soundset_key, string name, string filename,
++                           double volume, bool loop, bool global, int priority,
++                           double damp_max, double damp_inc, double damp_mult,
++                           double damp_min, double damp_tick, string silence_string);
++
++    /*! Trigger a sound event.  Return whether the event was handled. */
++    bool EmitSoundEvent (const string &amp;eventname,
++                         const ecl::V2 &amp;pos = ecl::V2 (), 
++                         double volume = 1.0, bool force_global = false);
++    bool EmitSoundEventGlobal (const string &amp;eventname, double volume = 1.0);
++
++    /*! Send the silence string of a sound effect to command line. */
++    void WriteSilenceString (const string &amp;eventname);
++
++    /*! Helper functions for options menu */
++    int GetOptionSoundSetCount();
++    int GetOptionSoundSet();
++    void SetOptionSoundSet(int value);
++    string GetOptionSoundSetText(int value);
++
++/* -------------------- SoundDampingList ---------------- */
++
++/*! This class stores object addresses and assigns volumes to
++    sound events, based on the frequency of the event. */
++
++    struct DampingData {
++        double incr;
++        double maxi;
++        double mult;
++        double mini;
++        double tick;
++    };
++
++    class SoundDamping {
++    private:
++        string effect_name;
++        const void *origin;
++        float factor;
++        DampingData damp;
++
++    public:
++        SoundDamping(string effect_name_, const void *origin_);
++        bool is_equal(string name2, const void *origin2) {
++            return (origin2 == origin) &amp;&amp; (effect_name == name2);
++        }
++        float get_volume(float def_volume);
++        bool tick();  // returns true if this entry should be erased
++    };
++
++/* -------------------- SoundEvent -------------------- */
++
++    struct SoundEvent {
++        // Variables
++        SoundName name;
++        bool      has_position;
++        ecl::V2   position;
++        int       priority;
++        double    volume;           // Volume between 0.0 and 1.0
++        int       left;
++        int       right;
++
++        // Variables used internally by sound engine
++        bool      active;
++        double    playing_time;
++
++        // Constructor
++        SoundEvent ();
++    };
++
++/* -------------------- SoundEffect and SoundEffectRepository ---------------- */
++
++/*! This class stores information about how to play sound events
++    and provides methods to play them. */
++
++    class SoundEffect {
++    public:
++        SoundEffect(string name_, string soundset_key_, string filename_,
++                       double volume_, bool loop_, bool global_, int priority_,
++                       double damp_max_, double damp_inc_, double damp_mult_,
++                       double damp_min_, double damp_tick_, string silence_string_)
++        : name(name_), soundset_key(soundset_key_), filename(filename_), volume(volume_),
++          loop(loop_), global(global_), priority(priority_),
++          silence_string(silence_string_) {
++            damp.maxi = damp_max_;
++            damp.incr = damp_inc_;
++            damp.mult = damp_mult_;
++            damp.mini = damp_min_;
++            damp.tick = damp_tick_;
++        }
++
++        SoundEffect()  // standard empty data set, compare sound-defaults.lua
++        : name(&quot;EMPTY_EVENT&quot;), filename(&quot;&quot;), soundset_key(&quot;&quot;), volume(1.0),
++          loop(false), global(false), priority(1), silence_string(&quot;&quot;) {
++            damp.maxi = 20.0;
++            damp.incr =  1.0;
++            damp.mult =  1.0;
++            damp.mini =  0.5;
++            damp.tick =  0.9;
++        }
++
++        void setFilename(string filename_) { filename = filename_; }
++        string getFilename() const { return filename; }
++        bool play(const ecl::V2 &amp;pos = ecl::V2(), double vol = 1.0, bool glob = false);
++        DampingData getDampingData() { return damp; }
++        string getSoundSetKey() { return soundset_key; }
++        string getSilenceString() { return silence_string; }
++
++    private:
++        string name;
++        string filename;
++        string soundset_key;
++        string silence_string;
++        double volume;
++        bool loop;
++        bool global;
++        int priority;
++        DampingData damp;
++    };
++
++    class SoundSet {
++    public:
++        SoundSet(string soundset_key_, int button_position_, OxydLib::OxydVersion oxyd_ver_)
++        : soundset_key(soundset_key_), is_oxyd(true), oxyd_ver(oxyd_ver_),
++          button_position(button_position_) {}
++
++        SoundSet(string soundset_key_, int button_position_)
++        : soundset_key(soundset_key_), is_oxyd(false),
++          oxyd_ver(OxydLib::OxydVersion_Invalid), button_position(button_position_) {}
++
++        SoundSet()
++        : soundset_key(&quot;&quot;), is_oxyd(false),
++          oxyd_ver(OxydLib::OxydVersion_Invalid), button_position(-1) {}
++
++        bool activate();
++        OxydLib::OxydVersion getOxydVersion() { return oxyd_ver; }
++        bool isOxyd() { return is_oxyd; }
++        string getSoundSetKey() { return soundset_key; }
++        int getButtonPosition() { return button_position; }
++        void setButtonPosition(int pos) { button_position = pos; }
++
++    private:
++        string soundset_key;
++        bool is_oxyd;
++        OxydLib::OxydVersion oxyd_ver;
++        int button_position;
++    };
++    
++    typedef map&lt;string, SoundEffect&gt; SoundEffectRepository;
++    typedef map&lt;string, SoundSet&gt; SoundSetRepository;
++
++
++/* -------------------- SoundEffectManager -------------------- */
++
++    class SoundEffectManager {
++    public:
++        static SoundEffectManager* instance();
++        ~SoundEffectManager() {}
++
++        // ---------- Sound effect repository and sound sets ----------
++
++        void setActiveSoundSetKey(string soundset_key) {active_sound_set_key=soundset_key;}
++        string getActiveSoundSetKey() { return active_sound_set_key; }
++        void setDefaultSoundSet(string soundset_name) {default_sound_set=soundset_name;}
++        string getDefaultSoundSet() { return default_sound_set; }
++        string effectKey(string effect_name, string soundset_name = &quot;&quot;);
++        DampingData getDampingData(string effect_name) {
++            return sound_effects[effectKey(effect_name)].getDampingData(); }
++        void defineSoundEffect(string soundset_key, string name, SoundEffect se) {
++            sound_effects[effectKey(name, soundset_key)] = se;
++        }
++        bool emitSoundEvent (const string &amp;eventname, const ecl::V2 &amp;pos = ecl::V2 (), 
++                             double volume = 1.0, bool force_global = false);
++        void writeSilenceString (const string &amp;eventname);
++        void initSoundSets();
++        bool defineSoundSet(string soundset_name, string soundset_key, int button_position);
++        bool defineSoundSetOxyd(string soundset_name, string soundset_key,
++                                OxydLib::OxydVersion oxyd_ver, int button_position);
++        string getOxydSoundSet(OxydLib::OxydVersion oxyd_ver);
++
++        int convertToOldSoundSetNumber(string soundset_name);
++        string convertFromOldSoundSetNumber(int soundset_number);
++
++        void setActiveSoundSet(string soundset_name);
++        void preloadSoundEffects();
++
++        void setSoundSetCount(int count) { sound_set_count = count; }
++        int getSoundSetCount() { return sound_set_count; }
++        
++        int getSoundSetButtonPosition(string soundset_name) {
++            return sound_sets[soundset_name].getButtonPosition();
++        }
++        string getSoundSetByPosition(int button_position);
++        
++    protected:
++        SoundEffectManager();
++        
++    private:
++        static SoundEffectManager *theSingleton;
++        SoundSetRepository         sound_sets;
++        SoundEffectRepository      sound_effects;
++        string                     active_sound_set_key;
++        string                     default_sound_set;
++        int                        sound_set_count;
++    };
++}
++
++#endif
+
+Added: trunk/src/SoundEngine.cc
+===================================================================
+--- trunk/src/SoundEngine.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/SoundEngine.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -0,0 +1,542 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007,2008 Andreas Lochmann
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#include &quot;errors.hh&quot;
++#include &quot;options.hh&quot;
++#include &quot;SoundEngine.hh&quot;
++#include &quot;main.hh&quot;
++
++#include &quot;SDL_mixer.h&quot;
++
++#include &lt;string&gt;
++#include &lt;cassert&gt;
++
++using namespace std;
++using namespace sound;
++using namespace enigma;
++
++
++/* -------------------- Local variables -------------------- */
++namespace
++{
++    auto_ptr&lt;SoundEngine&gt; sound_engine;
++
++    bool sound_enabled      = true;
++    bool music_enabled      = true;
++    bool sound_enabled_temp = false;
++}
++
++
++/* -------------------- Interface Functions -------------------- */
++
++void sound::Init() 
++{
++    if (!sound_engine.get()) {
++        sound_engine.reset(new SoundEngine_SDL);
++    }
++
++    if (sound_engine-&gt;init()) {
++        options::UpdateVolume();
++    }
++    else {
++        sound_enabled = false;
++        sound_engine.reset(new SoundEngine_Null);
++    }
++}
++
++void sound::Shutdown() 
++{
++    if (sound_engine.get())
++        sound_engine-&gt;shutdown();
++}
++
++void sound::Tick (double dtime)
++{
++    sound_engine-&gt;tick (dtime);
++    sound::MusicTick(dtime);
++}
++
++void sound::DisableSound() {
++    if (sound_enabled) {
++        sound_enabled = false;
++        Shutdown();
++    }
++}
++
++void sound::EnableSound() {
++    if (!sound_enabled) {
++        sound_enabled = true;
++        Init();
++    }
++}
++
++void sound::TempDisableSound() {
++    sound_enabled_temp = sound_enabled;
++    sound_enabled      = false;
++}
++
++void sound::TempReEnableSound() {
++    sound_enabled = sound_enabled_temp;
++}
++
++void sound::DefineSound (const SoundName &amp;name, const SoundData &amp;data)
++{
++    sound_engine-&gt;define_sound (name, data);
++}
++
++void sound::DisableMusic() {
++    music_enabled = false;
++}
++
++void sound::SetListenerPosition (const ecl::V2 &amp;pos) 
++{
++    sound_engine-&gt;set_listenerpos (pos);
++}
++
++bool sound::PlaySound (const SoundName &amp;name, const ecl::V2 &amp;pos, double volume, int priority) 
++{
++    if (!sound_enabled)
++        return false;
++
++    SoundEvent se;
++    se.name         = name;
++    se.has_position = true;
++    se.position     = pos;
++    se.priority     = priority;
++    se.volume       = volume * options::GetDouble(&quot;SoundVolume&quot;);
++    se.left = se.right = 0;
++
++    return sound_engine-&gt;play_sound (se);
++}
++
++bool sound::PlaySoundGlobal (const SoundName &amp;name, double volume, int priority) 
++{
++    SoundEvent se;
++    se.name         = name;
++    se.has_position = false;
++    se.position     = ecl::V2();
++    se.priority     = priority;
++    se.volume       = volume * options::GetDouble(&quot;SoundVolume&quot;);
++    se.left         = 255;
++    se.right        = 255;
++
++    return sound_engine-&gt;play_sound (se);
++}
++
++void sound::ClearCache()
++{
++    sound_engine-&gt;clear_cache();
++}
++
++void sound::CacheSound(const SoundEffect &amp;s)
++{
++    sound_engine-&gt;cache_sound(s);
++}
++
++void sound::FadeoutMusic() 
++{
++    sound_engine-&gt;fadeout_music();
++}
++
++bool sound::PlayMusic (const string &amp;name, double position) 
++{
++    if(!sound_enabled || !music_enabled || name==&quot;&quot;)
++        return false;
++    
++    string fname;
++    return app.resourceFS-&gt;findFile (name, fname) &amp;&amp; sound_engine-&gt;play_music(fname, position);
++}
++
++void sound::StopMusic() {
++    sound_engine-&gt;stop_music();
++}
++
++bool sound::IsMusicPlaying() {
++    return sound_engine-&gt;is_music_playing();
++}
++
++void sound::SetSoundVolume (double vol)
++{
++    sound_engine-&gt;set_sound_volume (vol);
++}
++
++void sound::SetMusicVolume (double vol)
++{
++    sound_engine-&gt;set_music_volume (vol);
++}
++
++
++/* -------------------- SoundEngine_SDL implementation -------------------- */
++
++SoundEngine::SoundEngine()
++{}
++
++class MutexLock {
++public:
++    MutexLock (SDL_mutex *m) {
++        mutex = m;
++        SDL_mutexP (mutex);
++    }
++    ~MutexLock () {
++        SDL_mutexV (mutex);
++    };
++private:
++    SDL_mutex *mutex;
++};
++
++SoundEngine_SDL *SoundEngine_SDL::m_instance = 0;
++
++SoundEngine_SDL::SoundEngine_SDL()
++: m_initialized(false),
++  m_soundvolume (MIX_MAX_VOLUME),
++  m_musicvolume (MIX_MAX_VOLUME),
++  m_current_music (0),
++  m_freq (MIX_DEFAULT_FREQUENCY),
++  m_format (MIX_DEFAULT_FORMAT),
++  m_channels (MIX_DEFAULT_CHANNELS)
++{
++    assert (m_instance == 0);
++    m_instance = this;
++}
++
++SoundEngine_SDL::~SoundEngine_SDL()
++{
++    shutdown();
++    m_instance = 0;
++}
++
++bool SoundEngine_SDL::init() 
++{
++    if (!m_initialized) {
++        // Initialize SDL audio subsystem
++        if (SDL_InitSubSystem (SDL_INIT_AUDIO) == -1) {
++            fprintf(stderr, &quot;Couldn't open SDL audio subsystem: %s\n&quot;, SDL_GetError());
++            return false;
++        }
++
++        // Initialize SDL_mixer lib
++        if (Mix_OpenAudio(m_freq, m_format, m_channels, 1024) &lt; 0) {
++            fprintf(stderr, &quot;Couldn't open mixer: %s\n&quot;, Mix_GetError());
++            return false;
++        }
++
++        // Update number of available channels
++        m_channels = Mix_GroupCount (-1);
++        m_channelinfo.resize (m_channels);
++
++        Mix_ChannelFinished (&amp;channel_finished);
++        m_mutex = SDL_CreateMutex();
++        if (!m_mutex)
++            return false;
++
++        m_initialized = true;
++    }
++    return true;
++}
++
++void SoundEngine_SDL::shutdown() 
++{
++    if (m_initialized) {
++	Mix_FreeMusic(m_current_music);
++        Mix_CloseAudio();
++        clear_cache();
++        SDL_DestroyMutex (m_mutex);
++        m_initialized = false;
++    }
++}
++
++void SoundEngine_SDL::clear_cache() 
++{
++    for (ecl::Dict&lt;Mix_Chunk*&gt;::iterator it = wav_cache.begin(); it != wav_cache.end(); ++it)
++        Mix_FreeChunk(it-&gt;second);
++    wav_cache.clear();
++}
++
++void SoundEngine_SDL::set_sound_volume (double soundvol) 
++{
++    if (!m_initialized)
++        return;                 // SDL_mixer crashes without this check
++
++    m_soundvolume = ecl::round_down&lt;int&gt;(ecl::Clamp(soundvol, 0.0, 1.0) * MIX_MAX_VOLUME);
++    Mix_Volume (-1, m_soundvolume);
++}
++
++void SoundEngine_SDL::set_music_volume (double musicvol) 
++{
++    if (!m_initialized)
++        return;                 // SDL_mixer crashes without this check
++
++    m_musicvolume = ecl::round_down&lt;int&gt;(ecl::Clamp(musicvol, 0.0, 1.0) * MIX_MAX_VOLUME);
++    Mix_VolumeMusic (m_musicvolume);
++    //Mix_SetPanning(MIX_CHANNEL_POST, m_musicvolume, m_musicvolume);
++}
++
++
++void SoundEngine_SDL::stop_music() 
++{
++    Mix_HaltMusic();
++    Mix_FreeMusic(m_current_music);
++    m_current_music = 0;
++}
++
++bool SoundEngine_SDL::play_music (const string &amp;filename, double position) 
++{
++    if (Mix_Music *music = Mix_LoadMUS(filename.c_str())) {
++        if (m_current_music)
++            Mix_FreeMusic (m_current_music);
++        m_current_music = music;
++        if(Mix_PlayMusic (m_current_music, 1) == -1)
++            Log &lt;&lt; &quot;Mix_PlayMusic: &quot; &lt;&lt; Mix_GetError() &lt;&lt; &quot;\n&quot;;
++        if(position &gt; 0) {
++            Log &lt;&lt; &quot;Start music at position &quot; &lt;&lt; position &lt;&lt; &quot;\n&quot;;
++            if(Mix_SetMusicPosition(position) == -1)
++                Log &lt;&lt; &quot;Mix_SetMusicPosition: &quot; &lt;&lt; Mix_GetError() &lt;&lt; &quot;\n&quot;;
++        }
++        Mix_VolumeMusic (m_musicvolume);
++        //Mix_SetPanning(MIX_CHANNEL_POST, m_musicvolume, m_musicvolume);
++        return true;
++    }
++    return false;
++}
++
++void SoundEngine_SDL::fadeout_music()
++{
++    while (Mix_FadingMusic() != MIX_NO_FADING)
++        SDL_Delay(10);
++
++    if (Mix_PlayingMusic()) {
++        Mix_FadeOutMusic(500);
++        SDL_Delay(400);
++    }
++    while (Mix_PlayingMusic())
++        SDL_Delay(10);
++}
++
++void SoundEngine_SDL::update_channel (int channel)
++{
++    // If distance sound origin &lt;= this value, play at full volume
++    const double fullvol_range = 0.2;
++
++    // How far can sound travel?
++    const double range = 30;    
++
++    SoundEvent &amp;se = m_channelinfo[channel];
++
++    double volume;
++    int    left;
++    int    right;
++    if (se.has_position) {
++        ecl::V2 distv = se.position - m_listenerpos;
++        double dist = max(0.0, length(distv) - fullvol_range);
++
++        int xdist = int(distv[0] * options::GetDouble(&quot;StereoSeparation&quot;));
++
++        left  = ecl::Clamp (255 - xdist, 0, 255);
++        right = ecl::Clamp (255 + xdist, 0, 255);
++        volume = (1 - dist/range) * se.volume;
++    }
++    else
++    {
++        volume = se.volume;
++        left = se.left;
++        right = se.right;
++    }
++
++    Mix_SetPanning (channel, left, right);
++
++    int mixvol = ecl::round_down&lt;int&gt;(volume * MIX_MAX_VOLUME);
++    Mix_Volume(channel, ecl::Clamp(mixvol, 0, MIX_MAX_VOLUME));
++}
++
++int SoundEngine_SDL::already_playing (const SoundEvent &amp;s)
++{
++    for (size_t i=0; i&lt;m_channelinfo.size(); ++i) {
++        const SoundEvent &amp;se = m_channelinfo[i];
++
++        if (se.active &amp;&amp; se.name == s.name &amp;&amp; se.playing_time &lt; 0.05
++            &amp;&amp; (!se.has_position || !s.has_position ||
++		ecl::length(se.position - s.position) &lt; 30))
++            return static_cast&lt;int&gt; (i);
++    }
++    return -1;
++}
++
++Mix_Chunk *SoundEngine_SDL::cache_sound(const string &amp;name)
++{
++    ecl::Dict&lt;Mix_Chunk*&gt;::iterator i=wav_cache.find(name);
++    if (i == wav_cache.end()) {
++        Mix_Chunk *ch = 0;
++        string filename;
++        if (app.resourceFS-&gt;findFile(&quot;soundsets/&quot; + name + &quot;.wav&quot;, filename))
++             ch = Mix_LoadWAV(filename.c_str());
++        if (ch != 0)
++            wav_cache.insert(name, ch);
++        else
++            enigma::Log &lt;&lt; &quot;Couldn't load sample '&quot; &lt;&lt; name &lt;&lt; &quot;': &quot;
++                        &lt;&lt; Mix_GetError() &lt;&lt; endl;
++        return ch;
++    } else
++        return i-&gt;second;
++}
++
++void SoundEngine_SDL::cache_sound(const SoundEffect &amp;s) 
++{
++    string filename = s.getFilename();
++    if (filename != &quot;&quot;)
++        cache_sound(filename);
++}
++
++bool SoundEngine_SDL::play_sound (const SoundEvent &amp;s)
++{
++    int channel = already_playing (s);
++    if (channel != -1) {
++        MutexLock (m_instance-&gt;m_mutex);
++        SoundEvent &amp;se = m_channelinfo [channel];
++        if (se.has_position) {
++            se.position = (se.position + s.position) / 2;
++            update_channel (channel);
++            return true;
++        }
++    }
++    
++    if (Mix_Chunk *chunk = cache_sound(s.name)) {
++        channel = -1; //Mix_GroupOldest(-1);
++
++        channel = Mix_PlayChannel(channel, chunk, 0);
++
++        if (channel != -1) {
++            {
++                MutexLock (m_instance-&gt;m_mutex);
++                SoundEvent &amp;se = m_channelinfo[channel];
++                se = s;
++                se.active       = true;
++                se.playing_time = 0.0;
++            }
++            update_channel (channel);
++        }
++        return true; // even if no free channel was found
++    } else
++        return false;
++}
++
++bool SoundEngine_SDL::is_music_playing() {
++    return Mix_PlayingMusic() || Mix_PausedMusic();
++}
++
++void SoundEngine_SDL::tick (double dtime)
++{
++    MutexLock (m_instance-&gt;m_mutex);
++    for (size_t i=0; i&lt;m_channelinfo.size(); ++i) {
++        SoundEvent &amp;se = m_channelinfo[i];
++        if (se.active)
++            se.playing_time += dtime;
++    }
++}
++
++void SoundEngine_SDL::define_sound (
++    const SoundName &amp;name, 
++    const SoundData &amp;data)
++{
++    Uint32 bufsize = static_cast&lt;Uint32&gt; (data.buf.size());
++    Mix_Chunk *ch= ChunkFromRaw (&amp;data.buf[0], bufsize,
++                                 data.freq, AUDIO_S8, data.nchannels);
++    if (ch != 0)
++        wav_cache.insert(name, ch);
++}
++
++void SoundEngine_SDL::channel_finished (int channel)
++{
++    MutexLock (m_instance-&gt;m_mutex);
++    SoundEvent &amp;se = m_instance-&gt;m_channelinfo[channel];
++    se.active = false;
++}
++
++/*! SDL_ConvertAudio is only capable of changing the sound frequency by
++  integer powers of 2 (i.e., by a factor of ... 1/4 1/2 1 2 ...).
++  The sound files used by Oxyd are sampled at 6kHz which we must
++  convert to roughly 22kHz.  This function resamples between any two
++  frequencies using simple linear interpolation.  It is not capable
++  of changing the sample format or dealing with more than one
++  channel.
++
++  FIXME: We should apply a lowpass filter after reampling to get rid
++  of the artifacts introduced by linear interpolation or use a better
++  interpolator. */
++Sint8* SoundEngine_SDL::resample (const Sint8 *data, Uint32 len, int oldfreq,
++                                  int newfreq, Uint32 *newlen_)
++    {
++        assert (data);
++        assert (len&gt;0);
++        assert (oldfreq &gt; 0);
++        assert (newfreq &gt; 0);
++        const int sample_size = 1;    //  8bit sample data
++
++        float ratio = float(oldfreq) / float(newfreq);
++        Uint32 newlen = ecl::round_down&lt;int&gt; (len / ratio);
++        *newlen_ = newlen;
++        Sint8 *newdata = (Sint8*) malloc (sample_size * newlen);
++        if (!newdata)
++            return 0;
++
++        const Sint8 *src = data;
++        Sint8       *dst = newdata;
++
++        float srcinc = float (len-1) / float (newlen); 
++        for (unsigned i=0; i&lt;newlen; ++i) {
++            int srcidx = ecl::round_down &lt;int&gt; (i * srcinc);
++            float a2 = i*srcinc - srcidx;
++            float a1 = 1.0f - a2;
++            dst[i] = static_cast&lt;Sint8&gt; ((a1*src[srcidx] + a2*src[srcidx+1])/2);
++        }
++        return newdata;
++    }
++
++Mix_Chunk* SoundEngine_SDL::ChunkFromRaw (const Uint8 *buf, Uint32 len,
++                                           int sfreq, int sformat, int schannels)
++{
++    if (!sound_enabled || !buf)
++        return 0;
++
++    // Get destination format
++    int dfreq, dchannels;
++    Uint16 dformat;
++    Mix_QuerySpec (&amp;dfreq, &amp;dformat, &amp;dchannels);
++
++    // Resample
++    Uint32 newlen=0;
++    Uint8 *newbuf = (Uint8*)resample((const Sint8*)buf, len, sfreq, dfreq, &amp;newlen);
++
++    // Convert audio data
++    SDL_AudioCVT cvt;
++    if (!SDL_BuildAudioCVT (&amp;cvt, sformat, schannels, dfreq,
++                            dformat, dchannels, dfreq))
++        return 0;
++
++    cvt.buf = (Uint8*) malloc(newlen * cvt.len_mult);
++    cvt.len = newlen;
++    memcpy(cvt.buf, newbuf, newlen);
++    free(newbuf);
++
++    SDL_ConvertAudio(&amp;cvt);
++
++    Mix_Chunk *chunk = Mix_QuickLoad_RAW(cvt.buf, cvt.len_cvt);
++    chunk-&gt;allocated = 1;
++    return chunk;
++}
++
+
+Added: trunk/src/SoundEngine.hh
+===================================================================
+--- trunk/src/SoundEngine.hh	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/SoundEngine.hh	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -0,0 +1,179 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007,2008 Andreas Lochmann
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef SOUNDENGINE_HH_INCLUDED
++#define SOUNDENGINE_HH_INCLUDED
++
++#include &quot;ecl_math.hh&quot;
++#include &quot;ecl_dict.hh&quot;
++
++#include &quot;SoundEffectManager.hh&quot;
++#include &quot;MusicManager.hh&quot;
++#include &quot;SDL_mixer.h&quot;
++
++#include &lt;string&gt;
++#include &lt;vector&gt;
++
++using namespace std;
++
++namespace sound
++{
++
++/* -------------------- Interface Functions -------------------- */
++
++    void Init();
++    void Shutdown();
++
++    void Tick (double dtime);
++
++    void DisableSound();
++    void EnableSound();
++    void DisableMusic();
++    bool PlayMusic (const string &amp;name, double position = 0.0);
++    void FadeoutMusic();
++
++    /*! Stop any music currently playing. */
++    void StopMusic();
++    bool IsMusicPlaying();
++
++    void TempDisableSound();
++    void TempReEnableSound();
++
++    void SetListenerPosition (const ecl::V2 &amp;pos);
++    bool PlaySound (const SoundName &amp;, const ecl::V2 &amp;pos,
++                    double relative_volume = 1.0, int priority=0);
++    bool PlaySoundGlobal (const SoundName &amp;, double relative_volume = 1.0, int priority=0);
++    
++    void ClearCache();
++    void CacheSound(const SoundEffect &amp;s);
++    void SetSoundVolume (double vol);
++    void SetMusicVolume (double vol);
++
++/* -------------------- SoundEngine -------------------- */
++
++    class SoundEngine {
++    public:
++        SoundEngine();
++        virtual ~SoundEngine() {}
++        
++        //! Returns true if successful.
++        virtual bool init() = 0;
++        virtual void shutdown() = 0;
++        virtual bool is_initialized() const = 0;
++
++        virtual void set_sound_volume (double soundvol) = 0;
++        virtual void set_music_volume (double musicvol) = 0;
++
++        // ---------- Music ----------
++
++        virtual bool play_music(const string &amp;filename, double position) = 0;
++        virtual void stop_music() = 0;
++        virtual void fadeout_music() = 0;
++        virtual bool is_music_playing() = 0;
++        
++        // ---------- Sound effects ----------
++
++        virtual void clear_cache() = 0;
++        virtual void define_sound(const SoundName &amp;, const SoundData &amp;) = 0;
++        virtual bool play_sound(const SoundEvent &amp;s) = 0;
++        virtual void cache_sound(const SoundEffect &amp;s) = 0;
++        virtual void set_listenerpos(ecl::V2 pos) = 0;
++        virtual void tick(double dtime) = 0;
++    };
++
++    class SoundEngine_Null : public SoundEngine {
++    public:
++
++        // SoundEngine interface
++        bool init() { return true; }
++        void shutdown() {}
++        bool is_initialized() const { return true; }
++        void set_sound_volume(double /*soundvol*/) {}
++        void set_music_volume(double /*musicvol*/) {}
++        bool play_music (const string &amp;/*filename*/, double /*position*/) { return false; }
++        void stop_music() {}
++        void fadeout_music() {}
++        bool is_music_playing() { return false; }
++        void clear_cache() {}
++        void define_sound (const SoundName &amp;, const SoundData &amp;) {}
++        bool play_sound (const SoundEvent &amp;) {}
++        void cache_sound(const SoundEffect &amp;s) {}
++        void set_listenerpos (ecl::V2 pos) {}
++        void tick(double /*dtime*/) {}
++    };
++
++    class SoundEngine_SDL : public SoundEngine {
++    public:
++        SoundEngine_SDL();
++        ~SoundEngine_SDL();
++
++        // ---------- SoundEngine interface ----------
++        bool init();        
++        void shutdown();
++        bool is_initialized() const { return m_initialized; }
++        void set_sound_volume(double soundvol);
++        void set_music_volume(double musicvol);
++        bool play_music (const string &amp;filename, double position);
++        void stop_music();
++        void fadeout_music();
++        bool is_music_playing();
++        void clear_cache();
++        void define_sound (const SoundName &amp;, const SoundData &amp;);
++        bool play_sound(const SoundEvent &amp;s);
++        void cache_sound(const SoundEffect &amp;s);
++        void set_listenerpos (ecl::V2 pos) { m_listenerpos = pos; }
++        void tick (double dtime);
++
++        /*! These functions convert raw audio data with a specified format to
++          the mixer's audio format.  This is used for converting the original
++          Oxyd sounds to a format usable by Enigma. */
++
++        Sint8* resample (const Sint8 *data, Uint32 len, int oldfreq,
++                         int newfreq, Uint32 *newlen_);
++        Mix_Chunk *ChunkFromRaw (const Uint8 *buf, Uint32 len,
++                                 int freq, int format, int channels);
++
++    private:
++        // ---------- Private methods ----------
++        Mix_Chunk *cache_sound(const string &amp;name);
++
++        void update_channel (int channel);
++        int already_playing (const SoundEvent &amp;s);
++
++
++        static void channel_finished (int channel);
++
++
++        // ---------- Variables ----------
++        bool       m_initialized;
++        int        m_soundvolume;
++        int        m_musicvolume;
++        Mix_Music *m_current_music;
++        int        m_freq;
++        Uint16     m_format;
++        int        m_channels;
++        ecl::Dict&lt;Mix_Chunk*&gt; wav_cache;
++        vector&lt;SoundEvent&gt; m_channelinfo;
++        ecl::V2      m_listenerpos;
++        SDL_mutex  *m_mutex;
++        static SoundEngine_SDL *m_instance;
++    };
++}
++
++#endif
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/actors.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -21,7 +21,7 @@
+ #include &quot;errors.hh&quot;
+ #include &quot;enigma.hh&quot;
+ #include &quot;player.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
+ #include &quot;server.hh&quot;
+ #include &quot;world.hh&quot;
+ //#include &quot;main.hh&quot;
+
+Modified: trunk/src/client.cc
+===================================================================
+--- trunk/src/client.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/client.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -26,7 +26,9 @@
+ #include &quot;gui/HelpMenu.hh&quot;
+ #include &quot;main.hh&quot;
+ #include &quot;gui/GameMenu.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEngine.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
++#include &quot;MusicManager.hh&quot;
+ #include &quot;player.hh&quot;
+ #include &quot;world.hh&quot;
+ #include &quot;nls.hh&quot;
+
+Modified: trunk/src/enigma-lua.pkg
+===================================================================
+--- trunk/src/enigma-lua.pkg	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/enigma-lua.pkg	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -114,7 +114,7 @@
+ 
+ /* -------------------- sound.cc -------------------- */
+ 
+-$#include &quot;sound.hh&quot;
++$#include &quot;SoundEffectManager.hh&quot;
+ $using namespace sound;
+ 
+ module sound
+
+Modified: trunk/src/game.cc
+===================================================================
+--- trunk/src/game.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/game.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -24,7 +24,7 @@
+ #include &quot;client.hh&quot;
+ #include &quot;server.hh&quot;
+ #include &quot;world.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEngine.hh&quot;
+ #include &quot;lev/PersistentIndex.hh&quot;
+ 
+ #include &quot;ecl_sdl.hh&quot;
+
+Modified: trunk/src/gui/LevelMenu.cc
+===================================================================
+--- trunk/src/gui/LevelMenu.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/gui/LevelMenu.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -28,7 +28,7 @@
+ #include &quot;nls.hh&quot;
+ #include &quot;options.hh&quot;
+ #include &quot;server.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;MusicManager.hh&quot;
+ #include &quot;StateManager.hh&quot;
+ #include &quot;video.hh&quot;
+ #include &quot;lev/Index.hh&quot;
+
+Modified: trunk/src/gui/LevelPackComposer.cc
+===================================================================
+--- trunk/src/gui/LevelPackComposer.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/gui/LevelPackComposer.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -23,7 +23,7 @@
+ #include &quot;enigma.hh&quot;
+ #include &quot;errors.hh&quot;
+ #include &quot;nls.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
+ #include &quot;video.hh&quot;
+ #include &quot;lev/Index.hh&quot;
+ 
+
+Modified: trunk/src/gui/LevelWidget.cc
+===================================================================
+--- trunk/src/gui/LevelWidget.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/gui/LevelWidget.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -26,7 +26,7 @@
+ #include &quot;main.hh&quot;
+ #include &quot;nls.hh&quot;
+ #include &quot;options.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
+ #include &quot;StateManager.hh&quot;
+ #include &quot;video.hh&quot;
+ #include &quot;file.hh&quot;
+
+Modified: trunk/src/gui/MainMenu.cc
+===================================================================
+--- trunk/src/gui/MainMenu.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/gui/MainMenu.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -29,7 +29,7 @@
+ #include &quot;main.hh&quot;
+ #include &quot;nls.hh&quot;
+ #include &quot;options.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;MusicManager.hh&quot;
+ #include &quot;video.hh&quot;
+ #include &quot;world.hh&quot;
+ 
+
+Modified: trunk/src/gui/Menu.cc
+===================================================================
+--- trunk/src/gui/Menu.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/gui/Menu.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -18,7 +18,8 @@
+  */
+ 
+ #include &quot;gui/Menu.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
++#include &quot;MusicManager.hh&quot;
+ #include &quot;video.hh&quot;
+ #include &quot;options.hh&quot;
+ #include &quot;main.hh&quot;
+
+Modified: trunk/src/gui/OptionsMenu.cc
+===================================================================
+--- trunk/src/gui/OptionsMenu.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/gui/OptionsMenu.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -26,7 +26,9 @@
+ #include &quot;nls.hh&quot;
+ #include &quot;options.hh&quot;
+ #include &quot;oxyd.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEngine.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
++#include &quot;MusicManager.hh&quot;
+ #include &quot;Utf8ToXML.hh&quot;
+ #include &quot;video.hh&quot;
+ #include &quot;XMLtoLocal.hh&quot;
+@@ -99,12 +101,8 @@
+     };
+ 
+     class InGameMusicButton : public BoolOptionButton {
+-        void on_action(Widget *) {
+-            if (toggle())
+-                sound::PlayMusic (options::GetString(&quot;LevelMusicFile&quot;));
+-            else
+-                sound::StopMusic (options::GetString(&quot;LevelMusicFile&quot;));
+-        }
++        void on_action(Widget *) { sound::SetInGameMusicActive(toggle()); }
++
+     public:
+         InGameMusicButton() :
+             BoolOptionButton(&quot;InGameMusic&quot;, N_(&quot;Music in game&quot;), N_(&quot;No music in game&quot;), this)
+
+Modified: trunk/src/gui/TextField.cc
+===================================================================
+--- trunk/src/gui/TextField.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/gui/TextField.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -22,7 +22,7 @@
+ #include &quot;gui/TextField.hh&quot;
+ #include &quot;ecl_utf.hh&quot;
+ #include &quot;enigma.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
+ #include &quot;video.hh&quot;
+ #include &quot;options.hh&quot;
+ #include &quot;nls.hh&quot;
+
+Modified: trunk/src/gui/widgets.cc
+===================================================================
+--- trunk/src/gui/widgets.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/gui/widgets.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -19,7 +19,7 @@
+ 
+ #include &quot;gui/widgets.hh&quot;
+ #include &quot;enigma.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
+ #include &quot;video.hh&quot;
+ #include &quot;options.hh&quot;
+ #include &quot;nls.hh&quot;
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/items.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -23,7 +23,7 @@
+ #include &quot;display.hh&quot;
+ #include &quot;player.hh&quot;
+ #include &quot;client.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
+ #include &quot;server.hh&quot;
+ #include &quot;world.hh&quot;
+ #include &quot;Inventory.hh&quot;
+
+Modified: trunk/src/laser.cc
+===================================================================
+--- trunk/src/laser.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/laser.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -19,7 +19,7 @@
+  */
+ #include &quot;errors.hh&quot;
+ #include &quot;laser.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
+ #include &quot;stones_internal.hh&quot;
+ #include &quot;server.hh&quot;
+ #include &quot;stones/LaserStone.hh&quot;
+
+Modified: trunk/src/lev/Index.cc
+===================================================================
+--- trunk/src/lev/Index.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/lev/Index.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -21,7 +21,7 @@
+ #include &quot;errors.hh&quot;
+ #include &quot;main.hh&quot;
+ #include &quot;options.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
+ #include &quot;PreferenceManager.hh&quot;
+ #include &quot;StateManager.hh&quot;
+ #include &quot;lev/ScoreManager.hh&quot;
+
+Modified: trunk/src/lua-display.cc
+===================================================================
+--- trunk/src/lua-display.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/lua-display.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: display
+-** Generated automatically by tolua++-1.0.92 on Mon Oct 29 00:41:21 2007.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 18 01:20:21 2008.
+ */
+ 
+ #ifndef __cplusplus
+
+Modified: trunk/src/lua-display.hh
+===================================================================
+--- trunk/src/lua-display.hh	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/lua-display.hh	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: display
+-** Generated automatically by tolua++-1.0.92 on Mon Oct 29 00:41:21 2007.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 18 01:20:21 2008.
+ */
+ 
+ /* Exported function */
+
+Modified: trunk/src/lua-ecl.cc
+===================================================================
+--- trunk/src/lua-ecl.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/lua-ecl.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: px
+-** Generated automatically by tolua++-1.0.92 on Mon Oct 29 00:41:21 2007.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 18 01:20:21 2008.
+ */
+ 
+ #ifndef __cplusplus
+
+Modified: trunk/src/lua-ecl.hh
+===================================================================
+--- trunk/src/lua-ecl.hh	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/lua-ecl.hh	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: px
+-** Generated automatically by tolua++-1.0.92 on Mon Oct 29 00:41:21 2007.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 18 01:20:21 2008.
+ */
+ 
+ /* Exported function */
+
+Modified: trunk/src/lua-editor.cc
+===================================================================
+--- trunk/src/lua-editor.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/lua-editor.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: editor
+-** Generated automatically by tolua++-1.0.92 on Mon Oct 29 00:41:21 2007.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 18 01:20:21 2008.
+ */
+ 
+ #ifndef __cplusplus
+
+Modified: trunk/src/lua-editor.hh
+===================================================================
+--- trunk/src/lua-editor.hh	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/lua-editor.hh	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: editor
+-** Generated automatically by tolua++-1.0.92 on Mon Oct 29 00:41:21 2007.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 18 01:20:21 2008.
+ */
+ 
+ /* Exported function */
+
+Modified: trunk/src/lua-enigma.cc
+===================================================================
+--- trunk/src/lua-enigma.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/lua-enigma.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: enigma
+-** Generated automatically by tolua++-1.0.92 on Mon Oct 29 00:41:21 2007.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 18 01:20:21 2008.
+ */
+ 
+ #ifndef __cplusplus
+@@ -25,7 +25,7 @@
+ #include &quot;video.hh&quot;
+ using namespace video;
+ using ecl::Screen;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
+ using namespace sound;
+ 
+ /* function to register type */
+
+Modified: trunk/src/lua-enigma.hh
+===================================================================
+--- trunk/src/lua-enigma.hh	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/lua-enigma.hh	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: enigma
+-** Generated automatically by tolua++-1.0.92 on Mon Oct 29 00:41:21 2007.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 18 01:20:21 2008.
+ */
+ 
+ /* Exported function */
+
+Modified: trunk/src/lua-global.cc
+===================================================================
+--- trunk/src/lua-global.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/lua-global.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: global
+-** Generated automatically by tolua++-1.0.92 on Mon Oct 29 00:41:21 2007.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 18 01:20:21 2008.
+ */
+ 
+ #ifndef __cplusplus
+
+Modified: trunk/src/lua-global.hh
+===================================================================
+--- trunk/src/lua-global.hh	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/lua-global.hh	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: global
+-** Generated automatically by tolua++-1.0.92 on Mon Oct 29 00:41:21 2007.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 18 01:20:21 2008.
+ */
+ 
+ /* Exported function */
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/lua.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -24,7 +24,7 @@
+ #include &quot;config.h&quot;
+ #include &quot;video.hh&quot;
+ #include &quot;server.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
+ #include &quot;options.hh&quot;
+ #include &quot;WorldProxy.hh&quot;
+ #include &quot;lev/Index.hh&quot;
+
+Modified: trunk/src/main.cc
+===================================================================
+--- trunk/src/main.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/main.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -25,7 +25,9 @@
+ #include &quot;gui/LevelPreviewCache.hh&quot;
+ #include &quot;options.hh&quot;
+ #include &quot;oxyd.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEngine.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
++#include &quot;MusicManager.hh&quot;
+ #include &quot;video.hh&quot;
+ #include &quot;ecl_argp.hh&quot;
+ #include &quot;ecl_system.hh&quot;
+
+Modified: trunk/src/options.cc
+===================================================================
+--- trunk/src/options.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/options.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -21,7 +21,9 @@
+ #include &quot;main.hh&quot;
+ #include &quot;options.hh&quot;
+ #include &quot;PreferenceManager.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEngine.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
++#include &quot;MusicManager.hh&quot;
+ #include &quot;ecl_system.hh&quot;
+ 
+ #include &lt;cassert&gt;
+
+Modified: trunk/src/oxyd.cc
+===================================================================
+--- trunk/src/oxyd.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/oxyd.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -25,7 +25,8 @@
+ 
+ #include &quot;errors.hh&quot;
+ #include &quot;oxyd.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEngine.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
+ #include &quot;lua.hh&quot;
+ #include &quot;server.hh&quot;
+ #include &quot;player.hh&quot;
+
+Modified: trunk/src/player.cc
+===================================================================
+--- trunk/src/player.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/player.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -20,7 +20,7 @@
+ #include &quot;Inventory.hh&quot;
+ #include &quot;display.hh&quot;
+ #include &quot;errors.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
+ #include &quot;client.hh&quot;
+ #include &quot;server.hh&quot;
+ #include &quot;world.hh&quot;
+
+Deleted: trunk/src/sound.cc
+===================================================================
+--- trunk/src/sound.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/sound.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -1,1203 +0,0 @@
+-/*
+- * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2007 Andreas Lochmann
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License
+- * as published by the Free Software Foundation; either version 2
+- * of the License, or (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along
+- * with this program; if not, write to the Free Software Foundation, Inc.,
+- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+- *
+- */
+-#include &quot;errors.hh&quot;
+-#include &quot;enigma.hh&quot;
+-#include &quot;options.hh&quot;
+-#include &quot;sound.hh&quot;
+-#include &quot;main.hh&quot;
+-#include &quot;oxyd.hh&quot;
+-#include &quot;oxydlib/OxydVersion.h&quot;
+-#include &quot;nls.hh&quot;
+-#include &quot;client.hh&quot;
+-
+-#include &quot;SDL.h&quot;
+-#include &quot;SDL_mixer.h&quot;
+-
+-#include &lt;string&gt;
+-#include &lt;iostream&gt;
+-#include &lt;cassert&gt;
+-#include &lt;memory&gt;
+-
+-using namespace std;
+-using namespace enigma;
+-using namespace sound;
+-using namespace OxydLib;
+-
+-#include &quot;sound_internal.hh&quot;
+-
+-/*! This function converts raw audio data with a specified format to
+-  the mixer's audio format.  This is used for converting the original
+-  Oxyd sounds to a format usable by Enigma. */
+-Mix_Chunk *ChunkFromRaw (const Uint8 *buf, Uint32 len,
+-                         int freq, int format, int channels);
+-
+-
+-/* -------------------- SoundEvent implementation -------------------- */
+-SoundEvent::SoundEvent ()
+-: name(&quot;&quot;), has_position(false), position(),
+-  priority (0), volume (0.0),
+-  left (0), right(0), active (false),
+-  playing_time (0)
+-{
+-}
+-
+-bool not_active (const SoundEvent &amp;s)
+-{
+-    return !s.active;
+-}
+-
+-bool lower_priority (const SoundEvent &amp;s, const SoundEvent &amp;t)
+-{
+-    return s.priority &lt; t.priority;
+-}
+-
+-
+-SoundEngine::SoundEngine()
+-: sound_sets(), sound_effects(), active_sound_set_key(&quot;&quot;),
+-  default_sound_set(&quot;&quot;), sound_set_count(0), music_singles(),
+-  music_queues(), active_music_queue(&quot;&quot;), music_context(MUSIC_NONE)
+-{}
+-
+-
+-/* -------------------- SoundEngine_SDL implementation -------------------- */
+-
+-class MutexLock {
+-public:
+-    MutexLock (SDL_mutex *m) {
+-        mutex = m;
+-        SDL_mutexP (mutex);
+-    }
+-    ~MutexLock () {
+-        SDL_mutexV (mutex);
+-    };
+-private:
+-    SDL_mutex *mutex;
+-};
+-
+-SoundEngine_SDL *SoundEngine_SDL::m_instance = 0;
+-
+-SoundEngine_SDL::SoundEngine_SDL()
+-: m_initialized(false),
+-  m_soundvolume (MIX_MAX_VOLUME),
+-  m_musicvolume (MIX_MAX_VOLUME),
+-  m_current_music (0),
+-  m_freq (MIX_DEFAULT_FREQUENCY),
+-  m_format (MIX_DEFAULT_FORMAT),
+-  m_channels (MIX_DEFAULT_CHANNELS)
+-{
+-    assert (m_instance == 0);
+-    m_instance = this;
+-}
+-
+-SoundEngine_SDL::~SoundEngine_SDL()
+-{
+-    shutdown();
+-    m_instance = 0;
+-}
+-
+-bool SoundEngine_SDL::init() 
+-{
+-    if (!m_initialized) {
+-        // Initialize SDL audio subsystem
+-        if (SDL_InitSubSystem (SDL_INIT_AUDIO) == -1) {
+-            fprintf(stderr, &quot;Couldn't open SDL audio subsystem: %s\n&quot;, SDL_GetError());
+-            return false;
+-        }
+-
+-        // Initialize SDL_mixer lib
+-        if (Mix_OpenAudio(m_freq, m_format, m_channels, 1024) &lt; 0) {
+-            fprintf(stderr, &quot;Couldn't open mixer: %s\n&quot;, Mix_GetError());
+-            return false;
+-        }
+-
+-        // Update number of available channels
+-        m_channels = Mix_GroupCount (-1);
+-        m_channelinfo.resize (m_channels);
+-
+-        Mix_ChannelFinished (&amp;channel_finished);
+-        m_mutex = SDL_CreateMutex();
+-        if (!m_mutex)
+-            return false;
+-
+-        m_initialized = true;
+-    }
+-    return true;
+-}
+-
+-void SoundEngine_SDL::shutdown() 
+-{
+-    if (m_initialized) {
+-	Mix_FreeMusic(m_current_music);
+-        Mix_CloseAudio();
+-        clear_cache();
+-        SDL_DestroyMutex (m_mutex);
+-        m_initialized = false;
+-    }
+-}
+-
+-
+-void SoundEngine_SDL::clear_cache() 
+-{
+-    for (ecl::Dict&lt;Mix_Chunk*&gt;::iterator it = wav_cache.begin(); it != wav_cache.end(); ++it)
+-        Mix_FreeChunk(it-&gt;second);
+-    wav_cache.clear();
+-}
+-
+-void SoundEngine_SDL::set_sound_volume (double soundvol) 
+-{
+-    if (!m_initialized)
+-        return;                 // SDL_mixer crashes without this check
+-
+-    m_soundvolume = ecl::round_down&lt;int&gt;(ecl::Clamp(soundvol, 0.0, 1.0) * MIX_MAX_VOLUME);
+-    Mix_Volume (-1, m_soundvolume);
+-}
+-
+-void SoundEngine_SDL::set_music_volume (double musicvol) 
+-{
+-    if (!m_initialized)
+-        return;                 // SDL_mixer crashes without this check
+-
+-    m_musicvolume = ecl::round_down&lt;int&gt;(ecl::Clamp(musicvol, 0.0, 1.0) * MIX_MAX_VOLUME);
+-    Mix_VolumeMusic (m_musicvolume);
+-}
+-
+-
+-void SoundEngine_SDL::stop_music() 
+-{
+-    Mix_HaltMusic();
+-    Mix_FreeMusic(m_current_music);
+-    m_current_music = 0;
+-}
+-
+-bool SoundEngine_SDL::play_music (const std::string &amp;filename, double position) 
+-{
+-    if (Mix_Music *music = Mix_LoadMUS(filename.c_str())) {
+-        if (m_current_music)
+-            Mix_FreeMusic (m_current_music);
+-        m_current_music = music;
+-        Mix_PlayMusic (m_current_music, 1);
+-        if(position &gt; 0) {
+-          Log &lt;&lt; &quot;Start music at position &quot; &lt;&lt; position &lt;&lt; &quot;\n&quot;;
+-          if(Mix_SetMusicPosition(position) == -1)
+-          Log &lt;&lt; &quot;Mix_SetMusicPosition: &quot; &lt;&lt; Mix_GetError() &lt;&lt; &quot;\n&quot;;
+-        }
+-        Mix_VolumeMusic (m_musicvolume);
+-        return true;
+-    }
+-    return false;
+-}
+-
+-void SoundEngine_SDL::fadeout_music()
+-{
+-    while (Mix_FadingMusic() != MIX_NO_FADING)
+-        SDL_Delay(10);
+-
+-    if (Mix_PlayingMusic()) {
+-        Mix_FadeOutMusic(500);
+-        SDL_Delay(400);
+-    }
+-    while (Mix_PlayingMusic())
+-        SDL_Delay(10);
+-}
+-
+-void SoundEngine_SDL::update_channel (int channel)
+-{
+-    // If distance sound origin &lt;= this value, play at full volume
+-    const double fullvol_range = 0.2;
+-
+-    // How far can sound travel?
+-    const double range = 30;    
+-
+-    SoundEvent &amp;se = m_channelinfo[channel];
+-
+-    double volume;
+-    int    left;
+-    int    right;
+-    if (se.has_position) {
+-        ecl::V2 distv = se.position - m_listenerpos;
+-        double dist = max(0.0, length(distv) - fullvol_range);
+-
+-        int xdist = int(distv[0] * options::GetDouble(&quot;StereoSeparation&quot;));
+-
+-        left  = ecl::Clamp (255 - xdist, 0, 255);
+-        right = ecl::Clamp (255 + xdist, 0, 255);
+-        volume = (1 - dist/range) * se.volume;
+-    }
+-    else
+-    {
+-        volume = se.volume;
+-        left = se.left;
+-        right = se.right;
+-    }
+-
+-    Mix_SetPanning (channel, left, right);
+-
+-    int mixvol = ecl::round_down&lt;int&gt;(volume * MIX_MAX_VOLUME);
+-    Mix_Volume(channel, ecl::Clamp(mixvol, 0, MIX_MAX_VOLUME));
+-}
+-
+-int SoundEngine_SDL::already_playing (const SoundEvent &amp;s)
+-{
+-    for (size_t i=0; i&lt;m_channelinfo.size(); ++i) {
+-        const SoundEvent &amp;se = m_channelinfo[i];
+-
+-        if (se.active &amp;&amp; se.name == s.name &amp;&amp; se.playing_time &lt; 0.05
+-            &amp;&amp; (!se.has_position || !s.has_position ||
+-		ecl::length(se.position - s.position) &lt; 30))
+-            return static_cast&lt;int&gt; (i);
+-    }
+-    return -1;
+-}
+-
+-
+-Mix_Chunk *SoundEngine_SDL::cache_sound(const std::string &amp;name)
+-{
+-    ecl::Dict&lt;Mix_Chunk*&gt;::iterator i=wav_cache.find(name);
+-    if (i == wav_cache.end()) {
+-        Mix_Chunk *ch = 0;
+-        string filename;
+-        if (app.resourceFS-&gt;findFile(&quot;soundsets/&quot; + name + &quot;.wav&quot;, filename))
+-             ch = Mix_LoadWAV(filename.c_str());
+-        if (ch != 0)
+-            wav_cache.insert(name, ch);
+-        else
+-            enigma::Log &lt;&lt; &quot;Couldn't load sample '&quot; &lt;&lt; name &lt;&lt; &quot;': &quot;
+-                        &lt;&lt; Mix_GetError() &lt;&lt; endl;
+-        return ch;
+-    } else
+-        return i-&gt;second;
+-}
+-
+-void SoundEngine_SDL::cache_sound(const SoundEffect &amp;s) 
+-{
+-    string filename = s.getFilename();
+-    if (filename != &quot;&quot;)
+-        cache_sound(filename);
+-}
+-
+-bool SoundEngine_SDL::play_sound (const SoundEvent &amp;s)
+-{
+-    int channel = already_playing (s);
+-    if (channel != -1) {
+-        MutexLock (m_instance-&gt;m_mutex);
+-        SoundEvent &amp;se = m_channelinfo [channel];
+-        if (se.has_position) {
+-            se.position = (se.position + s.position) / 2;
+-            update_channel (channel);
+-            return true;
+-        }
+-    }
+-    
+-    if (Mix_Chunk *chunk = cache_sound(s.name)) {
+-        channel = -1; //Mix_GroupOldest(-1);
+-
+-        channel = Mix_PlayChannel(channel, chunk, 0);
+-
+-        if (channel != -1) {
+-            {
+-                MutexLock (m_instance-&gt;m_mutex);
+-                SoundEvent &amp;se = m_channelinfo[channel];
+-                se = s;
+-                se.active       = true;
+-                se.playing_time = 0.0;
+-            }
+-            update_channel (channel);
+-        }
+-        return true; // even if no free channel was found
+-    } else
+-        return false;
+-}
+-
+-void SoundEngine_SDL::tick (double dtime)
+-{
+-    MutexLock (m_instance-&gt;m_mutex);
+-    for (size_t i=0; i&lt;m_channelinfo.size(); ++i) {
+-        SoundEvent &amp;se = m_channelinfo[i];
+-        if (se.active)
+-            se.playing_time += dtime;
+-    }
+-}
+-
+-void SoundEngine_SDL::define_sound (
+-    const SoundName &amp;name, 
+-    const SoundData &amp;data)
+-{
+-    Uint32 bufsize = static_cast&lt;Uint32&gt; (data.buf.size());
+-    Mix_Chunk *ch= ChunkFromRaw (&amp;data.buf[0], bufsize,
+-                                 data.freq, AUDIO_S8, data.nchannels);
+-    if (ch != 0)
+-        wav_cache.insert(name, ch);
+-}
+-
+-void SoundEngine_SDL::channel_finished (int channel)
+-{
+-    MutexLock (m_instance-&gt;m_mutex);
+-    SoundEvent &amp;se = m_instance-&gt;m_channelinfo[channel];
+-    se.active = false;
+-}
+-
+-
+-
+-
+-/* -------------------- Local variables -------------------- */
+-namespace
+-{
+-    auto_ptr&lt;SoundEngine&gt; sound_engine;
+-
+-    bool sound_enabled      = true;
+-    bool music_enabled      = true;
+-    bool sound_enabled_temp = false;
+-
+-    string     current_music_name;
+-}
+-
+-
+-
+-/* -------------------- Functions -------------------- */
+-
+-void sound::Init() 
+-{
+-    if (!sound_engine.get()) {
+-        sound_engine.reset(new SoundEngine_SDL);
+-    }
+-
+-    if (sound_engine-&gt;init()) {
+-        options::UpdateVolume();
+-    }
+-    else {
+-        sound_enabled = false;
+-        sound_engine.reset(new SoundEngine_Null);
+-    }
+-}
+-
+-void sound::Shutdown() 
+-{
+-    if (sound_engine.get())
+-        sound_engine-&gt;shutdown();
+-}
+-
+-void sound::Tick (double dtime)
+-{
+-    sound_engine-&gt;tick (dtime);
+-    sound::MusicTick(dtime);
+-}
+-
+-void sound::DisableSound() {
+-    if (sound_enabled) {
+-        sound_enabled = false;
+-        Shutdown();
+-    }
+-}
+-
+-void sound::EnableSound() {
+-    if (!sound_enabled) {
+-        sound_enabled = true;
+-        Init();
+-    }
+-}
+-
+-void sound::TempDisableSound() {
+-    sound_enabled_temp = sound_enabled;
+-    sound_enabled      = false;
+-}
+-
+-void sound::TempReEnableSound() {
+-    sound_enabled = sound_enabled_temp;
+-}
+-
+-void sound::DisableMusic() {
+-    music_enabled = false;
+-}
+-
+-void sound::SetListenerPosition (const ecl::V2 &amp;pos) 
+-{
+-    sound_engine-&gt;set_listenerpos (pos);
+-}
+-
+-bool sound::PlaySound (const SoundName &amp;name, const ecl::V2 &amp;pos, double volume, int priority) 
+-{
+-    if (!sound_enabled)
+-        return false;
+-
+-    SoundEvent se;
+-    se.name         = name;
+-    se.has_position = true;
+-    se.position     = pos;
+-    se.priority     = priority;
+-    se.volume       = volume * options::GetDouble(&quot;SoundVolume&quot;);
+-    se.left = se.right = 0;
+-
+-    return sound_engine-&gt;play_sound (se);
+-}
+-
+-bool sound::PlaySoundGlobal (const SoundName &amp;name, double volume, int priority) 
+-{
+-    SoundEvent se;
+-    se.name         = name;
+-    se.has_position = false;
+-    se.position     = ecl::V2();
+-    se.priority     = priority;
+-    se.volume       = volume * options::GetDouble(&quot;SoundVolume&quot;);
+-    se.left         = 255;
+-    se.right        = 255;
+-
+-    return sound_engine-&gt;play_sound (se);
+-}
+-
+-void sound::FadeoutMusic() 
+-{
+-    sound_engine-&gt;fadeout_music();
+-}
+-
+-bool sound::PlayMusic (const std::string &amp;name, double position) 
+-{
+-    if(name == current_music_name)
+-        return true;
+-    if(!sound_enabled || !music_enabled || name==&quot;&quot;)
+-        return false;
+-    
+-    FadeoutMusic();
+-
+-    string fname;
+-    if (app.resourceFS-&gt;findFile (name, fname) &amp;&amp; sound_engine-&gt;play_music(fname, position)) {
+-        current_music_name = name;
+-        return true;
+-    } else {
+-        current_music_name = &quot;&quot;;
+-        return false;
+-    }
+-}
+-
+-void sound::StopMusic() {
+-    sound_engine-&gt;stop_music();
+-    current_music_name = &quot;&quot;;
+-}
+-
+-void sound::StopMusic (const std::string &amp;name) {
+-    if (name==current_music_name)
+-        StopMusic();
+-}
+-
+-bool sound::StartMenuMusic()
+-{
+-    if(sound_engine-&gt;getMusicContext() != MUSIC_MENU) {
+-        sound::FadeoutMusic();
+-        sound_engine-&gt;setMusicContext(MUSIC_MENU);
+-    }
+-}
+-
+-bool sound::StartLevelMusic()
+-{
+-    if(sound_engine-&gt;getMusicContext() != MUSIC_GAME) {
+-        sound::FadeoutMusic();
+-        sound_engine-&gt;setMusicContext(MUSIC_GAME);
+-    }
+-}
+-
+-void sound::MusicTick(double dtime)
+-{
+-    sound_engine-&gt;music_tick(dtime);
+-}
+-
+-void SoundEngine::music_tick(double dtime)
+-{
+-    static double cumulated_dtime = 0;
+-    cumulated_dtime += dtime;
+-    if(cumulated_dtime &gt; 0.2) {
+-      if((!Mix_PlayingMusic()) &amp;&amp; (!Mix_PausedMusic())) {
+-        // Music has ended or not even begun
+-        current_music_name = &quot;&quot;;
+-        switch(sound_engine-&gt;getMusicContext()) {
+-            case MUSIC_MENU:
+-                music_queues[active_music_queue].next();                
+-                //sound::PlayMusic (&quot;music/menu/esprit.ogg&quot;);
+-                //sound::PlayMusic (options::GetString(&quot;MenuMusicFile&quot;));
+-                break;
+-            case MUSIC_GAME:
+-                if (options::GetBool(&quot;InGameMusic&quot;)) {
+-                    //sound::PlayMusic (&quot;music/menu/esprit.ogg&quot;);
+-                    //sound::PlayMusic (options::GetString(&quot;LevelMusicFile&quot;));
+-                } else
+-                    sound::StopMusic();
+-                break;
+-        }
+-      } else {
+-        // Music is still running. Check if we should reloop.
+-        if(active_music_queue != &quot;&quot;) {
+-            string current_title = music_queues[active_music_queue].getCurrentMusicTitle();
+-            if(current_title != &quot;&quot;) {
+-                music_singles[current_title].maybeLoopBack();
+-            }
+-        }
+-      }
+-      cumulated_dtime = 0;
+-    }
+-}
+-
+-void sound::InitMusic()
+-{
+-    sound_engine-&gt;init_music();
+-}
+-
+-void SoundEngine::init_music()
+-{
+-    // TODO: This is only temporary. Information will come 
+-    // from an xml file later.
+-    music_singles[&quot;Esprit Loop&quot;] =
+-        MusicSingle(&quot;Esprit Loop&quot;, &quot;music/menu/esprit.ogg&quot;, 178180, 10690, 21600, true);
+-    music_singles[&quot;Esprit&quot;] =
+-        MusicSingle(&quot;Esprit&quot;, &quot;music/menu/esprit.ogg&quot;, 178180, 10690, 21600, false);
+-    music_singles[&quot;Pentagonal Dreams&quot;] =
+-        MusicSingle(&quot;Pentagonal Dreams&quot;, &quot;music/menu/menu.s3m&quot;);
+-
+-    music_queues[&quot;Default&quot;] = MusicQueue(&quot;Default&quot;, 0);
+-    music_queues[&quot;Default&quot;].appendSingle(&quot;Esprit&quot;);
+-    music_queues[&quot;Default&quot;].appendSingle(&quot;Pentagonal Dreams&quot;);
+-
+-    music_queues[&quot;Esprit&quot;] = MusicQueue(&quot;Esprit&quot;, 1);
+-    music_queues[&quot;Esprit&quot;].appendSingle(&quot;Esprit&quot;);
+-
+-    music_queues[&quot;Pentagonal Dreams&quot;] = MusicQueue(&quot;Pentagonal Dreams&quot;, 2);
+-    music_queues[&quot;Pentagonal Dreams&quot;].appendSingle(&quot;Pentagonal Dreams&quot;);
+-
+-    music_queues[&quot;Loop test&quot;] = MusicQueue(&quot;Loop test&quot;, 3);
+-    music_queues[&quot;Loop test&quot;].appendSingle(&quot;Esprit Loop&quot;);
+-
+-    app.state-&gt;setProperty(&quot;MenuMusicQueue&quot;, &quot;Default&quot;);
+-    active_music_queue = &quot;Default&quot;;
+-}
+-
+-void sound::ClearCache()
+-{
+-    sound_engine-&gt;clear_cache();
+-}
+-
+-void sound::DefineSound (const SoundName &amp;name, const SoundData &amp;data)
+-{
+-    sound_engine-&gt;define_sound (name, data);
+-}
+-
+-void sound::SetSoundVolume (double vol)
+-{
+-    sound_engine-&gt;set_sound_volume (vol);
+-}
+-
+-void sound::SetMusicVolume (double vol)
+-{
+-    sound_engine-&gt;set_music_volume (vol);
+-}
+-
+-/* SDL_ConvertAudio is only capable of changing the sound frequency by
+-   integer powers of 2 (i.e., by a factor of ... 1/4 1/2 1 2 ...).
+-   The sound files used by Oxyd are sampled at 6kHz which we must
+-   convert to roughly 22kHz.  This function resamples between any two
+-   frequencies using simple linear interpolation.  It is not capable
+-   of changing the sample format or dealing with more than one
+-   channel.
+-
+-   FIXME: We should apply a lowpass filter after reampling to get rid
+-   of the artifacts introduced by linear interpolation or use a better
+-   interpolator.
+-*/
+-namespace
+-{
+-    Sint8 *resample (const Sint8 *data, Uint32 len, int oldfreq, int newfreq, 
+-                     Uint32 *newlen_)
+-    {
+-        assert (data);
+-        assert (len&gt;0);
+-        assert (oldfreq &gt; 0);
+-        assert (newfreq &gt; 0);
+-        const int sample_size = 1;    //  8bit sample data
+-
+-        float ratio = float(oldfreq) / float(newfreq);
+-        Uint32 newlen = ecl::round_down&lt;int&gt; (len / ratio);
+-        *newlen_ = newlen;
+-        Sint8 *newdata = (Sint8*) malloc (sample_size * newlen);
+-        if (!newdata)
+-            return 0;
+-
+-        const Sint8 *src = data;
+-        Sint8       *dst = newdata;
+-
+-        float srcinc = float (len-1) / float (newlen); 
+-        for (unsigned i=0; i&lt;newlen; ++i) {
+-            int srcidx = ecl::round_down &lt;int&gt; (i * srcinc);
+-            float a2 = i*srcinc - srcidx;
+-            float a1 = 1.0f - a2;
+-            dst[i] = static_cast&lt;Sint8&gt; ((a1*src[srcidx] + a2*src[srcidx+1])/2);
+-        }
+-        return newdata;
+-    }
+-}
+-
+-Mix_Chunk * ChunkFromRaw (const Uint8 *buf, Uint32 len,
+-                          int sfreq, int sformat, int schannels)
+-{
+-    if (!sound_enabled || !buf)
+-        return 0;
+-
+-    // Get destination format
+-    int dfreq, dchannels;
+-    Uint16 dformat;
+-    Mix_QuerySpec (&amp;dfreq, &amp;dformat, &amp;dchannels);
+-
+-    // Resample
+-    Uint32 newlen=0;
+-    Uint8 *newbuf = (Uint8*)resample((const Sint8*)buf, len, sfreq, dfreq, &amp;newlen);
+-
+-    // Convert audio data
+-    SDL_AudioCVT cvt;
+-    if (!SDL_BuildAudioCVT (&amp;cvt, sformat, schannels, dfreq,
+-                            dformat, dchannels, dfreq))
+-        return 0;
+-
+-    cvt.buf = (Uint8*) malloc(newlen * cvt.len_mult);
+-    cvt.len = newlen;
+-    memcpy(cvt.buf, newbuf, newlen);
+-    free(newbuf);
+-
+-    SDL_ConvertAudio(&amp;cvt);
+-
+-    Mix_Chunk *chunk = Mix_QuickLoad_RAW(cvt.buf, cvt.len_cvt);
+-    chunk-&gt;allocated = 1;
+-    return chunk;
+-}
+-
+-
+-/* ------------- Conversion and helper functions ------------- */
+-
+-/*! This function defines how to put soundset_key and eventname together to
+-  create an eventkey. */
+-
+-string SoundEngine::effectKey(string effect_name, string soundset_name)
+-{
+-    if (soundset_name == &quot;&quot;)
+-        return getActiveSoundSetKey() + &quot;#&quot; + effect_name;
+-    else
+-        return soundset_name + &quot;#&quot; + effect_name;
+-}
+-
+-/*! This function searches the known sound sets for a sound set with given
+-  oxyd version, and returns the sound set name (or empty string if none). */
+-
+-string SoundEngine::getOxydSoundSet(OxydVersion oxyd_ver)
+-{
+-    for (SoundSetRepository::iterator i = sound_sets.begin();
+-             i != sound_sets.end(); ++i)
+-        if((*i).second.getOxydVersion() == oxyd_ver)
+-            return (*i).first;
+-    return &quot;&quot;;
+-}
+-
+-string sound::GetOxydSoundSet(OxydVersion oxyd_ver)
+-{
+-    return sound_engine-&gt;getOxydSoundSet(oxyd_ver);
+-}
+-
+-/*! Enigma 1.00 only knew the option &quot;SoundSet&quot;, which was an integer. This
+-  was quite unhandy if one wanted to add additional sound sets. Since 1.01
+-  Enigma features the option &quot;SoundSetName&quot;. Still, old &quot;SoundSet&quot; is needed
+-  if user wants to switch to &lt;= 1.00 again; so here are the conversion
+-  functions. Any user sound set is mapped to 0 (&quot;Default&quot;).  */
+-
+-int SoundEngine::convertToOldSoundSetNumber(string soundset_name)
+-{
+-    if(soundset_name == &quot;Default&quot;)  return 0;
+-    if(soundset_name == &quot;Enigma&quot;)   return 1;
+-    SoundSet sd = sound_sets[soundset_name];
+-    if(sd.isOxyd())
+-        return ((int) sd.getOxydVersion()) + 2;
+-    return 0;
+-}
+-
+-string SoundEngine::convertFromOldSoundSetNumber(int soundset_number)
+-{
+-    if(soundset_number == 0)  return &quot;Default&quot;;
+-    if(soundset_number == 1)  return &quot;Enigma&quot;;
+-    return getOxydSoundSet((OxydVersion) (soundset_number - 2));
+-}
+-
+-/* -------------------- Sound set handling -------------------- */
+-
+-/*! These functions fill in data for the sound sets, initialises and
+-  activates them. Return false, if something went wrong, e.g. when an
+-  oxyd sound set is mentioned, but the corresponding oxyd version
+-  wasn't found. */
+-
+-bool SoundEngine::defineSoundSet(string soundset_name, string soundset_key,
+-                                 int button_position)
+-{
+-    sound_sets[soundset_name] = SoundSet(soundset_key, button_position);
+-    Log &lt;&lt; &quot;Added sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;' (key '&quot; &lt;&lt; soundset_key
+-        &lt;&lt; &quot;') on position &quot; &lt;&lt; button_position &lt;&lt; &quot;.\n&quot;;
+-    return true;
+-}
+-
+-bool SoundEngine::defineSoundSetOxyd(string soundset_name, string soundset_key,
+-                                     OxydVersion oxyd_ver, int button_position)
+-{
+-    if(oxyd::FoundOxyd(oxyd_ver)) {
+-        sound_sets[soundset_name] =
+-            SoundSet(soundset_key, button_position, (OxydVersion) oxyd_ver);
+-        Log &lt;&lt; &quot;Added sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;' (key '&quot; &lt;&lt; soundset_key
+-            &lt;&lt; &quot;') on position &quot; &lt;&lt; button_position &lt;&lt; &quot;.\n&quot;;
+-        return true;
+-    } else {
+-        Log &lt;&lt; &quot;Skipped sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;'.\n&quot;;
+-        return false;
+-    }
+-}
+-
+-bool SoundSet::activate()
+-{
+-    if(getSoundSetKey() == &quot;&quot;)
+-        return false;
+-    if(isOxyd() &amp;&amp;  !oxyd::InitOxydSoundSet(getOxydVersion()))
+-        return false;
+-
+-    sound_engine-&gt;setActiveSoundSetKey(getSoundSetKey());
+-    return true;
+-}
+-
+-void sound::InitSoundSets() {
+-    sound_engine-&gt;initSoundSets();
+-}
+-
+-void SoundEngine::initSoundSets()
+-{
+-    // Define sound sets
+-    sound_sets.clear();
+-    assert(sound_sets.empty());
+-    assert(defineSoundSet (&quot;Enigma&quot;,   &quot;Enigma&quot;,  1));
+-    int pos = 2; // position in options menu button
+-    if (defineSoundSetOxyd (&quot;Oxyd&quot;,     &quot;Oxyd*&quot;,   OxydVersion_Oxyd1,          pos))  pos++;
+-    if (defineSoundSetOxyd (&quot;Magnum&quot;,   &quot;Magnum*&quot;, OxydVersion_OxydMagnum,     pos))  pos++;
+-    if (defineSoundSetOxyd (&quot;Mag.Gold&quot;, &quot;Magnum*&quot;, OxydVersion_OxydMagnumGold, pos))  pos++;
+-    if (defineSoundSetOxyd (&quot;Per.Oxyd&quot;, &quot;Oxyd*&quot;,   OxydVersion_PerOxyd,        pos))  pos++;
+-    if (defineSoundSetOxyd (&quot;Extra&quot;,    &quot;Oxyd*&quot;,   OxydVersion_OxydExtra,      pos))  pos++;
+-    // Define user sound sets, as given by sound_effects
+-    for (SoundEffectRepository::iterator i = sound_effects.begin();
+-         i != sound_effects.end(); ++i) {
+-        string soundset_key = (*i).second.getSoundSetKey();
+-        bool found = false;
+-        // ignore Oxyd* and Magnum* sound effects, if no 
+-        if ((soundset_key != &quot;Oxyd*&quot;) &amp;&amp; (soundset_key != &quot;Magnum*&quot;)) {
+-            for (SoundSetRepository::iterator j = sound_sets.begin();
+-                 j != sound_sets.end(); ++j)
+-                if((*j).second.getSoundSetKey() == soundset_key)
+-                    found = true;
+-            if(!found)
+-                if (defineSoundSet (soundset_key, soundset_key, pos))  pos++;
+-        }
+-    }
+-    Log &lt;&lt; &quot;Found &quot; &lt;&lt; pos - 1 &lt;&lt; &quot; different sound sets.\n&quot;;
+-    setSoundSetCount(pos - 1);
+-    setDefaultSoundSet(&quot;Enigma&quot;);
+-    // Extract sound set names and keys from options; activate!
+-    string soundset_name = app.state-&gt;getString(&quot;SoundSetName&quot;);
+-    if (soundset_name == &quot;&quot;) { // just switched from 1.00 to higher
+-        soundset_name = convertFromOldSoundSetNumber(options::GetInt(&quot;SoundSet&quot;));
+-        app.state-&gt;setProperty(&quot;SoundSetName&quot;, soundset_name);
+-    }
+-    if (soundset_name == &quot;Default&quot;)
+-        soundset_name = getDefaultSoundSet();
+-    clear_cache();
+-    if (sound_sets[soundset_name].activate())  {
+-        preloadSoundEffects();
+-        Log &lt;&lt; &quot;Activated sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;'.\n&quot;;
+-    }
+-    else {
+-        // Fallback, happens e.g. when oxyd sound set can't be established or 
+-        // a user soundset is given which doesn't exist anymore.
+-        Log &lt;&lt; &quot;Warning: Soundset '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;' not available.\n&quot;;
+-        if (sound_sets[&quot;Enigma&quot;].activate()) {
+-            app.state-&gt;setProperty(&quot;SoundSetName&quot;, &quot;Enigma&quot;);
+-            options::SetOption(&quot;SoundSet&quot;, convertToOldSoundSetNumber(&quot;Enigma&quot;));
+-        } else
+-            ASSERT(false, XFrontend,
+-                &quot;Soundsets defect and fallback 'Enigma' not available.&quot;);
+-    }
+-}
+-
+-void SoundEngine::setActiveSoundSet(string soundset_name)
+-{
+-    string soundset_key = sound_sets[soundset_name].getSoundSetKey();
+-    if (soundset_key == getActiveSoundSetKey())
+-        return;
+-    if (soundset_key == &quot;Default&quot;) {
+-        Log &lt;&lt; &quot;Warning: Tried to choose 'Default' as effective sound set.\n&quot;;
+-        return;
+-    }
+-    if (soundset_key == &quot;&quot;) {
+-        Log &lt;&lt; &quot;Warning: Tried to choose empty sound set key as effective sound set.\n&quot;;
+-        return;
+-    }
+-    clear_cache();
+-    if (sound_sets[soundset_name].activate()) {
+-        preloadSoundEffects();
+-        Log &lt;&lt; &quot;Switched to sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;' (key '&quot; 
+-            &lt;&lt; soundset_key &lt;&lt; &quot;').\n&quot;;
+-    } else
+-        Log &lt;&lt; &quot;Warning: Problems loading sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;' (key'&quot;
+-            &lt;&lt; soundset_key &lt;&lt; &quot;').\n&quot;;
+-}
+-
+-/*! Pre-cache all sound effects so that they can be played without lag
+-  when the game is running. */
+-void SoundEngine::preloadSoundEffects()
+-{
+-    SoundEffectRepository::iterator i = sound_effects.begin(), 
+-        end = sound_effects.end();
+-    string prefix = getActiveSoundSetKey() + &quot;#&quot;;
+-    for (; i != end; ++i) {
+-        if (i-&gt;first.compare(0, prefix.size(), prefix) == 0)
+-            cache_sound(i-&gt;second);
+-    }
+-}
+-
+-void sound::SetActiveSoundSet(string soundset_name)
+-{
+-    sound_engine-&gt;setActiveSoundSet(soundset_name);
+-}
+-
+-void sound::SetDefaultSoundSet(string soundset_name)
+-{
+-    sound_engine-&gt;setDefaultSoundSet(soundset_name);
+-    if(app.state-&gt;getString(&quot;SoundSetName&quot;) == &quot;Default&quot;)
+-        SetActiveSoundSet(soundset_name);
+-}
+-
+-string SoundEngine::getSoundSetByPosition(int button_position)
+-{
+-    for (SoundSetRepository::iterator i = sound_sets.begin();
+-             i != sound_sets.end(); ++i)
+-        if((*i).second.getButtonPosition() == button_position)
+-            return (*i).first;
+-    return &quot;&quot;;
+-}
+-
+-/* -------------------- Playing sound events -------------------- */
+-
+-/*! The first function creates an interface to add sound events to Enigma.
+-  It is accessed via sound-defaults.lua and user sound definitions.
+-  The second method is the interface between the formal SoundEffect
+-  and the sound engine (via PlaySound[Global]). The last two functions
+-  define the interface between level objects and SoundEffect. */
+-
+-void sound::DefineSoundEffect(string soundset_key, string name, string filename,
+-                              double volume, bool loop, bool global, int priority,
+-                              double damp_max, double damp_inc, double damp_mult,
+-                              double damp_min, double damp_tick, string silence_string) {
+-    assert(sound_engine.get());
+-    if(soundset_key == &quot;&quot;) {
+-        Log &lt;&lt; &quot;Warning: Tried to define sound event '&quot; &lt;&lt; name
+-            &lt;&lt; &quot;' without sound set key. Skipped.\n&quot;;
+-        return;
+-    }
+-    sound_engine-&gt;defineSoundEffect(soundset_key, name,
+-        SoundEffect(name, soundset_key, filename, volume, loop, global, priority,
+-        damp_max, damp_inc, damp_mult, damp_min, damp_tick, silence_string));
+-}
+-
+-bool SoundEffect::play(const ecl::V2 &amp;pos, double vol, bool glob)
+-{
+-    if (filename == &quot;&quot;) {
+-        Log &lt;&lt; &quot;No soundfile given for sound event &quot; &lt;&lt; name &lt;&lt; &quot;.\n&quot;;
+-        return false;
+-    }
+-    if (glob || global)
+-        return PlaySoundGlobal (filename, volume * vol, priority);
+-    else
+-        return PlaySound (filename, pos, volume * vol, priority);
+-}
+-
+-bool SoundEngine::emitSoundEvent (const std::string &amp;eventname, const ecl::V2 &amp;pos,
+-                            double volume, bool force_global)
+-{
+-    string effectkey = effectKey(eventname);
+-    SoundEffectRepository::iterator i = sound_effects.find(effectkey);
+-    if (i == sound_effects.end()) {
+-        Log &lt;&lt; &quot;Undefined sound event &quot; &lt;&lt; effectkey &lt;&lt; &quot; @ &quot; 
+-            &lt;&lt; pos[0] &lt;&lt; &quot;,&quot; &lt;&lt; pos[1] &lt;&lt; &quot;\n&quot;;
+-        return false;
+-    } else {
+-        return i-&gt;second.play(pos, volume, force_global);
+-    }
+-}
+-
+-bool sound::EmitSoundEvent (const std::string &amp;eventname, const ecl::V2 &amp;pos,
+-                            double volume, bool force_global)
+-{
+-    return sound_engine-&gt;emitSoundEvent(eventname, pos, volume, force_global);
+-}
+-
+-bool sound::EmitSoundEventGlobal (const std::string &amp;eventname, double volume)
+-{
+-    return sound_engine-&gt;emitSoundEvent(eventname, ecl::V2(), volume, true);
+-}
+-
+-void SoundEngine::writeSilenceString (const std::string &amp;eventname)
+-{
+-    string effectkey = effectKey(eventname);
+-    SoundEffectRepository::iterator i = sound_effects.find(effectkey);
+-    if (i != sound_effects.end()) {
+-        string silence_string = (*i).second.getSilenceString();
+-        if (silence_string != &quot;&quot;)
+-            client::Msg_ShowText (silence_string, true);
+-    }
+-}
+-
+-void sound::WriteSilenceString (const std::string &amp;eventname)
+-{
+-    sound_engine-&gt;writeSilenceString(eventname);
+-}
+-
+-/* -------------------- Sound damping implementation -------------------- */
+-
+-/*! These methods are connected to the sound damping mechanism, designed
+-  to reduce the noise created by some objects like st-lightpassenger. */
+-
+-SoundDamping::SoundDamping(std::string effect_name_, const void *origin_)
+-: effect_name(effect_name_), origin(origin_)
+-{
+-    damp = sound_engine-&gt;getDampingData(effect_name_);
+-    factor = damp.incr;
+-    //Log &lt;&lt; &quot;New damping entry &quot; &lt;&lt; effect_name &lt;&lt; &quot; with &quot; &lt;&lt; damp.incr &lt;&lt; &quot;.\n&quot;;
+-}
+-
+-float SoundDamping::get_volume(float def_volume) {
+-    if (factor &lt; damp.maxi)
+-        factor += damp.incr;
+-    //Log &lt;&lt; &quot;  Found entry &quot; &lt;&lt; effect_name &lt;&lt; &quot;. Factor is now &quot; &lt;&lt; i-&gt;factor &lt;&lt; &quot;.\n&quot;;
+-    float q = factor * damp.mult;
+-    if (q &gt; 1.0)
+-        return def_volume / q;
+-    return def_volume;
+-}
+-
+-bool SoundDamping::tick() {
+-    // return true, if this entity is to be destroyed.
+-    factor *= damp.tick;
+-    return (factor &lt;= damp.mini);
+-}
+-
+-/* -------------------- MusicSingle -------------------- */
+-
+-void sound::DefineMusicSingle(string title, string filename) {
+-    // TODO: include play_till, replay_from, volume etc
+-    assert(sound_engine.get());
+-    if(filename == &quot;&quot;) {
+-        Log &lt;&lt; &quot;Warning: Tried to define music single '&quot; &lt;&lt; title
+-            &lt;&lt; &quot;' without file name. Skipped.\n&quot;;
+-        return;
+-    }
+-    sound_engine-&gt;defineMusicSingle(title, filename);
+-}
+-
+-bool SoundEngine::defineMusicSingle(string title, string filename)
+-{
+-    music_singles[title] = MusicSingle(title, filename);
+-    Log &lt;&lt; &quot;Added music single '&quot; &lt;&lt; title &lt;&lt; &quot;'.\n&quot;;
+-    return true;
+-}
+-
+-bool MusicSingle::start()
+-{
+-    start_time = SDL_GetTicks();
+-    return PlayMusic(filename);
+-}
+-
+-bool MusicSingle::maybeLoopBack()
+-{
+-    Uint32 current_ticks = SDL_GetTicks();
+-    if(allows_loop) {
+-        if(current_ticks &gt;= start_time + loop_end) {
+-            Uint32 position = loop_start + current_ticks - start_time - loop_end;
+-            start_time = current_ticks - position;
+-            StopMusic();
+-            return PlayMusic(filename, position/1000.0);
+-        } else
+-            return false;
+-    } else
+-        return false;
+-}
+-
+-bool SoundEngine::playMusicSingle(string title)
+-{
+-    return ((sound_engine-&gt;music_singles)[title]).start();
+-}
+-
+-/* -------------------- Music Queue -------------------- */
+-
+-string MusicQueue::getCurrentMusicTitle()
+-{
+-    if(current_position_in_queue == -1)
+-        return &quot;&quot;;
+-    else
+-        return single_title[current_position_in_queue];
+-}
+-
+-void MusicQueue::appendSingle(string title)
+-{
+-    single_title.push_back(title);
+-}
+-
+-bool MusicQueue::start()
+-{
+-    if(single_title.size() &gt; 0) {
+-        current_position_in_queue = 0;
+-        return sound_engine-&gt;playMusicSingle(single_title[0]);
+-    } else
+-        return false;
+-}
+-
+-bool MusicQueue::next()
+-{
+-    if(current_position_in_queue == -1)
+-        // Queue did not start yet. Request first title instead.
+-        return start();
+-    else {
+-        // TODO: Add random
+-        current_position_in_queue++;
+-        if(current_position_in_queue &gt;= single_title.size())
+-            current_position_in_queue = 0;
+-        Log &lt;&lt; &quot;Play next in queue &quot; &lt;&lt; title &lt;&lt; &quot;.\n&quot;;
+-        return sound_engine-&gt;playMusicSingle(single_title[current_position_in_queue]);
+-    }
+-}
+-
+-bool SoundEngine::setActiveMusicQueue(string music_queue_title)
+-{
+-    if (music_queue_title == &quot;&quot;) {
+-        Log &lt;&lt; &quot;Warning: Tried to choose empty music queue title as menu music queue.\n&quot;;
+-        return false;
+-    }
+-    if (music_queue_title == getActiveMusicQueueTitle()) {
+-        // Current queue is aready running.
+-        return true;
+-    }
+-    sound::FadeoutMusic();
+-    if (music_queues[music_queue_title].start()) {
+-        active_music_queue = music_queue_title;
+-        Log &lt;&lt; &quot;Switched to menu music queue '&quot; &lt;&lt; music_queue_title &lt;&lt; &quot;'.\n&quot;;
+-        return true;
+-    } else {
+-        Log &lt;&lt; &quot;Warning: Problems loading menu music queue '&quot; &lt;&lt; music_queue_title &lt;&lt; &quot;'.\n&quot;;
+-        return false;
+-    }
+-}
+-
+-string SoundEngine::getMusicQueueByPosition(int button_position)
+-{
+-    for (MusicQueueRepository::iterator i = music_queues.begin();
+-             i != music_queues.end(); ++i)
+-        if((*i).second.getButtonPosition() == button_position)
+-            return (*i).first;
+-    return &quot;&quot;;
+-}
+-
+-int SoundEngine::getMenuMusicQueueCount()
+-{
+-    int count = 0;
+-    for (MusicQueueRepository::iterator i = music_queues.begin();
+-             i != music_queues.end(); ++i)
+-        if((*i).second.getButtonPosition() != -1)
+-            count++;
+-    return count;
+-}
+-
+-/* -------------------- Sound option helpers -------------------- */
+-
+-/*! These functions are used in OptionsMenu.cc for the Soundset-Button. */
+-
+-int sound::GetOptionSoundSetCount()
+-{        
+-    return sound_engine-&gt;getSoundSetCount() + 1;
+-}
+-
+-int sound::GetOptionSoundSet()
+-{
+-    string soundSet = app.state-&gt;getString(&quot;SoundSetName&quot;);
+-    if (soundSet == &quot;Default&quot;)
+-        return 0;
+-    int pos = sound_engine-&gt;getSoundSetButtonPosition(soundSet);
+-    assert(pos &gt; 0);
+-    return pos;
+-}
+-
+-void sound::SetOptionSoundSet(int value)
+-{
+-    if(value == 0) {
+-        // settting to default sound set
+-        if (app.state-&gt;getString(&quot;SoundSetName&quot;) == &quot;Default&quot;)
+-            return;
+-        app.state-&gt;setProperty(&quot;SoundSetName&quot;, &quot;Default&quot;);
+-        options::SetOption(&quot;SoundSet&quot;, sound_engine-&gt;convertToOldSoundSetNumber(&quot;Default&quot;));
+-        SetActiveSoundSet(sound_engine-&gt;getDefaultSoundSet());
+-    } else {
+-        string newSet = sound_engine-&gt;getSoundSetByPosition(value);
+-        assert(newSet != &quot;&quot;);
+-        if (app.state-&gt;getString(&quot;SoundSetName&quot;) == newSet)
+-            return;
+-        app.state-&gt;setProperty(&quot;SoundSetName&quot;, newSet);
+-        options::SetOption(&quot;SoundSet&quot;, sound_engine-&gt;convertToOldSoundSetNumber(newSet));
+-        SetActiveSoundSet(newSet);
+-    }
+-}
+-
+-string sound::GetOptionSoundSetText(int value)
+-{
+-    if(value == 0)
+-        return N_(&quot;Default&quot;);
+-    string soundset_name = sound_engine-&gt;getSoundSetByPosition(value);
+-    if(soundset_name == &quot;&quot;)
+-        return &quot;INVALID&quot;;
+-    return soundset_name;
+-}
+-
+-/*! These functions are used in OptionsMenu.cc for the MenuMusicButton. */
+-
+-int sound::GetOptionMenuMusicCount()
+-{        
+-    return sound_engine-&gt;getMenuMusicQueueCount();
+-}
+-
+-int sound::GetOptionMenuMusic()
+-{
+-    string music_queue = app.state-&gt;getString(&quot;MenuMusicQueue&quot;);
+-    int pos = sound_engine-&gt;getMusicQueueButtonPosition(music_queue);
+-    assert(pos &gt;= 0);
+-    return pos;
+-}
+-
+-void sound::SetOptionMenuMusic(int value)
+-{
+-    string music_queue = sound_engine-&gt;getMusicQueueByPosition(value);
+-    Log &lt;&lt; &quot;Try to set mmq '&quot; &lt;&lt; music_queue &lt;&lt; &quot;' from position &quot; &lt;&lt; value &lt;&lt; &quot;.\n&quot;;
+-    app.state-&gt;setProperty(&quot;MenuMusicQueue&quot;, music_queue);
+-    sound_engine-&gt;setActiveMusicQueue(music_queue);
+-}
+-
+-string sound::GetOptionMenuMusicText(int value)
+-{
+-    return sound_engine-&gt;getMusicQueueByPosition(value);
+-}
+-
+
+Deleted: trunk/src/sound.hh
+===================================================================
+--- trunk/src/sound.hh	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/sound.hh	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -1,251 +0,0 @@
+-/*
+- * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2007 Andreas Lochmann
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License
+- * as published by the Free Software Foundation; either version 2
+- * of the License, or (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along
+- * with this program; if not, write to the Free Software Foundation, Inc.,
+- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+- *
+- */
+-#ifndef SOUND_HH
+-#define SOUND_HH
+-
+-#include &quot;ecl_math.hh&quot;
+-#include &quot;oxydlib/OxydVersion.h&quot;
+-
+-#include &lt;string&gt;
+-#include &lt;vector&gt;
+-
+-/** ----------- Survey of the formal data structure -----------
+- *
+- *  The wav-files are not to be accessed directly. There are several layers
+- *  between the wav-data and the final EmitSoundEvent-function, to allow for the
+- *  following uses:
+- *    (a) Sound Sets, possibly user defined,
+- *    (b) Access to oxyd's sound data,
+- *    (c) Sound damping for loud objects with user defined data,
+- *    (d) A &quot;Default&quot; mode which switches the sound set between level packs.
+- *    (e) A &quot;silence string&quot; that can be written instead of playing the sound.
+- *  For this, six layers of sound information exist.
+- *  Note: A sound effect is given by a wav-file and several data how to play it.
+- *        An object may choose a sound effect to play. Then it becomes a sound
+- *        event (= sound effect + position etc.).
+- *
+- *    (1) SoundEngine
+- *         -&gt; Providing global information and methods for using SDL.
+- *    (2) SoundData
+- *         -&gt; Holding technical details about how to play the wav-files.
+- *    (3) SoundEffect
+- *         -&gt; Holding game-related information about how to play a sound
+- *            effect. This includes the effect's filename, default volume,
+- *            if it's looped, if it's played on a global scale by default,
+- *            the default damping information for this event, etc.
+- *    (4) SoundSet
+- *         -&gt; Holding the sound set key of a sound set (see below), and if
+- *            it is connected to Oxyd. It also provides methods to
+- *            activate a sound set.
+- *    (5) SoundEvent
+- *         -&gt; A struct to hold information about a sound event, like the
+- *            effect's name, position, priority, volume etc.
+- *    (6) SoundDamping
+- *         -&gt; Each time an object makes noise, a SoundDamping-record
+- *            is created with an entry of the objects address (as void *).
+- *            This class modulates the volume with which the next effect
+- *            connected to this object is played.
+- *
+- *  Sound events are normally invoked by &quot;EmitSoundEvent(EFFECTNAME, ...)&quot;.
+- *  EFFECTNAME can then be e.g. &quot;pickup&quot; or &quot;laseron&quot;. This effect name does not
+- *  yet define the sound effect completely. Instead, the actually activated sound
+- *  set is looked up. It holds a string called sound set key (e.g. &quot;Enigma&quot; or
+- *  &quot;Oxyd*&quot;), and together with the effect name they form the effect key, here
+- *  &quot;Enigma#pickup&quot; or &quot;Oxyd*#laseron&quot;. This effect key is looked up in the sound
+- *  effect repository and results in a SoundEffect-entry, which is then played.
+- *
+- */
+-
+-/** -------------- About the sound damping system --------------
+- *
+- *  The sound damping is not automatically used. Instead, it is called through
+- *  the &quot;World::getVolume&quot;-function:
+- *    sound::EmitSoundEvent (NAME, POS, getVolume(NAME, OBJECT_CALLING, DEF_VOLUME))
+- *  OBJECT_CALLING need not be a real address, it is never dereferenced. It just
+- *  holds as a representative of the calling object. The SoundDamping-records
+- *  are evaluated and finally erased by World::tick_sound_dampings. 
+- *
+- *  The values used in the sound damping systes can be user defined. In the
+- *  following, we use the defaults:
+- *
+- *  tick_sound_dampings is only to be evaluated every 10th tick (0.1s).
+- *  Each damping factor (the ivar connected to the noisy object and its sound
+- *  effect name) is reduced by 0.9. This is less than the 10th root of 0.5 (0.933),
+- *  so after 1s the damping factor is reduced by more than one half. If the factor
+- *  shrinks under 0.5, it is considered 0.
+- *
+- *  Examples:
+- *    1) Frequency less than one sound event per 0.6 seconds.
+- *       Then there is no damping at all.
+- *    2) N events per second. For each event, factor (F) is raised by
+- *       one. And each 0.1 seconds it is multiplied with 0.9. We now
+- *       have N/10 events per 0.1 seconds, hence in equilibrium f
+- *       oscillates between
+- *            f = (f + N/10) * 0.9   =&gt;   f = N
+- *       and  f + N/10 = N * 1.1 (geometric series!).
+- *  In particular, for large enough N, f is approximately proportional
+- *  to N with half-life of less than a second. This is then evaluated
+- *  in getVolume.
+- * 
+- *  World::getVolume returns the volume, if object OBJECT_CALLING wants
+- *  to play sound effect NAME with default volume DEF_VOLUME. Often played
+- *  sounds from always the same object are damped to reduce noise-level.
+- *  Note that OBJECT_CALLING == NULL is explicitly allowed and used e.g.
+- *  for all laser-sounds. The damping factor is increased by 1.0 for each
+- *  event, and multiplied with 0.9 each 0.1 seconds, thereby approximately
+- *  equals the average number of events per second.
+- *
+- */
+-
+-/** -------------- Compatibility with 1.00 --------------
+- *
+- *  Enigma 1.01 uses a new option &quot;SoundSetName&quot;, which replaces &quot;SoundSet&quot;.
+- *  To enable Enigma 1.00 to run on the same system, the &quot;SoundSet&quot; variable
+- *  still exists. It is set to 0 (= &quot;Default&quot;) for all user sound sets:
+- *  When exiting 1.01 with a user sound set and starting 1.00, the default
+- *  sound set will be activated for 1.00. Yet, as &quot;SoundSetName&quot; still shows
+- *  the old value, 1.01 will use it to find its user sound set. Even if
+- *  you change the sound set in 1.00, this will have no effect on the
+- *  chosen sound set for 1.01. In contrast to this, if you change the 1.01
+- *  sound set, the 1.00 &quot;SoundSet&quot;-variable will be adapted. Except for this
+- *  &quot;restriction&quot;, you can use two different sound sets for 1.00 and 1.01.
+- *
+- */
+-
+-namespace sound
+-{
+-/* -------------------- Data types -------------------- */
+-
+-    typedef std::string SoundName;
+-
+-    typedef std::vector &lt;unsigned char&gt; ByteVec;
+-
+-    struct SoundData {
+-        ByteVec  buf;
+-        unsigned freq;
+-        size_t   samplesize;
+-        bool     signedp;
+-        int      nchannels;
+-    };
+-
+-/* -------------------- SoundDampingList ---------------- */
+-
+-/*! This class stores object addresses and assigns volumes to
+-    sound events, based on the frequency of the event. */
+-
+-    struct DampingData {
+-        double incr;
+-        double maxi;
+-        double mult;
+-        double mini;
+-        double tick;
+-    };
+-
+-    class SoundDamping {
+-    private:
+-        std::string effect_name;
+-        const void *origin;
+-        float factor;
+-        DampingData damp;
+-
+-    public:
+-        SoundDamping(std::string effect_name_, const void *origin_);
+-        bool is_equal(std::string name2, const void *origin2) {
+-            return (origin2 == origin) &amp;&amp; (effect_name == name2);
+-        }
+-        float get_volume(float def_volume);
+-        bool tick();  // returns true if this entry should be erased
+-    };
+-
+-/* -------------------- Functions -------------------- */
+-
+-    void Init();
+-    void Shutdown();
+-
+-    void Tick (double dtime);
+-
+-    void DisableSound();
+-    void EnableSound();
+-    void DisableMusic();
+-
+-    void TempDisableSound();
+-    void TempReEnableSound();
+-
+-    void SetListenerPosition (const ecl::V2 &amp;pos);
+-    bool PlaySound (const SoundName &amp;, const ecl::V2 &amp;pos,
+-                    double relative_volume = 1.0, int priority=0);
+-    bool PlaySoundGlobal (const SoundName &amp;, double relative_volume = 1.0, int priority=0);
+-
+-    bool PlayMusic (const std::string &amp;name, double position = 0.0);
+-    void FadeoutMusic();
+-
+-    /*! Stop any music currently playing. */
+-    void StopMusic();
+-
+-    /*! Stop music only if it has the specified name, otherwise
+-      continue playing. */
+-    void StopMusic (const std::string &amp;name);
+-
+-    void DefineMusicSingle(std::string title, std::string filename);
+-    bool StartMenuMusic();
+-    bool StartLevelMusic();
+-    void MusicTick(double dtime);
+-    void InitMusic();
+-    
+-    void ClearCache();
+-    void DefineSound (const SoundName &amp;, const SoundData &amp;);
+-    void SetSoundVolume (double vol);
+-    void SetMusicVolume (double vol);
+-
+-    /*! Helper function for oxyd.cc */
+-    std::string GetOxydSoundSet(OxydLib::OxydVersion oxyd_ver);
+-
+-    /*! Sound set handling */
+-    void InitSoundSets();
+-    void SetActiveSoundSet(std::string soundset_name);
+-    void SetDefaultSoundSet(std::string soundset_name);
+-
+-    /*! Define a new sound event. */
+-    void DefineSoundEffect(std::string soundset_key, std::string name, std::string filename,
+-                           double volume, bool loop, bool global, int priority,
+-                           double damp_max, double damp_inc, double damp_mult,
+-                           double damp_min, double damp_tick, std::string silence_string);
+-
+-    /*! Trigger a sound event.  Return whether the event was handled. */
+-    bool EmitSoundEvent (const std::string &amp;eventname,
+-                         const ecl::V2 &amp;pos = ecl::V2 (), 
+-                         double volume = 1.0, bool force_global = false);
+-    bool EmitSoundEventGlobal (const std::string &amp;eventname, double volume = 1.0);
+-
+-    /*! Send the silence string of a sound effect to command line. */
+-    void WriteSilenceString (const std::string &amp;eventname);
+-
+-    /*! Helper functions for options menu */
+-    int GetOptionSoundSetCount();
+-    int GetOptionSoundSet();
+-    void SetOptionSoundSet(int value);
+-    std::string GetOptionSoundSetText(int value);
+-    int GetOptionMenuMusicCount();
+-    int GetOptionMenuMusic();
+-    void SetOptionMenuMusic(int value);
+-    std::string GetOptionMenuMusicText(int value);
+-}
+-
+-#endif
+
+Deleted: trunk/src/sound_internal.hh
+===================================================================
+--- trunk/src/sound_internal.hh	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/sound_internal.hh	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -1,335 +0,0 @@
+-namespace
+-{
+-
+-/* -------------------- SoundEvent -------------------- */
+-
+-    struct SoundEvent {
+-        // Variables
+-        SoundName name;
+-        bool      has_position;
+-        ecl::V2   position;
+-        int       priority;
+-        double    volume;           // Volume between 0.0 and 1.0
+-        int       left;
+-        int       right;
+-
+-        // Variables used internally by sound engine
+-        bool      active;
+-        double    playing_time;
+-
+-        // Constructor
+-        SoundEvent ();
+-    };
+-
+-/* -------------------- SoundEffect and SoundEffectRepository ---------------- */
+-
+-/*! This class stores information about how to play sound events
+-    and provides methods to play them. */
+-
+-    class SoundEffect {
+-    public:
+-        SoundEffect(string name_, string soundset_key_, string filename_,
+-                       double volume_, bool loop_, bool global_, int priority_,
+-                       double damp_max_, double damp_inc_, double damp_mult_,
+-                       double damp_min_, double damp_tick_, string silence_string_)
+-        : name(name_), soundset_key(soundset_key_), filename(filename_), volume(volume_),
+-          loop(loop_), global(global_), priority(priority_),
+-          silence_string(silence_string_) {
+-            damp.maxi = damp_max_;
+-            damp.incr = damp_inc_;
+-            damp.mult = damp_mult_;
+-            damp.mini = damp_min_;
+-            damp.tick = damp_tick_;
+-        }
+-
+-        SoundEffect()  // standard empty data set, compare sound-defaults.lua
+-        : name(&quot;EMPTY_EVENT&quot;), filename(&quot;&quot;), soundset_key(&quot;&quot;), volume(1.0),
+-          loop(false), global(false), priority(1), silence_string(&quot;&quot;) {
+-            damp.maxi = 20.0;
+-            damp.incr =  1.0;
+-            damp.mult =  1.0;
+-            damp.mini =  0.5;
+-            damp.tick =  0.9;
+-        }
+-
+-        void setFilename(string filename_) { filename = filename_; }
+-        string getFilename() const { return filename; }
+-        bool play(const ecl::V2 &amp;pos = ecl::V2(), double vol = 1.0, bool glob = false);
+-        DampingData getDampingData() { return damp; }
+-        string getSoundSetKey() { return soundset_key; }
+-        string getSilenceString() { return silence_string; }
+-
+-    private:
+-        string name;
+-        string filename;
+-        string soundset_key;
+-        string silence_string;
+-        double volume;
+-        bool loop;
+-        bool global;
+-        int priority;
+-        DampingData damp;
+-    };
+-
+-    class SoundSet {
+-    public:
+-        SoundSet(string soundset_key_, int button_position_, OxydLib::OxydVersion oxyd_ver_)
+-        : soundset_key(soundset_key_), is_oxyd(true), oxyd_ver(oxyd_ver_),
+-          button_position(button_position_) {}
+-
+-        SoundSet(string soundset_key_, int button_position_)
+-        : soundset_key(soundset_key_), is_oxyd(false),
+-          oxyd_ver(OxydLib::OxydVersion_Invalid), button_position(button_position_) {}
+-
+-        SoundSet()
+-        : soundset_key(&quot;&quot;), is_oxyd(false),
+-          oxyd_ver(OxydLib::OxydVersion_Invalid), button_position(-1) {}
+-
+-        bool activate();
+-        OxydLib::OxydVersion getOxydVersion() { return oxyd_ver; }
+-        bool isOxyd() { return is_oxyd; }
+-        string getSoundSetKey() { return soundset_key; }
+-        int getButtonPosition() { return button_position; }
+-        void setButtonPosition(int pos) { button_position = pos; }
+-
+-    private:
+-        string soundset_key;
+-        bool is_oxyd;
+-        OxydLib::OxydVersion oxyd_ver;
+-        int button_position;
+-    };
+-    
+-    typedef map&lt;string, SoundEffect&gt; SoundEffectRepository;
+-    typedef map&lt;string, SoundSet&gt; SoundSetRepository;
+-
+-/* -------------------- Music and MusicQueue -------------------- */
+-
+-/*! The class &quot;MusicSingle&quot; holds filename and default playing information
+-    for a single music file. Several music files can be combined into
+-    a &quot;MusicQueue&quot; to play in a given or random sequence. MusicQueues are
+-    used for menu music. One MusicQueue corresponds to one choice on the
+-    option menu's button. */
+-
+-    class MusicSingle {
+-    public:
+-        MusicSingle(string title_, string filename_, Uint32 length_,
+-                    Uint32 loop_start_, Uint32 loop_end_, bool allows_loop_)
+-        : title(title_), filename(filename_), length(length_),
+-          loop_start(loop_start_), loop_end(loop_end_),
+-          allows_loop(allows_loop_), start_time() {}
+-
+-        MusicSingle(string title_, string filename_)
+-        : title(title_), filename(filename_), length(0),
+-          loop_start(0), loop_end(0), allows_loop(false), start_time() {}
+-
+-        MusicSingle()
+-        : title(&quot;&quot;), filename(&quot;&quot;), length(0), loop_start(0), loop_end(0),
+-          allows_loop(false) {}
+-
+-        bool start();
+-        bool maybeLoopBack();
+-
+-    private:
+-        string title;
+-        string filename;
+-        Uint32 length;      // in milliseconds
+-        Uint32 loop_start;  // where the loop starts
+-        Uint32 loop_end;    // where the loop should end (but continues playing until next tick)
+-        Uint32 start_time;  // number of milliseconds since SDL init
+-        bool allows_loop;
+-    };
+-
+-    class MusicQueue {
+-    public:
+-        MusicQueue(string title_, int button_position_)
+-        : title(title_), button_position(button_position_),
+-          current_position_in_queue(-1), single_title() {}
+-
+-        MusicQueue()
+-        : title(&quot;&quot;), button_position(-1),
+-          current_position_in_queue(-1), single_title() {}
+-
+-        bool start();
+-        bool next();
+-        string getCurrentMusicTitle();
+-        int getButtonPosition() { return button_position; }
+-        void setButtonPosition(int pos) { button_position = pos; }
+-        void appendSingle(string title);
+-
+-    private:
+-        int current_position_in_queue;
+-        string title;
+-        int button_position;
+-        vector&lt;string&gt; single_title;
+-    };
+-
+-    typedef map&lt;string, MusicSingle&gt; MusicSingleRepository;
+-    typedef map&lt;string, MusicQueue&gt; MusicQueueRepository;
+-
+-    /*! MusicContext is a nominal condition to change the
+-      music during the next tick.
+-      NONE: during initialisation (don't play music now),
+-      MENU/GAME: play music suitable for menu or during game. */
+-    enum MusicContext { MUSIC_NONE, MUSIC_MENU, MUSIC_GAME };
+-
+-        
+-/* -------------------- SoundEngine -------------------- */
+-
+-    class SoundEngine {
+-    public:
+-        SoundEngine();
+-        virtual ~SoundEngine() {}
+-        
+-        //! Returns true if successful.
+-        virtual bool init() = 0;
+-        virtual void shutdown() = 0;
+-        virtual bool is_initialized() const = 0;
+-
+-        virtual void set_sound_volume (double soundvol) = 0;
+-        virtual void set_music_volume (double musicvol) = 0;
+-
+-        // ---------- Music and music repository ----------
+-
+-        virtual bool play_music(const std::string &amp;filename, double position) = 0;
+-        virtual void stop_music() = 0;
+-        virtual void fadeout_music() = 0;
+-        void setMusicContext(MusicContext context) { music_context = context; }
+-        MusicContext getMusicContext() { return music_context; }
+-        bool defineMusicSingle(string title, string filename);
+-        bool playMusicSingle(string title);
+-        bool setActiveMusicQueue(string music_queue_title);
+-        string getActiveMusicQueueTitle() { return active_music_queue; }
+-        void music_tick(double dtime);
+-        void init_music();
+-        string getMusicQueueByPosition(int button_position);
+-        int getMenuMusicQueueCount();
+-        int getMusicQueueButtonPosition(string music_queue_title) {
+-            return music_queues[music_queue_title].getButtonPosition();
+-        }
+-        
+-        // ---------- Sound effects ----------
+-
+-        virtual void clear_cache() = 0;
+-        virtual void define_sound(const SoundName &amp;, const SoundData &amp;)=0;
+-        virtual bool play_sound(const SoundEvent &amp;s) = 0;
+-        virtual void cache_sound(const SoundEffect &amp;s) = 0;
+-        virtual void set_listenerpos(ecl::V2 pos) = 0;
+-        virtual void tick(double dtime) {}
+-
+-        // ---------- Sound effect repository and sound sets ----------
+-
+-        void setActiveSoundSetKey(string soundset_key) {active_sound_set_key=soundset_key;}
+-        string getActiveSoundSetKey() { return active_sound_set_key; }
+-        void setDefaultSoundSet(string soundset_name) {default_sound_set=soundset_name;}
+-        string getDefaultSoundSet() { return default_sound_set; }
+-        string effectKey(string effect_name, string soundset_name = &quot;&quot;);
+-        DampingData getDampingData(string effect_name) {
+-            return sound_effects[effectKey(effect_name)].getDampingData(); }
+-        void defineSoundEffect(string soundset_key, string name, SoundEffect se) {
+-            sound_effects[effectKey(name, soundset_key)] = se;
+-        }
+-        bool emitSoundEvent (const std::string &amp;eventname, const ecl::V2 &amp;pos = ecl::V2 (), 
+-                             double volume = 1.0, bool force_global = false);
+-        void writeSilenceString (const std::string &amp;eventname);
+-        void initSoundSets();
+-        bool defineSoundSet(string soundset_name, string soundset_key, int button_position);
+-        bool defineSoundSetOxyd(string soundset_name, string soundset_key,
+-                                OxydLib::OxydVersion oxyd_ver, int button_position);
+-        string getOxydSoundSet(OxydLib::OxydVersion oxyd_ver);
+-
+-        int convertToOldSoundSetNumber(string soundset_name);
+-        string convertFromOldSoundSetNumber(int soundset_number);
+-
+-        void setActiveSoundSet(string soundset_name);
+-        void preloadSoundEffects();
+-
+-        void setSoundSetCount(int count) { sound_set_count = count; }
+-        int getSoundSetCount() { return sound_set_count; }
+-        
+-        int getSoundSetButtonPosition(string soundset_name) {
+-            return sound_sets[soundset_name].getButtonPosition();
+-        }
+-        string getSoundSetByPosition(int button_position);
+-
+-    private:
+-        SoundSetRepository       sound_sets;
+-        SoundEffectRepository    sound_effects;
+-        string                   active_sound_set_key;
+-        string                   default_sound_set;
+-        int                      sound_set_count;
+-        MusicSingleRepository    music_singles;
+-        MusicQueueRepository     music_queues;
+-        string                   active_music_queue;
+-        MusicContext             music_context;
+-    };
+-
+-    class SoundEngine_Null : public SoundEngine {
+-    public:
+-
+-        // SoundEngine interface
+-        bool init() { return true; }
+-        void shutdown() {}
+-        void clear_cache() {}
+-        bool is_initialized() const { return true; }
+-        void set_sound_volume(double /*soundvol*/) {}
+-        void set_music_volume(double /*musicvol*/) {}
+-        bool play_music (const std::string &amp;/*filename*/, double /*position*/) { return false; }
+-        void stop_music() {}
+-        void fadeout_music() {}
+-
+-        bool play_sound (const SoundEvent &amp;) {}
+-        void cache_sound(const SoundEffect &amp;s) {}
+-        void define_sound (const SoundName &amp;, const SoundData &amp;) {}
+-        void set_listenerpos (ecl::V2 pos) {}
+-    };
+-
+-    class SoundEngine_SDL : public SoundEngine {
+-    public:
+-        SoundEngine_SDL();
+-        ~SoundEngine_SDL();
+-
+-        // ---------- SoundEngine interface ----------
+-        bool init();        
+-        void shutdown();
+-
+-        bool is_initialized() const { return m_initialized; }
+-        void set_sound_volume(double soundvol);
+-        void set_music_volume(double musicvol);
+-
+-        bool play_music (const std::string &amp;filename, double position);
+-        void stop_music();
+-        void fadeout_music();
+-
+-        bool play_sound(const SoundEvent &amp;s);
+-        void cache_sound(const SoundEffect &amp;s);
+-        void clear_cache();
+-        void define_sound (const SoundName &amp;, const SoundData &amp;);
+-
+-        void set_listenerpos (ecl::V2 pos) { m_listenerpos = pos; }
+-        void tick (double dtime);
+-    private:
+-        // ---------- Private methods ----------
+-        Mix_Chunk *cache_sound(const std::string &amp;name);
+-
+-        void update_channel (int channel);
+-        int already_playing (const SoundEvent &amp;s);
+-
+-
+-        static void channel_finished (int channel);
+-
+-
+-        // ---------- Variables ----------
+-        bool       m_initialized;
+-        int        m_soundvolume;
+-        int        m_musicvolume;
+-        Mix_Music *m_current_music;
+-        int        m_freq;
+-        Uint16     m_format;
+-        int        m_channels;
+-        ecl::Dict&lt;Mix_Chunk*&gt; wav_cache;
+-        vector&lt;SoundEvent&gt; m_channelinfo;
+-        ecl::V2      m_listenerpos;
+-        SDL_mutex  *m_mutex;
+-        static SoundEngine_SDL *m_instance;
+-    };
+-}
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/stones_complex.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -20,7 +20,7 @@
+ 
+ #include &quot;errors.hh&quot;
+ #include &quot;laser.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
+ #include &quot;server.hh&quot;
+ #include &quot;player.hh&quot;
+ #include &quot;Inventory.hh&quot;
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/world.cc	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -20,7 +20,7 @@
+ #include &quot;errors.hh&quot;
+ #include &quot;laser.hh&quot;
+ #include &quot;player.hh&quot;
+-#include &quot;sound.hh&quot;
++#include &quot;SoundEffectManager.hh&quot;
+ #include &quot;options.hh&quot;
+ #include &quot;server.hh&quot;
+ #include &quot;lua.hh&quot;
+@@ -1493,7 +1493,7 @@
+ 
+ void World::tick_sound_dampings ()
+ {
+-    // See sound.hh and sound.cc for details.
++    // See SoundEffectManager.hh for details.
+     static int counter = 0;
+     ++counter;
+ 
+@@ -2302,7 +2302,7 @@
+ 
+ float getVolume(const char *name, Object *obj, float def_volume)
+ {
+-    // See sound.hh and sound.cc for details.
++    // See SoundEffectManager.hh for details.
+     SoundDampingList::iterator i = level-&gt;sound_dampings.begin(),
+         end = level-&gt;sound_dampings.end();
+     while (i != end) {
+
+Modified: trunk/src/world_internal.hh
+===================================================================
+--- trunk/src/world_internal.hh	2008-04-16 22:06:28 UTC (rev 1103)
++++ trunk/src/world_internal.hh	2008-04-18 22:45:50 UTC (rev 1104)
+@@ -350,7 +350,7 @@
+         ImpulseList          delayed_impulses;
+         vector&lt;GridPos&gt;      changed_stones;
+ 
+-        SoundDampingList     sound_dampings; // see sound.hh for details
++        SoundDampingList     sound_dampings; // see SoundEffectManager for details
+ 
+         FloorLayer      fl_layer;
+         ItemLayer       it_layer;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000536.html">[Enigma-game-svn] r1103 - in trunk: . data data/music	data/music/menu src src/gui
+</A></li>
+	<LI>Next message: <A HREF="000538.html">[Enigma-game-svn] r1105 - in homepage: images input
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#537">[ date ]</a>
+              <a href="thread.html#537">[ thread ]</a>
+              <a href="subject.html#537">[ subject ]</a>
+              <a href="author.html#537">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

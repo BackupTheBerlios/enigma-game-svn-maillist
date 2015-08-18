@@ -1,0 +1,235 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1830 - in trunk/src: . lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-October/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1830%20-%20in%20trunk/src%3A%20.%20lev&In-Reply-To=%3C200910152132.n9FLWvjG012644%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001258.html">
+   <LINK REL="Next"  HREF="001260.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1830 - in trunk/src: . lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1830%20-%20in%20trunk/src%3A%20.%20lev&In-Reply-To=%3C200910152132.n9FLWvjG012644%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1830 - in trunk/src: . lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Oct 15 23:32:57 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001258.html">[Enigma-game-svn] r1829 - in trunk/data/levels: enigma_cross	enigma_iii enigma_iv enigma_ix enigma_vii enigma_viii
+</A></li>
+        <LI>Next message: <A HREF="001260.html">[Enigma-game-svn] r1831 - trunk/data/fonts
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1259">[ date ]</a>
+              <a href="thread.html#1259">[ thread ]</a>
+              <a href="subject.html#1259">[ subject ]</a>
+              <a href="author.html#1259">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-10-15 23:32:56 +0200 (Thu, 15 Oct 2009)
+New Revision: 1830
+
+Modified:
+   trunk/src/DOMSchemaResolver.cc
+   trunk/src/lev/PersistentIndex.cc
+   trunk/src/lev/Proxy.cc
+   trunk/src/lev/RatingManager.cc
+   trunk/src/lev/ScoreManager.cc
+Log:
+Trunk 1.1:
+- finish XML resolver error handling
+- fix crashes on load of valid XML documents of false type
+
+
+Modified: trunk/src/DOMSchemaResolver.cc
+===================================================================
+--- trunk/src/DOMSchemaResolver.cc	2009-10-14 18:32:56 UTC (rev 1829)
++++ trunk/src/DOMSchemaResolver.cc	2009-10-15 21:32:56 UTC (rev 1830)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2006 Ronald Lamprecht
++ * Copyright (C) 2006,2007,2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -23,15 +23,9 @@
+ #include &quot;XMLtoLocal.hh&quot;
+ #include &quot;LocalToXML.hh&quot;
+ #include &lt;xercesc/dom/DOM.hpp&gt;
+-#if _XERCES_VERSION &gt;= 30000
+ #include &lt;xercesc/framework/Wrapper4InputSource.hpp&gt;
+ #include &lt;xercesc/framework/LocalFileInputSource.hpp&gt;
+ 
+-#else
+-#include &lt;xercesc/framework/Wrapper4InputSource.hpp&gt;
+-#include &lt;xercesc/framework/LocalFileInputSource.hpp&gt;
+-#endif
+-
+ #include &lt;iostream&gt;
+ 
+ XERCES_CPP_NAMESPACE_USE
+@@ -85,6 +79,7 @@
+ // W3C implementation:
+ //                 DOMLSInput * inSrc = app.domImplementationLS-&gt;createLSInput();
+ //                 inSrc-&gt;setSystemId(LocalToXML(&amp;schemaPath).x_str()));
++                resolveStatus = true;
+                 return inSrc;
+             } else {
+                 Log &lt;&lt; &quot;DOMSchemaResolver: schema file '&quot; 
+@@ -113,6 +108,7 @@
+             if (result) {
+                 DOMInputSource * inSrc = new Wrapper4InputSource(new LocalFileInputSource(
+                         LocalToXML(&amp;schemaPath).x_str()));
++                resolveStatus = true;
+                 return inSrc;
+             } else {
+                 Log &lt;&lt; &quot;DOMSchemaResolver: schema file '&quot; 
+
+Modified: trunk/src/lev/PersistentIndex.cc
+===================================================================
+--- trunk/src/lev/PersistentIndex.cc	2009-10-14 18:32:56 UTC (rev 1829)
++++ trunk/src/lev/PersistentIndex.cc	2009-10-15 21:32:56 UTC (rev 1830)
+@@ -365,7 +365,8 @@
+ #endif
+                 }
+ 
+-                if (doc != NULL &amp;&amp; !app.domParserErrorHandler-&gt;getSawErrors()) {
++                if (app.domParserSchemaResolver-&gt;didResolveSchema() &amp;&amp; doc != NULL 
++                        &amp;&amp; !app.domParserErrorHandler-&gt;getSawErrors()) {
+                     infoElem = dynamic_cast&lt;DOMElement *&gt;(doc-&gt;getElementsByTagName(
+                             Utf8ToXML(&quot;info&quot;).x_str())-&gt;item(0));
+                     updateElem = dynamic_cast&lt;DOMElement *&gt;(doc-&gt;getElementsByTagName(
+@@ -374,8 +375,10 @@
+                             Utf8ToXML(&quot;levels&quot;).x_str())-&gt;item(0));
+                 }
+ 
+-                if(app.domParserErrorHandler-&gt;getSawErrors()) {
++                if (app.domParserErrorHandler-&gt;getSawErrors()) {
+                     errMessage = errStream.str();
++                } else if (!app.domParserSchemaResolver-&gt;didResolveSchema()) {
++                    errMessage = &quot;Wrong XML document - expected a levelpack index, got something else!&quot;;
+                 }
+                 app.domParserErrorHandler-&gt;reportToNull();  // do not report to errStream any more
+             }
+@@ -732,14 +735,17 @@
+                     app.domParserSchemaResolver-&gt;resetResolver();
+                     app.domParserSchemaResolver-&gt;addSchemaId(&quot;index.xsd&quot;,&quot;index.xsd&quot;);
+                     doc = app.domParser-&gt;parseURI(indexTemplatePath.c_str());
+-                    if (doc != NULL &amp;&amp; !app.domParserErrorHandler-&gt;getSawErrors()) {
++                    if (app.domParserSchemaResolver-&gt;didResolveSchema() &amp;&amp; doc != NULL 
++                            &amp;&amp; !app.domParserErrorHandler-&gt;getSawErrors()) {
+                         infoElem = dynamic_cast&lt;DOMElement *&gt;(doc-&gt;getElementsByTagName(
+                                 Utf8ToXML(&quot;info&quot;).x_str())-&gt;item(0));
+                         levelsElem = dynamic_cast&lt;DOMElement *&gt;(doc-&gt;getElementsByTagName(
+                                 Utf8ToXML(&quot;levels&quot;).x_str())-&gt;item(0));
+                     }
+-                    if(app.domParserErrorHandler-&gt;getSawErrors()) {
++                    if (app.domParserErrorHandler-&gt;getSawErrors()) {
+                         errMessage = errStream.str();
++                    } else if (!app.domParserSchemaResolver-&gt;didResolveSchema()) {
++                        errMessage = &quot;Wrong XML document - expected a levelpack index, got something else!&quot;;
+                     }
+                     app.domParserErrorHandler-&gt;reportToNull();  // do not report to errStream any more
+                 }
+
+Modified: trunk/src/lev/Proxy.cc
+===================================================================
+--- trunk/src/lev/Proxy.cc	2009-10-14 18:32:56 UTC (rev 1829)
++++ trunk/src/lev/Proxy.cc	2009-10-15 21:32:56 UTC (rev 1830)
+@@ -656,14 +656,17 @@
+                         levelCode.size(), absLevelPath.c_str(), false)));
+                 doc = app.domParser-&gt;parse(*domInputLevelSource);
+ #endif
+-                if (doc != NULL &amp;&amp; !app.domParserErrorHandler-&gt;getSawErrors()) {
++                if (app.domParserSchemaResolver-&gt;didResolveSchema() &amp;&amp; doc != NULL 
++                        &amp;&amp; !app.domParserErrorHandler-&gt;getSawErrors()) {
+                     infoElem = dynamic_cast&lt;DOMElement *&gt;(doc-&gt;getElementsByTagNameNS(
+                             levelNS, Utf8ToXML(&quot;info&quot;).x_str())-&gt;item(0));
+                     stringList = doc-&gt;getElementsByTagNameNS(levelNS, 
+                             Utf8ToXML(&quot;string&quot;).x_str());
+                 }
+-                if(app.domParserErrorHandler-&gt;getSawErrors()) {
++                if (app.domParserErrorHandler-&gt;getSawErrors()) {
+                     errMessage = errStream.str();
++                } else if (!app.domParserSchemaResolver-&gt;didResolveSchema()) {
++                    errMessage = &quot;Wrong XML document - expected a level, got something else!&quot;;
+                 }
+                 app.domParserErrorHandler-&gt;reportToNull();  // do not report to errStream any more
+             }
+
+Modified: trunk/src/lev/RatingManager.cc
+===================================================================
+--- trunk/src/lev/RatingManager.cc	2009-10-14 18:32:56 UTC (rev 1829)
++++ trunk/src/lev/RatingManager.cc	2009-10-15 21:32:56 UTC (rev 1830)
+@@ -132,7 +132,8 @@
+             app.domParserSchemaResolver-&gt;resetResolver();
+             app.domParserSchemaResolver-&gt;addSchemaId(&quot;ratings.xsd&quot;,&quot;ratings.xsd&quot;);
+             DOMDocument *doc = app.domParser-&gt;parseURI(path.c_str());
+-            if (doc != NULL &amp;&amp; !app.domParserErrorHandler-&gt;getSawErrors()) {
++            if (app.domParserSchemaResolver-&gt;didResolveSchema() &amp;&amp; doc != NULL 
++                    &amp;&amp; !app.domParserErrorHandler-&gt;getSawErrors()) {
+                 DOMElement *updateElem = 
+                         dynamic_cast&lt;DOMElement *&gt;(doc-&gt;getElementsByTagName(
+                         Utf8ToXML(&quot;update&quot;).x_str())-&gt;item(0));
+
+Modified: trunk/src/lev/ScoreManager.cc
+===================================================================
+--- trunk/src/lev/ScoreManager.cc	2009-10-14 18:32:56 UTC (rev 1829)
++++ trunk/src/lev/ScoreManager.cc	2009-10-15 21:32:56 UTC (rev 1830)
+@@ -181,7 +181,8 @@
+ #endif
+                 
+             }
+-            if (doc != NULL &amp;&amp; !app.domParserErrorHandler-&gt;getSawErrors()) {
++            if (app.domParserSchemaResolver-&gt;didResolveSchema() &amp;&amp;  doc != NULL 
++                    &amp;&amp; !app.domParserErrorHandler-&gt;getSawErrors()) {
+                 propertiesElem = dynamic_cast&lt;DOMElement *&gt;(doc-&gt;getElementsByTagName(
+                         Utf8ToXML(&quot;properties&quot;).x_str())-&gt;item(0));
+                 levelsElem = dynamic_cast&lt;DOMElement *&gt;(doc-&gt;getElementsByTagName(
+@@ -288,8 +289,10 @@
+                 }
+                 
+             }
+-            if(app.domParserErrorHandler-&gt;getSawErrors()) {
++            if (app.domParserErrorHandler-&gt;getSawErrors()) {
+                 errMessage = errStream.str();
++            } else if (!app.domParserSchemaResolver-&gt;didResolveSchema()) {
++                errMessage = &quot;Wrong XML document - expected a score, got something else!&quot;;
+             }
+             app.domParserErrorHandler-&gt;reportToNull();  // do not report to errStream any more
+         }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001258.html">[Enigma-game-svn] r1829 - in trunk/data/levels: enigma_cross	enigma_iii enigma_iv enigma_ix enigma_vii enigma_viii
+</A></li>
+	<LI>Next message: <A HREF="001260.html">[Enigma-game-svn] r1831 - trunk/data/fonts
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1259">[ date ]</a>
+              <a href="thread.html#1259">[ thread ]</a>
+              <a href="subject.html#1259">[ subject ]</a>
+              <a href="author.html#1259">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

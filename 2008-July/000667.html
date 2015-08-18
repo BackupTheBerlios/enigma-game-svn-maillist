@@ -1,0 +1,313 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1233 - in trunk: data/schemas src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1233%20-%20in%20trunk%3A%20data/schemas%20src&In-Reply-To=%3C200807121637.m6CGbTiM003468%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000666.html">
+   <LINK REL="Next"  HREF="000668.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1233 - in trunk: data/schemas src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1233%20-%20in%20trunk%3A%20data/schemas%20src&In-Reply-To=%3C200807121637.m6CGbTiM003468%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1233 - in trunk: data/schemas src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Jul 12 18:37:29 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000666.html">[Enigma-game-svn] r1232 - feature_branches/hp_lotm/input/lotm
+</A></li>
+        <LI>Next message: <A HREF="000668.html">[Enigma-game-svn] r1234 - feature_branches/hp_lotm/input/lotm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#667">[ date ]</a>
+              <a href="thread.html#667">[ thread ]</a>
+              <a href="subject.html#667">[ subject ]</a>
+              <a href="author.html#667">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-07-12 18:37:18 +0200 (Sat, 12 Jul 2008)
+New Revision: 1233
+
+Modified:
+   trunk/data/schemas/objects.xml
+   trunk/src/actors.hh
+   trunk/src/items.cc
+   trunk/src/items.hh
+   trunk/src/world.cc
+   trunk/src/world_internal.hh
+Log:
+Trunk 1.1: new API reengineering
+- improve numerical stability of physical engine:
+  calculate friction according to final velocity to avoid friction pumping
+  energy into the system on collision handling what is critical on jammed
+  or two rubberband fixed actors.
+- allow floor covering items to support own friction and mousefactor values:
+  - it_strip: add attributes friction, mousefactor
+
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-07-12 08:01:54 UTC (rev 1232)
++++ trunk/data/schemas/objects.xml	2008-07-12 16:37:18 UTC (rev 1233)
+@@ -34,6 +34,7 @@
+     &lt;attr name=&quot;loop&quot; type=&quot;bool&quot; default=&quot;true&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;max&quot; type=&quot;double&quot; default=&quot;0&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;min&quot; type=&quot;double&quot; default=&quot;0&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;mousefactor&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;movable&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;name&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;nopaction&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+@@ -178,6 +179,8 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;it_strip&quot;&gt;
+       &lt;attr name=&quot;connections&quot;/&gt;
++      &lt;attr name=&quot;friction&quot;/&gt;
++      &lt;attr name=&quot;mousefactor&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;it_strip_w&quot;&gt;
+       &lt;attr name=&quot;connections&quot; value=&quot;w&quot;/&gt;
+
+Modified: trunk/src/actors.hh
+===================================================================
+--- trunk/src/actors.hh	2008-07-12 08:01:54 UTC (rev 1232)
++++ trunk/src/actors.hh	2008-07-12 16:37:18 UTC (rev 1233)
+@@ -90,6 +90,7 @@
+ //        ecl::V2 oldpos;		// Backup position for enter/leave notification
+         ecl::V2 force;		// Force used during tick
+         ecl::V2 collforce;
++        double  friction;       // friction on the current position
+         
+         // 2 sets of contacts - one for the current tick, one for the last tick
+         Contact contacts_a[MAX_CONTACTS];
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-07-12 08:01:54 UTC (rev 1232)
++++ trunk/src/items.cc	2008-07-12 16:37:18 UTC (rev 1233)
+@@ -142,7 +142,14 @@
+         GridObject::processLight(d);
+ }
+ 
++double Item::getFriction(ecl::V2 pos, double defaultFriction) {
++    return defaultFriction;
++}
+ 
++ecl::V2 Item::calcMouseforce(Actor *a, ecl::V2 mouseForce, ecl::V2 floorForce) {
++    return floorForce;
++}
++
+ void Item::on_drop (Actor * /*a*/) {
+ }
+ 
+@@ -3899,6 +3906,8 @@
+                 
+         // Items interface
+         virtual bool covers_floor(ecl::V2 pos) const;
++        virtual double getFriction(ecl::V2 pos, double defaultFriction);
++        virtual ecl::V2 calcMouseforce(Actor *a, ecl::V2 mouseForce, ecl::V2 floorForce);
+         
+     private:
+         int traitsIdx() const;
+@@ -3961,6 +3970,22 @@
+                 &amp;&amp; (((pos[1] &lt;= ycenter + MAXDIST) &amp;&amp; (cbits &amp; NORTHBIT)) || ((pos[1] &gt;= ycenter - MAXDIST) &amp;&amp; (cbits &amp; SOUTHBIT)))))
+                 ? true : false;
+     }
++    
++    double StripItem::getFriction(ecl::V2 pos, double defaultFriction) {
++        Value v = getAttr(&quot;friction&quot;);
++        if (v &amp;&amp; covers_floor(pos))
++            return v;
++        else
++            return defaultFriction;
++    }
++    
++    ecl::V2 StripItem::calcMouseforce(Actor *a, ecl::V2 mouseForce, ecl::V2 floorForce) {
++        Value v = getAttr(&quot;mousefactor&quot;);
++        if (v &amp;&amp; covers_floor(a-&gt;get_pos()))
++            return mouseForce * (double)v ;
++        else
++            return floorForce;        
++    }
+         
+     int StripItem::traitsIdx() const {
+         return getConnections();
+
+Modified: trunk/src/items.hh
+===================================================================
+--- trunk/src/items.hh	2008-07-12 08:01:54 UTC (rev 1232)
++++ trunk/src/items.hh	2008-07-12 16:37:18 UTC (rev 1233)
+@@ -190,7 +190,9 @@
+         /* ---------- Virtual functions ---------- */
+         const char *get_kind() const;
+         void init_model();
+-        void processLight(Direction d);
++        virtual void processLight(Direction d);
++        virtual double getFriction(ecl::V2 pos, double defaultFriction);
++        virtual ecl::V2 calcMouseforce(Actor *a, ecl::V2 mouseForce, ecl::V2 floorForce);
+ 
+         /* ---------- Item interface ---------- */
+ 
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-07-12 08:01:54 UTC (rev 1232)
++++ trunk/src/world.cc	2008-07-12 16:37:18 UTC (rev 1233)
+@@ -460,10 +460,10 @@
+ #define M_PI 3.1415926535
+ #endif
+ 
+-void World::add_mouseforce (Actor *a, Floor *floor, V2 &amp;mforce)
++ecl::V2 World::drunkenMouseforce(Actor *a, V2 &amp;mforce)
+ {
++    V2 f = mforce;
+     if (a-&gt;get_controllers() != 0) {
+-        V2 f = floor-&gt;process_mouseforce(a, m_mouseforce.get_force(a));
+         if (a-&gt;is_drunken()) {
+             // rotate mouse force by random angle
+             double maxangle = M_PI * 0.7;
+@@ -471,8 +471,8 @@
+             f = V2(f[0]*cos(angle) - f[1]*sin(angle),
+                    f[0]*sin(angle) + f[1]*cos(angle));
+         }
+-        mforce += f;
+     }
++    return f;
+ }
+ 
+ /*! Calculate the total force on an actor A at time TIME.  The
+@@ -480,9 +480,10 @@
+   that the position and velocity entries in ActorInfo will be updated
+   only after a *successful* time step, so they cannot be used
+   here.] */
+-V2 World::get_local_force (Actor *a)
+-{
++V2 World::get_local_force (Actor *a) {
+     V2 f;
++    V2 m;
++    double friction = 0;
+ 
+     if (a-&gt;is_on_floor()) {
+         if (Floor *floor = a-&gt;m_actorinfo.field-&gt;floor) {
+@@ -490,30 +491,29 @@
+             f += flatForce;
+ 
+             // Mouse force
+-            add_mouseforce (a, floor, f);
+-
++            if (a-&gt;get_controllers() != 0) {
++                m = floor-&gt;process_mouseforce(a, m_mouseforce.get_force(a));
++            }
+             // Friction
+-            double friction = floor-&gt;get_friction();
+-            if (a-&gt;has_spikes())
+-                friction += 7.0;
++            friction = floor-&gt;get_friction();
+ 
+-            V2 v = a-&gt;get_vel();
+-            double vv=length(v);
+-            if (vv &gt; 0) {
+-                V2 frictionf = v * (server::FrictionFactor*friction);
+-                frictionf /= vv;
+-                frictionf *= pow(vv, 0.8);
+-                f -= frictionf;
+-            }
+-
++            // Floor force
+             floor-&gt;add_force(a, f);
+         }
+ 
+-        if (Item *item = a-&gt;m_actorinfo.field-&gt;item) 
++        if (Item *item = a-&gt;m_actorinfo.field-&gt;item) {
++            friction = item-&gt;getFriction(a-&gt;get_pos(), friction);
++            if (a-&gt;get_controllers() != 0) {
++                m = item-&gt;calcMouseforce(a, m_mouseforce.get_force(a), m);
++            }
+             item-&gt;add_force(a, f);
++        }
+     }
++    
++    a-&gt;m_actorinfo.friction = friction;
++    f += drunkenMouseforce(a, m);
+ 
+-    return f;
++    return f + m;
+ }
+ 
+ /* Global forces are calculated less often than local ones, namely
+@@ -1323,7 +1323,26 @@
+     double q = length(ai.vel) / MAXVEL;
+     if (q &gt; 1)
+         ai.vel /= q;
++        
++    // Friction influence
++    double friction = server::FrictionFactor * ai.friction; 
++    if (a-&gt;has_spikes())
++        friction += 7.0 * server::FrictionFactor;
+ 
++    double vv=length(ai.vel);
++    if (vv &gt; 0) {
++        V2 frictionf = ai.vel * friction;
++        frictionf /= vv;
++        frictionf *= pow(vv, 0.8);
++        ai.vel -= dtime * frictionf / ai.mass;
++        if (friction  &lt; 0) {  // inverse, accelerating friction
++            // Limit to maximum velocity again
++            double q = length(ai.vel) / MAXVEL;
++            if (q &gt; 1)
++                ai.vel /= q;
++        }
++    }
++
+     ai.pos += dtime * ai.vel;
+     // avoid actors outside of world
+     if (ai.pos[0] &lt; 0) ai.pos[0] = 0.0;
+
+Modified: trunk/src/world_internal.hh
+===================================================================
+--- trunk/src/world_internal.hh	2008-07-12 08:01:54 UTC (rev 1232)
++++ trunk/src/world_internal.hh	2008-07-12 16:37:18 UTC (rev 1233)
+@@ -271,7 +271,7 @@
+ 
+         /* ---------- Private methods ---------- */
+ 
+-        void add_mouseforce (Actor *a, Floor *floor, V2 &amp;mforce);
++        ecl::V2 drunkenMouseforce(Actor *a, V2 &amp;mforce);
+         V2 get_local_force (Actor *a);
+         V2 get_global_force (Actor *a);
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000666.html">[Enigma-game-svn] r1232 - feature_branches/hp_lotm/input/lotm
+</A></li>
+	<LI>Next message: <A HREF="000668.html">[Enigma-game-svn] r1234 - feature_branches/hp_lotm/input/lotm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#667">[ date ]</a>
+              <a href="thread.html#667">[ thread ]</a>
+              <a href="subject.html#667">[ subject ]</a>
+              <a href="author.html#667">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

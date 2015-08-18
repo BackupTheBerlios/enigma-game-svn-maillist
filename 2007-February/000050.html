@@ -1,0 +1,158 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r611 - branches/1.0/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r611%20-%20branches/1.0/src&In-Reply-To=%3C200702232354.l1NNsi0f008621%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000049.html">
+   <LINK REL="Next"  HREF="000051.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r611 - branches/1.0/src</H1>
+    <B>andreasl at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r611%20-%20branches/1.0/src&In-Reply-To=%3C200702232354.l1NNsi0f008621%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r611 - branches/1.0/src">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Sat Feb 24 00:54:44 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000049.html">[Enigma-game-svn] r610 - in homepage: . input
+</A></li>
+        <LI>Next message: <A HREF="000051.html">[Enigma-game-svn] r612 - homepage/input
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#50">[ date ]</a>
+              <a href="thread.html#50">[ thread ]</a>
+              <a href="subject.html#50">[ subject ]</a>
+              <a href="author.html#50">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2007-02-24 00:54:42 +0100 (Sat, 24 Feb 2007)
+New Revision: 611
+
+Modified:
+   branches/1.0/src/stones_complex.cc
+   branches/1.0/src/world.cc
+Log:
+Fixing turnstile border crash:
+ - Pushing an actor out of the level grid with a turnstile
+   is replaced by a shatter instead (no warp).
+ - Other methods to warp an actor out of the level grid are
+   throw an XLevelRuntime-Exception in &quot;world::WarpActor&quot;.
+Small changes to turnstile code:
+ - 135 degree-warp when hitting pivot and arm at once.
+ - Removed unused turnstile-corner-code.
+
+
+
+Modified: branches/1.0/src/stones_complex.cc
+===================================================================
+--- branches/1.0/src/stones_complex.cc	2007-02-23 22:36:35 UTC (rev 610)
++++ branches/1.0/src/stones_complex.cc	2007-02-23 23:54:42 UTC (rev 611)
+@@ -2493,23 +2493,6 @@
+     public:
+         Turnstile_W(): Turnstile_Arm(&quot;st-turnstile-w&quot;) {}
+     };
+-
+-    /*
+-    **
+-    */
+-    class Turnstile_Corner : public Stone {
+-        CLONEOBJ(Turnstile_Corner);
+-
+-        void init_model() {
+-            set_anim (&quot;st-turnstile-corner&quot;);
+-        }
+-        void animcb() {
+-            KillStone(get_pos());
+-        }
+-    public:
+-        Turnstile_Corner() : Stone(&quot;st-turnstile-corner&quot;)
+-        {}
+-    };
+ }
+ 
+ 
+@@ -2764,15 +2747,13 @@
+         if (idx_source == -1) 
+             continue;       // actor inside pivot -- should not happen
+ 
+-        const int rot_index[4][8] = {
+-            { 6,  0, 0,  2, 2,  4, 4,  6 }, // anticlockwise
+-            { 2,  2, 4,  4, 6,  6, 0,  0 }, // clockwise
+-            { 6,  0, 0,  2, 2,  4, 4,  6 }, // anticlockwise (oxyd-compatible)
+-            { 2,  2, 4,  4, 6,  6, 0,  0 }, // clockwise (oxyd-compatible)
++        const int rot_index[2][8] = { // same for both versions, see rev.611
++            { 6,  6, 0,  0, 2,  2, 4,  4 }, // anticlockwise
++            { 2,  4, 4,  6, 6,  0, 0,  2 }  // clockwise
+         };
+ 
+         bool compatible = oxyd_compatible();
+-        int  idx_target = rot_index[clockwise+2*compatible][idx_source]; // destination index
++        int  idx_target = rot_index[clockwise][idx_source]; // destination index
+         bool do_warp = arm_seen[idx_source]; // move the actor along with the turnstile?
+ 
+         if (compatible) {
+@@ -2785,7 +2766,14 @@
+         if (!do_warp) 
+             continue;
+ 
++        // Pushing an actor out of the level results in a shatter (no warp) instead
+         GridPos ac_target_pos(pv_pos.x+to_x[idx_target], pv_pos.y+to_y[idx_target]);
++
++        if(!IsInsideLevel(ac_target_pos)) {
++            SendMessage(ac, &quot;shatter&quot;);
++            continue;
++        }
++
+         world::WarpActor(ac, ac_target_pos.x+.5, ac_target_pos.y+.5, false);
+ 
+         if (Stone *st = GetStone(ac_target_pos)) {
+
+Modified: branches/1.0/src/world.cc
+===================================================================
+--- branches/1.0/src/world.cc	2007-02-23 22:36:35 UTC (rev 610)
++++ branches/1.0/src/world.cc	2007-02-23 23:54:42 UTC (rev 611)
+@@ -1644,6 +1644,8 @@
+ void world::WarpActor(Actor *a, double newx, double newy, bool keep_velocity)
+ {
+     V2 newpos = V2(newx, newy);
++    ASSERT(IsInsideLevel(GridPos(newpos)), XLevelRuntime,
++        &quot;WarpActor: Tried to warp actor out of level grid. (And hyperspace travel is not implemented yet, sorry.)&quot;);
+     if (!keep_velocity)
+         a-&gt;get_actorinfo()-&gt;vel = V2();
+     a-&gt;warp(newpos);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000049.html">[Enigma-game-svn] r610 - in homepage: . input
+</A></li>
+	<LI>Next message: <A HREF="000051.html">[Enigma-game-svn] r612 - homepage/input
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#50">[ date ]</a>
+              <a href="thread.html#50">[ thread ]</a>
+              <a href="subject.html#50">[ subject ]</a>
+              <a href="author.html#50">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

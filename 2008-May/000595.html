@@ -1,0 +1,264 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1161 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1161%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200805272221.m4RML3GD017568%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000594.html">
+   <LINK REL="Next"  HREF="000596.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1161 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1161%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200805272221.m4RML3GD017568%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1161 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed May 28 00:21:03 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000594.html">[Enigma-game-svn] r1160 - in trunk: data data/schemas src src/stones
+</A></li>
+        <LI>Next message: <A HREF="000596.html">[Enigma-game-svn] r1162 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#595">[ date ]</a>
+              <a href="thread.html#595">[ thread ]</a>
+              <a href="subject.html#595">[ subject ]</a>
+              <a href="author.html#595">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-05-28 00:21:02 +0200 (Wed, 28 May 2008)
+New Revision: 1161
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/items.cc
+   trunk/src/stones/LightPassengerStone.cc
+   trunk/src/stones/LightPassengerStone.hh
+Log:
+Trunk 1.1: new API reengineering
+- it_glasses fix API1 compatibility
+- st_lightpassenger:
+  - stop if moved onto an it_cross and switch to state OFF
+  - finish glasses visibility
+- it_sensor:
+  - fix model update on attribute &quot;invisible&quot;
+  - add visibility on glasses with SPOT_SENSOR
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-05-26 21:38:26 UTC (rev 1160)
++++ trunk/data/api1init.lua	2008-05-27 22:21:02 UTC (rev 1161)
+@@ -54,6 +54,7 @@
+     it_cross = &quot;it-cross&quot;,
+     it_extralife = &quot;it-extralife&quot;,
+     it_floppy = &quot;it-floppy&quot;,
++    it_glasses = &quot;it-glasses&quot;,
+     it_hammer = &quot;it-hammer&quot;,
+     it_magnet = &quot;it-magnet&quot;,
+     it_magnet_on = &quot;it-magnet-on&quot;,
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-05-26 21:38:26 UTC (rev 1160)
++++ trunk/data/schemas/objects.xml	2008-05-27 22:21:02 UTC (rev 1161)
+@@ -135,6 +135,7 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;it_sensor&quot;&gt;
+       &lt;attr name=&quot;invisible&quot;/&gt;
++      &lt;msg name=&quot;_glasses&quot;/&gt;
+       &lt;msg name=&quot;_hit&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;it_sword&quot;/&gt;
+@@ -371,6 +372,7 @@
+       &lt;msg name=&quot;off&quot;/&gt;
+       &lt;msg name=&quot;signal&quot;/&gt;
+       &lt;msg name=&quot;_init&quot;/&gt;
++      &lt;msg name=&quot;_glasses&quot;/&gt;
+       &lt;msg name=&quot;_model_reanimated&quot;/&gt;
+       &lt;msg name=&quot;_trigger&quot;/&gt;
+     &lt;/object&gt;
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-05-26 21:38:26 UTC (rev 1160)
++++ trunk/src/items.cc	2008-05-27 22:21:02 UTC (rev 1161)
+@@ -3192,6 +3192,9 @@
+         // Object interface
+         virtual Value message(const Message &amp;m);
+         
++        // StateObject interface
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++        
+         // GridObject interface
+         virtual void init_model();
+ 
+@@ -3222,12 +3225,25 @@
+             return Value();
+         } else if (m.message == &quot;_hitactor&quot;) {
+             return getAttr(&quot;$hitactor&quot;);
++        } else if (m.message == &quot;_glasses&quot;) {
++            if (isDisplayable())
++                init_model();            
+         }
+         return Item::message(m);
+     }
+     
++    void Sensor::setAttr(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;invisible&quot;) {
++            Item::setAttr(key, val);
++            if (isDisplayable())
++                init_model();
++            return;
++        }
++        Item::setAttr(key, val);
++    }
++    
+     void Sensor::init_model() {
+-        if (getAttr(&quot;invisible&quot;).to_bool())
++        if (getAttr(&quot;invisible&quot;).to_bool() &amp;&amp; ((server::GlassesVisibility &amp; 8) == 0))
+             set_model(&quot;invisible&quot;);
+         else
+             set_model(&quot;it_sensor&quot;);
+@@ -3246,7 +3262,7 @@
+     int Sensor::traitsIdx() const {
+         return getAttr(&quot;inverse&quot;).to_bool() ? 1 : 0;
+     }
+-//    DEF_TRAITSF(Sensor, &quot;it_sensor&quot;, it_sensor, itf_static);
++
+     ItemTraits Sensor::traits[2] = {
+         {&quot;it_sensor&quot;,  it_sensor,  itf_static},
+         {&quot;it_sensor&quot;,  it_inversesensor,  itf_static}
+@@ -3455,7 +3471,7 @@
+         }
+         if (newVisibility != server::GlassesVisibility) {
+             server::GlassesVisibility = newVisibility;
+-            BroadcastMessage(&quot;_glasses&quot;, newVisibility, GRID_STONES_BIT);
++            BroadcastMessage(&quot;_glasses&quot;, newVisibility, GridLayerBits(GRID_ITEMS_BIT | GRID_STONES_BIT));
+         }
+     }
+     
+
+Modified: trunk/src/stones/LightPassengerStone.cc
+===================================================================
+--- trunk/src/stones/LightPassengerStone.cc	2008-05-26 21:38:26 UTC (rev 1160)
++++ trunk/src/stones/LightPassengerStone.cc	2008-05-27 22:21:02 UTC (rev 1161)
+@@ -29,7 +29,7 @@
+ 
+ namespace enigma {
+     LightPassengerStone::LightPassengerStone(bool isActive) : Stone () {
+-        state =  isActive ? ON : OFF;
++        state =  isActive ? ON_NEW : OFF;
+     }
+ 
+     LightPassengerStone::~LightPassengerStone() {
+@@ -66,13 +66,15 @@
+     
+     void LightPassengerStone::setState(int extState) {
+         if (state == OFF &amp;&amp; extState == 1) {
+-            state = ON;
+             if (isDisplayable()) {
++                state = ON;
+                 init_model();
+                 if (objFlags &amp; OBJBIT_LIGHTNEWDIRS)  // currently enlighted?
+                     GameTimer.set_alarm(this, calcInterval(), false);
++            } else {
++                state = ON_NEW;
+             }
+-        } else if ((state == ON || state == BLINK) &amp;&amp; extState == 0) {
++        } else if ((state == ON || state == ON_NEW || state == BLINK) &amp;&amp; extState == 0) {
+             state = OFF;
+             objFlags &amp;= ~OBJBIT_SKATEDIR;  // NODIR
+             if (isDisplayable())
+@@ -83,12 +85,12 @@
+     void LightPassengerStone::init_model() {
+         switch(state) {
+             case OFF:
+-                set_anim(objFlags &amp; OBJBIT_VISIBLE ?
++                set_model(objFlags &amp; OBJBIT_VISIBLE ?
+                     &quot;st-lightpassenger_off&quot; : &quot;st-lightpassenger_hidden&quot;); break;
+             case ON:
+-                set_anim(&quot;st-lightpassenger&quot;); break;
++                set_model(&quot;st-lightpassenger&quot;); break;
+             case BLINK:
+-                set_anim(&quot;st-lightpassenger-blink&quot;); break;
++                set_model(&quot;st-lightpassenger-blink&quot;); break;
+             case BREAK:
+                 bool NorthSouth = objFlags &amp; (NORTHBIT | SOUTHBIT);
+                 bool EastWest = objFlags &amp; (WESTBIT | EASTBIT);
+@@ -107,6 +109,17 @@
+         activatePhoto();
+         if (updateCurrentLightDirs() != NODIRBIT)
+             GameTimer.set_alarm(this, calcInterval(), false);
++        if (((server::GlassesVisibility &amp; 16) != 0) != ((objFlags &amp; OBJBIT_VISIBLE) != 0)) {
++            objFlags ^= OBJBIT_VISIBLE; // toggle visibility bit
++        }
++        if (state == ON || state == BLINK) {
++            Item *it = GetItem(p);
++            if (it != NULL &amp;&amp; get_id(it) == it_cross) {
++                setState(0);
++            }
++        } else if (state == ON_NEW) {
++            state = ON;
++        }
+         Stone::on_creation(p);
+     }
+     
+
+Modified: trunk/src/stones/LightPassengerStone.hh
+===================================================================
+--- trunk/src/stones/LightPassengerStone.hh	2008-05-26 21:38:26 UTC (rev 1160)
++++ trunk/src/stones/LightPassengerStone.hh	2008-05-27 22:21:02 UTC (rev 1161)
+@@ -37,13 +37,14 @@
+             OFF,     ///&lt; inactive, does not react on laser 
+             ON,      ///&lt; active, does react on laser
+             BLINK,   ///&lt; active, double lasered, ready to break
+-            BREAK    ///&lt; active, breaking and dissolving
++            BREAK,   ///&lt; active, breaking and dissolving
++            ON_NEW   ///&lt; a new lightpassenger that should start in ON on first grid set
+         };
+         
+         enum ObjectPrivatFlagsBits {
+             OBJBIT_SKATEDIR =   7&lt;&lt;24,   ///&lt; current skate direction
+             OBJBIT_BLOCKED  =   1&lt;&lt;27,   ///&lt; have been blocked by a stone on last move attempt 
+-            OBJBIT_VISIBLE  =   1&lt;&lt;28    ///&lt; this stone isn't hidden when inactive
++            OBJBIT_VISIBLE  =   1&lt;&lt;28    ///&lt; can be distinguished from glass when inactive
+         };
+     public:
+         LightPassengerStone(bool isActive);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000594.html">[Enigma-game-svn] r1160 - in trunk: data data/schemas src src/stones
+</A></li>
+	<LI>Next message: <A HREF="000596.html">[Enigma-game-svn] r1162 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#595">[ date ]</a>
+              <a href="thread.html#595">[ thread ]</a>
+              <a href="subject.html#595">[ subject ]</a>
+              <a href="author.html#595">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

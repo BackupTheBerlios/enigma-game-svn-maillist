@@ -1,0 +1,221 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1335 - in trunk: data/levels/lib src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1335%20-%20in%20trunk%3A%20data/levels/lib%20src/stones&In-Reply-To=%3C200809192247.m8JMlpVt001851%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000764.html">
+   <LINK REL="Next"  HREF="000766.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1335 - in trunk: data/levels/lib src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1335%20-%20in%20trunk%3A%20data/levels/lib%20src/stones&In-Reply-To=%3C200809192247.m8JMlpVt001851%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1335 - in trunk: data/levels/lib src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Sep 20 00:47:51 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000764.html">[Enigma-game-svn] r1334 - in trunk: data src src/stones
+</A></li>
+        <LI>Next message: <A HREF="000766.html">[Enigma-game-svn] r1336 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#765">[ date ]</a>
+              <a href="thread.html#765">[ thread ]</a>
+              <a href="subject.html#765">[ subject ]</a>
+              <a href="author.html#765">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-09-20 00:47:43 +0200 (Sat, 20 Sep 2008)
+New Revision: 1335
+
+Modified:
+   trunk/data/levels/lib/libpuzzle_3.xml
+   trunk/src/stones/PuzzleStone.cc
+   trunk/src/stones/PuzzleStone.hh
+Log:
+Trunk 1.1: new API reengineering
+- puzzle part 5:
+  - fix: yellow puzzles are laser rotatable, blue ones not
+  - crash fix: fall puzzles on floor change, not directly on move
+  - let puzzle fall on first fitting position
+  - fix: break infinite shuffling if no stone can be pushed
+  - add uppercase suffixes and &quot;upper&quot; numbers as hollow auto puzzle tiles
+
+
+Modified: trunk/data/levels/lib/libpuzzle_3.xml
+===================================================================
+--- trunk/data/levels/lib/libpuzzle_3.xml	2008-09-17 22:09:04 UTC (rev 1334)
++++ trunk/data/levels/lib/libpuzzle_3.xml	2008-09-19 22:47:43 UTC (rev 1335)
+@@ -99,8 +99,9 @@
+             
+             if not nextpuzz[&quot;hollow&quot;] then
+                 puzz:pull_rotate(dir)
+-                intensity = intensity - 1
+             end
++            -- decrement in any case - there may exist no way scramble
++            intensity = intensity - 1
+         end
+     end
+     -- cleanup for subsequent calls
+@@ -119,8 +120,20 @@
+             end
+         else
+             if tile[1]:find(&quot;st_puzzle&quot;, 1, true) then
+-                local clusteridx = (&quot;01234456789&quot;):find(suffix)
+-                local connections = (&quot; abcdefghijklmno&quot;):find(suffix)
++                local clusteridx = (&quot;01234456789&quot;):find(suffix, 1, true)
++                local connections = (&quot; abcdefghijklmno&quot;):find(suffix, 1 , true)
++                if  clusteridx == nil then
++                    clusteridx = (&quot;)!@#$%^&amp;*(&quot;):find(suffix, 1, true)
++                    if clusteridx ~= nil then
++                        tile[&quot;hollow&quot;] = true
++                    end
++                end
++                if  connections == nil then
++                    connections = (&quot;+ABCDEFGHIJKLMNO&quot;):find(suffix, 1, true)
++                    if connections ~= nil then
++                        tile[&quot;hollow&quot;] = true
++                    end
++                end
+                 if  clusteridx ~= nil then
+                     tile[&quot;cluster&quot;] = clusteridx - 1
+                 elseif connections ~= nil then
+
+Modified: trunk/src/stones/PuzzleStone.cc
+===================================================================
+--- trunk/src/stones/PuzzleStone.cc	2008-09-17 22:09:04 UTC (rev 1334)
++++ trunk/src/stones/PuzzleStone.cc	2008-09-19 22:47:43 UTC (rev 1335)
+@@ -134,7 +134,7 @@
+     void PuzzleStone::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
+         if (state == IDLE &amp;&amp; !(objFlags &amp; OBJBIT_HOLLOW)) {
+             DirectionBits addDirs = added_dirs(oldDirs, newDirs);
+-            if (addDirs != NODIRBIT &amp;&amp; !explodeCluster() &amp;&amp; getAttr(&quot;color&quot;) == BLUE) {
++            if (addDirs != NODIRBIT &amp;&amp; !explodeCluster() &amp;&amp; getAttr(&quot;color&quot;) == YELLOW) {
+                 GridPos p = get_pos();
+                 if (addDirs &amp; SOUTHBIT) rotateLine(SOUTH);
+                 if (p == get_pos() &amp;&amp; (addDirs &amp; WESTBIT))  rotateLine(WEST);
+@@ -251,6 +251,14 @@
+             ShatterActorsInsideField (get_pos());
+     }
+ 
++    void PuzzleStone::on_floor_change() {
++        if (state == FALLING) {
++            state = FALLEN;   // we need to mark the puzzle as the floor set recalls this methods
++            SetFloor(get_pos(), MakeFloor(&quot;fl-gray&quot;));
++            KillStone(get_pos());
++        }
++    }
++    
+     void PuzzleStone::alarm() {
+         explodeStone();
+     }
+@@ -410,24 +418,22 @@
+         sound_event(&quot;movebig&quot;);
+         int size = cluster.size();
+ 
+-        if (createBridge) {
+-            for (PuzzleList::iterator itr = cluster.begin(); itr != cluster.end(); ++itr) {
+-                SetFloor(move((*itr)-&gt;get_pos(), dir), MakeFloor(&quot;fl-gray&quot;));
+-                KillStone((*itr)-&gt;get_pos());
+-            }
++        for (PuzzleList::iterator itr = cluster.begin(); itr != cluster.end(); ++itr) {
++           (*itr)-&gt;sourcePos = (*itr)-&gt;get_pos();
++           YieldStone((*itr)-&gt;sourcePos);
+         }
+-        else {
+-            for (PuzzleList::iterator itr = cluster.begin(); itr != cluster.end(); ++itr) {
+-               (*itr)-&gt;sourcePos = (*itr)-&gt;get_pos();
+-               YieldStone((*itr)-&gt;sourcePos);
+-            }
+ 
++        for (PuzzleList::iterator itr = cluster.begin(); itr != cluster.end(); ++itr) {
++            SetStone(move((*itr)-&gt;sourcePos, dir), *itr);
++            (*itr)-&gt;on_move();
++        }
++        server::IncMoveCounter(size);
++
++        if (createBridge) {
+             for (PuzzleList::iterator itr = cluster.begin(); itr != cluster.end(); ++itr) {
+-                SetStone(move((*itr)-&gt;sourcePos, dir), *itr);
+-                (*itr)-&gt;on_move();
++                (*itr)-&gt;state = FALLING;
+             }
+         }
+-        server::IncMoveCounter(size);
+         return true;
+     }
+ 
+
+Modified: trunk/src/stones/PuzzleStone.hh
+===================================================================
+--- trunk/src/stones/PuzzleStone.hh	2008-09-17 22:09:04 UTC (rev 1334)
++++ trunk/src/stones/PuzzleStone.hh	2008-09-19 22:47:43 UTC (rev 1335)
+@@ -62,7 +62,9 @@
+     private:
+         enum iState {
+             IDLE,       ///&lt;
+-            PENDING,    ///&lt;  a cluster gets locked on a pending explosion to avoid further actions
++            FALLING,    ///&lt; a cluster falling into water or abyss
++            FALLEN,     ///&lt; a stone that is fallen an is vanishing
++            PENDING,    ///&lt; a cluster gets locked on a pending explosion to avoid further actions
+             IGNITED,    ///&lt; 
+             EXPLODING   ///&lt; 
+         };
+@@ -100,16 +102,17 @@
+         virtual void animcb();
+ 
+         // Stone interface
+-        virtual bool isConnectable(Stone *other) const;
+-        virtual void on_impulse(const Impulse&amp; impulse);
+-        virtual void on_move();
++        virtual bool is_transparent(Direction d) const;
+         virtual bool is_sticky(const Actor *a) const;
+-        virtual bool is_transparent(Direction d) const;
+         virtual bool allowsSpreading(Direction dir) const;
+         virtual bool is_removable() const;        
++        virtual bool isConnectable(Stone *other) const;
+         virtual StoneResponse collision_response(const StoneContact &amp;sc);
+         virtual void actor_hit(const StoneContact &amp;sc);
+         virtual void actor_contact(Actor *a);
++        virtual void on_impulse(const Impulse&amp; impulse);
++        virtual void on_move();
++        virtual void on_floor_change();
+         
+         // TimeHandler interface
+         virtual void alarm();
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000764.html">[Enigma-game-svn] r1334 - in trunk: data src src/stones
+</A></li>
+	<LI>Next message: <A HREF="000766.html">[Enigma-game-svn] r1336 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#765">[ date ]</a>
+              <a href="thread.html#765">[ thread ]</a>
+              <a href="subject.html#765">[ subject ]</a>
+              <a href="author.html#765">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

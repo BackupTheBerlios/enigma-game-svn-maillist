@@ -1,0 +1,295 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1154 - in trunk/src: . stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1154%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200805192254.m4JMs7qQ012845%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000586.html">
+   <LINK REL="Next"  HREF="000588.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1154 - in trunk/src: . stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1154%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200805192254.m4JMs7qQ012845%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1154 - in trunk/src: . stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue May 20 00:54:07 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000586.html">[Enigma-game-svn] r1153 - in trunk: data src src/stones
+</A></li>
+        <LI>Next message: <A HREF="000588.html">[Enigma-game-svn] r1155 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#587">[ date ]</a>
+              <a href="thread.html#587">[ thread ]</a>
+              <a href="subject.html#587">[ subject ]</a>
+              <a href="author.html#587">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-05-20 00:54:05 +0200 (Tue, 20 May 2008)
+New Revision: 1154
+
+Modified:
+   trunk/src/Object.cc
+   trunk/src/Object.hh
+   trunk/src/StateObject.cc
+   trunk/src/StateObject.hh
+   trunk/src/Value.cc
+   trunk/src/Value.hh
+   trunk/src/stones/FourSwitch.cc
+   trunk/src/stones/FourSwitch.hh
+   trunk/src/world.cc
+Log:
+Trunk 1.1: new API
+- neareast object:
+  - prefix &quot;@&quot; finalizes object on level init
+  - prefix &quot;@@&quot; keeps nearest resolve dynamic
+
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2008-05-19 20:21:02 UTC (rev 1153)
++++ trunk/src/Object.cc	2008-05-19 22:54:05 UTC (rev 1154)
+@@ -147,6 +147,10 @@
+     }
+     
+     Value Object::message(const Message &amp;m) {
++        if (m.message == &quot;_init&quot;) {
++            // finalize nearest target and destination
++            finalizeNearestObjectReferences();
++        }
+         return Value();
+     }
+     
+@@ -354,6 +358,27 @@
+         return false;
+     }
+     
++    void Object::finalizeNearestObjectReferences(std::string attr) {
++        bool modified = false;
++        TokenList targets = getAttr(attr);
++        
++        for (TokenList::iterator tit = targets.begin(); tit != targets.end(); ++tit) {
++            modified |= (*tit).finalizeNearestObjectReference(this);
++        }
++        if (modified)
++            setAttr(attr, targets);
++    }
++    
++    void Object::finalizeNearestObjectReferences() {
++        finalizeNearestObjectReferences(&quot;target&quot;);
++        finalizeNearestObjectReferences(&quot;destination&quot;);
++        int min = getAttr(&quot;$minState&quot;);
++        int max = getAttr(&quot;$maxState&quot;);
++        for (int i = min; i &lt;= max; i++) {
++            finalizeNearestObjectReferences(ecl::strf(&quot;target_%d&quot;, i));
++        }
++    }
++    
+     void Object::warning(const char *format, ...) const {
+         va_list arg_ptr;
+     
+
+Modified: trunk/src/Object.hh
+===================================================================
+--- trunk/src/Object.hh	2008-05-19 20:21:02 UTC (rev 1153)
++++ trunk/src/Object.hh	2008-05-19 22:54:05 UTC (rev 1154)
+@@ -250,6 +250,9 @@
+         int       id;
+         AttribMap attribs;
+         
++        void finalizeNearestObjectReferences(std::string attr);
++        void finalizeNearestObjectReferences();
++        
+         static int getNextId(Object *obj, bool bootFinished);
+         static void bootFinished();
+         static void freeId(int id);
+
+Modified: trunk/src/StateObject.cc
+===================================================================
+--- trunk/src/StateObject.cc	2008-05-19 20:21:02 UTC (rev 1153)
++++ trunk/src/StateObject.cc	2008-05-19 22:54:05 UTC (rev 1154)
+@@ -52,6 +52,10 @@
+     Value StateObject::getAttr(const string &amp;key) const {
+         if (key == &quot;state&quot;)
+             return externalState();
++        else if (key == &quot;$maxState&quot;)
++            return maxState();
++        else if (key == &quot;$minState&quot;)
++            return minState();
+         return Object::getAttr(key);
+     }
+     
+@@ -64,11 +68,11 @@
+         Object::setAttr(key, val);
+     }
+     
+-    int StateObject::maxState() {
++    int StateObject::maxState() const {
+         return 1;  // default 2 state
+     }
+     
+-    int StateObject::minState() {
++    int StateObject::minState() const {
+         return 0;  // default 2 state
+     }
+     
+
+Modified: trunk/src/StateObject.hh
+===================================================================
+--- trunk/src/StateObject.hh	2008-05-19 20:21:02 UTC (rev 1153)
++++ trunk/src/StateObject.hh	2008-05-19 22:54:05 UTC (rev 1154)
+@@ -97,13 +97,13 @@
+          * The maximum number of the external state. It defaults to 1, and 
+          * should be overridden by the final subclass just on demand. 
+          */
+-        virtual int maxState();
++        virtual int maxState() const;
+         
+         /**
+          * The minimum number of the external state. It defaults to 0, and
+          * should be overridden by the final subclass just on demand.
+          */
+-        virtual int minState();
++        virtual int minState() const;
+         
+         /**
+          * The method that is called on toggle messages to switch the object
+
+Modified: trunk/src/Value.cc
+===================================================================
+--- trunk/src/Value.cc	2008-05-19 20:21:02 UTC (rev 1153)
++++ trunk/src/Value.cc	2008-05-19 22:54:05 UTC (rev 1154)
+@@ -452,7 +452,30 @@
+         return result;
+     }
+     
++    bool Value::finalizeNearestObjectReference(const Object *reference) {
++        if (type == STRING &amp;&amp; std::string(val.str).find(&quot;@@&quot;) != 0 &amp;&amp; std::string(val.str).find(&quot;@&quot;) == 0
++                &amp;&amp; std::string(val.str).find_first_of(&quot;*?&quot;) != std::string::npos) {
++            //
++            ObjectList result = GetNamedGroup(val.str, reference);
++            clear();
++            if (!result.empty() &amp;&amp; result.front() != NULL) {
++                Value v = result.front()-&gt;getAttr(&quot;name&quot;);
++                if (v &amp;&amp; v.type == STRING &amp;&amp; strcmp(v.val.str, &quot;&quot;) != 0) {
++                    val.str = new char[strlen(v.val.str)+1];
++                    strcpy(val.str, v.val.str);
++                    type = NAMEDOBJECT;
++                    return true;
++                }
++            }
++            // otherwise it resolves to no object
++            type = NAMEDOBJECT;
++            val.dval[0] = 0;
++            return true;
++        }
++        return false;
++    }
+     
++    
+     int to_int(const Value &amp;v) {
+         return v;
+     }
+
+Modified: trunk/src/Value.hh
+===================================================================
+--- trunk/src/Value.hh	2008-05-19 20:21:02 UTC (rev 1153)
++++ trunk/src/Value.hh	2008-05-19 22:54:05 UTC (rev 1154)
+@@ -238,6 +238,7 @@
+          * 
+          */
+         ObjectList getObjectList(const Object *reference = NULL) const;
++        bool finalizeNearestObjectReference(const Object *reference = NULL);
+     private:
+         void clear();      ///&lt; Release resources and assign type NIL
+ 
+
+Modified: trunk/src/stones/FourSwitch.cc
+===================================================================
+--- trunk/src/stones/FourSwitch.cc	2008-05-19 20:21:02 UTC (rev 1153)
++++ trunk/src/stones/FourSwitch.cc	2008-05-19 22:54:05 UTC (rev 1154)
+@@ -48,7 +48,7 @@
+         return Stone::invertActionValue(val);
+     }
+     
+-    int FourSwitch::maxState() {
++    int FourSwitch::maxState() const {
+         return 3;  // dir representing state
+     }
+     
+
+Modified: trunk/src/stones/FourSwitch.hh
+===================================================================
+--- trunk/src/stones/FourSwitch.hh	2008-05-19 20:21:02 UTC (rev 1153)
++++ trunk/src/stones/FourSwitch.hh	2008-05-19 22:54:05 UTC (rev 1154)
+@@ -64,7 +64,7 @@
+         virtual Value invertActionValue(const Value &amp;val) const;
+         
+         // StateObject interface
+-        virtual int maxState();
++        virtual int maxState() const;
+         virtual void toggleState();
+         virtual void setState(int extState);
+ 
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-05-19 20:21:02 UTC (rev 1153)
++++ trunk/src/world.cc	2008-05-19 22:54:05 UTC (rev 1154)
+@@ -328,7 +328,9 @@
+ Object * World::get_named(const std::string &amp;name) {
+     std::string wanted = name;
+     if (wanted.size() &gt; 0 &amp;&amp; wanted[0] == '@')
+-        wanted.erase(0, 1); // erase the leading @ 
++        wanted.erase(0, 1); // erase a leading @ 
++    if (wanted.size() &gt; 0 &amp;&amp; wanted[0] == '@')
++        wanted.erase(0, 1); // erase a leading @@ 
+     ecl::Dict&lt;Object*&gt;::iterator found = m_objnames.find(wanted);
+     if (found != m_objnames.end()) 
+         return found-&gt;second;
+@@ -344,6 +346,9 @@
+     double mindist = -1;
+     if (pattern.size() &gt; 0 &amp;&amp; pattern[0] == '@') {
+         pattern.erase(0, 1); // erase the leading @
++        if (pattern.size() &gt; 0 &amp;&amp; pattern[0] == '@') {
++            pattern.erase(0, 1); // erase the leading @@
++        }
+         if (reference != NULL)
+             nearest = true;
+     } 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000586.html">[Enigma-game-svn] r1153 - in trunk: data src src/stones
+</A></li>
+	<LI>Next message: <A HREF="000588.html">[Enigma-game-svn] r1155 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#587">[ date ]</a>
+              <a href="thread.html#587">[ thread ]</a>
+              <a href="subject.html#587">[ subject ]</a>
+              <a href="author.html#587">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

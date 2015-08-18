@@ -1,0 +1,3014 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r956 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-December/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r956%20-%20trunk/src&In-Reply-To=%3C200712282048.lBSKmeZf020958%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000387.html">
+   <LINK REL="Next"  HREF="000389.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r956 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r956%20-%20trunk/src&In-Reply-To=%3C200712282048.lBSKmeZf020958%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r956 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Fri Dec 28 21:48:40 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000387.html">[Enigma-game-svn] r955 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="000389.html">[Enigma-game-svn] r957 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#388">[ date ]</a>
+              <a href="thread.html#388">[ thread ]</a>
+              <a href="subject.html#388">[ subject ]</a>
+              <a href="author.html#388">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-12-28 21:48:38 +0100 (Fri, 28 Dec 2007)
+New Revision: 956
+
+Added:
+   trunk/src/GridObject.cc
+   trunk/src/GridObject.hh
+   trunk/src/Object.cc
+   trunk/src/Object.hh
+   trunk/src/Value.cc
+   trunk/src/Value.hh
+Removed:
+   trunk/src/objects.cc
+   trunk/src/objects.hh
+Modified:
+   trunk/src/Makefile.am
+   trunk/src/WorldProxy.hh
+   trunk/src/actors.hh
+   trunk/src/enigma.cc
+   trunk/src/enigma.hh
+   trunk/src/items.hh
+   trunk/src/laser.hh
+   trunk/src/lua.hh
+   trunk/src/ox_oxyd1.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/player.hh
+   trunk/src/stones.hh
+   trunk/src/world.hh
+Log:
+Trunk 1.1: reengineering
+- extract classes Value, Object, GridObject to own files
+- remove files objects.hh/cc
+Note:
+- autogen necessary
+
+
+Added: trunk/src/GridObject.cc
+===================================================================
+--- trunk/src/GridObject.cc	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/GridObject.cc	2007-12-28 20:48:38 UTC (rev 956)
+@@ -0,0 +1,111 @@
++/*
++ * Copyright (C) 2002,2003,2004,2005 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;GridObject.hh&quot;
++
++#include &quot;errors.hh&quot;
++#include &quot;game.hh&quot;
++#include &quot;lua.hh&quot;
++#include &quot;sound.hh&quot;
++#include &quot;world.hh&quot;
++
++#include &quot;ecl_util.hh&quot;
++#include &quot;ecl_dict.hh&quot;
++
++#include &lt;algorithm&gt;
++#include &lt;string&gt;
++#include &lt;cstdlib&gt;
++#include &lt;cstdarg&gt;
++#include &lt;iostream&gt;
++#include &lt;iomanip&gt;
++
++
++using namespace std;
++
++namespace enigma {
++
++// remove comment from define below to switch on verbose messaging
++// note: VERBOSE_MESSAGES is defined in multiple source files!
++// #define VERBOSE_MESSAGES
++
++
++/* -------------------- GridObject implementation -------------------- */
++
++    void GridObject::setOwner(int player) {
++        ASSERT(pos.x &lt; 0, XLevelRuntime,
++            &quot;GridObject: attempt to add object to owner inventory that is still on grid&quot;);
++        pos.x = -1;
++        pos.y = player;
++    }
++    
++    Value GridObject::getOwner() {
++        if (pos.x == -1 &amp;&amp; pos.y != -1)
++            return Value(pos.y);
++        else
++            return Value();
++    }
++    
++    void GridObject::setOwnerPos(GridPos po) {
++        ASSERT(pos.x &lt; 0, XLevelRuntime,
++            &quot;GridObject: attempt to add object to owner inventory that is still on grid&quot;);
++        if (po.x &gt;= 0) {
++            pos.x = -2 - po.x;
++            pos.y = -2 - po.y;
++        } else {
++            pos.x = po.x;
++            pos.y = po.y;
++        }
++    }
++    
++    GridPos GridObject::getOwnerPos() {
++        if (pos.x &lt;= -2)
++            return GridPos(-2 - pos.x, -2 - pos.y);
++        else 
++            return pos;
++    }
++    
++    display::Model *GridObject::set_anim (const std::string &amp;mname) 
++    {
++        set_model (mname);
++        display::Model *m = get_model();
++        m-&gt;set_callback(this);
++        return m;
++    }
++    
++    bool GridObject::sound_event (const char *name, double vol)
++    {
++        return sound::EmitSoundEvent (name, get_pos().center(), getVolume(name, this, vol));
++    }
++    
++    void GridObject::warning(const char *format, ...) const 
++    {
++        va_list        arg_ptr;
++        const GridPos&amp; position = get_pos();
++    
++        va_start(arg_ptr, format);
++    
++        fprintf(stderr, &quot;%p \&quot;%s\&quot; at %i/%i: &quot;, this, get_kind(), position.x, position.y);
++        vfprintf(stderr, format, arg_ptr);
++        fputc('\n', stderr);
++    
++        va_end(arg_ptr);
++    }
++    
++} // namespace enigma
+
+
+Property changes on: trunk/src/GridObject.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/GridObject.hh
+===================================================================
+--- trunk/src/GridObject.hh	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/GridObject.hh	2007-12-28 20:48:38 UTC (rev 956)
+@@ -0,0 +1,128 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef GRIDOBJECT_HH
++#define GRIDOBJECT_HH
++
++#include &quot;Object.hh&quot;
++
++#include &quot;display.hh&quot;
++#include &quot;ecl_alist.hh&quot;
++#include &lt;map&gt;
++
++namespace enigma { 
++
++    using std::string;
++    
++
++/* -------------------- GridObject -------------------- */
++    class Actor;
++
++    /** 
++     * GridObject is the base class for everything that can only be
++     * placed on &quot;The Grid&quot;, i.e., for floor tiles, items, and
++     * stones. 
++     */
++    class GridObject : public Object, public display::ModelCallback {
++    public:
++        GridObject() : pos (GridPos(-1, -1)) {}
++        GridObject(const char * kind) : Object(kind), pos (GridPos(-1, -1)) {}
++
++        void creation(GridPos p) {
++            pos = p;
++            on_creation (p);
++        }
++        void removal(GridPos p) { 
++            on_removal(p);
++            pos.x = -1;
++            pos.y = -1;
++        }
++        GridPos get_pos() const {return pos;}
++        
++        virtual void setOwner(int player);
++        
++        /**
++         * Get the player number who is owning the object.
++         * @return  integer value of player number or nil if not owned by a player
++         */
++        Value getOwner();
++        
++        /**
++         * Set the location of the GridObject to a given world or mirrored owner
++         * position.
++         */
++        virtual void setOwnerPos(GridPos po);
++         
++        /**
++         * Get the position of object within the world. Only objects owned by
++         * players will return positions outside of the world. 
++         */
++        GridPos getOwnerPos();
++
++        // GridObject interface
++        virtual void on_laserhit (Direction) {}
++        virtual void actor_enter (Actor *) {}
++        virtual void actor_leave (Actor *) {}
++
++
++        void warning(const char *format, ...) const;
++
++        // Helper functions
++        bool sound_event (const char *name, double vol = 1.0);
++        display::Model *set_anim (const std::string &amp;mname);
++
++    protected:
++        // GridObject interface
++        virtual void set_model (const std::string &amp;mname) = 0;
++        virtual display::Model *get_model () = 0;
++        virtual void kill_model (GridPos p) = 0;
++
++        virtual void init_model() {
++            set_model(get_kind());
++        }
++
++        virtual void on_creation (GridPos) {
++            init_model();
++        }
++
++        virtual void on_removal (GridPos p) {
++            kill_model (p);
++        }
++
++    private:
++        // ModelCallback interface.
++        void animcb() {}
++
++
++        /**
++         * The location of the GridObject. An object that is set on one of the world's
++         * layers will store the x and y coordinates with values greater equal 0. An
++         * object that is not a direct part of the world has a pos.x &lt; 0. Objects that
++         * are owned by other objects that are part of a world layer will store the
++         * position of the owner mirrored at point -1, -1. This results in pos.x &lt;= -2.
++         * All other GridObjects will have pos.x = -1. In this case pos.y &gt;= 0 identifies
++         * the player that owns the object in his inventory. Objects that are neiter set
++         * in the world nor owned by anyone have pos.x = pos.y = -1. 
++         */
++        GridPos pos;
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/GridObject.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/Makefile.am	2007-12-28 20:48:38 UTC (rev 956)
+@@ -53,6 +53,8 @@
+ 	fwd.hh			\
+ 	game.cc			\
+ 	game.hh			\
++	GridObject.cc 		\
++	GridObject.hh 		\
+ 	Inventory.cc		\
+ 	Inventory.hh		\
+ 	ItemHolder.hh		\
+@@ -82,8 +84,8 @@
+ 	network.hh		\
+ 	nls.cc 			\
+ 	nls.hh			\
+-	objects.cc 		\
+-	objects.hh 		\
++	Object.cc 		\
++	Object.hh 		\
+ 	oxyd.cc			\
+ 	oxyd.hh 		\
+ 	oxyd_internal.hh	\
+@@ -119,10 +121,12 @@
+ 	util.hh			\
+ 	utilXML.cc		\
+ 	utilXML.hh		\
++	Value.cc		\
++	Value.hh		\
+ 	video.cc 		\
+ 	video.hh		\
+-	WorldProxy.cc	\
+-	WorldProxy.hh	\
++	WorldProxy.cc		\
++	WorldProxy.hh		\
+ 	world.cc 		\
+ 	world.hh 		\
+ 	world_internal.hh	\
+
+Added: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/Object.cc	2007-12-28 20:48:38 UTC (rev 956)
+@@ -0,0 +1,254 @@
++/*
++ * Copyright (C) 2002,2003,2004,2005 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;Object.hh&quot;
++
++#include &quot;errors.hh&quot;
++#include &quot;game.hh&quot;
++#include &quot;lua.hh&quot;
++#include &quot;sound.hh&quot;
++#include &quot;world.hh&quot;
++
++#include &quot;ecl_util.hh&quot;
++#include &quot;ecl_dict.hh&quot;
++
++#include &lt;algorithm&gt;
++#include &lt;string&gt;
++#include &lt;cstdlib&gt;
++#include &lt;cstdarg&gt;
++#include &lt;iostream&gt;
++#include &lt;iomanip&gt;
++
++
++using namespace std;
++
++namespace enigma {
++
++// remove comment from define below to switch on verbose messaging
++// note: VERBOSE_MESSAGES is defined in multiple source files!
++// #define VERBOSE_MESSAGES
++
++/* -------------------- Object implementation -------------------- */
++
++    int Object::next_id = 1;
++    std::map&lt;int, Object *&gt; Object::objects;
++    
++    int Object::getNextId(Object *obj, bool bootFinished) {
++        static bool isBooting = true;
++        static int nextIdBoot = 1;
++        static std::map&lt;int, Object *&gt; objectsBoot;
++        
++        if (isBooting) {
++            if (bootFinished) {
++                isBooting = false;
++                next_id = nextIdBoot;
++                objects = objectsBoot;
++                return 0;
++            } else {
++                objectsBoot[nextIdBoot] = obj;
++                return nextIdBoot++;
++            }
++        } else {
++            objects[next_id] = obj;
++            return next_id++;
++        }
++    }
++    
++    void Object::bootFinished() {
++        getNextId(NULL, true);
++    }
++    
++    void Object::freeId(int id) {
++        objects.erase(id);
++    }
++    
++    Object * Object::getObject(int id) {
++        std::map&lt;int, Object *&gt;::iterator it = objects.find(id);
++        if (it == objects.end())
++            return NULL;
++        else
++            return it-&gt;second;
++    }
++    
++    Object::Object() {
++        id = getNextId(this, false);
++    }
++    
++    Object::Object(const char *kind) {
++        set_attrib(&quot;kind&quot;, Value(kind));
++        id = getNextId(this, false);
++    }
++    
++    Object::Object(const Object &amp;src_obj) {
++        id = getNextId(this, false);
++        attribs = src_obj.attribs;
++    }
++    
++    Object::~Object() {
++        freeId(id);
++    //cerr &lt;&lt; &quot;obj del &quot; &lt;&lt; id &lt;&lt; &quot; - &quot; &lt;&lt; this-&gt;get_kind() &lt;&lt;&quot;\n&quot;;
++    }
++    
++    int Object::getId() const {
++        return id;
++    }
++    
++    Value Object::message(const Message &amp;m) {
++        return Value();
++    }
++    
++    void Object::on_levelinit() {
++    }
++    
++    
++    const char * Object::get_kind() const {      // To be made pure virtual
++        const Value *v = get_attrib(&quot;kind&quot;);
++        ASSERT(v &amp;&amp; v-&gt;getType() == Value::STRING, XLevelRuntime,
++            &quot;Object: attribute kind is not of type string (found in get_kind)&quot;);
++        return v-&gt;get_string();
++    }
++    
++    // check kind of object
++    // kind_templ may contain wildcards ( ? and * )
++    bool Object::is_kind(const char *kind_templ) const {
++        return ecl::string_match(get_kind(), kind_templ);
++    }
++    
++    bool Object::is_kind(const string&amp; kind_templ) const {
++        return ecl::string_match(get_kind(), kind_templ.c_str());
++    }
++    
++    void Object::set_attrib(const string&amp; key, const Value&amp; val) {
++        if (val)         // only set non-default values
++            attribs[key] = val;  //.insert (key, val);
++    }
++    
++    const Value* Object::get_attrib(const string&amp; key) const { // To be delete as soon as
++                                                               // get_kind() has no need of it
++        AttribMap::const_iterator i = attribs.find(key);
++        if (i == attribs.end())
++            return 0;
++        else
++            return &amp;i-&gt;second;
++    }
++    
++    Value Object::getAttr(const string&amp; key) const {
++        AttribMap::const_iterator i = attribs.find(key);
++        if (i == attribs.end())
++            return Value(Value::DEFAULT);
++        else
++            return i-&gt;second;
++    }
++    
++    Value Object::getDefaultedAttr(const string&amp; key, Value defaultValue) const {
++        if (Value v = getAttr(key))
++            return v;
++        else
++            return defaultValue;
++    }
++    
++    Value Object::getValue(const string&amp; key) const {
++        return getAttr(key);       // TODO write template method
++    }
++    
++    Value Object::getDefaultValue(const string &amp;key) const {
++        return Value(Value::DEFAULT);
++    }
++    
++    void Object::performAction (const Value&amp; val) {
++        TokenList targets = getAttr(&quot;target&quot;);
++        TokenList actions = getAttr(&quot;action&quot;);
++        if (Value state = getAttr(&quot;state&quot;)) {
++            int s = state;
++            if (Value stateTargets = getAttr(ecl::strf(&quot;target_%d&quot;, s)))
++                targets = stateTargets;
++            if (Value actionTargets = getAttr(ecl::strf(&quot;action_%d&quot;, s)))
++                actions = actionTargets;
++        }
++        
++        TokenList::iterator ait = actions.begin();
++        std::string action;  // empty string as default
++        for (TokenList::iterator tit = targets.begin(); tit != targets.end(); ++tit) {
++            action = (ait != actions.end()) ? ait-&gt;to_string() : &quot;&quot;;
++            
++            ObjectList ol = *tit;  // get all objects described by target token
++            if (ol.size() == 0 || (ol.size() == 1 &amp;&amp; ol.front() == NULL)) {  // no target object
++                if ((action == &quot;callback&quot; || action == &quot;&quot;) &amp;&amp; (tit-&gt;getType() == Value::STRING) 
++                        &amp;&amp; lua::IsFunc(lua::LevelState(), tit-&gt;get_string())) {
++                    // it is an existing callback function
++                    if (lua::CallFunc(lua::LevelState(), tit-&gt;get_string(), val, this) != lua::NO_LUAERROR) {
++                        throw XLevelRuntime(string(&quot;callback '&quot;) + tit-&gt;get_string() + &quot;' failed:\n&quot;+lua::LastError(lua::LevelState()));
++                    }
++                }
++                // else ignore this no longer valid target
++    //            Log &lt;&lt; &quot;PerformAction target not valid\n&quot;;
++            } else {
++                // send message to all objects
++                if (action == &quot;&quot;) 
++                    action = &quot;toggle&quot;;
++                for (ObjectList::iterator oit = ol.begin(); oit != ol.end(); ++oit) {
++                    if (*oit != NULL) {
++                        SendMessage(*oit, Message(action, val, this));                    
++                    }
++                }
++            }
++            
++            if (ait != actions.end()) ++ait;
++        }
++    }
++    
++    /* Send an impulse to position 'dest' into direction dir.  If 'dest'
++       contains a stone, on_impulse() is called for that stone */
++    void Object::send_impulse(const GridPos&amp; dest, Direction dir) 
++    {
++        if (Stone *st = GetStone(dest)) {
++            Impulse impulse(this, dest, dir);
++            st-&gt;on_impulse(impulse);
++        }
++    }
++    
++    /* Like variant above, but the _result_ of the impulse is delayed.
++     */
++    
++    void
++    Object::send_impulse(const GridPos&amp; dest, Direction dir, double delay)
++    {
++        if (Stone *st = GetStone(dest)) {
++            addDelayedImpulse(Impulse(this, dest, dir), delay, st);
++        }
++    }
++    
++    void Object::warning(const char *format, ...) const {
++        va_list arg_ptr;
++    
++        va_start(arg_ptr, format);
++    
++        fprintf(stderr, &quot;%p non-grid-\&quot;%s\&quot;: &quot;, this, get_kind());
++        vfprintf(stderr, format, arg_ptr);
++        fputc('\n', stderr);
++    
++        va_end(arg_ptr);
++    }
++    
++    Object::ObjectType Object::getObjectType() const {
++        return OTHER;
++    }
++    
++} // namespace enigma
+
+
+Property changes on: trunk/src/Object.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/Object.hh
+===================================================================
+--- trunk/src/Object.hh	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/Object.hh	2007-12-28 20:48:38 UTC (rev 956)
+@@ -0,0 +1,204 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef OBJECT_HH
++#define OBJECT_HH
++
++#include &quot;display.hh&quot;
++#include &quot;ecl_alist.hh&quot;
++#include &quot;Value.hh&quot;
++#include &lt;map&gt;
++
++namespace enigma { 
++
++    using std::string;
++    
++    struct Message;
++    class Value;
++
++    /**
++     *  Object is the base class for all ``objects'' in the world.
++     * The most important facilities this class provides are:
++     *
++     * (1) A way to clone() and dispose() objects.  This is mainly used
++     *     in function MakeObject() to create new objects of a given
++     *     type.
++     * 
++     * (2) A way to pass messages between unrelated objects via message().
++     *     This allows us to send messages to objects from Lua and to
++     *     decouple objects types as much as possible.
++     * 
++     * (3) A way to get and set attributes.  These attributes are quite
++     *     similar to instance variables, but they can be easily modified
++     *     from Lua.  This makes it possible to modify certain object
++     *     parameters (such as the text on a piece of paper or the color
++     *     of an oxyd stone) in level descriptions.
++     * 
++     * The various Object subclasses instances need to register a template
++     * instance for each object name. To avoid the inclusion of every
++     * subclass declaration file into the registry for registry driven forward
++     * initialization we make use of the static file based initialization
++     * that occurs prior to the main application startup. To be independent of
++     * the undefined sequence in which the files are initialized we store the
++     * template instances, object names and id's in function local static caches.
++     * These caches are copied to the final runtime data structures on the main
++     * application startup. We call this feature &quot;boot&quot;-initialization. The macros
++     * BOOT_REGISTER_START and BOOT_REGISTER_END will be used once at the end of
++     * every subclass file. They embrace the BootRegister() function calls that
++     * register the templates.
++     */
++    class Object {
++
++    public:
++        enum ObjectType { 
++            OTHER,
++            STONE,
++            FLOOR,
++            ITEM,
++            ACTOR
++        };
++            
++        Object();
++        Object(const char *kind);
++        Object(const Object &amp;src_obj); 
++        virtual ~Object();
++
++        static Object * getObject(int id);
++        int getId() const;
++        
++        /* ---------- Attributes ---------- */
++
++        typedef ecl::AssocList&lt;std::string, Value&gt; AttribMap;
++
++        bool is_kind(const char *kind) const;
++        bool is_kind(const string&amp; kind) const;
++
++        const AttribMap &amp;get_attribs() const { return attribs; }
++        
++        /**
++         * Get an attribute or a special given default value. This method
++         * gets attributes like the simple argumented getAttr method but
++         * returns the given default value instead of a DEFAULT value if
++         * no explicit attribute exists.
++         */
++        Value getDefaultedAttr(const string &amp;key, Value defaultValue) const;
++
++
++        /* ---------- Helper routines ---------- */
++
++        void send_impulse(const GridPos&amp; dest, Direction dir);
++        void send_impulse(const GridPos&amp; dest, Direction dir, double delay);
++
++        /* ---------- Object interface ---------- */
++
++        virtual const char *get_kind() const;
++
++        /**
++         * 
++         */
++        virtual Value message(const Message &amp;m);
++        
++        virtual void set_attrib(const string&amp; key, const Value &amp;val);
++        
++        /**
++         * Get an attribute that has been set or that stands as a proxy for a
++         * trait or ivar. Object itself will just return attribute values
++         * that are stored in its attribute map. For not existing attributes
++         * a value of type DEFAULT is returned.
++         * 
++         * Subclasses may override this method to supply values of traits or
++         * ivars. This way levels can gain read access to attributes that can
++         * not to be stored in the attribute map due to performance reasons.
++         */
++        virtual Value getAttr(const string &amp;key) const;
++        
++        /**
++         * Get the attribute, traits, ivar or default value for a given key.
++         * This is the main access method for object values that returns
++         * the best available value known for a key. It resolves attributes,
++         * uses proxy values for ivars and traits, uses class defaults,
++         * world defaults or system defaults.
++         * 
++         * This is a template method. Subclass have to override the method
++         * &lt;code&gt;getDefaultValue()&lt;/code&gt; to supply proper class defaults.
++         * All other defaults are resolved by this method
++         */
++        Value getValue(const string &amp;key) const;
++
++        virtual Object *clone()=0;
++        virtual void dispose()=0;
++
++        virtual void on_levelinit();
++
++        virtual void warning(const char *format, ...) const;
++        virtual ObjectType getObjectType() const;
++
++    protected:
++        virtual Value getDefaultValue(const string &amp;key) const;
++        /** This function is used by all triggers, switches etc. that
++         * perform some particular action when activated (like opening
++         * doors or switching lasers on and off). It interprets the
++         * &quot;action&quot; and &quot;target&quot; attributes of `o'. 
++         */
++        void performAction(const Value&amp; val);
++    private:
++        friend void InitWorld();   // for bootFinished() access
++        
++        static int next_id;
++        static std::map&lt;int, Object *&gt; objects;
++        int id;
++        AttribMap attribs;
++        static int getNextId(Object *obj, bool bootFinished);
++        static void bootFinished();
++        static void freeId(int id);
++        const Value* get_attrib(const string&amp; key) const;
++    };
++
++
++} // namespace enigma
++
++
++#define BOOT_REGISTER_START        \
++        namespace {                \
++            bool do_boot_register() {
++
++#define BOOT_REGISTER_END          \
++                return true;       \
++            }                      \
++            static bool boot_registered = do_boot_register(); \
++        } 
++
++#define CLONEOBJ(TYPE)                                  \
++        TYPE* clone() { return new TYPE(*this); }       \
++        void dispose() { delete this; }
++
++#define CLONEACTOR(TYPE)                                                \
++        TYPE* clone() { TYPE *o=new TYPE(*this); o-&gt;init(); return o; } \
++        void dispose() { delete this; }
++
++#define INSTANCELISTOBJ(TYPE)                                                   \
++        typedef std::vector&lt;TYPE*&gt; InstanceList;                                \
++        static InstanceList instances;                                          \
++        TYPE *clone() { TYPE *o = new TYPE(*this); instances.push_back(o); return o;}  \
++        void dispose() {                                                        \
++            instances.erase(find(instances.begin(), instances.end(), this));    \
++            delete this;                                                        \
++        }
++
++#endif
+
+
+Property changes on: trunk/src/Object.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/Value.cc
+===================================================================
+--- trunk/src/Value.cc	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/Value.cc	2007-12-28 20:48:38 UTC (rev 956)
+@@ -0,0 +1,434 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;Value.hh&quot;
++
++#include &quot;errors.hh&quot;
++#include &quot;enigma.hh&quot;
++#include &quot;ecl.hh&quot;
++#include &quot;main.hh&quot;
++#include &quot;Object.hh&quot;
++#include &quot;world.hh&quot;
++
++#include &lt;set&gt;
++#include &lt;vector&gt;
++
++using namespace std;
++using namespace ecl;
++
++namespace enigma {
++    
++/* -------------------- Value implementation -------------------- */
++
++    Value::Value() : type (NIL) {
++    }
++    
++    Value::Value(const char* str) : type (STRING) {
++        val.str = new char[strlen(str)+1];
++        strcpy(val.str, str);
++    }
++    
++    Value::Value(double d) : type (DOUBLE) {
++         val.dval[0] = d;
++    }
++    
++    Value::Value(int i) : type (DOUBLE) {
++         val.dval[0] = i;
++    }
++    
++    Value::Value(bool b) : type (BOOL) {
++         val.dval[0] = b;
++    }
++    
++    Value::Value(Object *obj) : type (OBJECT) {
++         if (obj != NULL)
++             val.dval[0] = obj-&gt;getId();
++         else
++             val.dval[0] = 0;
++    }
++    
++    Value::Value(ObjectList aList) : type (GROUP) {
++        std::string descriptor;
++        ObjectList::iterator it;
++        for (it = aList.begin(); it != aList.end(); ++it) {
++            if (*it == NULL)
++                descriptor.append(&quot;#0,&quot;);
++            else {
++                Value v = (*it)-&gt;getAttr(&quot;name&quot;);
++                if (v &amp;&amp; v.type == STRING &amp;&amp; strcmp(v.val.str, &quot;&quot;) != 0) {
++                    descriptor.append(v);
++                    descriptor.append(&quot;,&quot;);
++                } else {
++                    descriptor.append(ecl::strf(&quot;#%d,&quot;, (*it)-&gt;getId()));
++                }   
++            }
++        }
++        val.str =  new char[descriptor.size() + 1];
++        strcpy(val.str, descriptor.c_str());
++    //    Log &lt;&lt; &quot;Value ObjectList '&quot; &lt;&lt; descriptor &lt;&lt; &quot;'\n&quot;;
++    }
++    
++    Value::Value(TokenList aList) : type (TOKENS) {
++        std::string descriptor;
++        TokenList::iterator it;
++        for (it = aList.begin(); it != aList.end(); ++it) {
++            switch ((*it).type) {
++                case STRING :
++                    ASSERT((*it).val.str[0] != 0, XLevelRuntime, &quot;TokenList: illegal empty string value&quot;);                
++                    descriptor.append((*it).val.str);
++                    break;
++                case OBJECT :
++                    descriptor.append(ecl::strf(&quot;#%d&quot;, (int)((*it).val.dval[0])));
++                    break;
++                case GROUP :
++                    descriptor.append(&quot;%&quot;);
++                    descriptor.append((*it).val.str);
++                    break;
++                default :
++                    ASSERT(false, XLevelRuntime, &quot;TokenList: illegal value type&quot;);
++                    break;
++            }
++            descriptor.append(&quot;;&quot;);
++        }
++        val.str =  new char[descriptor.size() + 1];
++        strcpy(val.str, descriptor.c_str());
++     
++    //    Log &lt;&lt; &quot;Value TokenList '&quot; &lt;&lt; descriptor &lt;&lt; &quot;'\n&quot;;
++    }
++    
++    Value::Value(ecl::V2 pos) : type (POSITION) {
++         val.dval[0] = pos[0];
++         val.dval[1] = pos[1];
++    }
++    
++    Value::Value(GridPos gpos) : type (POSITION) {
++         val.dval[0] = gpos.x;
++         val.dval[1] = gpos.y;
++    }
++    
++    Value::Value(Type t) : type (t) {
++        switch (t) {
++            case POSITION :
++                val.dval[1] = 0;
++                // fall thorough
++            case DOUBLE :
++                val.dval[0] = 0;
++                break;
++            case STRING :
++            case GROUP :
++            case TOKENS :
++                val.str = new char[1];
++                val.str[0] = 0;
++                break;
++            case BOOL :
++                val.dval[0] = false;
++                break;
++            case OBJECT :
++                val.dval[0] = (double) NULL;
++                break;
++        }
++    }
++    
++    Value::~Value() { 
++        clear(); 
++    }
++    
++    
++    Value::Value(const string&amp; str) : type(STRING) {
++        val.str = new char[str.length()+1];
++        strcpy(val.str, str.c_str());
++    }
++    
++    Value::Value (const Value&amp; other) : type(NIL) {
++        this-&gt;operator=(other);
++    }
++    
++    Value&amp; Value::operator= (const Value&amp; other) {
++        if (this != &amp;other) {
++            switch (other.type) {
++                case STRING:
++                    assign(other.val.str);
++                    break;
++                case GROUP:
++                    assign(other.val.str);
++                    type = GROUP;
++                    break;
++                default:
++                    clear();
++                    type = other.type;
++                    val = other.val;
++            }
++        }
++        return *this;
++    }
++    
++    bool Value::operator==(const Value&amp; other) const {
++        if (type != other.type)
++            return false;
++        else
++            switch (type) {
++                case DOUBLE :
++                case BOOL :
++                case OBJECT :
++                    return val.dval[0] == other.val.dval[0];
++                case STRING :
++                case GROUP :
++                case TOKENS :
++                    return strcmp(val.str, other.val.str) == 0;
++                case POSITION :
++                    return (val.dval[0] == other.val.dval[0]) &amp;&amp; (val.dval[1] == other.val.dval[1]);
++            }
++        return true;
++    }
++    
++    bool Value::operator!=(const Value&amp; other) const {
++        return ! (*this == other);
++    }
++    
++    bool Value::operator==(int i) const {
++        return (int) *this == i;
++    }
++    
++    bool Value::operator!=(int i) const {
++        return (int) *this != i;
++    }
++    
++    Value::operator bool() const {
++        if (isDefault())
++            return false;
++        else
++            return true;
++    }
++    
++    Value::operator double() const {
++        switch (type) {
++            case DOUBLE: 
++                return val.dval[0];
++            case BOOL: 
++                return (val.dval[0] != 0) ? 1 : 0;
++            case STRING:
++                return atof(val.str);  // TODO use strtod and eval remaining part of string
++            default:
++                return 0.0;
++        }
++    }
++    
++    Value::operator int() const {
++        switch (type) {
++            case DOUBLE:
++                return round_nearest&lt;int&gt;(val.dval[0]);
++            case BOOL: 
++                return (val.dval[0] != 0) ? 1 : 0;
++            case STRING: 
++                return atoi(val.str);  //TODO use strtol and eval remaining part of string
++            default: return 0;
++        }
++    }
++    
++    Value::operator Object *() const {
++        switch (type) {
++            case OBJECT:
++                return Object::getObject(round_nearest&lt;int&gt;(val.dval[0]));
++            case STRING:
++                return GetNamedObject(val.str);            
++            default: 
++                return NULL;
++        }
++    }
++    
++    Value::operator ObjectList() const {
++        ObjectList result;
++        switch (type) {
++            case STRING:
++                if (std::string(val.str).find_first_of(&quot;*?&quot;) != std::string::npos) {
++                    // wildcards in object name - we need to add all objects
++                    result = GetNamedGroup(val.str);
++                    break;
++                }
++                // else it is a single object name - fall through
++            case OBJECT:
++                result.push_back(*this);
++                break;
++            case GROUP:
++                std::vector&lt;std::string&gt; vs;
++                ecl::split_copy(std::string(val.str), ',', back_inserter(vs));
++                for (std::vector&lt;std::string&gt;::iterator it = vs.begin(); it != vs.end(); ++it) {
++                    if (it-&gt;size() &gt; 0) {
++                        if ((*it)[0] == '#') {
++                            result.push_back(Object::getObject(atoi((*it).c_str() + 1)));
++                        } else {
++                            result.push_back(GetNamedObject(*it));
++                        }
++                    }
++                }
++                break;
++        }
++        return result;
++    }
++    
++    Value::operator TokenList() const {
++        TokenList result;
++        switch (type) {
++            case OBJECT:
++            case STRING:
++            case GROUP:
++                result.push_back(*this);
++                break;
++            case TOKENS:
++                std::vector&lt;std::string&gt; vs;
++                ecl::split_copy(std::string(val.str), ';', back_inserter(vs));
++                for (std::vector&lt;std::string&gt;::iterator it = vs.begin(); it != vs.end(); ++it) {
++                    if (it-&gt;size() &gt; 0) {
++                        if ((*it)[0] == '#') {
++                            // an object id
++                            Value v(OBJECT);
++                            v.val.dval[0] = atoi((*it).c_str() + 1);
++                            result.push_back(v);
++                        } else if ((*it)[0] == '%'){
++                            // a group
++                            Value v(NIL);
++                            v.assign((*it).c_str() + 1);
++                            v.type = GROUP;
++                            result.push_back(v);
++                        } else {
++                            // a string
++                            result.push_back(Value(*it));
++                        }
++                    }
++                }
++                break;
++        }
++        return result;
++    }
++    
++    Value::operator ecl::V2() const {
++        switch (type) {
++            case POSITION: {
++                return ecl::V2(val.dval[0], val.dval[1]);
++            }
++            default:
++                return ecl::V2(0, 0);
++        }
++    }
++    
++    Value::operator GridPos() const {
++        switch (type) {
++            case POSITION:
++                return GridPos(round_down&lt;int&gt;(val.dval[0]), round_down&lt;int&gt;(val.dval[1]));
++            default:
++                return GridPos(0, 0);
++        }
++    }
++    
++    Value::operator const char*() const {
++        static std::string s;
++        switch (type) {
++            case Value::DOUBLE:
++                s = ecl::strf(&quot;%g&quot;, val.dval[0]);  // need drop of trailing zeros and point for int
++                return s.c_str();
++            case Value::STRING: 
++                return val.str;
++            case Value::NIL:
++            case Value::DEFAULT:
++            default: 
++                s.clear();
++                return s.c_str();
++        }
++    }
++    
++    void Value::assign(const char* s) {
++        clear();
++        type = STRING;
++        val.str = new char[strlen(s)+1];
++        strcpy(val.str, s);
++    }
++    
++    void Value::assign(double d) { 
++        clear(); type=DOUBLE; val.dval[0]=d; 
++    }
++    
++    void Value::clear() {
++        switch (type) {
++            case STRING:
++            case GROUP:
++               delete[] val.str;
++               break;
++        }
++        type = NIL;
++    }
++    
++    Value::Type Value::getType() const {
++        return type;
++    }
++    
++    double Value::get_double() const throw(){
++        ASSERT(type == DOUBLE, XLevelRuntime, &quot;get_double: type not double&quot;);
++        return val.dval[0];
++    }
++    
++    const char* Value::get_string() const throw() {
++        ASSERT(type == STRING, XLevelRuntime, &quot;get_string: type not string&quot;);
++        return val.str;
++    }
++    
++    bool Value::isDefault() const {
++        return type == DEFAULT;
++    }
++    
++    std::string Value::to_string() const{
++        return std::string(*this);
++    }
++    
++    bool Value::to_bool() const {
++        switch (type) {
++            case BOOL :
++            case DOUBLE :
++                return val.dval[0] != 0;
++            case NIL :
++            case DEFAULT :
++                return false;
++            default :
++                return true;
++        }
++    }
++    
++    
++    int to_int(const Value &amp;v) {
++        return v;
++    }
++    
++    bool to_bool(const Value &amp;v) {
++        return v.to_bool();
++    }
++    
++    double to_double(const Value &amp;v) {
++        return v;
++    }
++    
++    std::string to_string(const Value &amp;v) {
++        return v.to_string();
++    }
++    
++    Direction to_direction (const Value &amp;v) {
++        int val = Clamp(to_int(v), 0, 3);
++        return static_cast&lt;Direction&gt;(val);
++    }
++    
++} // namespace enigma
+
+
+Property changes on: trunk/src/Value.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/Value.hh
+===================================================================
+--- trunk/src/Value.hh	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/Value.hh	2007-12-28 20:48:38 UTC (rev 956)
+@@ -0,0 +1,253 @@
++/*
++ * Copyright (C) 2002,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef VALUE_HH
++#define VALUE_HH
++
++/*
++ * This file contains declarations for facilities used by several
++ * different parts of the program, like common types and constants,
++ * and routines for resource management.
++ */
++
++#include &quot;enigma.hh&quot;
++
++namespace enigma { 
++
++    class Object;
++    class Value;
++   
++    typedef std::list&lt;Object *&gt; ObjectList;
++    typedef std::list&lt;Value&gt; TokenList;
++
++    /**
++     * A flexible container for various types of data. This class is one
++     * of the central Enigma concepts. It is used for Object attributes,
++     * for passing arguments and return values in messages and for exchanging
++     * values with LUA code.
++     * 
++     * Object attributes besides the common floor, item, stone, actor traits
++     * are usually very specific and only few objects will be aware of
++     * them. The Value provides a common container, that allows all objects
++     * and the world to pass these attributes without any further knowledge.
++     * 
++     * Instances of Value can be passed to and from the type free LUA language.
++     * Objects can be configured in their attributes and questioned about states
++     * via attributes.
++     * 
++     * Value are converted to required types as far as possible and in a
++     * LUA compatible manner.
++     * 
++     * Bool Values can not be assigned directly to a bool variable. Use the
++     * to_bool() method for retrieving proper bool values.
++     * 
++     * A special Value type called &quot;DEFAULT&quot; exists within the C++ engine. It
++     * describes a not explicitly set Value. The receiver of this Value should use
++     * or request the default behaviour. &quot;DEFAULT&quot; Values are the only Values
++     * that are converted to bool &quot;false&quot;. All other Values convert to bool 
++     * &quot;true&quot;. Thus a value can be checked for existance by evaluating it as a
++     * bool. This remains true even for Values that contain bool content! A
++     * common pattern for handling Values is:
++     * 
++     * &lt;pre&gt;
++     * if (Value v = getAttr(&quot;key&quot;)) {   // proceed only if attribute exists
++     *     int i = v;                    // assign value to an int
++     *     std::string s(v);             // create a string out of a value
++     *     x = (double)v * 2;            // cast v to a desired type
++     *     double d = getAttr(&quot;x&quot;, 2);   // get a value with a default of 2.0
++     * }
++     * &lt;/pre&gt;
++     */
++    class Value {
++    public:
++        /**
++         * Specifier for the current type of the value content.
++         */
++        enum Type { 
++            DEFAULT,  ///&lt; Pseudotype for a not existing attribute that should
++                      ///&lt; cause the default behaviour of the object
++            NIL,      ///&lt; Value that is equivalent to Lua &quot;nil&quot;. It represents
++                      ///&lt; an invalid value
++            BOOL,     ///&lt; Value that represents bool values &quot;true&quot; and &quot;false&quot;.
++            DOUBLE,   ///&lt; Value is numerical and can take a &quot;double&quot;. It is used
++                      ///&lt; for other numericals values like &quot;int&quot;, too.
++            STRING,   ///&lt; Value is a string. Such a string may encode another
++                      ///&lt; type that has no native representation in Value
++            OBJECT,   ///&lt; Value is an object id. The id is a persistent object
++                      ///&lt; identifier.
++            GROUP,    ///&lt; Value is a group of objects.
++            POSITION, ///&lt; Value is a position
++            TOKENS    ///&lt; Value is a list of token values
++        };
++
++        Value();                       ///&lt; Constructor for NIL value that 
++                                       ///&lt; represents an invalid value
++        Value(double d);               ///&lt; Constructor for DOUBLE value
++        Value(const char* str);        ///&lt; Constructor for STRING value. The
++                                       ///&lt; given string is duplicated
++        Value(const std::string&amp; str); ///&lt; Constructor for STRING value. The
++                                       ///&lt; given string is duplicated
++        Value(int i);                  ///&lt; Constructor for DOUBLE value
++        Value(bool b);                 ///&lt; Constructor for BOOL value
++        Value(Object *obj);            ///&lt; Constructor for OBJECT value that properly
++                                       ///&lt; represents a persistent reference to an object
++        Value(ObjectList aList);       ///&lt; Constructor for OBJECT value that properly
++                                       ///&lt; represents a set of objects
++        Value(TokenList aList);        ///&lt; Constructor for TOKENS value that properly
++                                       ///&lt; represents a list of tokens
++        Value(ecl::V2 pos);            ///&lt; Constructor for POSITION value
++        Value(GridPos gpos);           ///&lt; Constructor for POSITION value
++        Value(Type t);                 ///&lt; Constructor for a given type. The
++                                       ///&lt; value defaults to 0.0 or &quot;&quot;
++        ~Value();
++
++        Value(const Value&amp; v);                 ///&lt; Explicit copy constructor that
++                                               ///&lt; performs a deep copy
++        Value&amp; operator=(const Value&amp; v);      ///&lt; Explicit copy assignment that
++                                               ///&lt; performs a deep copy
++        /**
++         * Compare values in type and value. This compare is a LUA like
++         * compare of values. Note that a DOUBLE value of 1.0 does not equal
++         * a STRING value of &quot;1.0&quot; even though both values are seamless casted
++         * to the same double and result in the same numerical calculation results.
++         * 
++         * If you want to compare two values that express numerical data independent
++         * of their value type use the pattern:
++         * &lt;pre&gt;
++         *     (double) value1 == (double) value2
++         * &lt;/pre&gt;
++         */
++        bool operator==(const Value&amp; v) const;
++        bool operator!=(const Value&amp; v) const; ///&lt; Compare values in type and value
++        bool operator==(int i) const;          ///&lt; Compare value with int without casting.
++                                               ///&lt; f.e &lt;code&gt;if (v == 2)&lt;/code&gt;
++        bool operator!=(int i) const;          ///&lt; Compare value with int without casting
++        
++        /**
++         * Test of a value for explicit existence besides a default.
++         * This conversion returns &quot;false&quot; if the value is of type DEFAULT.
++         * This happens when a &quot;getAttr()&quot; call did not find a concrete value.
++         * All other value types that represent explicit given values return &quot;true&quot;.
++         * The main usage is the common pattern &lt;code&gt;if (Value v = getAttr(&quot;key&quot;))&lt;/code&gt;.
++         * 
++         * Note: this conversion does not return the result of a boolean stored
++         * in the value. If a concrete value contains a boolean this test
++         * returns always &quot;true&quot;, even if the boolean is &quot;false&quot; and the value
++         * is of type NIL.
++         */
++        operator bool() const;
++        
++        /**
++         * Conversion of a value to a double. String values are interpreted as
++         * a double like it is done by LUA. All other values default to a double
++         * value of 0.0.
++         */
++        operator double() const;
++         
++        /**
++         * Conversion of a value to a int. String values are interpreted as
++         * a int like it is done by LUA. All other values default to a int
++         * value of 0.
++         */
++        operator int() const;
++        
++        /**
++         * Conversion of a value to an object reference. All values besides valid
++         * object values default to a NULL reference.
++         */
++        operator Object *() const;
++        
++        /**
++         * Conversion of a value to an object set.
++         */
++        operator ObjectList() const;
++        
++        /**
++         * Conversion of a value to a list of tokens.
++         */
++        operator TokenList() const;
++        
++        /**
++         * Conversion of a value to a position vector.
++         */
++        operator ecl::V2() const;
++        
++        /**
++         * Conversion of a value to a grid position.
++         */
++        operator GridPos() const;
++        
++        /**
++         * Conversion of a value to a &lt;code&gt;char *&lt;/code&gt; just for initialization
++         * of a std::string. Numerical values are converted to a string like it
++         * id done by LUA. All other values default to an empty string.
++         * 
++         * Note that the returned pointer may be volatile and
++         * cannot be used for any further usage besides immediate initialization of
++         * a string object. For all other purposes use the &lt;code&gt;to_string()&lt;/code&gt; method to
++         * receive a non-volatile copy of the string.
++         */
++        operator const char*() const;
++
++        void assign(double d);       ///&lt; Reset value to a DOUBLE
++        void assign(const char* s);  ///&lt; Reset value to a STRING with a copy of
++                                     ///&lt; the given string
++
++        Type    getType() const;               ///&lt; Returns the current value type
++        double  get_double() const throw();     ///&lt; Returns the current double value without
++                                                ///&lt; any conversion if it is a DOUBLE.
++                                                ///&lt; On type mismatch a XLevelRuntime is thrown
++        const char* get_string() const throw(); ///&lt; Returns the current string value without
++                                                ///&lt; any conversion if it is a STRING.
++                                                ///&lt; On type mismatch a XLevelRuntime is thrown
++        bool isDefault() const;                 ///&lt; Returns true if type is DEFAULT
++        
++        /**
++         * Returns a std::string with convertion of numerical values. All other
++         * values default to an empty string.
++         */
++        std::string to_string() const;
++        
++        /**
++         * Returns the LUA compatible boolean representation of the value.
++         * &lt;code&gt;false&lt;/code&gt; is returned for a NIL value and &lt;code&gt;true&lt;/code&gt;
++         * for any other value.
++         */
++        bool to_bool() const;
++    private:
++        void clear();      ///&lt; Release resources and assign type NIL
++
++        // Variables
++        Type type;
++        union {
++            double dval[2];
++            char* str;
++        } val;
++    };
++
++
++    bool        to_bool(const Value &amp;v);        ///&lt; Synonym for v.to_bool()
++    int         to_int(const Value &amp;v);         ///&lt; Synonym for (int)v
++    double      to_double(const Value &amp;v);      ///&lt; Synonym for (double)v
++    std::string to_string(const Value &amp;v);      ///&lt; Synonym for v.to_string()
++    Direction   to_direction (const Value &amp;v);  ///&lt; Casting of value to Direction
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/Value.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/WorldProxy.hh
+===================================================================
+--- trunk/src/WorldProxy.hh	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/WorldProxy.hh	2007-12-28 20:48:38 UTC (rev 956)
+@@ -19,7 +19,7 @@
+ #ifndef WORLDPROXY_HH_INCLUDED
+ #define WORLDPROXY_HH_INCLUDED
+ 
+-#include &quot;objects.hh&quot;
++#include &quot;Object.hh&quot;
+ 
+ namespace enigma {
+ 
+
+Modified: trunk/src/actors.hh
+===================================================================
+--- trunk/src/actors.hh	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/actors.hh	2007-12-28 20:48:38 UTC (rev 956)
+@@ -19,7 +19,7 @@
+ #ifndef ACTORS_HH_INCLUDED
+ #define ACTORS_HH_INCLUDED
+ 
+-#include &quot;objects.hh&quot;
++#include &quot;Object.hh&quot;
+ 
+ namespace enigma {
+ 
+
+Modified: trunk/src/enigma.cc
+===================================================================
+--- trunk/src/enigma.cc	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/enigma.cc	2007-12-28 20:48:38 UTC (rev 956)
+@@ -22,7 +22,7 @@
+ #include &quot;enigma.hh&quot;
+ #include &quot;ecl.hh&quot;
+ #include &quot;main.hh&quot;
+-#include &quot;objects.hh&quot;
++#include &quot;Object.hh&quot;
+ #include &quot;server.hh&quot;
+ #include &quot;world.hh&quot;
+ 
+@@ -125,402 +125,6 @@
+ }
+ 
+ 
+-/* -------------------- Value implementation -------------------- */
+-
+-Value::Value() : type (NIL) {
+-}
+-
+-Value::Value(const char* str) : type (STRING) {
+-    val.str = new char[strlen(str)+1];
+-    strcpy(val.str, str);
+-}
+-
+-Value::Value(double d) : type (DOUBLE) {
+-     val.dval[0] = d;
+-}
+-
+-Value::Value(int i) : type (DOUBLE) {
+-     val.dval[0] = i;
+-}
+-
+-Value::Value(bool b) : type (BOOL) {
+-     val.dval[0] = b;
+-}
+-
+-Value::Value(Object *obj) : type (OBJECT) {
+-     if (obj != NULL)
+-         val.dval[0] = obj-&gt;getId();
+-     else
+-         val.dval[0] = 0;
+-}
+-
+-Value::Value(ObjectList aList) : type (GROUP) {
+-    std::string descriptor;
+-    ObjectList::iterator it;
+-    for (it = aList.begin(); it != aList.end(); ++it) {
+-        if (*it == NULL)
+-            descriptor.append(&quot;#0,&quot;);
+-        else {
+-            Value v = (*it)-&gt;getAttr(&quot;name&quot;);
+-            if (v &amp;&amp; v.type == STRING &amp;&amp; strcmp(v.val.str, &quot;&quot;) != 0) {
+-                descriptor.append(v);
+-                descriptor.append(&quot;,&quot;);
+-            } else {
+-                descriptor.append(ecl::strf(&quot;#%d,&quot;, (*it)-&gt;getId()));
+-            }   
+-        }
+-    }
+-    val.str =  new char[descriptor.size() + 1];
+-    strcpy(val.str, descriptor.c_str());
+-//    Log &lt;&lt; &quot;Value ObjectList '&quot; &lt;&lt; descriptor &lt;&lt; &quot;'\n&quot;;
+-}
+-
+-Value::Value(TokenList aList) : type (TOKENS) {
+-    std::string descriptor;
+-    TokenList::iterator it;
+-    for (it = aList.begin(); it != aList.end(); ++it) {
+-        switch ((*it).type) {
+-            case STRING :
+-                ASSERT((*it).val.str[0] != 0, XLevelRuntime, &quot;TokenList: illegal empty string value&quot;);                
+-                descriptor.append((*it).val.str);
+-                break;
+-            case OBJECT :
+-                descriptor.append(ecl::strf(&quot;#%d&quot;, (int)((*it).val.dval[0])));
+-                break;
+-            case GROUP :
+-                descriptor.append(&quot;%&quot;);
+-                descriptor.append((*it).val.str);
+-                break;
+-            default :
+-                ASSERT(false, XLevelRuntime, &quot;TokenList: illegal value type&quot;);
+-                break;
+-        }
+-        descriptor.append(&quot;;&quot;);
+-    }
+-    val.str =  new char[descriptor.size() + 1];
+-    strcpy(val.str, descriptor.c_str());
+- 
+-//    Log &lt;&lt; &quot;Value TokenList '&quot; &lt;&lt; descriptor &lt;&lt; &quot;'\n&quot;;
+-}
+-
+-Value::Value(ecl::V2 pos) : type (POSITION) {
+-     val.dval[0] = pos[0];
+-     val.dval[1] = pos[1];
+-}
+-
+-Value::Value(GridPos gpos) : type (POSITION) {
+-     val.dval[0] = gpos.x;
+-     val.dval[1] = gpos.y;
+-}
+-
+-Value::Value(Type t) : type (t) {
+-    switch (t) {
+-        case POSITION :
+-            val.dval[1] = 0;
+-            // fall thorough
+-        case DOUBLE :
+-            val.dval[0] = 0;
+-            break;
+-        case STRING :
+-        case GROUP :
+-        case TOKENS :
+-            val.str = new char[1];
+-            val.str[0] = 0;
+-            break;
+-        case BOOL :
+-            val.dval[0] = false;
+-            break;
+-        case OBJECT :
+-            val.dval[0] = (double) NULL;
+-            break;
+-    }
+-}
+-
+-Value::~Value() { 
+-    clear(); 
+-}
+-
+-
+-Value::Value(const string&amp; str) : type(STRING) {
+-    val.str = new char[str.length()+1];
+-    strcpy(val.str, str.c_str());
+-}
+-
+-Value::Value (const Value&amp; other) : type(NIL) {
+-    this-&gt;operator=(other);
+-}
+-
+-Value&amp; Value::operator= (const Value&amp; other) {
+-    if (this != &amp;other) {
+-        switch (other.type) {
+-            case STRING:
+-                assign(other.val.str);
+-                break;
+-            case GROUP:
+-                assign(other.val.str);
+-                type = GROUP;
+-                break;
+-            default:
+-                clear();
+-                type = other.type;
+-                val = other.val;
+-        }
+-    }
+-    return *this;
+-}
+-
+-bool Value::operator==(const Value&amp; other) const {
+-    if (type != other.type)
+-        return false;
+-    else
+-        switch (type) {
+-            case DOUBLE :
+-            case BOOL :
+-            case OBJECT :
+-                return val.dval[0] == other.val.dval[0];
+-            case STRING :
+-            case GROUP :
+-            case TOKENS :
+-                return strcmp(val.str, other.val.str) == 0;
+-            case POSITION :
+-                return (val.dval[0] == other.val.dval[0]) &amp;&amp; (val.dval[1] == other.val.dval[1]);
+-        }
+-    return true;
+-}
+-
+-bool Value::operator!=(const Value&amp; other) const {
+-    return ! (*this == other);
+-}
+-
+-bool Value::operator==(int i) const {
+-    return (int) *this == i;
+-}
+-
+-bool Value::operator!=(int i) const {
+-    return (int) *this != i;
+-}
+-
+-Value::operator bool() const {
+-    if (isDefault())
+-        return false;
+-    else
+-        return true;
+-}
+-
+-Value::operator double() const {
+-    switch (type) {
+-        case DOUBLE: 
+-            return val.dval[0];
+-        case BOOL: 
+-            return (val.dval[0] != 0) ? 1 : 0;
+-        case STRING:
+-            return atof(val.str);  // TODO use strtod and eval remaining part of string
+-        default:
+-            return 0.0;
+-    }
+-}
+-
+-Value::operator int() const {
+-    switch (type) {
+-        case DOUBLE:
+-            return round_nearest&lt;int&gt;(val.dval[0]);
+-        case BOOL: 
+-            return (val.dval[0] != 0) ? 1 : 0;
+-        case STRING: 
+-            return atoi(val.str);  //TODO use strtol and eval remaining part of string
+-        default: return 0;
+-    }
+-}
+-
+-Value::operator Object *() const {
+-    switch (type) {
+-        case OBJECT:
+-            return Object::getObject(round_nearest&lt;int&gt;(val.dval[0]));
+-        case STRING:
+-            return GetNamedObject(val.str);            
+-        default: 
+-            return NULL;
+-    }
+-}
+-
+-Value::operator ObjectList() const {
+-    ObjectList result;
+-    switch (type) {
+-        case STRING:
+-            if (std::string(val.str).find_first_of(&quot;*?&quot;) != std::string::npos) {
+-                // wildcards in object name - we need to add all objects
+-                result = GetNamedGroup(val.str);
+-                break;
+-            }
+-            // else it is a single object name - fall through
+-        case OBJECT:
+-            result.push_back(*this);
+-            break;
+-        case GROUP:
+-            std::vector&lt;std::string&gt; vs;
+-            ecl::split_copy(std::string(val.str), ',', back_inserter(vs));
+-            for (std::vector&lt;std::string&gt;::iterator it = vs.begin(); it != vs.end(); ++it) {
+-                if (it-&gt;size() &gt; 0) {
+-                    if ((*it)[0] == '#') {
+-                        result.push_back(Object::getObject(atoi((*it).c_str() + 1)));
+-                    } else {
+-                        result.push_back(GetNamedObject(*it));
+-                    }
+-                }
+-            }
+-            break;
+-    }
+-    return result;
+-}
+-
+-Value::operator TokenList() const {
+-    TokenList result;
+-    switch (type) {
+-        case OBJECT:
+-        case STRING:
+-        case GROUP:
+-            result.push_back(*this);
+-            break;
+-        case TOKENS:
+-            std::vector&lt;std::string&gt; vs;
+-            ecl::split_copy(std::string(val.str), ';', back_inserter(vs));
+-            for (std::vector&lt;std::string&gt;::iterator it = vs.begin(); it != vs.end(); ++it) {
+-                if (it-&gt;size() &gt; 0) {
+-                    if ((*it)[0] == '#') {
+-                        // an object id
+-                        Value v(OBJECT);
+-                        v.val.dval[0] = atoi((*it).c_str() + 1);
+-                        result.push_back(v);
+-                    } else if ((*it)[0] == '%'){
+-                        // a group
+-                        Value v(NIL);
+-                        v.assign((*it).c_str() + 1);
+-                        v.type = GROUP;
+-                        result.push_back(v);
+-                    } else {
+-                        // a string
+-                        result.push_back(Value(*it));
+-                    }
+-                }
+-            }
+-            break;
+-    }
+-    return result;
+-}
+-
+-Value::operator ecl::V2() const {
+-    switch (type) {
+-        case POSITION: {
+-            return ecl::V2(val.dval[0], val.dval[1]);
+-        }
+-        default:
+-            return ecl::V2(0, 0);
+-    }
+-}
+-
+-Value::operator GridPos() const {
+-    switch (type) {
+-        case POSITION:
+-            return GridPos(round_down&lt;int&gt;(val.dval[0]), round_down&lt;int&gt;(val.dval[1]));
+-        default:
+-            return GridPos(0, 0);
+-    }
+-}
+-
+-Value::operator const char*() const {
+-    static std::string s;
+-    switch (type) {
+-        case Value::DOUBLE:
+-            s = ecl::strf(&quot;%g&quot;, val.dval[0]);  // need drop of trailing zeros and point for int
+-            return s.c_str();
+-        case Value::STRING: 
+-            return val.str;
+-        case Value::NIL:
+-        case Value::DEFAULT:
+-        default: 
+-            s.clear();
+-            return s.c_str();
+-    }
+-}
+-
+-void Value::assign(const char* s) {
+-    clear();
+-    type = STRING;
+-    val.str = new char[strlen(s)+1];
+-    strcpy(val.str, s);
+-}
+-
+-void Value::assign(double d) { 
+-    clear(); type=DOUBLE; val.dval[0]=d; 
+-}
+-
+-void Value::clear() {
+-    switch (type) {
+-        case STRING:
+-        case GROUP:
+-    	   delete[] val.str;
+-           break;
+-    }
+-    type = NIL;
+-}
+-
+-Value::Type Value::getType() const {
+-    return type;
+-}
+-
+-double Value::get_double() const throw(){
+-    ASSERT(type == DOUBLE, XLevelRuntime, &quot;get_double: type not double&quot;);
+-    return val.dval[0];
+-}
+-
+-const char* Value::get_string() const throw() {
+-    ASSERT(type == STRING, XLevelRuntime, &quot;get_string: type not string&quot;);
+-    return val.str;
+-}
+-
+-bool Value::isDefault() const {
+-    return type == DEFAULT;
+-}
+-
+-std::string Value::to_string() const{
+-    return std::string(*this);
+-}
+-
+-bool Value::to_bool() const {
+-    switch (type) {
+-        case BOOL :
+-        case DOUBLE :
+-            return val.dval[0] != 0;
+-        case NIL :
+-        case DEFAULT :
+-            return false;
+-        default :
+-            return true;
+-    }
+-}
+-
+-
+-int to_int(const Value &amp;v) {
+-    return v;
+-}
+-
+-bool to_bool(const Value &amp;v) {
+-    return v.to_bool();
+-}
+-
+-double to_double(const Value &amp;v) {
+-    return v;
+-}
+-
+-std::string to_string(const Value &amp;v) {
+-    return v.to_string();
+-}
+-
+-Direction to_direction (const Value &amp;v) {
+-    int val = Clamp(to_int(v), 0, 3);
+-    return static_cast&lt;Direction&gt;(val);
+-}
+-
+ /* -------------------- GridPos -------------------- */
+ 
+ GridPos::GridPos(const ecl::V2&amp; p) 
+
+Modified: trunk/src/enigma.hh
+===================================================================
+--- trunk/src/enigma.hh	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/enigma.hh	2007-12-28 20:48:38 UTC (rev 956)
+@@ -38,9 +38,6 @@
+ #define NUMENTRIES(array) (sizeof(array)/sizeof(*array))
+ 
+ namespace enigma { 
+-
+-    class Object;
+-    class Value;
+     
+ /* -------------------- Various types -------------------- */
+ 
+@@ -189,224 +186,6 @@
+       structures. */
+     bool to_gridloc (const char *str, GridLoc &amp;loc);
+ 
+-
+-/* -------------------- Value -------------------- */
+-
+-    typedef std::list&lt;Object *&gt; ObjectList;
+-    typedef std::list&lt;Value&gt; TokenList;
+-
+-    /**
+-     * A flexible container for various types of data. This class is one
+-     * of the central Enigma concepts. It is used for Object attributes,
+-     * for passing arguments and return values in messages and for exchanging
+-     * values with LUA code.
+-     * 
+-     * Object attributes besides the common floor, item, stone, actor traits
+-     * are usually very specific and only few objects will be aware of
+-     * them. The Value provides a common container, that allows all objects
+-     * and the world to pass these attributes without any further knowledge.
+-     * 
+-     * Instances of Value can be passed to and from the type free LUA language.
+-     * Objects can be configured in their attributes and questioned about states
+-     * via attributes.
+-     * 
+-     * Value are converted to required types as far as possible and in a
+-     * LUA compatible manner.
+-     * 
+-     * Bool Values can not be assigned directly to a bool variable. Use the
+-     * to_bool() method for retrieving proper bool values.
+-     * 
+-     * A special Value type called &quot;DEFAULT&quot; exists within the C++ engine. It
+-     * describes a not explicitly set Value. The receiver of this Value should use
+-     * or request the default behaviour. &quot;DEFAULT&quot; Values are the only Values
+-     * that are converted to bool &quot;false&quot;. All other Values convert to bool 
+-     * &quot;true&quot;. Thus a value can be checked for existance by evaluating it as a
+-     * bool. This remains true even for Values that contain bool content! A
+-     * common pattern for handling Values is:
+-     * 
+-     * &lt;pre&gt;
+-     * if (Value v = getAttr(&quot;key&quot;)) {   // proceed only if attribute exists
+-     *     int i = v;                    // assign value to an int
+-     *     std::string s(v);             // create a string out of a value
+-     *     x = (double)v * 2;            // cast v to a desired type
+-     *     double d = getAttr(&quot;x&quot;, 2);   // get a value with a default of 2.0
+-     * }
+-     * &lt;/pre&gt;
+-     */
+-    class Value {
+-    public:
+-        /**
+-         * Specifier for the current type of the value content.
+-         */
+-        enum Type { 
+-            DEFAULT,  ///&lt; Pseudotype for a not existing attribute that should
+-                      ///&lt; cause the default behaviour of the object
+-            NIL,      ///&lt; Value that is equivalent to Lua &quot;nil&quot;. It represents
+-                      ///&lt; an invalid value
+-            BOOL,     ///&lt; Value that represents bool values &quot;true&quot; and &quot;false&quot;.
+-            DOUBLE,   ///&lt; Value is numerical and can take a &quot;double&quot;. It is used
+-                      ///&lt; for other numericals values like &quot;int&quot;, too.
+-            STRING,   ///&lt; Value is a string. Such a string may encode another
+-                      ///&lt; type that has no native representation in Value
+-            OBJECT,   ///&lt; Value is an object id. The id is a persistent object
+-                      ///&lt; identifier.
+-            GROUP,    ///&lt; Value is a group of objects.
+-            POSITION, ///&lt; Value is a position
+-            TOKENS    ///&lt; Value is a list of token values
+-        };
+-
+-        Value();                       ///&lt; Constructor for NIL value that 
+-                                       ///&lt; represents an invalid value
+-        Value(double d);               ///&lt; Constructor for DOUBLE value
+-        Value(const char* str);        ///&lt; Constructor for STRING value. The
+-                                       ///&lt; given string is duplicated
+-        Value(const std::string&amp; str); ///&lt; Constructor for STRING value. The
+-                                       ///&lt; given string is duplicated
+-        Value(int i);                  ///&lt; Constructor for DOUBLE value
+-        Value(bool b);                 ///&lt; Constructor for BOOL value
+-        Value(Object *obj);            ///&lt; Constructor for OBJECT value that properly
+-                                       ///&lt; represents a persistent reference to an object
+-        Value(ObjectList aList);       ///&lt; Constructor for OBJECT value that properly
+-                                       ///&lt; represents a set of objects
+-        Value(TokenList aList);        ///&lt; Constructor for TOKENS value that properly
+-                                       ///&lt; represents a list of tokens
+-        Value(ecl::V2 pos);            ///&lt; Constructor for POSITION value
+-        Value(GridPos gpos);           ///&lt; Constructor for POSITION value
+-        Value(Type t);                 ///&lt; Constructor for a given type. The
+-                                       ///&lt; value defaults to 0.0 or &quot;&quot;
+-        ~Value();
+-
+-        Value(const Value&amp; v);                 ///&lt; Explicit copy constructor that
+-                                               ///&lt; performs a deep copy
+-        Value&amp; operator=(const Value&amp; v);      ///&lt; Explicit copy assignment that
+-                                               ///&lt; performs a deep copy
+-        /**
+-         * Compare values in type and value. This compare is a LUA like
+-         * compare of values. Note that a DOUBLE value of 1.0 does not equal
+-         * a STRING value of &quot;1.0&quot; even though both values are seamless casted
+-         * to the same double and result in the same numerical calculation results.
+-         * 
+-         * If you want to compare two values that express numerical data independent
+-         * of their value type use the pattern:
+-         * &lt;pre&gt;
+-         *     (double) value1 == (double) value2
+-         * &lt;/pre&gt;
+-         */
+-        bool operator==(const Value&amp; v) const;
+-        bool operator!=(const Value&amp; v) const; ///&lt; Compare values in type and value
+-        bool operator==(int i) const;          ///&lt; Compare value with int without casting.
+-                                               ///&lt; f.e &lt;code&gt;if (v == 2)&lt;/code&gt;
+-        bool operator!=(int i) const;          ///&lt; Compare value with int without casting
+-        
+-        /**
+-         * Test of a value for explicit existence besides a default.
+-         * This conversion returns &quot;false&quot; if the value is of type DEFAULT.
+-         * This happens when a &quot;getAttr()&quot; call did not find a concrete value.
+-         * All other value types that represent explicit given values return &quot;true&quot;.
+-         * The main usage is the common pattern &lt;code&gt;if (Value v = getAttr(&quot;key&quot;))&lt;/code&gt;.
+-         * 
+-         * Note: this conversion does not return the result of a boolean stored
+-         * in the value. If a concrete value contains a boolean this test
+-         * returns always &quot;true&quot;, even if the boolean is &quot;false&quot; and the value
+-         * is of type NIL.
+-         */
+-        operator bool() const;
+-        
+-        /**
+-         * Conversion of a value to a double. String values are interpreted as
+-         * a double like it is done by LUA. All other values default to a double
+-         * value of 0.0.
+-         */
+-        operator double() const;
+-         
+-        /**
+-         * Conversion of a value to a int. String values are interpreted as
+-         * a int like it is done by LUA. All other values default to a int
+-         * value of 0.
+-         */
+-        operator int() const;
+-        
+-        /**
+-         * Conversion of a value to an object reference. All values besides valid
+-         * object values default to a NULL reference.
+-         */
+-        operator Object *() const;
+-        
+-        /**
+-         * Conversion of a value to an object set.
+-         */
+-        operator ObjectList() const;
+-        
+-        /**
+-         * Conversion of a value to a list of tokens.
+-         */
+-        operator TokenList() const;
+-        
+-        /**
+-         * Conversion of a value to a position vector.
+-         */
+-        operator ecl::V2() const;
+-        
+-        /**
+-         * Conversion of a value to a grid position.
+-         */
+-        operator GridPos() const;
+-        
+-        /**
+-         * Conversion of a value to a &lt;code&gt;char *&lt;/code&gt; just for initialization
+-         * of a std::string. Numerical values are converted to a string like it
+-         * id done by LUA. All other values default to an empty string.
+-         * 
+-         * Note that the returned pointer may be volatile and
+-         * cannot be used for any further usage besides immediate initialization of
+-         * a string object. For all other purposes use the &lt;code&gt;to_string()&lt;/code&gt; method to
+-         * receive a non-volatile copy of the string.
+-         */
+-        operator const char*() const;
+-
+-        void assign(double d);       ///&lt; Reset value to a DOUBLE
+-        void assign(const char* s);  ///&lt; Reset value to a STRING with a copy of
+-                                     ///&lt; the given string
+-
+-        Type    getType() const;               ///&lt; Returns the current value type
+-        double  get_double() const throw();     ///&lt; Returns the current double value without
+-                                                ///&lt; any conversion if it is a DOUBLE.
+-                                                ///&lt; On type mismatch a XLevelRuntime is thrown
+-        const char* get_string() const throw(); ///&lt; Returns the current string value without
+-                                                ///&lt; any conversion if it is a STRING.
+-                                                ///&lt; On type mismatch a XLevelRuntime is thrown
+-        bool isDefault() const;                 ///&lt; Returns true if type is DEFAULT
+-        
+-        /**
+-         * Returns a std::string with convertion of numerical values. All other
+-         * values default to an empty string.
+-         */
+-        std::string to_string() const;
+-        
+-        /**
+-         * Returns the LUA compatible boolean representation of the value.
+-         * &lt;code&gt;false&lt;/code&gt; is returned for a NIL value and &lt;code&gt;true&lt;/code&gt;
+-         * for any other value.
+-         */
+-        bool to_bool() const;
+-    private:
+-        void clear();      ///&lt; Release resources and assign type NIL
+-
+-        // Variables
+-        Type type;
+-        union {
+-            double dval[2];
+-            char* str;
+-        } val;
+-    };
+-
+-
+-    bool        to_bool(const Value &amp;v);        ///&lt; Synonym for v.to_bool()
+-    int         to_int(const Value &amp;v);         ///&lt; Synonym for (int)v
+-    double      to_double(const Value &amp;v);      ///&lt; Synonym for (double)v
+-    std::string to_string(const Value &amp;v);      ///&lt; Synonym for v.to_string()
+-    Direction   to_direction (const Value &amp;v);  ///&lt; Casting of value to Direction
+-
+ /* -------------------- Timers -------------------- */
+ 
+     /* Interface for time event handlers. */
+
+Modified: trunk/src/items.hh
+===================================================================
+--- trunk/src/items.hh	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/items.hh	2007-12-28 20:48:38 UTC (rev 956)
+@@ -19,7 +19,7 @@
+ #ifndef ITEMS_HH_INCLUDED
+ #define ITEMS_HH_INCLUDED
+ 
+-#include &quot;objects.hh&quot;
++#include &quot;GridObject.hh&quot;
+ 
+ namespace enigma {
+     
+
+Modified: trunk/src/laser.hh
+===================================================================
+--- trunk/src/laser.hh	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/laser.hh	2007-12-28 20:48:38 UTC (rev 956)
+@@ -22,7 +22,7 @@
+ /* This file contains the declarations for (almost) everything that
+    has to do with lasers. */
+ 
+-#include &quot;objects.hh&quot;
++#include &quot;GridObject.hh&quot;
+ #include &quot;stones.hh&quot;
+ 
+ namespace enigma {
+
+Modified: trunk/src/lua.hh
+===================================================================
+--- trunk/src/lua.hh	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/lua.hh	2007-12-28 20:48:38 UTC (rev 956)
+@@ -21,7 +21,7 @@
+ 
+ #include &quot;enigma.hh&quot;
+ #include &quot;ecl_geom.hh&quot;
+-#include &quot;objects.hh&quot;
++#include &quot;GridObject.hh&quot;
+ #include &lt;map&gt;
+ 
+ #ifdef CXXLUA
+
+Deleted: trunk/src/objects.cc
+===================================================================
+--- trunk/src/objects.cc	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/objects.cc	2007-12-28 20:48:38 UTC (rev 956)
+@@ -1,313 +0,0 @@
+-/*
+- * Copyright (C) 2002,2003,2004,2005 Daniel Heck
+- * Copyright (C) 2007 Ronald Lamprecht
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License
+- * as published by the Free Software Foundation; either version 2
+- * of the License, or (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along
+- * with this program; if not, write to the Free Software Foundation, Inc.,
+- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+- *
+- */
+-
+-#include &quot;errors.hh&quot;
+-#include &quot;game.hh&quot;
+-#include &quot;lua.hh&quot;
+-#include &quot;sound.hh&quot;
+-#include &quot;world.hh&quot;
+-
+-#include &quot;ecl_util.hh&quot;
+-#include &quot;ecl_dict.hh&quot;
+-
+-#include &lt;algorithm&gt;
+-#include &lt;string&gt;
+-#include &lt;cstdlib&gt;
+-#include &lt;cstdarg&gt;
+-#include &lt;iostream&gt;
+-#include &lt;iomanip&gt;
+-
+-
+-using namespace std;
+-
+-namespace enigma {
+-
+-// remove comment from define below to switch on verbose messaging
+-// note: VERBOSE_MESSAGES is defined in multiple source files!
+-// #define VERBOSE_MESSAGES
+-
+-/* -------------------- Object implementation -------------------- */
+-
+-int Object::next_id = 1;
+-std::map&lt;int, Object *&gt; Object::objects;
+-
+-int Object::getNextId(Object *obj, bool bootFinished) {
+-    static bool isBooting = true;
+-    static int nextIdBoot = 1;
+-    static std::map&lt;int, Object *&gt; objectsBoot;
+-    
+-    if (isBooting) {
+-        if (bootFinished) {
+-            isBooting = false;
+-            next_id = nextIdBoot;
+-            objects = objectsBoot;
+-            return 0;
+-        } else {
+-            objectsBoot[nextIdBoot] = obj;
+-            return nextIdBoot++;
+-        }
+-    } else {
+-        objects[next_id] = obj;
+-        return next_id++;
+-    }
+-}
+-
+-void Object::bootFinished() {
+-    getNextId(NULL, true);
+-}
+-
+-void Object::freeId(int id) {
+-    objects.erase(id);
+-}
+-
+-Object * Object::getObject(int id) {
+-    std::map&lt;int, Object *&gt;::iterator it = objects.find(id);
+-    if (it == objects.end())
+-        return NULL;
+-    else
+-        return it-&gt;second;
+-}
+-
+-Object::Object() {
+-    id = getNextId(this, false);
+-}
+-
+-Object::Object(const char *kind) {
+-    set_attrib(&quot;kind&quot;, Value(kind));
+-    id = getNextId(this, false);
+-}
+-
+-Object::Object(const Object &amp;src_obj) {
+-    id = getNextId(this, false);
+-    attribs = src_obj.attribs;
+-}
+-
+-Object::~Object() {
+-    freeId(id);
+-//cerr &lt;&lt; &quot;obj del &quot; &lt;&lt; id &lt;&lt; &quot; - &quot; &lt;&lt; this-&gt;get_kind() &lt;&lt;&quot;\n&quot;;
+-}
+-
+-int Object::getId() const {
+-    return id;
+-}
+-
+-Value Object::message(const Message &amp;m) {
+-    return Value();
+-}
+-
+-void Object::on_levelinit() {
+-}
+-
+-
+-const char * Object::get_kind() const {      // To be made pure virtual
+-    const Value *v = get_attrib(&quot;kind&quot;);
+-    ASSERT(v &amp;&amp; v-&gt;getType() == Value::STRING, XLevelRuntime,
+-        &quot;Object: attribute kind is not of type string (found in get_kind)&quot;);
+-    return v-&gt;get_string();
+-}
+-
+-// check kind of object
+-// kind_templ may contain wildcards ( ? and * )
+-bool Object::is_kind(const char *kind_templ) const {
+-    return ecl::string_match(get_kind(), kind_templ);
+-}
+-
+-bool Object::is_kind(const string&amp; kind_templ) const {
+-    return ecl::string_match(get_kind(), kind_templ.c_str());
+-}
+-
+-void Object::set_attrib(const string&amp; key, const Value&amp; val) {
+-    if (val)         // only set non-default values
+-        attribs[key] = val;  //.insert (key, val);
+-}
+-
+-const Value* Object::get_attrib(const string&amp; key) const { // To be delete as soon as
+-                                                           // get_kind() has no need of it
+-    AttribMap::const_iterator i = attribs.find(key);
+-    if (i == attribs.end())
+-        return 0;
+-    else
+-        return &amp;i-&gt;second;
+-}
+-
+-Value Object::getAttr(const string&amp; key) const {
+-    AttribMap::const_iterator i = attribs.find(key);
+-    if (i == attribs.end())
+-        return Value(Value::DEFAULT);
+-    else
+-        return i-&gt;second;
+-}
+-
+-Value Object::getDefaultedAttr(const string&amp; key, Value defaultValue) const {
+-    if (Value v = getAttr(key))
+-        return v;
+-    else
+-        return defaultValue;
+-}
+-
+-Value Object::getValue(const string&amp; key) const {
+-    return getAttr(key);       // TODO write template method
+-}
+-
+-Value Object::getDefaultValue(const string &amp;key) const {
+-    return Value(Value::DEFAULT);
+-}
+-
+-void Object::performAction (const Value&amp; val) {
+-    TokenList targets = getAttr(&quot;target&quot;);
+-    TokenList actions = getAttr(&quot;action&quot;);
+-    if (Value state = getAttr(&quot;state&quot;)) {
+-        int s = state;
+-        if (Value stateTargets = getAttr(ecl::strf(&quot;target_%d&quot;, s)))
+-            targets = stateTargets;
+-        if (Value actionTargets = getAttr(ecl::strf(&quot;action_%d&quot;, s)))
+-            actions = actionTargets;
+-    }
+-    
+-    TokenList::iterator ait = actions.begin();
+-    std::string action;  // empty string as default
+-    for (TokenList::iterator tit = targets.begin(); tit != targets.end(); ++tit) {
+-        action = (ait != actions.end()) ? ait-&gt;to_string() : &quot;&quot;;
+-        
+-        ObjectList ol = *tit;  // get all objects described by target token
+-        if (ol.size() == 0 || (ol.size() == 1 &amp;&amp; ol.front() == NULL)) {  // no target object
+-            if ((action == &quot;callback&quot; || action == &quot;&quot;) &amp;&amp; (tit-&gt;getType() == Value::STRING) 
+-                    &amp;&amp; lua::IsFunc(lua::LevelState(), tit-&gt;get_string())) {
+-                // it is an existing callback function
+-                if (lua::CallFunc(lua::LevelState(), tit-&gt;get_string(), val, this) != lua::NO_LUAERROR) {
+-                    throw XLevelRuntime(string(&quot;callback '&quot;) + tit-&gt;get_string() + &quot;' failed:\n&quot;+lua::LastError(lua::LevelState()));
+-                }
+-            }
+-            // else ignore this no longer valid target
+-//            Log &lt;&lt; &quot;PerformAction target not valid\n&quot;;
+-        } else {
+-            // send message to all objects
+-            if (action == &quot;&quot;) 
+-                action = &quot;toggle&quot;;
+-            for (ObjectList::iterator oit = ol.begin(); oit != ol.end(); ++oit) {
+-                if (*oit != NULL) {
+-                    SendMessage(*oit, Message(action, val, this));                    
+-                }
+-            }
+-        }
+-        
+-        if (ait != actions.end()) ++ait;
+-    }
+-}
+-
+-/* Send an impulse to position 'dest' into direction dir.  If 'dest'
+-   contains a stone, on_impulse() is called for that stone */
+-void Object::send_impulse(const GridPos&amp; dest, Direction dir) 
+-{
+-    if (Stone *st = GetStone(dest)) {
+-        Impulse impulse(this, dest, dir);
+-        st-&gt;on_impulse(impulse);
+-    }
+-}
+-
+-/* Like variant above, but the _result_ of the impulse is delayed.
+- */
+-
+-void
+-Object::send_impulse(const GridPos&amp; dest, Direction dir, double delay)
+-{
+-    if (Stone *st = GetStone(dest)) {
+-        addDelayedImpulse(Impulse(this, dest, dir), delay, st);
+-    }
+-}
+-
+-void Object::warning(const char *format, ...) const {
+-    va_list arg_ptr;
+-
+-    va_start(arg_ptr, format);
+-
+-    fprintf(stderr, &quot;%p non-grid-\&quot;%s\&quot;: &quot;, this, get_kind());
+-    vfprintf(stderr, format, arg_ptr);
+-    fputc('\n', stderr);
+-
+-    va_end(arg_ptr);
+-}
+-
+-Object::ObjectType Object::getObjectType() const {
+-    return OTHER;
+-}
+-/* -------------------- GridObject implementation -------------------- */
+-
+-void GridObject::setOwner(int player) {
+-    ASSERT(pos.x &lt; 0, XLevelRuntime,
+-        &quot;GridObject: attempt to add object to owner inventory that is still on grid&quot;);
+-    pos.x = -1;
+-    pos.y = player;
+-}
+-
+-Value GridObject::getOwner() {
+-    if (pos.x == -1 &amp;&amp; pos.y != -1)
+-        return Value(pos.y);
+-    else
+-        return Value();
+-}
+-
+-void GridObject::setOwnerPos(GridPos po) {
+-    ASSERT(pos.x &lt; 0, XLevelRuntime,
+-        &quot;GridObject: attempt to add object to owner inventory that is still on grid&quot;);
+-    if (po.x &gt;= 0) {
+-        pos.x = -2 - po.x;
+-        pos.y = -2 - po.y;
+-    } else {
+-        pos.x = po.x;
+-        pos.y = po.y;
+-    }
+-}
+-
+-GridPos GridObject::getOwnerPos() {
+-    if (pos.x &lt;= -2)
+-        return GridPos(-2 - pos.x, -2 - pos.y);
+-    else 
+-        return pos;
+-}
+-
+-display::Model *GridObject::set_anim (const std::string &amp;mname) 
+-{
+-    set_model (mname);
+-    display::Model *m = get_model();
+-    m-&gt;set_callback(this);
+-    return m;
+-}
+-
+-bool GridObject::sound_event (const char *name, double vol)
+-{
+-    return sound::EmitSoundEvent (name, get_pos().center(), getVolume(name, this, vol));
+-}
+-
+-void GridObject::warning(const char *format, ...) const 
+-{
+-    va_list        arg_ptr;
+-    const GridPos&amp; position = get_pos();
+-
+-    va_start(arg_ptr, format);
+-
+-    fprintf(stderr, &quot;%p \&quot;%s\&quot; at %i/%i: &quot;, this, get_kind(), position.x, position.y);
+-    vfprintf(stderr, format, arg_ptr);
+-    fputc('\n', stderr);
+-
+-    va_end(arg_ptr);
+-}
+-
+-} // namespace enigma
+
+Deleted: trunk/src/objects.hh
+===================================================================
+--- trunk/src/objects.hh	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/objects.hh	2007-12-28 20:48:38 UTC (rev 956)
+@@ -1,301 +0,0 @@
+-/*
+- * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2007 Ronald Lamprecht
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License
+- * as published by the Free Software Foundation; either version 2
+- * of the License, or (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along
+- * with this program; if not, write to the Free Software Foundation, Inc.,
+- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+- *
+- */
+-#ifndef OBJECTS_HH
+-#define OBJECTS_HH
+-
+-#define BOOT_REGISTER_START        \
+-        namespace {                \
+-            bool do_boot_register() {
+-
+-#define BOOT_REGISTER_END          \
+-                return true;       \
+-            }                      \
+-            static bool boot_registered = do_boot_register(); \
+-        } 
+-
+-#include &quot;display.hh&quot;
+-#include &quot;ecl_alist.hh&quot;
+-#include &lt;map&gt;
+-
+-namespace enigma { 
+-
+-    using std::string;
+-    
+-    struct Message;
+-
+-/* -------------------- Objects -------------------- */
+-
+-    /**
+-     *  Object is the base class for all ``objects'' in the world.
+-     * The most important facilities this class provides are:
+-     *
+-     * (1) A way to clone() and dispose() objects.  This is mainly used
+-     *     in function MakeObject() to create new objects of a given
+-     *     type.
+-     * 
+-     * (2) A way to pass messages between unrelated objects via message().
+-     *     This allows us to send messages to objects from Lua and to
+-     *     decouple objects types as much as possible.
+-     * 
+-     * (3) A way to get and set attributes.  These attributes are quite
+-     *     similar to instance variables, but they can be easily modified
+-     *     from Lua.  This makes it possible to modify certain object
+-     *     parameters (such as the text on a piece of paper or the color
+-     *     of an oxyd stone) in level descriptions.
+-     * 
+-     * The various Object subclasses instances need to register a template
+-     * instance for each object name. To avoid the inclusion of every
+-     * subclass declaration file into the registry for registry driven forward
+-     * initialization we make use of the static file based initialization
+-     * that occurs prior to the main application startup. To be independent of
+-     * the undefined sequence in which the files are initialized we store the
+-     * template instances, object names and id's in function local static caches.
+-     * These caches are copied to the final runtime data structures on the main
+-     * application startup. We call this feature &quot;boot&quot;-initialization. The macros
+-     * BOOT_REGISTER_START and BOOT_REGISTER_END will be used once at the end of
+-     * every subclass file. They embrace the BootRegister() function calls that
+-     * register the templates.
+-     */
+-    class Object {
+-
+-    public:
+-        enum ObjectType { 
+-            OTHER,
+-            STONE,
+-            FLOOR,
+-            ITEM,
+-            ACTOR
+-        };
+-            
+-        Object();
+-        Object(const char *kind);
+-        Object(const Object &amp;src_obj); 
+-        virtual ~Object();
+-
+-        static Object * getObject(int id);
+-        int getId() const;
+-        
+-        /* ---------- Attributes ---------- */
+-
+-        typedef ecl::AssocList&lt;std::string, Value&gt; AttribMap;
+-
+-        bool is_kind(const char *kind) const;
+-        bool is_kind(const string&amp; kind) const;
+-
+-        const AttribMap &amp;get_attribs() const { return attribs; }
+-        
+-        /**
+-         * Get an attribute or a special given default value. This method
+-         * gets attributes like the simple argumented getAttr method but
+-         * returns the given default value instead of a DEFAULT value if
+-         * no explicit attribute exists.
+-         */
+-        Value getDefaultedAttr(const string &amp;key, Value defaultValue) const;
+-
+-
+-        /* ---------- Helper routines ---------- */
+-
+-        void send_impulse(const GridPos&amp; dest, Direction dir);
+-        void send_impulse(const GridPos&amp; dest, Direction dir, double delay);
+-
+-        /* ---------- Object interface ---------- */
+-
+-        virtual const char *get_kind() const;
+-
+-        /**
+-         * 
+-         */
+-        virtual Value message(const Message &amp;m);
+-        
+-        virtual void set_attrib(const string&amp; key, const Value &amp;val);
+-        
+-        /**
+-         * Get an attribute that has been set or that stands as a proxy for a
+-         * trait or ivar. Object itself will just return attribute values
+-         * that are stored in its attribute map. For not existing attributes
+-         * a value of type DEFAULT is returned.
+-         * 
+-         * Subclasses may override this method to supply values of traits or
+-         * ivars. This way levels can gain read access to attributes that can
+-         * not to be stored in the attribute map due to performance reasons.
+-         */
+-        virtual Value getAttr(const string &amp;key) const;
+-        
+-        /**
+-         * Get the attribute, traits, ivar or default value for a given key.
+-         * This is the main access method for object values that returns
+-         * the best available value known for a key. It resolves attributes,
+-         * uses proxy values for ivars and traits, uses class defaults,
+-         * world defaults or system defaults.
+-         * 
+-         * This is a template method. Subclass have to override the method
+-         * &lt;code&gt;getDefaultValue()&lt;/code&gt; to supply proper class defaults.
+-         * All other defaults are resolved by this method
+-         */
+-        Value getValue(const string &amp;key) const;
+-
+-        virtual Object *clone()=0;
+-        virtual void dispose()=0;
+-
+-        virtual void on_levelinit();
+-
+-        virtual void warning(const char *format, ...) const;
+-        virtual ObjectType getObjectType() const;
+-
+-    protected:
+-        virtual Value getDefaultValue(const string &amp;key) const;
+-        /** This function is used by all triggers, switches etc. that
+-         * perform some particular action when activated (like opening
+-         * doors or switching lasers on and off). It interprets the
+-         * &quot;action&quot; and &quot;target&quot; attributes of `o'. 
+-         */
+-        void performAction(const Value&amp; val);
+-    private:
+-        friend void InitWorld();   // for bootFinished() access
+-        
+-        static int next_id;
+-        static std::map&lt;int, Object *&gt; objects;
+-        int id;
+-        AttribMap attribs;
+-        static int getNextId(Object *obj, bool bootFinished);
+-        static void bootFinished();
+-        static void freeId(int id);
+-        const Value* get_attrib(const string&amp; key) const;
+-    };
+-
+-/* -------------------- GridObject -------------------- */
+-    class Actor;
+-
+-    /** 
+-     * GridObject is the base class for everything that can only be
+-     * placed on &quot;The Grid&quot;, i.e., for floor tiles, items, and
+-     * stones. 
+-     */
+-    class GridObject : public Object, public display::ModelCallback {
+-    public:
+-        GridObject() : pos (GridPos(-1, -1)) {}
+-        GridObject(const char * kind) : Object(kind), pos (GridPos(-1, -1)) {}
+-
+-        void creation(GridPos p) {
+-            pos = p;
+-            on_creation (p);
+-        }
+-        void removal(GridPos p) { 
+-            on_removal(p);
+-            pos.x = -1;
+-            pos.y = -1;
+-        }
+-        GridPos get_pos() const {return pos;}
+-        
+-        virtual void setOwner(int player);
+-        
+-        /**
+-         * Get the player number who is owning the object.
+-         * @return  integer value of player number or nil if not owned by a player
+-         */
+-        Value getOwner();
+-        
+-        /**
+-         * Set the location of the GridObject to a given world or mirrored owner
+-         * position.
+-         */
+-        virtual void setOwnerPos(GridPos po);
+-         
+-        /**
+-         * Get the position of object within the world. Only objects owned by
+-         * players will return positions outside of the world. 
+-         */
+-        GridPos getOwnerPos();
+-
+-        // GridObject interface
+-        virtual void on_laserhit (Direction) {}
+-        virtual void actor_enter (Actor *) {}
+-        virtual void actor_leave (Actor *) {}
+-
+-
+-        void warning(const char *format, ...) const;
+-
+-        // Helper functions
+-        bool sound_event (const char *name, double vol = 1.0);
+-        display::Model *set_anim (const std::string &amp;mname);
+-
+-    protected:
+-        // GridObject interface
+-        virtual void set_model (const std::string &amp;mname) = 0;
+-        virtual display::Model *get_model () = 0;
+-        virtual void kill_model (GridPos p) = 0;
+-
+-        virtual void init_model() {
+-            set_model(get_kind());
+-        }
+-
+-        virtual void on_creation (GridPos) {
+-            init_model();
+-        }
+-
+-        virtual void on_removal (GridPos p) {
+-            kill_model (p);
+-        }
+-
+-    private:
+-        // ModelCallback interface.
+-        void animcb() {}
+-
+-
+-        /**
+-         * The location of the GridObject. An object that is set on one of the world's
+-         * layers will store the x and y coordinates with values greater equal 0. An
+-         * object that is not a direct part of the world has a pos.x &lt; 0. Objects that
+-         * are owned by other objects that are part of a world layer will store the
+-         * position of the owner mirrored at point -1, -1. This results in pos.x &lt;= -2.
+-         * All other GridObjects will have pos.x = -1. In this case pos.y &gt;= 0 identifies
+-         * the player that owns the object in his inventory. Objects that are neiter set
+-         * in the world nor owned by anyone have pos.x = pos.y = -1. 
+-         */
+-        GridPos pos;
+-    };
+-
+-} // namespace enigma
+-
+-
+-#define CLONEOBJ(TYPE)                                  \
+-        TYPE* clone() { return new TYPE(*this); }       \
+-        void dispose() { delete this; }
+-
+-#define CLONEACTOR(TYPE)                                                \
+-        TYPE* clone() { TYPE *o=new TYPE(*this); o-&gt;init(); return o; } \
+-        void dispose() { delete this; }
+-
+-
+-// #define SINGLETONOBJ(TYPE)                    \
+-//         TYPE* clone() { return this; }        \
+-//         void dispose() {}
+-
+-
+-#define INSTANCELISTOBJ(TYPE)                                                   \
+-        typedef std::vector&lt;TYPE*&gt; InstanceList;                                \
+-        static InstanceList instances;                                          \
+-        TYPE *clone() { TYPE *o = new TYPE(*this); instances.push_back(o); return o;}  \
+-        void dispose() {                                                        \
+-            instances.erase(find(instances.begin(), instances.end(), this));    \
+-            delete this;                                                        \
+-        }
+-
+-#endif
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/ox_oxyd1.cc	2007-12-28 20:48:38 UTC (rev 956)
+@@ -32,7 +32,6 @@
+ #define ITEMSPEC(i) i
+ #define ITEMMAPTYPE ItemID
+ 
+-#include &quot;objects.hh&quot;
+ #include &quot;server.hh&quot;
+ #include &quot;oxyd_internal.hh&quot;
+ 
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/ox_peroxyd.cc	2007-12-28 20:48:38 UTC (rev 956)
+@@ -33,7 +33,6 @@
+ #define ITEMSPEC(i) i
+ #define ITEMMAPTYPE enigma::ItemID
+ 
+-#include &quot;objects.hh&quot;
+ #include &quot;server.hh&quot;
+ #include &quot;oxyd_internal.hh&quot;
+ 
+
+Modified: trunk/src/player.hh
+===================================================================
+--- trunk/src/player.hh	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/player.hh	2007-12-28 20:48:38 UTC (rev 956)
+@@ -27,7 +27,6 @@
+  * (currently always 1 or 2).
+  */
+ 
+-#include &quot;objects.hh&quot;
+ #include &quot;items.hh&quot;
+ #include &quot;actors.hh&quot;
+ 
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/stones.hh	2007-12-28 20:48:38 UTC (rev 956)
+@@ -19,7 +19,7 @@
+ #ifndef STONES_HH_INCLUDED
+ #define STONES_HH_INCLUDED
+ 
+-#include &quot;objects.hh&quot;
++#include &quot;GridObject.hh&quot;
+ 
+ namespace enigma {
+     
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2007-12-27 21:17:16 UTC (rev 955)
++++ trunk/src/world.hh	2007-12-28 20:48:38 UTC (rev 956)
+@@ -20,7 +20,8 @@
+ #define WORLD_HH_INCLUDED
+ 
+ #include &quot;enigma.hh&quot;
+-#include &quot;objects.hh&quot;
++#include &quot;Object.hh&quot;
++#include &quot;GridObject.hh&quot;
+ #include &quot;actors.hh&quot;
+ #include &quot;floors.hh&quot;
+ #include &quot;items.hh&quot;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000387.html">[Enigma-game-svn] r955 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="000389.html">[Enigma-game-svn] r957 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#388">[ date ]</a>
+              <a href="thread.html#388">[ thread ]</a>
+              <a href="subject.html#388">[ subject ]</a>
+              <a href="author.html#388">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

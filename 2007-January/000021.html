@@ -1,0 +1,2136 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r581 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r581%20-%20trunk/src&In-Reply-To=%3C200701212209.l0LM9BDP003568%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000020.html">
+   <LINK REL="Next"  HREF="000022.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r581 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r581%20-%20trunk/src&In-Reply-To=%3C200701212209.l0LM9BDP003568%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r581 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Jan 21 23:09:11 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000020.html">[Enigma-game-svn] r580 - in trunk/data: . gfx32 gfx40 gfx48
+</A></li>
+        <LI>Next message: <A HREF="000022.html">[Enigma-game-svn] r582 - in branches/1.0: data/levels/enigma_cross	data/levels/enigma_v data/levels/enigma_vi data/levels/lib po
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21">[ date ]</a>
+              <a href="thread.html#21">[ thread ]</a>
+              <a href="subject.html#21">[ subject ]</a>
+              <a href="author.html#21">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-01-21 23:09:09 +0100 (Sun, 21 Jan 2007)
+New Revision: 581
+
+Modified:
+   trunk/src/actors.cc
+   trunk/src/enigma.cc
+   trunk/src/enigma.hh
+   trunk/src/floors.cc
+   trunk/src/items.cc
+   trunk/src/laser.cc
+   trunk/src/lua.cc
+   trunk/src/objects.cc
+   trunk/src/objects_decl.hh
+   trunk/src/oxyd.cc
+   trunk/src/player.cc
+   trunk/src/st_switches.cc
+   trunk/src/stones.cc
+   trunk/src/stones_complex.cc
+   trunk/src/stones_internal.hh
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+Log:
+Reengineering of Value and get_attr()
+- add a DEFAULT value that stands for not explicit set attributes
+- cast operators and comparison operators for Value that allows simplified usage
+- replace &quot;Value *get_attr()&quot; by &quot;Value getAttr()&quot; for traits and ivar attributes
+- support for default values
+- simplify usage of values with boolean content
+- methods documented in doxygen
+
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2007-01-19 17:32:58 UTC (rev 580)
++++ trunk/src/actors.cc	2007-01-21 22:09:09 UTC (rev 581)
+@@ -492,16 +492,11 @@
+   m_target()
+ {
+     set_attrib(&quot;force&quot;, Value(10.0));
+-    set_attrib(&quot;target1&quot;, Value());
+-    set_attrib(&quot;target2&quot;, Value());
+-    set_attrib(&quot;target3&quot;, Value());
+-    set_attrib(&quot;target4&quot;, Value());
+ }
+  
+ void Horse::think (double /* dtime */) 
+ {
+-    double force = 0;
+-    double_attrib(&quot;force&quot;, &amp;force);
++    double force = getAttr(&quot;force&quot;);
+     update_target ();
+     if (m_targetidx != -1) {
+         add_force (normalize(m_target - get_pos()) * force);
+@@ -518,7 +513,9 @@
+     string targetstr;
+     GridLoc loc;
+ 
+-    if (!string_attrib (attrs[idx-1], &amp;targetstr))
++    if (Value v = getAttr(attrs[idx-1]))
++        targetstr = v.get_string();
++    else
+         return false;
+     
+     to_gridloc(targetstr.c_str(), loc);
+
+Modified: trunk/src/enigma.cc
+===================================================================
+--- trunk/src/enigma.cc	2007-01-19 17:32:58 UTC (rev 580)
++++ trunk/src/enigma.cc	2007-01-21 22:09:09 UTC (rev 581)
+@@ -121,25 +121,54 @@
+     return d;
+ }
+ 
+-
++
+ /* -------------------- Value implementation -------------------- */
+ 
+-Value::Value(const char* str)
+-: type(STRING)
+-{
++Value::Value() : type (NIL) {
++}
++
++Value::Value(const char* str) : type (STRING) {
+     val.str = new char[strlen(str)+1];
+     strcpy(val.str, str);
+ }
+ 
+-Value::~Value() 
+-{ 
++Value::Value(double d) : type (DOUBLE) {
++     val.dval = d;
++}
++
++Value::Value(int i) : type (DOUBLE) {
++     val.dval = i;
++}
++
++Value::Value(bool b) {
++     if (b) {
++        type = DOUBLE;
++        val.dval = 1;
++     } else
++        type = NIL;
++}
++
++Value::Value(Type t) : type (t) {
++    switch (t) {
++        case DOUBLE :
++            val.dval = 0;
++            break;
++        case STRING :
++            val.str = new char[1];
++            val.str[0] = 0;
++            break;
++        case OBJECT :
++            // tbd
++            break;
++    }
++}
++
++Value::~Value() { 
+     clear(); 
+ }
+ 
+ 
+-Value::Value(const string&amp; str)
+-: type(STRING)
+-{
++Value::Value(const string&amp; str) : type(STRING) {
+     val.str = new char[str.length()+1];
+     strcpy(val.str, str.c_str());
+ }
+@@ -153,7 +182,7 @@
+         if (other.type == STRING) {
+             assign(other.val.str);
+         } else {
+-	    clear();
++            clear();
+             type = other.type;
+             val = other.val;
+         }
+@@ -161,7 +190,77 @@
+     return *this;
+ }
+ 
++bool Value::operator==(const Value&amp; other) const {
++    if (type != other.type)
++        return false;
++    else
++        switch (type) {
++            case DOUBLE :
++                return val.dval == other.val.dval;
++            case STRING :
++                return strcmp(val.str, other.val.str) == 0;
++            case OBJECT :
++                return false; // tbd
++        }
++    return true;
++}
+ 
++bool Value::operator!=(const Value&amp; other) const {
++    return ! (*this == other);
++}
++
++bool Value::operator==(int i) const {
++    return (int) *this == i;
++}
++
++bool Value::operator!=(int i) const {
++    return (int) *this != i;
++}
++
++Value::operator bool() const {
++    if (isDefault())
++        return false;
++    else
++        return true;
++}
++
++Value::operator double() const {
++    switch (type) {
++        case DOUBLE: 
++            return val.dval;
++        case STRING:
++            return atof(val.str);  // TODO use strtod and eval remaining part of string
++        default:
++            return 0.0;
++    }
++}
++
++Value::operator int() const {
++    switch (type) {
++        case DOUBLE:
++            return round_nearest&lt;int&gt;(val.dval);
++        case STRING: 
++            return atoi(val.str);  //TODO use strtol and eval remaining part of string
++    default: return 0;
++    }
++}
++
++Value::operator const char*() const {
++    static std::string s;
++    switch (type) {
++        case Value::DOUBLE:
++            s = ecl::strf(&quot;%f&quot;, val.dval);
++            return s.c_str();
++        case Value::STRING: 
++            return val.str;
++        case Value::NIL:
++        case Value::DEFAULT:
++        default: 
++            s.clear();
++            return s.c_str();
++    }
++}
++
+ void Value::assign(const char* s) {
+     clear();
+     type = STRING;
+@@ -169,114 +268,63 @@
+     strcpy(val.str, s);
+ }
+ 
+-void Value::assign(double d) 
+-{ 
++void Value::assign(double d) { 
+     clear(); type=DOUBLE; val.dval=d; 
+ }
+ 
+-
+ void Value::clear() {
+     if (type == STRING)
+ 	delete[] val.str;
+     type = NIL;
+ }
+ 
+-double Value::get_double() const throw()
+-{
++Value::Type Value::getType() const {
++    return type;
++}
++
++double Value::get_double() const throw(){
+     ASSERT(type == DOUBLE, XLevelRuntime, &quot;get_double: type not double&quot;);
+     return val.dval;
+ }
+ 
+-const char* Value::get_string() const throw()
+-{
++const char* Value::get_string() const throw() {
+     ASSERT(type == STRING, XLevelRuntime, &quot;get_string: type not string&quot;);
+     return val.str;
+ }
+ 
+-Buffer&amp; enigma::operator&lt;&lt;(Buffer&amp; buf, const Value&amp; val)
+-{
+-    buf &lt;&lt; Uint8(val.get_type());
++bool Value::isDefault() const {
++    return type == DEFAULT;
++}
+ 
+-    switch (val.get_type()) {
+-    case Value::NIL:
+-        break;
+-    case Value::DOUBLE:
+-        buf &lt;&lt; val.get_double();
+-        break;
+-    case Value::STRING:
+-        {
+-            const char* str = val.get_string();
+-            buf &lt;&lt; (Uint16)strlen(str);
+-            buf.write(str, strlen(str));
+-        } break;
++std::string Value::to_string() const{
++    return std::string(*this);
++}
++
++bool Value::to_bool() const {
++    switch (type) {
++        case NIL :
++        case DEFAULT :
++            return false;
++        default :
++            return true;
+     }
+-    return buf;
+ }
+ 
+-// Buffer&amp; enigma::operator&gt;&gt;(Buffer&amp; buf, Value&amp; val)
+-// {
+-//     Uint8 type = Value::NIL;
+-//     buf &gt;&gt; type;
+ 
+-//     switch (type) {
+-//     case Value::NIL:
+-//         // ## fixme
+-//         break;
+-//     case Value::DOUBLE:
+-//         {
+-//             double tmp;
+-//             if (buf &gt;&gt; tmp)
+-//                 val = Value(tmp);
+-//         } break;
+-//     case Value::STRING:
+-//         {
+-//             Uint16 len;
+-//             if (buf &gt;&gt; len) {
+-//                 char* tmp = new char[len+1];
+-//                 tmp[len] = 0;
+-//                 if (buf.read(tmp, len))
+-//                     val.assign(tmp);
+-//                 delete[] tmp;
+-//             }
+-//         } break;
+-//     }
+-//     return buf;
+-// }
+-
+ int enigma::to_int(const Value &amp;v) {
+-    switch (v.get_type()) {
+-    case Value::DOUBLE: return round_nearest&lt;int&gt;(v.get_double());
+-    case Value::STRING: return atoi(v.get_string());
+-    default: return 0;
+-    }
++    return v;
+ }
+ 
+ bool enigma::to_bool(const Value &amp;v) {
+-    return (v.get_type() != Value::NIL);
++    return v.to_bool();
+ }
+ 
+ double enigma::to_double(const Value &amp;v) {
+-    switch (v.get_type()) {
+-    case Value::DOUBLE: return v.get_double();
+-    case Value::STRING: return atof(v.get_string());
+-    default: return 0;
+-    }
++    return v;
+ }
+ 
+-#ifdef _MSC_VER
+-#define snprintf _snprintf
+-#endif
+-
+-const char * enigma::to_string(const Value &amp;v) {
+-    static char buf[30];
+-    switch (v.get_type()) {
+-    case Value::NIL: return &quot;&quot;;
+-    case Value::DOUBLE:
+-        snprintf(buf, sizeof(buf), &quot;%f&quot;, v.get_double());
+-        return buf;
+-    case Value::STRING: return v.get_string();
+-    default: return 0;
+-    }
++std::string enigma::to_string(const Value &amp;v) {
++    return v.to_string();
+ }
+ 
+ Direction enigma::to_direction (const Value &amp;v) {
+@@ -284,16 +332,6 @@
+     return static_cast&lt;Direction&gt;(val);
+ }
+ 
+-ostream&amp; enigma::operator&lt;&lt;(ostream&amp; os, const Value&amp; val)
+-{
+-    switch (val.get_type()) {
+-    case Value::NIL:   os &lt;&lt; &quot;nil&quot;; break;
+-    case Value::DOUBLE: os &lt;&lt; val.get_double(); break;
+-    case Value::STRING: os &lt;&lt; val.get_string(); break;
+-    }
+-    return os;
+-}
+-
+ /* -------------------- GridPos -------------------- */
+ 
+ GridPos::GridPos(const ecl::V2&amp; p) 
+
+Modified: trunk/src/enigma.hh
+===================================================================
+--- trunk/src/enigma.hh	2007-01-19 17:32:58 UTC (rev 580)
++++ trunk/src/enigma.hh	2007-01-21 22:09:09 UTC (rev 581)
+@@ -126,27 +126,169 @@
+ 
+ /* -------------------- Value -------------------- */
+ 
++    /**
++     * A flexible container for various types of data. This class is one
++     * of the central Enigma concepts. It is used for Object attributes,
++     * for passing arguments and return values in messages and for exchanging
++     * values with LUA code.
++     * 
++     * Object attributes besides the common floor, item, stone, actor traits
++     * are usually very specific and only few objects will be aware of
++     * them. The Value provides a common container, that allows all objects
++     * and the world to pass these attributes without any further knowledge.
++     * 
++     * Instances of Value can be passed to and from the type free LUA language.
++     * Objects can be configured in their attributes and questioned about states
++     * via attributes.
++     * 
++     * Value are converted to required types as far as possible and in a
++     * LUA compatible manner.
++     * 
++     * Due to the history of Enigma and LUA the bool values are not a native
++     * type. The value &quot;false&quot; is coded as type &quot;NIL&quot;. Every Value besides
++     * type &quot;NIL&quot; and &quot;DEFAULT&quot; is interpreted as &quot;true&quot;. All attributes 
++     * should be declared with a default value of &quot;false&quot;. Bool Values can
++     * not be assigned directly to a bool variable. Use the to_bool() method
++     * for retrieving proper bool values.
++     * 
++     * A special Value type called &quot;DEFAULT&quot; exists within the C++ engine. It
++     * describes a not existing Value. The receiver of this Value should use
++     * or request the default behaviour. &quot;DEFAULT&quot; Values are the only Values
++     * that are converted to bool &quot;false&quot;. All other Values convert to bool 
++     * &quot;true&quot;. Thus a value can be checked for existance by evaluating it as a
++     * bool. This remains true even for Values that contain bool content! A
++     * common pattern for handling Values is:
++     * 
++     * &lt;pre&gt;
++     * if (Value v = getAttr(&quot;key&quot;)) {   // proceed only if attribute exists
++     *     int i = v;                    // assign value to an int
++     *     std::string s(v);             // create a string out of a value
++     *     x = (double)v * 2;            // cast v to a desired type
++     *     double d = getAttr(&quot;x&quot;, 2);   // get a value with a default of 2.0
++     * }
++     * &lt;/pre&gt;
++     */
+     class Value {
+     public:
+-        enum Type { NIL, DOUBLE, STRING };
++        /**
++         * Specifier for the current type of the value content.
++         */
++        enum Type { 
++            DEFAULT,  ///&lt; Pseudotype for a not existing attribute that should
++                      ///&lt; cause the default behaviour of the object
++            NIL,      ///&lt; Value that is equivalent to Lua &quot;nil&quot;. It represents
++                      ///&lt; the bool &quot;false&quot;
++            DOUBLE,   ///&lt; Value is numerical and can take a &quot;double&quot;. It is used
++                      ///&lt; for other numericals values like &quot;int&quot;, too.
++            STRING,   ///&lt; Value is a string. Such a string may encode another
++                      ///&lt; type that has no native representation in Value
++            OBJECT    ///&lt; Value is an object id. The id is a persistent object
++                      ///&lt; identifier.
++        };
+ 
+-        Value() : type(NIL) {}
+-        Value(double d) : type(DOUBLE) { val.dval = d; }
+-        Value(const char* str);
+-        Value(const std::string&amp; str);
++        Value();                       ///&lt; Constructor for NIL value that 
++                                       ///&lt; represents boolean &quot;false&quot;, too 
++        Value(double d);               ///&lt; Constructor for DOUBLE value
++        Value(const char* str);        ///&lt; Constructor for STRING value. The
++                                       ///&lt; given string is duplicated
++        Value(const std::string&amp; str); ///&lt; Constructor for STRING value. The
++                                       ///&lt; given string is duplicated
++        Value(int i);                  ///&lt; Constructor for DOUBLE value
++        Value(bool b);                 ///&lt; Constructor for a value that properly
++                                       ///&lt; represents the given bool
++        Value(Type t);                 ///&lt; Constructor for a given type. The
++                                       ///&lt; value defaults to 0.0 or &quot;&quot;
+         ~Value();
+ 
+-        Value(const Value&amp; v);
+-        Value&amp; operator=(const Value&amp; v);
++        Value(const Value&amp; v);                 ///&lt; Explicit copy constructor that
++                                               ///&lt; performs a deep copy
++        Value&amp; operator=(const Value&amp; v);      ///&lt; Explicit copy assignment that
++                                               ///&lt; performs a deep copy
++        /**
++         * Compare values in type and value. This compare is a LUA like
++         * compare of values. Note that a DOUBLE value of 1.0 does not equal
++         * a STRING value of &quot;1.0&quot; even though both values are seamless casted
++         * to the same double and result in the same numerical calculation results.
++         * 
++         * If you want to compare two values that express numerical data independent
++         * of their value type use the pattern:
++         * &lt;pre&gt;
++         *     (double) value1 == (double) value2
++         * &lt;/pre&gt;
++         */
++        bool operator==(const Value&amp; v) const;
++        bool operator!=(const Value&amp; v) const; ///&lt; Compare values in type and value
++        bool operator==(int i) const;          ///&lt; Compare value with int without casting.
++                                               ///&lt; f.e &lt;code&gt;if (v == 2)&lt;/code&gt;
++        bool operator!=(int i) const;          ///&lt; Compare value with int without casting
++        
++        /**
++         * Test of a value for explicit existence besides a default.
++         * This conversion returns &quot;false&quot; if the value is of type DEFAULT.
++         * This happens when a &quot;getAttr()&quot; call did not find a concrete value.
++         * All other value types that represent explicit given values return &quot;true&quot;.
++         * The main usage is the common pattern &lt;code&gt;if (Value v = getAttr(&quot;key&quot;))&lt;/code&gt;.
++         * 
++         * Note: this conversion does not return the result of a boolean stored
++         * in the value. If a concrete value contains a boolean this test
++         * returns always &quot;true&quot;, even if the boolean is &quot;false&quot; and the value
++         * is of type NIL.
++         */
++        operator bool() const;
++        
++        /**
++         * Conversion of a value to a double. String values are interpreted as
++         * a double like it is done by LUA. All other values default to a double
++         * value of 0.0.
++         */
++        operator double() const;
++         
++        /**
++         * Conversion of a value to a int. String values are interpreted as
++         * a int like it is done by LUA. All other values default to a int
++         * value of 0.
++         */
++        operator int() const;
++        
++        /**
++         * Conversion of a value to a &lt;code&gt;char *&lt;/code&gt; just for initialization
++         * of a std::string. Numerical values are converted to a string like it
++         * id done by LUA. All other values default to an empty string.
++         * 
++         * Note that the returned pointer may be volatile and
++         * cannot be used for any further usage besides immediate initialization of
++         * a string object. For all other purposes use the &lt;code&gt;to_string()&lt;/code&gt; method to
++         * receive a non-volatile copy of the string.
++         */
++        operator const char*() const;
+ 
+-        void assign(double d);
+-        void assign(const char* s);
++        void assign(double d);       ///&lt; Reset value to a DOUBLE
++        void assign(const char* s);  ///&lt; Reset value to a STRING with a copy of
++                                     ///&lt; the given string
+ 
+-        Type    get_type() const { return type; }
+-        double  get_double() const throw();
+-        const char* get_string() const throw();
++        Type    getType() const;               ///&lt; Returns the current value type
++        double  get_double() const throw();     ///&lt; Returns the current double value without
++                                                ///&lt; any conversion if it is a DOUBLE.
++                                                ///&lt; On type mismatch a XLevelRuntime is thrown
++        const char* get_string() const throw(); ///&lt; Returns the current string value without
++                                                ///&lt; any conversion if it is a STRING.
++                                                ///&lt; On type mismatch a XLevelRuntime is thrown
++        bool isDefault() const;                 ///&lt; Returns true if type is DEFAULT
++        
++        /**
++         * Returns a std::string with convertion of numerical values. All other
++         * values default to an empty string.
++         */
++        std::string to_string() const;
++        
++        /**
++         * Returns the LUA compatible boolean representation of the value.
++         * &lt;code&gt;false&lt;/code&gt; is returned for a NIL value and &lt;code&gt;true&lt;/code&gt;
++         * for any other value.
++         */
++        bool to_bool() const;
+     private:
+-        void clear();
++        void clear();      ///&lt; Release resources and assign type NIL
+ 
+         // Variables
+         Type type;
+@@ -156,17 +298,13 @@
+         } val;
+     };
+ 
+-    ecl::Buffer&amp; operator&lt;&lt;(ecl::Buffer&amp; buf, const Value&amp; val);
+-//     ecl::Buffer&amp; operator&gt;&gt;(ecl::Buffer&amp; buf, Value&amp; val);
+ 
+-    std::ostream&amp; operator&lt;&lt;(std::ostream&amp; os, const Value&amp; val);
++    bool        to_bool(const Value &amp;v);        ///&lt; Synonym for v.to_bool()
++    int         to_int(const Value &amp;v);         ///&lt; Synonym for (int)v
++    double      to_double(const Value &amp;v);      ///&lt; Synonym for (double)v
++    std::string to_string(const Value &amp;v);      ///&lt; Synonym for v.to_string()
++    Direction   to_direction (const Value &amp;v);  ///&lt; Casting of value to Direction
+ 
+-    bool        to_bool(const Value &amp;v);
+-    int         to_int(const Value &amp;v);
+-    double      to_double(const Value &amp;v);
+-    const char *to_string(const Value &amp;v);
+-    Direction   to_direction (const Value &amp;v);
+-
+ /* -------------------- Timers -------------------- */
+ 
+     /* Interface for time event handlers. */
+
+Modified: trunk/src/floors.cc
+===================================================================
+--- trunk/src/floors.cc	2007-01-19 17:32:58 UTC (rev 580)
++++ trunk/src/floors.cc	2007-01-21 22:09:09 UTC (rev 581)
+@@ -418,23 +418,25 @@
+                 return (selector == flft_burnable) &amp;&amp; !has_flags(it, itf_fireproof);
+         }
+     }
+-    if(selector == flft_burnable)
+-        if(const Value *v = get_attrib(&quot;burnable&quot;))  return to_int(*v) == 1;
+-    if(selector == flft_ignitable)
+-        if(const Value *v = get_attrib(&quot;ignitable&quot;)) return to_int(*v) == 1;
+-    if(selector == flft_secure)
+-        if(const Value *v = get_attrib(&quot;secure&quot;))    return to_int(*v) == 1;
+-    if(selector == flft_eternal)
+-        if(const Value *v = get_attrib(&quot;eternal&quot;))   return to_int(*v) == 1;
+-    if(selector == flft_noash)
+-        if(const Value *v = get_attrib(&quot;noash&quot;))     return to_int(*v) == 1;
+-    if(selector == flft_fastfire)
+-        if(const Value *v = get_attrib(&quot;fastfire&quot;))  return to_int(*v) == 1;
+-    if(selector == flft_initfire)
+-        if(const Value *v = get_attrib(&quot;initfire&quot;))  return to_int(*v) == 1;
+-    if(server::GameCompatibility == GAMET_ENIGMA)
+-        return traits.firetype &amp; selector;
++    if ((server::GameCompatibility == GAMET_ENIGMA) &amp;&amp; (traits.firetype &amp; selector))
++        return true;
+     // In non-Enigma-modes, without items on them, all floors behave the same:
++    switch (selector) {
++        case flft_burnable :
++            return getAttr(&quot;burnable&quot;) != 0;   // no !=0 compare if attribute is boolean
++        case flft_ignitable :
++            return getAttr(&quot;ignitable&quot;) != 0;  //  ...
++        case flft_secure :
++            return getAttr(&quot;secure&quot;) != 0;
++        case flft_eternal :
++            return getAttr(&quot;eternal&quot;) != 0;
++        case flft_noash :
++            return getAttr(&quot;noash&quot;) != 0;
++        case flft_fastfire :
++            return getAttr(&quot;fastfire&quot;) != 0;
++        case flft_initfire :
++            return getAttr(&quot;initfire&quot;) != 0;
++    }
+     return false;
+ }
+ 
+@@ -554,7 +556,7 @@
+     private:
+         void actor_enter(Actor *) {
+             static int lastCode = -1;
+-            int        code     = int_attrib(&quot;code&quot;);
++            int        code     = getAttr(&quot;code&quot;);
+             if (lastCode != code) {
+                 fprintf(stderr, &quot;Entering floor 0x%x\n&quot;, code);
+                 lastCode = code;
+@@ -708,7 +710,7 @@
+ 
+         char get_type() const {
+             string type = &quot;a&quot;;
+-            string_attrib(&quot;type&quot;, &amp;type);
++            if (Value v = getAttr(&quot;type&quot;)) type = v.get_string();
+             return type[0];
+         }
+ 
+@@ -883,7 +885,7 @@
+         state = EMERGING;
+         m_affected_actor = a;
+         affected_player = -1;
+-        m_affected_actor-&gt;int_attrib(&quot;player&quot;, &amp;affected_player);
++        if (Value v = m_affected_actor-&gt;getAttr(&quot;player&quot;)) affected_player = v;
+     }
+ }
+ 
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2007-01-19 17:32:58 UTC (rev 580)
++++ trunk/src/items.cc	2007-01-21 22:09:09 UTC (rev 581)
+@@ -182,7 +182,7 @@
+         }
+ 
+         bool is_on() const {
+-            return int_attrib(&quot;on&quot;) == 1;
++            return getAttr(&quot;on&quot;) == 1;
+         }
+ 
+         void set_on (bool newon) {
+@@ -233,11 +233,11 @@
+         DECL_TRAITS;
+ 
+         void on_pickup(Actor *) {
+-            int code = int_attrib(&quot;code&quot;);
++            int code = getAttr(&quot;code&quot;);
+             fprintf(stderr, &quot;Picked up item 0x%x\n&quot;, code);
+         }
+         void on_drop(Actor *) {
+-            int code = int_attrib(&quot;code&quot;);
++            int code = getAttr(&quot;code&quot;);
+             fprintf(stderr, &quot;Dropped item 0x%x\n&quot;, code);
+         }
+     public:
+@@ -451,8 +451,7 @@
+                 for (int idx=0; GetSignalTargetPos (this, keystonepos, idx); ++idx) {
+                     Stone *st = GetStone(keystonepos);
+                     if (st &amp;&amp; st-&gt;is_kind(&quot;st-key&quot;))
+-                        st-&gt;set_attrib(&quot;keycode&quot;,
+-                                       int_attrib(&quot;keycode&quot;));
++                        st-&gt;set_attrib(&quot;keycode&quot;, getAttr(&quot;keycode&quot;));
+                 }
+             }
+             return Value();
+@@ -847,7 +846,7 @@
+          hi != instances.end(); ++hi)
+     {
+         const Hollow&amp; h         = **hi;
+-        bool          essential = h.int_attrib(&quot;essential&quot;) != 0;
++        bool          essential = (h.getAttr(&quot;essential&quot;) != 0);
+ 
+         if (h.whiteball &amp;&amp; (server::LevelTime - h.enter_time) &gt;= MINTIME) {
+             if (essential) ess_wcnt++;
+@@ -865,10 +864,7 @@
+ }
+ 
+ void Hollow::setup_successor(Item *newitem) {
+-    const Value *essential = get_attrib(&quot;essential&quot;);
+-    if (essential != NULL) {
+-        newitem-&gt;set_attrib(&quot;essential&quot;,*essential);
+-    }
++    newitem-&gt;set_attrib(&quot;essential&quot;, getAttr(&quot;essential&quot;));
+ }
+ 
+ 
+@@ -1070,8 +1066,8 @@
+ 
+         ItemAction activate(Actor *, GridPos)
+         {
+-            string txt;
+-            if (string_attrib (&quot;text&quot;, &amp;txt)) {
++            if (Value v = getAttr(&quot;text&quot;)) {
++                std::string txt(v);
+                 lev::Proxy *level = lev::Proxy::loadedLevel();
+                 // after complete switch to Proxy as levelloader the following
+                 // conditional can be abolished
+@@ -1360,7 +1356,7 @@
+ 
+ void Trigger::init_model()
+ {
+-    if (int_attrib(&quot;invisible&quot;))
++    if (getAttr(&quot;invisible&quot;) != 0)
+         set_model(&quot;invisible&quot;);
+     else if (m_pressedp)
+         set_model(&quot;it-trigger1&quot;);
+@@ -1594,25 +1590,21 @@
+         DECL_TRAITS_ARRAY(2, is_on());
+     public:
+         Magnet(bool onoff) : OnOffItem (onoff) {
+-            set_attrib (&quot;strength&quot;, Value()); // 30.0
+-            set_attrib (&quot;range&quot;, Value());
+         }
+     private:
+         void on_creation (GridPos p) {
+-            double range = server::MagnetRange;
+-	    double_attrib(&quot;range&quot;, &amp;range);
++            double range = getAttr(&quot;range&quot;, server::MagnetRange);
++            double strength = getAttr(&quot;strength&quot;, server::MagnetForce);
+ 
+-            double strength = server::MagnetForce;
+-	    double_attrib(&quot;strength&quot;, &amp;strength);
+-
+             ff.m_active = is_on();
+             ff.set_pos (p);
+-	    ff.set_range (range);
+-	    ff.set_strength (strength);
++	        ff.set_range (range);
++	        ff.set_strength (strength);
+ 
+             world::AddForceField(&amp;ff);
+             Item::on_creation (p);
+         }
++        
+         void on_removal (GridPos p) {
+             Item::on_removal(p);
+             world::RemoveForceField(&amp;ff);
+@@ -1679,11 +1671,6 @@
+         DECL_TRAITS_ARRAY(2, is_on());
+     public:
+         WormHole(bool onoff_) : OnOffItem(onoff_) {
+-            set_attrib(&quot;targetx&quot;, Value());
+-            set_attrib(&quot;targety&quot;, Value());
+-            set_attrib(&quot;strength&quot;, Value());
+-            set_attrib(&quot;range&quot;, Value());
+-            set_attrib(&quot;interval&quot;, Value()); // see get_interval() for default
+             state = TELEPORT_IDLE;
+             justWarping = false;
+         }
+@@ -1716,12 +1703,10 @@
+         void set_forcefield() {
+             if (is_on()) {
+                 ff.set_pos(get_pos());
+-                double range = server::WormholeRange;
+-                double_attrib(&quot;range&quot;, &amp;range);
++                double range = getAttr(&quot;range&quot;, server::WormholeRange);
+                 ff.set_range (range);
+ 
+-                double s = server::WormholeForce;
+-                double_attrib(&quot;strength&quot;, &amp;s);
++                double s = getAttr(&quot;strength&quot;, server::WormholeForce);
+                 ff.set_strength (s);
+ 
+                 world::AddForceField(&amp;ff);
+@@ -1737,9 +1722,7 @@
+         bool get_target (V2 &amp;targetpos);
+ 
+         double get_interval() const {
+-            double interval = 0.0;
+-            double_attrib(&quot;interval&quot;, &amp;interval);
+-            return interval;
++            return getAttr(&quot;interval&quot;);
+         }
+ 
+         // Variables.
+@@ -1754,9 +1737,11 @@
+ }
+ 
+ bool WormHole::get_target(V2 &amp;targetpos) {
+-    V2 t;
+-    if (double_attrib(&quot;targetx&quot;, &amp;t[0]) &amp;&amp; double_attrib(&quot;targety&quot;, &amp;t[1])) {
+-        targetpos = t;
++    Value vx = getAttr(&quot;targetx&quot;);
++    Value vy = getAttr(&quot;targety&quot;);
++    if (vx &amp;&amp; vy) {
++        targetpos[0] = vx;
++        targetpos[1] = vy;
+         return true;
+     }
+     else {
+@@ -1907,9 +1892,6 @@
+   m_target_index (0),
+   m_target_vortex(0)
+ {
+-    set_attrib (&quot;autoclose&quot;, Value());
+-    set_attrib (&quot;targetx&quot;, Value());
+-    set_attrib (&quot;targety&quot;, Value());
+ }
+ 
+ void Vortex::prepare_for_warp (Actor *actor)
+@@ -2015,9 +1997,11 @@
+     }
+     // no signal defined
+     else if (idx == 0) {
+-        V2 t;
+-        if (double_attrib(&quot;targetx&quot;, &amp;t[0]) &amp;&amp; double_attrib(&quot;targety&quot;, &amp;t[1])) {
+-            target = t;
++        Value vx = getAttr(&quot;targetx&quot;);
++        Value vy = getAttr(&quot;targety&quot;);
++        if (vx &amp;&amp; vy) {
++            target[0] = vx;
++            target[1] = vy;
+             return true;
+         }
+     }
+@@ -2288,17 +2272,16 @@
+             {
+                 set_attrib(&quot;type&quot;, type);
+                 set_attrib(&quot;fixed&quot;, 0.0);
+-                set_attrib(&quot;brittleness&quot;, Value());
+              }
+ 
+         enum State { IDLE, CRACKING1, CRACKING2 } state;
+         bool anim_end;
+ 
+         int get_type() const {
+-            int t = int_attrib(&quot;type&quot;);
++            int t = getAttr(&quot;type&quot;);
+             return ecl::Clamp(t, 0, 4);
+         }
+-	    bool is_fixed() const { return int_attrib(&quot;fixed&quot;) != 0; }
++	    bool is_fixed() const { return getAttr(&quot;fixed&quot;) != 0; }
+ 
+         void init_model() {
+             if (int t=get_type()) {
+@@ -2358,7 +2341,7 @@
+             if (msg == &quot;crack&quot; &amp;&amp; state==IDLE &amp;&amp; !is_fixed()) {
+                 int type = get_type();
+                 if ((type == 0 &amp;&amp; do_crack()) || (type &gt; 0)) {
+-                    set_attrib(&quot;type&quot;, Value(int_attrib(&quot;type&quot;) + 1));
++                    set_attrib(&quot;type&quot;, Value((int)getAttr(&quot;type&quot;) + 1));
+                     sound_event (&quot;crack&quot;);
+                     init_model();
+                 }
+@@ -2372,14 +2355,12 @@
+         }
+ 
+         bool do_crack() {
+-	    if (!is_fixed()) {
+-		double brittleness = server::Brittleness;
+-		double_attrib (&quot;brittleness&quot;, &amp;brittleness);
+-		double rnd = DoubleRand(0, 1);
+-		return rnd &lt; brittleness;
+-	    }
+-	    else
+-		return false;
++            if (!is_fixed()) {
++                double brittleness = getAttr(&quot;brittleness&quot;, server::Brittleness);
++                double rnd = DoubleRand(0, 1);
++                return rnd &lt; brittleness;
++    	    } else
++                return false;
+         }
+     };
+     ItemTraits Crack::traits[4] = {
+@@ -2515,7 +2496,7 @@
+     	    set_attrib(&quot;load&quot;, load);
+         }
+ 
+-        int get_load() const { return ecl::Clamp&lt;int&gt;(int_attrib(&quot;load&quot;),0,2); }
++        int get_load() const { return ecl::Clamp&lt;int&gt;(getAttr(&quot;load&quot;),0,2); }
+         void set_load (int load) { set_attrib(&quot;load&quot;, ecl::Clamp&lt;int&gt;(load,0,2)); }
+ 
+         void extinguish (GridPos p) {
+@@ -2716,10 +2697,9 @@
+         int open = -1;
+ 
+         if (msg == &quot;signal&quot;) {
+-            if (val.get_type() == Value::DOUBLE) {
++            if (val.getType() == Value::DOUBLE) {
+                 // val: 1 means &quot;shrink&quot;, 0 means &quot;grow&quot;
+-                open = static_cast&lt;int&gt;(val.get_double());
+-//                 warning(&quot;received signal %i&quot;, open);
++                open = (int)val;
+             }
+             else {
+                 ASSERT(0, XLevelRuntime, &quot;Blocker: message 'signal' with wrong typed value&quot;);
+@@ -3143,7 +3123,7 @@
+         bool m_active;
+ 
+         void actor_enter(Actor *a) {
+-            if (!m_active &amp;&amp; a-&gt;get_attrib(&quot;player&quot;) != 0) {
++            if (!m_active &amp;&amp; a-&gt;getAttr(&quot;player&quot;)) {
+                 GameTimer.set_alarm (this, 10);
+             }
+         }
+@@ -3436,9 +3416,8 @@
+         info-&gt;pos = olda-&gt;get_pos();
+         info-&gt;vel = olda-&gt;get_vel();
+ 
+-        int iplayer;
+-        if (olda-&gt;int_attrib(&quot;player&quot;, &amp;iplayer)) {
+-            player::ReplaceActor (iplayer, olda, newa);
++        if (Value v = olda-&gt;getAttr(&quot;player&quot;)) {
++            player::ReplaceActor((int)v, olda, newa);
+         }
+ 
+         world::AddActor (newa);
+@@ -3476,7 +3455,7 @@
+         {
+             const double ROTOR_LIFETIME = 5.0;
+ 
+-            int     iplayer = a-&gt;int_attrib(&quot;player&quot;);
++            int     iplayer = a-&gt;getAttr(&quot;player&quot;);
+             ActorID id      = get_id (a);
+ 
+             if (id == ac_blackball || id == ac_whiteball) {
+@@ -3487,10 +3466,13 @@
+                 rotor-&gt;set_attrib (&quot;controllers&quot;, Value (iplayer+1));
+                 rotor-&gt;set_attrib (&quot;player&quot;, Value (iplayer));
+                 rotor-&gt;set_attrib (&quot;gohome&quot;, Value (0.0));
+-                rotor-&gt;set_attrib (&quot;essential&quot;, Value(a-&gt;int_attrib(&quot;essential&quot;)));
++                rotor-&gt;set_attrib (&quot;essential&quot;, a-&gt;getAttr(&quot;essential&quot;));
+                 std::string essId;
+-                if (!a-&gt;string_attrib (&quot;essential_id&quot;, &amp;essId))
++                if (Value v = a-&gt;getAttr(&quot;essential_id&quot;)) {
++                    essId = v.to_string();
++                } else {
+                     essId = a-&gt;get_traits().name;
++                }
+                 rotor-&gt;set_attrib (&quot;essential_id&quot;, Value(essId));
+ 
+                 replace_actor (a, rotor);
+@@ -3517,12 +3499,10 @@
+ 
+         ItemAction activate(Actor *a, GridPos p) {
+             // Default values for the rubberband:
+-            double strength = 10.0;
+-            double length = 1.0;
+-            double minlength = 0.0;
+-            double_attrib (&quot;strength&quot;, &amp;strength);
+-            double_attrib (&quot;length&quot;, &amp;length);
+-            double_attrib (&quot;minlength&quot;, &amp;minlength);
++            double strength = getAttr(&quot;strength&quot;, 10.0);
++            double length = getAttr(&quot;length&quot;, 1.0);
++            double minlength = getAttr(&quot;minlength&quot;, 0.0);
++            
+ 
+             world::RubberBandData rbd;
+             rbd.strength = strength;
+@@ -3530,16 +3510,15 @@
+             rbd.minlength = minlength;
+ 
+             // Target to connect to, default: &quot;&quot;
+-            string target = &quot;&quot;;
+-            string_attrib(&quot;target&quot;,&amp;target);
++            std::string target(getAttr(&quot;target&quot;));
++            
+             // TODO: Multiple Targets!
+             // TODO: Target for black and target for white marble?
+             // TODO: MultiplayerGame: Defaulttarget is second actor!
+ 
+             // The mode attribute &quot;scissor&quot; defines, if when using an it-rubberband,
+             // other rubberbands to the actor will be cut of or not, true means they will. false is default.
+-            enigma::Value const *scissorValue = get_attrib(&quot;scissor&quot;);
+-            bool isScissor = (scissorValue == NULL)? false : to_bool(*scissorValue);
++            bool isScissor = to_bool(getAttr(&quot;scissor&quot;));
+ 
+             // Get actor or stone with the name, given in &quot;connect_to&quot;:
+             Actor *target_actor = dynamic_cast&lt;Actor*&gt;(GetNamedObject(target));
+
+Modified: trunk/src/laser.cc
+===================================================================
+--- trunk/src/laser.cc	2007-01-19 17:32:58 UTC (rev 580)
++++ trunk/src/laser.cc	2007-01-21 22:09:09 UTC (rev 581)
+@@ -133,7 +133,7 @@
+ 
+         // Private methods.
+         void emit_light();
+-        Direction get_dir() const {return Direction(int_attrib(&quot;dir&quot;));}
++        Direction get_dir() const {return to_direction(getAttr(&quot;dir&quot;));}
+ 
+         // Stone interface.
+         void on_creation (GridPos p);
+@@ -446,11 +446,11 @@
+     protected:
+         MirrorStone(const char *name, bool movable=false, bool transparent=false);
+ 
+-        bool is_transparent() const { return int_attrib(&quot;transparent&quot;) != 0; }
+-        bool is_movable() const { return int_attrib(&quot;movable&quot;) != 0; }
++        bool is_transparent() const { return getAttr(&quot;transparent&quot;) != 0; }
++        bool is_movable() const { return getAttr(&quot;movable&quot;) != 0; }
+ 
+         void set_orientation(int o) { set_attrib(&quot;orientation&quot;, o); }
+-        int get_orientation() { return int_attrib(&quot;orientation&quot;); }
++        int get_orientation() { return getAttr(&quot;orientation&quot;); }
+ 
+         void emit_light(Direction dir) {
+             if (!has_dir(outdirs, dir))
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2007-01-19 17:32:58 UTC (rev 580)
++++ trunk/src/lua.cc	2007-01-21 22:09:09 UTC (rev 581)
+@@ -76,14 +76,14 @@
+     lua::Error _lua_err_code (int i)
+     {
+         switch (i) {
+-	case 0: return NO_LUAERROR;
+-	case LUA_ERRRUN: return ERRRUN;
+-	case LUA_ERRFILE: return ERRFILE;
+-	case LUA_ERRSYNTAX: return ERRSYNTAX;
+-	case LUA_ERRMEM: return ERRMEM;
+-	case LUA_ERRERR: return ERRERR;
+-	}
+-	assert (!&quot;Should never get there!&quot;);
++            case 0: return NO_LUAERROR;
++            case LUA_ERRRUN: return ERRRUN;
++            case LUA_ERRFILE: return ERRFILE;
++            case LUA_ERRSYNTAX: return ERRSYNTAX;
++            case LUA_ERRMEM: return ERRMEM;
++            case LUA_ERRERR: return ERRERR;
++        }
++        assert (!&quot;Should never get there!&quot;);
+     }
+ 
+     void throwLuaError(lua_State * L, const char * message) {
+@@ -146,10 +146,17 @@
+ static void
+ push_value(lua_State *L, const Value &amp;val)
+ {
+-    switch (val.get_type()) {
+-    case Value::NIL: lua_pushnil(L); break;
+-    case Value::DOUBLE: lua_pushnumber(L, to_double(val)); break;
+-    case Value::STRING: lua_pushstring(L, to_string(val)); break;
++    switch (val.getType()) {
++        case Value::NIL:
++        case Value::DEFAULT :
++            lua_pushnil(L);
++            break;
++        case Value::DOUBLE:
++            lua_pushnumber(L, val.get_double());
++            break;
++        case Value::STRING:
++            lua_pushstring(L, val.get_string());
++            break;
+     }
+ }
+ 
+@@ -258,13 +265,7 @@
+         return 0;
+     }
+ 
+-    const Value *v =  obj-&gt;get_attrib(key);
+-    if (!v) {
+-        // unknown attribute
+-        lua_pushnil(L);
+-    }
+-    else
+-        push_value(L, *v);
++    push_value(L, obj-&gt;getAttr(key));
+     return 1;
+ }
+ 
+
+Modified: trunk/src/objects.cc
+===================================================================
+--- trunk/src/objects.cc	2007-01-19 17:32:58 UTC (rev 580)
++++ trunk/src/objects.cc	2007-01-21 22:09:09 UTC (rev 581)
+@@ -100,11 +100,9 @@
+ }
+ 
+ 
+-const char *
+-Object::get_kind() const
+-{
++const char * Object::get_kind() const {      // To be made pure virtual
+     const Value *v = get_attrib(&quot;kind&quot;);
+-    ASSERT(v &amp;&amp; v-&gt;get_type()==Value::STRING, XLevelRuntime,
++    ASSERT(v &amp;&amp; v-&gt;getType() == Value::STRING, XLevelRuntime,
+         &quot;Object: attribute kind is not of type string (found in get_kind)&quot;);
+     return v-&gt;get_string();
+ }
+@@ -120,10 +118,12 @@
+ }
+ 
+ void Object::set_attrib(const string&amp; key, const Value&amp; val) {
+-    attribs[key] = val;//.insert (key, val);
++    if (val)         // only set non-default values
++        attribs[key] = val;  //.insert (key, val);
+ }
+ 
+-const Value* Object::get_attrib(const string&amp; key) const {
++const Value* Object::get_attrib(const string&amp; key) const { // To be delete as soon as
++                                                           // get_kind() has no need of it
+     AttribMap::const_iterator i = attribs.find(key);
+     if (i == attribs.end())
+         return 0;
+@@ -131,44 +131,30 @@
+         return &amp;i-&gt;second;
+ }
+ 
+-bool Object::string_attrib(const string &amp;name, string *val) const {
+-    if (const Value *v = get_attrib(name)) {
+-        if (v-&gt;get_type() != Value::NIL) {
+-            const char *s = to_string(*v);
+-            if (s != 0) {
+-                *val = s;
+-                return true;
+-            }
+-        }
+-    }
+-    return false;
++Value Object::getAttr(const string&amp; key) const {
++    AttribMap::const_iterator i = attribs.find(key);
++    if (i == attribs.end())
++        return Value(Value::DEFAULT);
++    else
++        return i-&gt;second;
+ }
+ 
+-int Object::int_attrib(const string &amp;name) const {
+-    if (const Value *v = get_attrib(name))
+-        return to_int(*v);
+-    return 0;
++Value Object::getAttr(const string&amp; key, Value defaultValue) const {
++    if (Value v = getAttr(key))
++        return v;
++    else
++        return defaultValue;
+ }
+ 
+-bool Object::int_attrib(const string &amp;name, int *val) const {
+-    if (const Value *v = get_attrib(name)) {
+-        *val = to_int(*v);
+-        return true;
+-    }
+-    return false;
++Value Object::getValue(const string&amp; key) const {
++    return getAttr(key);       // TODO write template method
+ }
+ 
+-
+-bool Object::double_attrib(const string &amp;name, double *val) const {
+-    if (const Value *v = get_attrib(name)) {
+-        if (v-&gt;get_type() != Value::NIL) {
+-            *val = to_double(*v);
+-            return true;
+-        }
+-    }
+-    return false;
++Value Object::getDefaultValue(const string &amp;key) const {
++    return Value(Value::DEFAULT);
+ }
+ 
++
+ /* Send an impulse to position 'dest' into direction dir.  If 'dest'
+    contains a stone, on_impulse() is called for that stone */
+ void Object::send_impulse(const GridPos&amp; dest, Direction dir) 
+
+Modified: trunk/src/objects_decl.hh
+===================================================================
+--- trunk/src/objects_decl.hh	2007-01-19 17:32:58 UTC (rev 580)
++++ trunk/src/objects_decl.hh	2007-01-21 22:09:09 UTC (rev 581)
+@@ -57,16 +57,20 @@
+ 
+         typedef ecl::AssocList&lt;std::string, Value&gt; AttribMap;
+ 
+-        bool string_attrib (const string &amp;name, string *val) const;
+-        int  int_attrib (const string &amp;name) const;
+-        bool int_attrib (const string &amp;name, int *val) const;
+-        bool double_attrib (const string &amp;name, double *val) const;
+-
+         bool is_kind(const char *kind) const;
+         bool is_kind(const string&amp; kind) const;
+ 
+         const AttribMap &amp;get_attribs() const { return attribs; }
++        
++        /**
++         * Get an attribute or a special given default value. This method
++         * gets attributes like the simple argumented getAttr method but
++         * returns the given default value instead of a DEFAULT value if
++         * no explicit attribute exists.
++         */
++        Value getAttr(const string &amp;key, Value defaultValue) const;
+ 
++
+         /* ---------- Helper routines ---------- */
+ 
+         void send_impulse(const GridPos&amp; dest, Direction dir);
+@@ -79,7 +83,31 @@
+         virtual Value on_message (const Message &amp;m);
+         virtual Value message(const string&amp; msg, const Value &amp;val);
+         virtual void set_attrib(const string&amp; key, const Value &amp;val);
+-        virtual const Value* get_attrib(const string&amp; key) const;
++        
++        /**
++         * Get an attribute that has been set or that stands as a proxy for a
++         * trait or ivar. Object itself will just return attribute values
++         * that are stored in its attribute map. For not existing attributes
++         * a value of type DEFAULT is returned.
++         * 
++         * Subclasses may override this method to supply values of traits or
++         * ivars. This way levels can gain read access to attributes that can
++         * not to be stored in the attribute map due to performance reasons.
++         */
++        virtual Value getAttr(const string &amp;key) const;
++        
++        /**
++         * Get the attribute, traits, ivar or default value for a given key.
++         * This is the main access method for object values that returns
++         * the best available value known for a key. It resolves attributes,
++         * uses proxy values for ivars and traits, uses class defaults,
++         * world defaults or system defaults.
++         * 
++         * This is a template method. Subclass have to override the method
++         * &lt;code&gt;getDefaultValue()&lt;/code&gt; to supply proper class defaults.
++         * All other defaults are resolved by this method
++         */
++        Value getValue(const string &amp;key) const;
+ 
+         virtual Object *clone()=0;
+         virtual void dispose()=0;
+@@ -88,7 +116,10 @@
+ 
+         virtual void warning(const char *format, ...) const;
+ 
++    protected:
++        virtual Value getDefaultValue(const string &amp;key) const;
+     private:
++        const Value* get_attrib(const string&amp; key) const;
+         AttribMap attribs;
+     };
+ 
+
+Modified: trunk/src/oxyd.cc
+===================================================================
+--- trunk/src/oxyd.cc	2007-01-19 17:32:58 UTC (rev 580)
++++ trunk/src/oxyd.cc	2007-01-21 22:09:09 UTC (rev 581)
+@@ -93,21 +93,21 @@
+         for (unsigned y=0; y&lt;sgrid.getHeight(); ++y)
+             for (unsigned x=0; x&lt;sgrid.getWidth(); ++x)
+                 if (Stone *st = world::GetStone(GridPos(x, y)))
+-                    if (int code = st-&gt;int_attrib(&quot;code&quot;))
++                    if (int code = st-&gt;getAttr(&quot;code&quot;))
+                         stones.insert(code);
+ 
+         const Grid &amp;igrid = level.getGrid (GridType_Objects);
+         for (unsigned y=0; y&lt;igrid.getHeight(); ++y)
+             for (unsigned x=0; x&lt;igrid.getWidth(); ++x)
+                 if (Item *it = world::GetItem(GridPos(x, y)))
+-                    if (int code = it-&gt;int_attrib(&quot;code&quot;))
++                    if (int code = it-&gt;getAttr(&quot;code&quot;))
+                         items.insert(code);
+ 
+         const Grid &amp;fgrid = level.getGrid (GridType_Objects);
+         for (unsigned y=0; y&lt;fgrid.getHeight(); ++y)
+             for (unsigned x=0; x&lt;fgrid.getWidth(); ++x)
+                 if (world::Floor *fl = world::GetFloor(GridPos(x, y)))
+-                    if (int code = fl-&gt;int_attrib(&quot;code&quot;))
++                    if (int code = fl-&gt;getAttr(&quot;code&quot;))
+                         floors.insert(code);
+ 
+         if (!stones.empty()) {
+
+Modified: trunk/src/player.cc
+===================================================================
+--- trunk/src/player.cc	2007-01-19 17:32:58 UTC (rev 580)
++++ trunk/src/player.cc	2007-01-21 22:09:09 UTC (rev 581)
+@@ -235,8 +235,8 @@
+ 
+ Inventory * player::GetInventory (Actor *a) 
+ {
+-    if (const Value *v = a-&gt;get_attrib(&quot;player&quot;))
+-        return GetInventory(to_int(*v));
++    if (Value v = a-&gt;getAttr(&quot;player&quot;))
++        return GetInventory((int)v);
+     return 0;
+ }
+ 
+@@ -285,10 +285,8 @@
+         vector&lt;Actor *&gt; &amp;al = players[i].actors;
+ 
+         for (unsigned j=0; j&lt;al.size(); ++j) {
+-            const Value *val = al[j]-&gt;get_attrib(black ? &quot;blackball&quot; : &quot;whiteball&quot;);
+-            if (val) {
++            if (al[j]-&gt;getAttr(black ? &quot;blackball&quot; : &quot;whiteball&quot;))
+                 al[j]-&gt;set_respawnpos(center);
+-            }
+         }
+     }
+ }
+@@ -299,10 +297,8 @@
+         vector&lt;Actor *&gt; &amp;al = players[i].actors;
+ 
+         for (unsigned j=0; j&lt;al.size(); ++j) {
+-            const Value *val = al[j]-&gt;get_attrib(black ? &quot;blackball&quot; : &quot;whiteball&quot;);
+-            if (val) {
++            if (al[j]-&gt;getAttr(black ? &quot;blackball&quot; : &quot;whiteball&quot;))
+                 al[j]-&gt;remove_respawnpos();
+-            }
+         }
+     }
+ }
+@@ -409,9 +405,11 @@
+         for (size_t i=0; i&lt;actors.size(); ++i) {
+             Actor *a = actors[i];
+             std::string essId;
+-            if (!a-&gt;string_attrib (&quot;essential_id&quot;, &amp;essId))
++            if (Value v = a-&gt;getAttr(&quot;essential_id&quot;))
++                essId = v.to_string();
++            else
+                 essId = a-&gt;get_traits().name;
+-            int essential = a-&gt;int_attrib(&quot;essential&quot;);
++            int essential = a-&gt;getAttr(&quot;essential&quot;);
+             // count number of necessary actors per kind
+             if (essential == 1)
+                 --essMap[essId];
+@@ -536,7 +534,7 @@
+ Inventory *player::MayPickup(Actor *a) 
+ {
+     int iplayer=-1;
+-    a-&gt;int_attrib(&quot;player&quot;, &amp;iplayer);
++    if (Value v = a-&gt;getAttr(&quot;player&quot;)) iplayer = v;
+     if (iplayer &lt; 0 || (unsigned)iplayer &gt;= players.size()) {
+         //        cerr &lt;&lt; &quot;PickupItem: illegal 'player' entry\n&quot;;
+         return 0;
+
+Modified: trunk/src/st_switches.cc
+===================================================================
+--- trunk/src/st_switches.cc	2007-01-19 17:32:58 UTC (rev 580)
++++ trunk/src/st_switches.cc	2007-01-21 22:09:09 UTC (rev 581)
+@@ -241,8 +241,7 @@
+                 sound_event (&quot;coinsloton&quot;);
+                 set_anim(&quot;st-coin2slot&quot;);
+ 
+-                double coin_value = 0;
+-                it-&gt;double_attrib(&quot;value&quot;, &amp;coin_value);
++                double coin_value = it-&gt;getAttr(&quot;value&quot;);
+                 remaining_time += coin_value;
+ 
+                 inv-&gt;yield_first();
+@@ -314,11 +313,9 @@
+ bool KeyStone::check_matching_key (enigma::Inventory *inv)
+ {
+     Item *it = inv-&gt;get_item(0);
+-    int keycode, my_keycode = int_attrib (&quot;keycode&quot;);
+     return (it
+             &amp;&amp; it-&gt;is_kind(&quot;it-key*&quot;)
+-            &amp;&amp; it-&gt;int_attrib(&quot;keycode&quot;, &amp;keycode)
+-            &amp;&amp; my_keycode == keycode);
++            &amp;&amp; it-&gt;getAttr(&quot;keycode&quot;) == getAttr(&quot;keycode&quot;));
+ }
+ 
+ void KeyStone::actor_hit(const StoneContact &amp;sc)
+@@ -333,7 +330,7 @@
+         if (is_on()) {
+             if (!inv-&gt;is_full()) {
+                 Item *key = MakeItem(&quot;it-key&quot;);
+-                key-&gt;set_attrib (&quot;keycode&quot;, int_attrib (&quot;keycode&quot;));
++                key-&gt;set_attrib (&quot;keycode&quot;, getAttr(&quot;keycode&quot;));
+                 inv-&gt;add_item(key);
+                 toggle = true;
+             }
+@@ -446,7 +443,7 @@
+         virtual const char *get_inactive_model() const = 0;
+         virtual double timer_delay() const;
+ 
+-        bool inverse() { return int_attrib(&quot;inverse&quot;) == 1; }
++        bool inverse() { return getAttr(&quot;inverse&quot;) == 1; }
+ 
+         // Stone interface
+         void on_creation (GridPos p);
+@@ -599,10 +596,10 @@
+ }
+ 
+ double LaserTimeSwitch::timer_delay() const {
+-    double delay;
+-    if (!double_attrib(&quot;delay&quot;, &amp;delay))
++    if (Value v = getAttr(&quot;delay&quot;))
++        return v;
++    else
+         ASSERT(0, XLevelRuntime, &quot;LaserTimeSwitch: delay not properly defined&quot;);
+-    return delay;
+ }
+ 
+ void LaserTimeSwitch::actor_hit(const StoneContact &amp;sc) {
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2007-01-19 17:32:58 UTC (rev 580)
++++ trunk/src/stones.cc	2007-01-21 22:09:09 UTC (rev 581)
+@@ -191,24 +191,13 @@
+    If components are not set, use ((1,0),(0,1)) as
+    default matrix, resp. defaultfactor as hit_factor. */
+ ecl::V2 Stone::distortedVelocity (ecl::V2 vel, double defaultfactor = 1.0) {
+-    ecl::V2 newvel(0,0);    
+-    if(const Value *xx = this-&gt;get_attrib(&quot;hit_distortion_xx&quot;))
+-        newvel[0] += to_double(*xx) * vel[0];
+-    else
+-        newvel[0] += vel[0];
+-    if(const Value *xy = this-&gt;get_attrib(&quot;hit_distortion_xy&quot;))
+-        newvel[0] += to_double(*xy) * vel[1];
+-    if(const Value *yx = this-&gt;get_attrib(&quot;hit_distortion_yx&quot;))
+-        newvel[1] += to_double(*yx) * vel[0];
+-    if(const Value *yy = this-&gt;get_attrib(&quot;hit_distortion_yy&quot;))
+-        newvel[1] += to_double(*yy) * vel[1];
+-    else
+-        newvel[1] += vel[1];
+-    if (const Value *factor = this-&gt;get_attrib(&quot;hit_factor&quot;))
+-        newvel *= to_double(*factor);
+-    else
+-        newvel *= defaultfactor;    
+-    return newvel;
++    ecl::V2 newvel;
++    double factor = this-&gt;getAttr(&quot;hit_factor&quot;, defaultfactor);
++    newvel[0] = (double)(this-&gt;getAttr(&quot;hit_distortion_xx&quot;, 1)) * vel[0]
++                + (double)(this-&gt;getAttr(&quot;hit_distortion_xy&quot;)) * vel[1];
++    newvel[1] = (double)(this-&gt;getAttr(&quot;hit_distortion_yx&quot;)) * vel[0]
++                + (double)(this-&gt;getAttr(&quot;hit_distortion_yy&quot;, 1)) * vel[1];
++    return newvel * factor;
+ }
+ 
+ 
+@@ -262,8 +251,7 @@
+         }
+     private:
+         double get_charge() {
+-            double q = 0;
+-            double_attrib(&quot;charge&quot;, &amp;q);
++            double q = getAttr(&quot;charge&quot;);
+             return max(-1.0, min(1.0, q));
+         }
+         void animcb() { init_model(); }
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2007-01-19 17:32:58 UTC (rev 580)
++++ trunk/src/stones_complex.cc	2007-01-21 22:09:09 UTC (rev 581)
+@@ -342,7 +342,7 @@
+         bool is_floating() const { return true; }
+ 
+         Direction get_orientation() const {
+-            return Direction(int_attrib(&quot;orientation&quot;));
++            return to_direction(getAttr(&quot;orientation&quot;));
+         }
+         void set_orientation(Direction dir) {
+             set_attrib(&quot;orientation&quot;, Value(dir));
+@@ -367,7 +367,7 @@
+     private:
+         CLONEOBJ(OneWayStone_black);
+         virtual bool actor_may_pass (Actor *a) {
+-            return a-&gt;get_attrib(&quot;blackball&quot;) != 0;
++            return a-&gt;getAttr(&quot;blackball&quot;) != 0;
+         }
+         void actor_hit (const StoneContact&amp;) {
+             // do nothing if hit by actor
+@@ -381,7 +381,7 @@
+     private:
+         CLONEOBJ(OneWayStone_white);
+         virtual bool actor_may_pass (Actor *a) {
+-            return a-&gt;get_attrib(&quot;whiteball&quot;) != 0;
++            return a-&gt;getAttr(&quot;whiteball&quot;) != 0;
+         }
+         void actor_hit (const StoneContact&amp;) {
+             // do nothing if hit by actor
+@@ -403,7 +403,7 @@
+ }
+ 
+ Value OneWayBase::message(const string&amp; msg, const Value &amp;val) {
+-    if (msg == &quot;direction&quot; &amp;&amp; val.get_type() == Value::DOUBLE) {
++    if (msg == &quot;direction&quot; &amp;&amp; val.getType() == Value::DOUBLE) {
+         set_orientation(to_direction(val));
+         init_model();
+     }
+@@ -472,7 +472,7 @@
+ 
+ 
+         Direction get_dir() const {
+-            return static_cast&lt;Direction&gt;(int_attrib(&quot;direction&quot;));
++            return to_direction(getAttr(&quot;direction&quot;));
+         }
+         void set_dir(Direction d) {
+             if (d != get_dir())
+@@ -798,7 +798,7 @@
+ DirectionBits
+ ConnectiveStone::get_connections() const
+ {
+-    int conn=int_attrib(&quot;connections&quot;) - 1;
++    int conn = (int)getAttr(&quot;connections&quot;) - 1;
+     if (conn &gt;=0 &amp;&amp; conn &lt;16)
+         return DirectionBits(conn);
+     else
+@@ -810,7 +810,7 @@
+ }
+ 
+ int ConnectiveStone::get_modelno() const {
+-    return int_attrib(&quot;connections&quot;);
++    return getAttr(&quot;connections&quot;);
+ }
+ 
+ 
+@@ -930,7 +930,7 @@
+ 
+         /* ---------- Private methods ---------- */
+ 
+-        bool oxyd1_compatible() const { return int_attrib(&quot;oxyd&quot;) != 0; }
++        bool oxyd1_compatible() const { return getAttr(&quot;oxyd&quot;) != 0; }
+ 
+         static bool visit_dir(vector&lt;GridPos&gt; &amp;stack, GridPos curpos,
+                               Direction dir, int wanted_oxyd_attrib);
+@@ -1004,7 +1004,7 @@
+     GridPos newpos = move(curpos, dir);
+     PuzzleStone *pz = dynamic_cast&lt;PuzzleStone*&gt;(GetStone(newpos));
+ 
+-    if ((!pz) || (wanted_oxyd_attrib != pz-&gt;int_attrib(&quot;oxyd&quot;)))
++    if ((!pz) || (wanted_oxyd_attrib != (int)pz-&gt;getAttr(&quot;oxyd&quot;)))
+         return false;
+ 
+     DirectionBits cfaces = pz-&gt;get_connections();
+@@ -1033,7 +1033,7 @@
+     bool is_complete = true;
+     pos_stack.push_back(get_pos());
+     this-&gt;visited = true;
+-    int wanted_oxyd_attrib = int_attrib(&quot;oxyd&quot;);
++    int wanted_oxyd_attrib = getAttr(&quot;oxyd&quot;);
+ 
+     while (!pos_stack.empty())
+     {
+@@ -1067,7 +1067,7 @@
+     GridPos newpos = move(curpos, dir);
+     if (PuzzleStone *pz = dynamic_cast&lt;PuzzleStone*&gt;(GetStone(newpos))) {
+         if (!pz-&gt;visited) {
+-            if (wanted_oxyd_attrib == pz-&gt;int_attrib(&quot;oxyd&quot;)) {
++            if (wanted_oxyd_attrib == (int)pz-&gt;getAttr(&quot;oxyd&quot;)) {
+                 pz-&gt;visited = true;
+                 stack.push_back(newpos);
+             }
+@@ -1087,7 +1087,7 @@
+     pos_stack.push_back(get_pos());
+     this-&gt;visited = true;
+ 
+-    int wanted_oxyd_attrib = int_attrib(&quot;oxyd&quot;);
++    int wanted_oxyd_attrib = getAttr(&quot;oxyd&quot;);
+ 
+     while (!pos_stack.empty()) {
+         GridPos curpos = pos_stack.back();
+@@ -1114,7 +1114,7 @@
+ 
+     GridPos p = startpos;
+     while (Stone *puzz = dynamic_cast&lt;PuzzleStone*&gt;(GetStone(p))) {
+-        if (wanted_oxyd_attrib != -1 &amp;&amp; wanted_oxyd_attrib != puzz-&gt;int_attrib(&quot;oxyd&quot;))
++        if (wanted_oxyd_attrib != -1 &amp;&amp; wanted_oxyd_attrib != (int)puzz-&gt;getAttr(&quot;oxyd&quot;))
+             break; // stop when an unrequested puzzle stone type is readed
+         c.push_back(p);
+         p.move(dir);
+@@ -1218,7 +1218,7 @@
+ }
+ 
+ int PuzzleStone::get_modelno() const {
+-    int modelno = int_attrib(&quot;connections&quot;);
++    int modelno = getAttr(&quot;connections&quot;);
+     if (oxyd1_compatible()) modelno += 16;
+     return modelno;
+ }
+@@ -1226,10 +1226,10 @@
+ void PuzzleStone::rotate_cluster(const Cluster &amp;c) {
+     size_t size = c.size();
+     if (size &gt; 1) {
+-        int cn = GetStone(c[size-1])-&gt;int_attrib(&quot;connections&quot;);
++        int cn = GetStone(c[size-1])-&gt;getAttr(&quot;connections&quot;);
+         for (size_t i=size-1; i&gt;0; --i) {
+             PuzzleStone *st = dynamic_cast&lt;PuzzleStone*&gt; (GetStone (c[i]));
+-            st-&gt;set_attrib (&quot;connections&quot;, GetStone(c[i-1])-&gt;int_attrib (&quot;connections&quot;));
++            st-&gt;set_attrib (&quot;connections&quot;, GetStone(c[i-1])-&gt;getAttr(&quot;connections&quot;));
+             st-&gt;init_model();
+         }
+         GetStone(c[0])-&gt;set_attrib (&quot;connections&quot;, cn);
+@@ -1254,7 +1254,7 @@
+                                         int wanted_oxyd_attrib)
+ {
+     PuzzleStone *puzz = dynamic_cast&lt;PuzzleStone*&gt;(GetStone(p));
+-    if (puzz &amp;&amp; wanted_oxyd_attrib == puzz-&gt;int_attrib(&quot;oxyd&quot;)) {
++    if (puzz &amp;&amp; wanted_oxyd_attrib == (int)puzz-&gt;getAttr(&quot;oxyd&quot;)) {
+         // explode adjacent puzzle stones of same type
+         puzz-&gt;trigger_explosion(delay);
+     }
+@@ -1262,7 +1262,7 @@
+ 
+ void PuzzleStone::explode() {
+     GridPos p       = get_pos();
+-    int     ox_attr = int_attrib(&quot;oxyd&quot;);
++    int     ox_attr = getAttr(&quot;oxyd&quot;);
+ 
+     // exchange puzzle stone with explosion
+     sound_event(&quot;stonedestroy&quot;);
+@@ -1408,7 +1408,7 @@
+ {
+     if (dir != NODIR) {
+         Cluster c;
+-        find_row_or_column_cluster(c, get_pos(), dir, int_attrib (&quot;oxyd&quot;));
++        find_row_or_column_cluster(c, get_pos(), dir, (int)getAttr(&quot;oxyd&quot;));
+         if (c.size() &gt;= 2) {
+ //             warning(&quot;ok -&gt; rotate&quot;);
+             rotate_cluster(c);
+@@ -1653,8 +1653,7 @@
+         virtual string closing_sound() const { return &quot;doorclose&quot;; }
+         virtual const char *collision_sound() { return &quot;electric&quot;; }
+         string get_type() const {
+-            string type=&quot;h&quot;;
+-            string_attrib(&quot;type&quot;, &amp;type);
++            string type(getAttr(&quot;type&quot;, &quot;h&quot;));
+             return type;
+         }
+ 
+@@ -1772,7 +1771,7 @@
+ }
+ 
+ ShogunStone::Holes ShogunStone::get_holes() const {
+-    int h=int_attrib(&quot;holes&quot;);
++    int h = getAttr(&quot;holes&quot;);
+     if (h&gt;=1 &amp;&amp; h&lt;=7)
+         return Holes(h);
+     else {
+@@ -1830,7 +1829,7 @@
+         init_model();
+     }
+     else {
+-        string_attrib(&quot;name&quot;, &amp;old_name); // store name of disappearing stone
++        if (Value v = getAttr(&quot;name&quot;)) old_name = v.get_string(); // store name of disappearing stone
+         SendMessage(GetItem(my_pos), &quot;noshogun&quot;);
+         KillStone(my_pos);
+     }
+@@ -1885,7 +1884,7 @@
+ 
+         virtual Value message(const string &amp;m, const Value &amp;value) {
+             if (m==&quot;trigger&quot;) {
+-                incoming = (value.get_type() == Value::DOUBLE)
++                incoming = (value.getType() == Value::DOUBLE)
+                     ? Direction( static_cast&lt;int&gt; (value.get_double()+0.1))
+                     : NODIR;
+ 
+@@ -2241,22 +2240,18 @@
+             OxydStone *o1 = instances[closed_oxyds[i]];
+             OxydStone *o2 = instances[closed_oxyds[a]];
+ 
+-            string icolor, acolor;
+-            o1-&gt;string_attrib(&quot;color&quot;, &amp;icolor);
+-            o2-&gt;string_attrib(&quot;color&quot;, &amp;acolor);
++            Value icolor = o1-&gt;getAttr(&quot;color&quot;); 
+ 
+-            o1-&gt;set_attrib(&quot;color&quot;, acolor.c_str());
+-            o2-&gt;set_attrib(&quot;color&quot;, icolor.c_str());
++            o1-&gt;set_attrib(&quot;color&quot;, o2-&gt;getAttr(&quot;color&quot;));
++            o2-&gt;set_attrib(&quot;color&quot;, icolor);
+         }
+     }
+ }
+ 
+ void OxydStone::change_state(State newstate) 
+ {
+-    string flavor = &quot;a&quot;;
+-    string color = &quot;1&quot;;
+-    string_attrib(&quot;flavor&quot;, &amp;flavor);
+-    string_attrib(&quot;color&quot;, &amp;color);
++    string flavor(getAttr(&quot;flavor&quot;,&quot;a&quot;));
++    string color(getAttr(&quot;color&quot;, &quot;1&quot;));
+ 
+     string modelname = string(&quot;st-oxyd&quot;) + flavor + color;
+ 
+@@ -2324,7 +2319,7 @@
+ 
+ void OxydStone::maybe_open_stone() {
+     if (state == CLOSED || state == CLOSING) {
+-        int mycolor = int_attrib(&quot;color&quot;);
++        Value mycolor = getAttr(&quot;color&quot;);
+ 
+         // Is another oxyd stone currently blinking?
+         InstanceList::iterator i;
+@@ -2339,10 +2334,10 @@
+                 // open both stones. Close one of them otherwise.
+                 // (This is the Oxyd behaviour; it doesn't work with
+                 // some Enigma levels.)
+-                can_open = (mycolor == (*i)-&gt;int_attrib(&quot;color&quot;) &amp;&amp; (*i)-&gt;state==BLINKING);
++                can_open = (mycolor == (*i)-&gt;getAttr(&quot;color&quot;) &amp;&amp; (*i)-&gt;state==BLINKING);
+             }
+             else 
+-                can_open = (mycolor == (*i)-&gt;int_attrib(&quot;color&quot;));
++                can_open = (mycolor == (*i)-&gt;getAttr(&quot;color&quot;));
+ 
+             if (can_open) {
+                 change_state(OPEN);
+@@ -2365,18 +2360,13 @@
+ 
+ void OxydStone::on_creation (GridPos) 
+ {
+-    string flavor = &quot;a&quot;;
+-    string_attrib(&quot;flavor&quot;, &amp;flavor);
++    string flavor(getAttr(&quot;flavor&quot;, &quot;a&quot;));
+     set_model(string(&quot;st-oxyd&quot;) + flavor);
+     photo_activate();
+ }
+ 
+ bool OxydStone::is_removable() const {
+-    const Value* isStatic = get_attrib(&quot;static&quot;);
+-    if (isStatic != NULL)
+-        return !to_bool(*isStatic);
+-    else
+-        return true;
++    return !getAttr(&quot;static&quot;).to_bool();
+ }
+ 
+ void OxydStone::on_removal(GridPos p) 
+@@ -2973,7 +2963,7 @@
+ 
+     string ChessStone::get_model_name() {
+         string mname = get_kind();
+-        mname += int_attrib(&quot;color&quot;) == 0.0 ? &quot;_black&quot; : &quot;_white&quot;;
++        mname += (getAttr(&quot;color&quot;) == 0) ? &quot;_black&quot; : &quot;_white&quot;;
+         return mname;
+     }
+ 
+@@ -3021,10 +3011,10 @@
+     void ChessStone::actor_hit(const StoneContact &amp;sc) {
+          if (player::WieldedItemIs (sc.actor, &quot;it-magicwand&quot;)) {
+              sound_event (&quot;stonepaint&quot;);
+-             set_color(1 - int_attrib(&quot;color&quot;));
++             set_color(1 - (int)getAttr(&quot;color&quot;));
+              // If not IDLE, color will be set next time IDLE is set.
+-         } else if ((sc.actor-&gt;get_attrib(&quot;blackball&quot;) &amp;&amp; int_attrib(&quot;color&quot;) == 0)
+-                    || (sc.actor-&gt;get_attrib(&quot;whiteball&quot;) &amp;&amp; int_attrib(&quot;color&quot;) == 1)) {
++         } else if ((sc.actor-&gt;getAttr(&quot;blackball&quot;) &amp;&amp; getAttr(&quot;color&quot;) == 0)
++                    || (sc.actor-&gt;getAttr(&quot;whiteball&quot;) &amp;&amp; getAttr(&quot;color&quot;) == 1)) {
+             V2 v = sc.actor-&gt;get_vel();
+             Direction dir1 = get_push_direction(sc);
+             if(dir1 == NODIR)  return;
+@@ -3070,7 +3060,6 @@
+             } else {
+                 // Test stone. Is it opposite chess stone or totally another one?
+                 Stone *st = GetStone(destination);
+-                const Value *col = get_attrib(&quot;color&quot;);
+                 if(to_int(SendMessage(st, &quot;capture&quot;, Value(get_model_name()))) ) {
+                     // Give it some time for animation, then replace it.
+                     ASSERT(try_state(CAPTURING), XLevelRuntime,
+@@ -3108,7 +3097,7 @@
+ 
+     Value ChessStone::message(const string &amp;msg, const Value &amp;v) {
+         if(msg == &quot;capture&quot;) {
+-            if(state == IDLE &amp;&amp; to_string(v) != get_model_name())
++            if(state == IDLE &amp;&amp; v.to_string() != get_model_name())
+                 if(try_state(CAPTURED)) {
+                     set_anim(get_model_name() + &quot;-captured&quot;);
+                     return Value(1);
+@@ -3123,11 +3112,11 @@
+         else   if(msg == &quot;move_wwn&quot;) { return message_move(WEST, NORTH); }
+         else   if(msg == &quot;move_nnw&quot;) { return message_move(NORTH, WEST); }
+         else   if(msg == &quot;move&quot;) {
+-            Direction dir1 = (Direction) int_attrib(&quot;direction1&quot;);
+-            Direction dir2 = (Direction) int_attrib(&quot;direction2&quot;);
++            Direction dir1 = to_direction(getAttr(&quot;direction1&quot;));
++            Direction dir2 = to_direction(getAttr(&quot;direction2&quot;));
+             return message_move(dir1, dir2);
+         } else if(msg == &quot;signal&quot;) { set_color(to_int(v)); }
+-        else   if(msg == &quot;flip&quot;) { set_color(1 - int_attrib(&quot;color&quot;)); }
++        else   if(msg == &quot;flip&quot;) { set_color(1 - (int)getAttr(&quot;color&quot;)); }
+         else
+             return Stone::message(msg, v);
+         return Value();
+@@ -3152,7 +3141,7 @@
+                 rememberSwamp = true;
+             else
+                 state = newstate;        
+-            if(state == IDLE &amp;&amp; newcolor != int_attrib(&quot;color&quot;))
++            if(state == IDLE &amp;&amp;  getAttr(&quot;color&quot;) != newcolor)
+                 set_color(newcolor);
+             if(state == IDLE &amp;&amp; rememberFalling) {
+                 state = FALLING;
+@@ -3278,19 +3267,17 @@
+                 the force resulting from floor-&gt;add_force. &quot;baseinterval&quot;
+                 is 50 ms or the interval given in &quot;interval&quot;.
+             */
+-            double base = 0.05;
+-            if (const Value *v = this-&gt;get_attrib(&quot;interval&quot;)) 
+-                base = to_double(*v);
+-            if (const Value *f = this-&gt;get_attrib(&quot;friction_factor&quot;))
+-                base *= 1.0 + to_double(*f) * GetFloor(get_pos())-&gt;get_friction();
+-            if (const Value *g = this-&gt;get_attrib(&quot;gradient_factor&quot;))
++            double base = getAttr(&quot;interval&quot;, 0.05);
++            if (Value f = getAttr(&quot;friction_factor&quot;))
++                base *= 1.0 + (double)f * GetFloor(get_pos())-&gt;get_friction();
++            if (Value g = getAttr(&quot;gradient_factor&quot;))
+                 if (skateDir != NODIR) {
+                     V2 vec = V2(0.0,0.0);
+                     double quot = 0;
+                     GetFloor(get_pos())-&gt;add_force(0, vec);
+                     quot = skateDir == NORTH ? -vec[1] : skateDir == SOUTH ? vec[1] :
+                         skateDir == EAST ? vec[0] : skateDir == WEST ? -vec[0] : 0;
+-                    base /= max(1.0 + to_double(*g) * quot, 0.01);                    
++                    base /= max(1.0 + (double)g * quot, 0.01);                    
+                 }
+             return max(base, 0.02);
+         }
+
+Modified: trunk/src/stones_internal.hh
+===================================================================
+--- trunk/src/stones_internal.hh	2007-01-19 17:32:58 UTC (rev 580)
++++ trunk/src/stones_internal.hh	2007-01-21 22:09:09 UTC (rev 581)
+@@ -88,7 +88,7 @@
+         }
+ 
+         bool is_on() const { 
+-            return int_attrib(&quot;on&quot;) == 1; 
++            return getAttr(&quot;on&quot;) == 1; 
+         }
+ 
+         virtual void set_on(bool newon) {
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2007-01-19 17:32:58 UTC (rev 580)
++++ trunk/src/stones_simple.cc	2007-01-21 22:09:09 UTC (rev 581)
+@@ -187,7 +187,7 @@
+ 
+         StoneResponse collision_response(const StoneContact &amp;/*sc*/) {
+             static int lastCode = -1;
+-            int        code     = int_attrib(&quot;code&quot;);
++            int        code     = getAttr(&quot;code&quot;);
+             if (code != lastCode) {
+                 fprintf(stderr, &quot;Collision with stone 0x%02x\n&quot;, code);
+                 lastCode = code;
+@@ -724,7 +724,7 @@
+         Break_acwhite() : BreakableStone(&quot;st-break_acwhite&quot;) {}
+     private:
+         bool may_be_broken_by(Actor *a) const {
+-            return a-&gt;get_attrib(&quot;whiteball&quot;) &amp;&amp;
++            return (a-&gt;getAttr(&quot;whiteball&quot;) != 0) &amp;&amp;
+                 player::WieldedItemIs (a, &quot;it-hammer&quot;);
+         }
+     };
+@@ -754,7 +754,7 @@
+         Break_acblack() : BreakableStone(&quot;st-break_acblack&quot;) {}
+     private:
+         bool may_be_broken_by(Actor *a) const {
+-            return a-&gt;get_attrib(&quot;blackball&quot;) &amp;&amp;
++            return (a-&gt;getAttr(&quot;blackball&quot;) != 0) &amp;&amp;
+                 player::WieldedItemIs (a, &quot;it-hammer&quot;);
+         }
+     };
+@@ -1125,12 +1125,9 @@
+         DECL_TRAITS;
+ 
+         void actor_hit(const StoneContact &amp;sc) {
+-            double strength = 10.0;
+-            double length = 1.0;
+-            double minlength = 0.0;
+-            double_attrib (&quot;strength&quot;, &amp;strength);
+-            double_attrib (&quot;length&quot;, &amp;length);
+-            double_attrib (&quot;minlength&quot;, &amp;minlength);
++            double strength = getAttr(&quot;strength&quot;, 10.0);
++            double length = getAttr(&quot;length&quot;, 1.0);
++            double minlength = getAttr(&quot;minlength&quot;);
+ 
+             world::RubberBandData rbd;
+             rbd.strength = strength;
+@@ -1139,8 +1136,7 @@
+ 
+             // The mode attribute &quot;scissor&quot; defines, if when touching an st-rubberband,
+             // other rubberbands to the actor will be cut of or not, true means they will. true is default.
+-            enigma::Value const *scissorValue = get_attrib(&quot;scissor&quot;);
+-            bool isScissor = (scissorValue == NULL)? true : to_bool(*scissorValue);
++            bool isScissor = to_bool(getAttr(&quot;scissor&quot;));
+ 
+             if (!world::HasRubberBand (sc.actor, this)) {
+                 sound_event (&quot;rubberband&quot;);
+@@ -1228,12 +1224,10 @@
+         int m_signalvalue;
+ 
+         double get_interval() const {
+-            double interval = 100;
+-            double_attrib(&quot;interval&quot;, &amp;interval);
+-            return interval;
++            return getAttr(&quot;interval&quot;, 100);
+         }
+         void init_model() {
+-            if (int_attrib(&quot;invisible&quot;)) {
++            if (getAttr(&quot;invisible&quot;) == 1) {
+                 set_model(&quot;invisible&quot;);
+             }
+             else {
+@@ -1411,8 +1405,7 @@
+         set_anim(&quot;st-thief-emerge&quot;);
+         state = EMERGING;
+         m_affected_actor = sc.actor;
+-        affected_player = -1;
+-        m_affected_actor-&gt;int_attrib(&quot;player&quot;, &amp;affected_player);
++        affected_player = m_affected_actor-&gt;getAttr(&quot;player&quot;, -1);
+     }
+ }
+ 
+@@ -1490,8 +1483,7 @@
+                 // actor_hit is called before reflect, but the force added below
+                 // is applied to actor after the reflection.
+ 
+-                double forcefac = server::BumperForce;
+-                double_attrib(&quot;force&quot;, &amp;forcefac);
++                double forcefac = getAttr(&quot;force&quot;, server::BumperForce);
+ 
+                 V2 vec = normalize(sc.actor-&gt;get_pos() - get_pos().center());
+                 sc.actor-&gt;add_force (distortedVelocity(vec, forcefac));                
+@@ -1617,11 +1609,11 @@
+ 
+         StoneResponse collision_response(const StoneContact &amp;sc) {
+             if (m_type &lt; 4) {
+-                return (sc.actor-&gt;get_attrib(&quot;blackball&quot;)) ? 
++                return (sc.actor-&gt;getAttr(&quot;blackball&quot;) != 0) ? 
+                     STONE_PASS : STONE_REBOUND;
+             }
+             else {
+-                return (sc.actor-&gt;get_attrib(&quot;whiteball&quot;)) ? 
++                return (sc.actor-&gt;getAttr(&quot;whiteball&quot;) != 0) ? 
+                     STONE_PASS : STONE_REBOUND;
+             }
+         }
+@@ -1685,8 +1677,8 @@
+ 
+     private:
+         void actor_hit(const StoneContact &amp;sc) {
+-            if      (sc.actor-&gt;get_attrib(&quot;blackball&quot;)) turn_white();
+-            else if (sc.actor-&gt;get_attrib(&quot;whiteball&quot;)) turn_black();
++            if      (sc.actor-&gt;getAttr(&quot;blackball&quot;) != 0) turn_white();
++            else if (sc.actor-&gt;getAttr(&quot;whiteball&quot;) != 0) turn_black();
+         }
+     };
+ 
+@@ -1696,8 +1688,8 @@
+         YinYangStone2() : YinYangStone(&quot;st-yinyang2&quot;) {}
+     private:
+         void actor_hit(const StoneContact &amp;sc) {
+-            if      (sc.actor-&gt;get_attrib(&quot;blackball&quot;)) turn_black();
+-            else if (sc.actor-&gt;get_attrib(&quot;whiteball&quot;)) turn_white();
++            if      (sc.actor-&gt;getAttr(&quot;blackball&quot;) != 0) turn_black();
++            else if (sc.actor-&gt;getAttr(&quot;whiteball&quot;) != 0) turn_white();
+         }
+     };
+ 
+@@ -1713,9 +1705,9 @@
+             if (player::WieldedItemIs (sc.actor, &quot;it-magicwand&quot;) ||
+                 player::WieldedItemIs (sc.actor, &quot;it-brush&quot;))
+             {
+-                if      (sc.actor-&gt;get_attrib(&quot;blackball&quot;)) 
++                if      (sc.actor-&gt;getAttr(&quot;blackball&quot;) != 0) 
+                     turn_white(&quot;st-white4&quot;);
+-                else if (sc.actor-&gt;get_attrib(&quot;whiteball&quot;)) 
++                else if (sc.actor-&gt;getAttr(&quot;whiteball&quot;) != 0) 
+                     turn_black(&quot;st-black4&quot;);
+             }
+         }
+@@ -1793,7 +1785,7 @@
+         CLONEOBJ(MagicStone);
+         DECL_TRAITS;
+         void actor_hit(const StoneContact &amp;sc) {
+-            if (sc.actor-&gt;get_attrib(&quot;player&quot;) &amp;&amp; 
++            if (sc.actor-&gt;getAttr(&quot;player&quot;) &amp;&amp; 
+                 sc.actor-&gt;get_vel() * sc.normal &lt; -4)
+             {
+                 KillStone(get_pos());
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2007-01-19 17:32:58 UTC (rev 580)
++++ trunk/src/world.cc	2007-01-21 22:09:09 UTC (rev 581)
+@@ -475,9 +475,8 @@
+ void World::unname (Object *obj)
+ {
+     ASSERT(obj, XLevelRuntime, &quot;unname: no object given&quot;);
+-    string name;
+-    if (obj-&gt;string_attrib(&quot;name&quot;, &amp;name)) {
+-        m_objnames.remove(name);
++    if (Value v = obj-&gt;getAttr(&quot;name&quot;)) {
++        m_objnames.remove(v.to_string());
+         obj-&gt;set_attrib(&quot;name&quot;, &quot;&quot;);
+     }
+ }
+@@ -1254,9 +1253,9 @@
+         a-&gt;on_creation(a-&gt;get_actorinfo()-&gt;pos);
+         a-&gt;message (&quot;init&quot;, Value());
+ 
+-        int iplayer;
+-        if (a-&gt;int_attrib(&quot;player&quot;, &amp;iplayer)) {
+-            player::AddActor(iplayer,a);
++        if (Value v = a-&gt;getAttr(&quot;player&quot;)) {
++            int iplayer = v;
++            player::AddActor(iplayer, a);
+             if (iplayer == 0) seen_player0 = true;
+         } else {
+             player::AddUnassignedActor(a);
+@@ -1289,7 +1288,8 @@
+ void world::NameObject(Object *obj, const std::string &amp;name)
+ {
+     string old_name;
+-    if (obj-&gt;string_attrib(&quot;name&quot;, &amp;old_name)) {
++    if (Value v = obj-&gt;getAttr(&quot;name&quot;)) {
++        old_name = v.to_string();
+         obj-&gt;warning(&quot;name '%s' overwritten by '%s'&quot;,
+                      old_name.c_str(), name.c_str());
+         UnnameObject(obj);
+@@ -1304,13 +1304,12 @@
+ 
+ void world::TransferObjectName (Object *source, Object *target)
+ {
+-    string name;
+-    if (source-&gt;string_attrib(&quot;name&quot;, &amp;name)) {
++    if (Value v = source-&gt;getAttr(&quot;name&quot;)) {
++        string name(v);
+         UnnameObject(source);
+-        string targetName;
+-        if (target-&gt;string_attrib(&quot;name&quot;, &amp;targetName)) {
++        if (Value v = target-&gt;getAttr(&quot;name&quot;)) {
+             target-&gt;warning(&quot;name '%s' overwritten by '%s'&quot;,
+-                            targetName.c_str(), name.c_str());
++                            v.to_string().c_str(), name.c_str());
+             UnnameObject(target);
+         }
+         NameObject(target, name);
+@@ -1552,10 +1551,9 @@
+ void world::PerformAction (Object *o, bool onoff) 
+ {
+     string action = &quot;idle&quot;;
+-    string target;
++    string target(o-&gt;getAttr(&quot;target&quot;));
+ 
+-    o-&gt;string_attrib(&quot;action&quot;, &amp;action);
+-    o-&gt;string_attrib(&quot;target&quot;, &amp;target);
++    if (Value v = o-&gt;getAttr(&quot;action&quot;)) action = v.to_string();
+ 
+ #if defined(VERBOSE_MESSAGES)
+     o-&gt;warning(&quot;PerformAction action=%s target=%s&quot;, action.c_str(), target.c_str());
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000020.html">[Enigma-game-svn] r580 - in trunk/data: . gfx32 gfx40 gfx48
+</A></li>
+	<LI>Next message: <A HREF="000022.html">[Enigma-game-svn] r582 - in branches/1.0: data/levels/enigma_cross	data/levels/enigma_v data/levels/enigma_vi data/levels/lib po
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21">[ date ]</a>
+              <a href="thread.html#21">[ thread ]</a>
+              <a href="subject.html#21">[ subject ]</a>
+              <a href="author.html#21">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

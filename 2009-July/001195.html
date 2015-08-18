@@ -1,0 +1,129 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1766 - in trunk: lib-src/enigma-core src src/gui
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1766%20-%20in%20trunk%3A%20lib-src/enigma-core%20src%20src/gui&In-Reply-To=%3C200907212122.n6LLMS7P022018%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001194.html">
+   <LINK REL="Next"  HREF="001196.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1766 - in trunk: lib-src/enigma-core src src/gui</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1766%20-%20in%20trunk%3A%20lib-src/enigma-core%20src%20src/gui&In-Reply-To=%3C200907212122.n6LLMS7P022018%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1766 - in trunk: lib-src/enigma-core src src/gui">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Jul 21 23:22:28 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001194.html">[Enigma-game-svn] r1765 - trunk/data/levels/lib
+</A></li>
+        <LI>Next message: <A HREF="001196.html">[Enigma-game-svn] r1767 - trunk/src/lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1195">[ date ]</a>
+              <a href="thread.html#1195">[ thread ]</a>
+              <a href="subject.html#1195">[ subject ]</a>
+              <a href="author.html#1195">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-07-21 23:22:28 +0200 (Tue, 21 Jul 2009)
+New Revision: 1766
+
+Modified:
+   trunk/lib-src/enigma-core/ecl_system.cc
+   trunk/src/Makefile.am
+   trunk/src/gui/MainMenu.cc
+Log:
+Trunk 1.1:
+- Mac OS X patch by Sidney:
+  - support for auto folder and enigma.score folder exploration
+
+
+Modified: trunk/lib-src/enigma-core/ecl_system.cc
+===================================================================
+--- trunk/lib-src/enigma-core/ecl_system.cc	2009-07-21 12:44:23 UTC (rev 1765)
++++ trunk/lib-src/enigma-core/ecl_system.cc	2009-07-21 21:22:28 UTC (rev 1766)
+@@ -137,17 +137,9 @@
+ #ifdef __MINGW32__
+     result == ((int)ShellExecute(NULL, &quot;explore&quot;, path.c_str(), NULL, NULL, SW_SHOWNORMAL) &gt;= 32);
+ #elif MACOSX
+-    CFStringRef cfurlStr = CFStringCreateWithCString( NULL, path.c_str(), kCFStringEncodingASCII);
+-
+-    // Create a URL object:
+-    CFURLRef cfurl = CFURLCreateWithString (NULL, cfurlStr, NULL);
+-
+-    // Open the URL:
+-    LSOpenCFURLRef(cfurl, NULL);
+-
+-    // Release the created resources:
+-    CFRelease(cfurl);
+-    CFRelease(cfurlStr);
++    FSRef fref;
++    FSPathMakeRef((UInt8*)path.c_str(), &amp;fref, NULL);
++    LSOpenFSRef(&amp;fref, NULL);
+ #else
+     result = (system((&quot;xdg-open &quot; + path + &quot; &amp;&quot;).c_str()) == 0);
+ #endif
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2009-07-21 12:44:23 UTC (rev 1765)
++++ trunk/src/Makefile.am	2009-07-21 21:22:28 UTC (rev 1766)
+@@ -563,7 +563,7 @@
+ static_prefix := `$(SDL_CONFIG) --prefix`
+ .PHONY: enigma-fw-mosx
+ enigma-fw-mosx: $(enigma_OBJECTS) $(enigma_DEPENDENCIES)
+-	$(CXX) $(LDFLAGS) -o enigma-fw $(enigma_OBJECTS) $(enigma_DEPENDENCIES) $(static_prefix)/lib/libintl.a /usr/lib/libiconv.dylib $(static_prefix)/lib/libxerces-c.a -L$(static_prefix)/lib -lsdlmain -lz -framework SDL -framework SDL_image -framework SDL_mixer -framework Cocoa -framework OpenGL -framework SDL_ttf $(static_prefix)/lib/libpng.a 
++	$(CXX) $(LDFLAGS) -o enigma-fw $(enigma_OBJECTS) $(enigma_DEPENDENCIES) $(static_prefix)/lib/libintl.a /usr/lib/libiconv.dylib /usr/lib/libcurl.dylib $(static_prefix)/lib/libxerces-c.a -L$(static_prefix)/lib -lsdlmain -lz -framework SDL -framework SDL_image -framework SDL_mixer -framework Cocoa -framework OpenGL -framework SDL_ttf $(static_prefix)/lib/libpng.a 
+ 
+ # Special target to make a disk image of the bundled app
+ .PHONY: bundle-dmg
+
+Modified: trunk/src/gui/MainMenu.cc
+===================================================================
+--- trunk/src/gui/MainMenu.cc	2009-07-21 12:44:23 UTC (rev 1765)
++++ trunk/src/gui/MainMenu.cc	2009-07-21 21:22:28 UTC (rev 1766)
+@@ -227,7 +227,7 @@
+         BuildVList *brp = vshrink? &amp;br : &b;
+         
+         homepage = b.add(new StaticTextButton(N_(&quot;Homepage&quot;), this));
+-        docs = b.add(new StaticTextButton(N_(&quot;Dokumentation&quot;), this));
++        docs = b.add(new StaticTextButton(N_(&quot;Documentation&quot;), this));
+         paths = b.add(new StaticTextButton(N_(&quot;Paths&quot;), this));
+         autofolder = brp-&gt;add(new StaticTextButton(N_(&quot;Locate Auto&quot;), this));
+         scorefolder = brp-&gt;add(new StaticTextButton(N_(&quot;Locate Score&quot;), this));
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001194.html">[Enigma-game-svn] r1765 - trunk/data/levels/lib
+</A></li>
+	<LI>Next message: <A HREF="001196.html">[Enigma-game-svn] r1767 - trunk/src/lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1195">[ date ]</a>
+              <a href="thread.html#1195">[ thread ]</a>
+              <a href="subject.html#1195">[ subject ]</a>
+              <a href="author.html#1195">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

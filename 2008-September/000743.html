@@ -1,0 +1,336 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1313 - trunk/src/floors
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1313%20-%20trunk/src/floors&In-Reply-To=%3C200809082300.m88N0nca031156%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000742.html">
+   <LINK REL="Next"  HREF="000744.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1313 - trunk/src/floors</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1313%20-%20trunk/src/floors&In-Reply-To=%3C200809082300.m88N0nca031156%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1313 - trunk/src/floors">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Sep  9 01:00:49 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000742.html">[Enigma-game-svn] r1312 - in trunk: data data/levels/enigma_vii	data/schemas src src/stones
+</A></li>
+        <LI>Next message: <A HREF="000744.html">[Enigma-game-svn] r1314 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#743">[ date ]</a>
+              <a href="thread.html#743">[ thread ]</a>
+              <a href="subject.html#743">[ subject ]</a>
+              <a href="author.html#743">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-09-09 01:00:47 +0200 (Tue, 09 Sep 2008)
+New Revision: 1313
+
+Added:
+   trunk/src/floors/BridgeFloor.cc
+   trunk/src/floors/BridgeFloor.hh
+Log:
+Trunk 1.1: new API reengineering
+- fix r1312 - missing files added
+
+
+Added: trunk/src/floors/BridgeFloor.cc
+===================================================================
+--- trunk/src/floors/BridgeFloor.cc	2008-09-08 22:46:29 UTC (rev 1312)
++++ trunk/src/floors/BridgeFloor.cc	2008-09-08 23:00:47 UTC (rev 1313)
+@@ -0,0 +1,164 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;floors/BridgeFloor.hh&quot;
++
++#include &quot;errors.hh&quot;
++#include &quot;main.hh&quot;
++#include &quot;stones.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    
++    BridgeFloor::BridgeFloor(std::string flavor) : Floor(&quot;fl_bridge&quot;, 5, 1) {
++        Floor::setAttr(&quot;flavor&quot;, flavor);
++        state = OPEN;
++    }
++    
++    std::string BridgeFloor::getClass() const {
++        return &quot;fl_bridge&quot;;
++    }
++        
++    void BridgeFloor::setAttr(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;flavor&quot;) {
++            std::string flavor = val.to_string();
++            ASSERT(flavor == &quot;gc&quot; || flavor == &quot;bw&quot; || flavor == &quot;bn&quot;, XLevelRuntime, &quot;BridgeFloor illegal flavor value&quot;);
++            Floor::setAttr(&quot;flavor&quot;, val);
++            if (isDisplayable() &amp;&amp; state &lt;= OPEN) {
++                init_model();    // need to redisplay after attribute set
++            }
++            return;
++        }
++        Floor::setAttr(key, val);
++    }
++    
++    Value BridgeFloor::message(const Message &amp;m) {
++        if (m.message == &quot;_init&quot;) {
++            // a stone may be set or changed after floor set
++            Stone *st = GetStone(get_pos());
++            if ((objFlags &amp; OBJBIT_EXPLICIT) || (st != NULL &amp;&amp; !st-&gt;is_floating())) {
++                state = CLOSED;
++            } else {
++                state = OPEN;
++            }
++            init_model();
++            return Value();
++        } else
++            return Floor::message(m);
++    }
++
++    int BridgeFloor::externalState() const {
++        return (state == CLOSED) ? 0 : 1;
++    }
++    
++    void BridgeFloor::setState(int extState) {
++        if (isDisplayable()) {
++            Stone *st = GetStone(get_pos());
++            if (extState == 1 &amp;&amp; (state == CLOSED || state == CLOSING) &amp;&amp; (st == NULL || st-&gt;is_floating()))
++                set_iState(OPENING);
++            else if (extState == 0 &amp;&amp; (state == OPEN || state == OPENING))
++                set_iState(CLOSING);
++        } else {   // object initialisation
++            state = extState;
++        }
++        if (extState == 1)
++            objFlags &amp;= ~OBJBIT_EXPLICIT;
++        else
++            objFlags |= OBJBIT_EXPLICIT;
++    }
++    
++    void BridgeFloor::toggleState() {
++        Stone *st = GetStone(get_pos());
++        if ((state == CLOSED || state == CLOSING) &amp;&amp; st != NULL &amp;&amp; !st-&gt;is_floating())
++            objFlags ^= OBJBIT_EXPLICIT;   // toggle flag
++        else if (state == CLOSED || state == CLOSING)
++            setState(1);
++        else
++            setState(0);
++    }
++
++    void BridgeFloor::init_model()  {
++        set_model(model_basename() + ((state==OPEN) ? &quot;open&quot; : &quot;closed&quot;));
++    }
++    
++    void BridgeFloor::on_creation(GridPos p) {
++        // we can not rely on state attribute in case a floor in yielded and reset on anther grid
++        Stone *st = GetStone(get_pos());
++        if ((objFlags &amp; OBJBIT_EXPLICIT) || (st != NULL &amp;&amp; !st-&gt;is_floating()))
++            state = CLOSED;
++        else
++            state = OPEN;
++        Floor::on_creation(p);
++    }
++    
++    void BridgeFloor::animcb() {
++        if (state == OPENING)
++            state = OPEN;
++        else if (state == CLOSING)
++            state = CLOSED;
++        init_model();
++    }
++
++    void BridgeFloor::stone_change(Stone *st) {
++        if (st != NULL &amp;&amp; !st-&gt;is_floating() &amp;&amp; (state == OPEN || state == OPENING)) {
++            set_iState(CLOSING);
++        }
++        else if ((st == NULL || st-&gt;is_floating()) &amp;&amp; (state == CLOSED || state == CLOSING) 
++                &amp;&amp; !(objFlags &amp; OBJBIT_EXPLICIT)) {
++            set_iState(OPENING);
++        }
++    }
++    
++    void BridgeFloor::actor_contact(Actor *a) {
++        if (state != CLOSED) SendMessage(a, &quot;fall&quot;);
++    }
++    
++    std::string BridgeFloor::model_basename() const {
++        std::string flavor = getAttr(&quot;flavor&quot;).to_string();
++        if (flavor == &quot;gc&quot;)
++            return &quot;fl-bridgea-&quot;;
++        else if (flavor == &quot;bw&quot;)
++            return &quot;fl-bridgex-&quot;;
++        else if (flavor == &quot;bn&quot;)
++            return &quot;fl-bridgey-&quot;;
++    }
++    
++    void BridgeFloor::set_iState(int newState) {
++        if (newState == OPENING) {
++            if (state == CLOSING)
++                get_model()-&gt;reverse();
++            else
++                set_anim(model_basename() + &quot;opening&quot;);
++        } else if (newState == CLOSING) {
++            if (state == OPENING)
++                get_model()-&gt;reverse();
++            else
++                set_anim(model_basename() + &quot;closing&quot;);
++        }
++        state = newState;
++    }
++
++    BOOT_REGISTER_START
++        BootRegister(new BridgeFloor(&quot;gc&quot;), &quot;fl_bridge&quot;);
++        BootRegister(new BridgeFloor(&quot;gc&quot;), &quot;fl_bridge_gc&quot;);
++        BootRegister(new BridgeFloor(&quot;bn&quot;), &quot;fl_bridge_bn&quot;);
++        BootRegister(new BridgeFloor(&quot;bw&quot;), &quot;fl_bridge_bw&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/floors/BridgeFloor.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/floors/BridgeFloor.hh
+===================================================================
+--- trunk/src/floors/BridgeFloor.hh	2008-09-08 22:46:29 UTC (rev 1312)
++++ trunk/src/floors/BridgeFloor.hh	2008-09-08 23:00:47 UTC (rev 1313)
+@@ -0,0 +1,75 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef BRIDGEFLOOR_HH
++#define BRIDGEFLOOR_HH
++
++#include &quot;floors.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class BridgeFloor : public Floor {
++        CLONEOBJ(BridgeFloor);
++        
++    private:
++        enum iState {
++            CLOSED,    ///&lt; 
++            OPEN,      ///&lt; 
++            CLOSING,   ///&lt; 
++            OPENING,   ///&lt; 
++        };
++
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_EXPLICIT =   1&lt;&lt;24,   ///&lt; closed by message and not by a stone
++        };
++    public:
++        BridgeFloor(std::string flavor);
++
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual int externalState() const;
++        virtual void setState(int extState);
++        virtual void toggleState();
++
++        // GridObject interface
++        virtual void init_model();
++        virtual void on_creation(GridPos p);
++                
++        // ModelCallback interface  - Animation callback
++        virtual void animcb();
++
++        // Floor interface
++        virtual void stone_change(Stone *st);
++        virtual void actor_contact(Actor *a);
++        
++    private:
++        // Private methods.
++        std::string model_basename() const;
++        void set_iState(int newState);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/floors/BridgeFloor.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000742.html">[Enigma-game-svn] r1312 - in trunk: data data/levels/enigma_vii	data/schemas src src/stones
+</A></li>
+	<LI>Next message: <A HREF="000744.html">[Enigma-game-svn] r1314 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#743">[ date ]</a>
+              <a href="thread.html#743">[ thread ]</a>
+              <a href="subject.html#743">[ subject ]</a>
+              <a href="author.html#743">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

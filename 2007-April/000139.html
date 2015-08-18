@@ -1,0 +1,125 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r702 - branches/1.0/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r702%20-%20branches/1.0/src&In-Reply-To=%3C200704291158.l3TBwMN3018379%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000138.html">
+   <LINK REL="Next"  HREF="000140.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r702 - branches/1.0/src</H1>
+    <B>andreasl at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r702%20-%20branches/1.0/src&In-Reply-To=%3C200704291158.l3TBwMN3018379%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r702 - branches/1.0/src">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Sun Apr 29 13:58:22 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000138.html">[Enigma-game-svn] r701 - branches/1.0/data
+</A></li>
+        <LI>Next message: <A HREF="000140.html">[Enigma-game-svn] r703 - in branches/1.0: lib-src/enigma-core	src/lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#139">[ date ]</a>
+              <a href="thread.html#139">[ thread ]</a>
+              <a href="subject.html#139">[ subject ]</a>
+              <a href="author.html#139">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2007-04-29 13:58:22 +0200 (Sun, 29 Apr 2007)
+New Revision: 702
+
+Modified:
+   branches/1.0/src/sound.cc
+   branches/1.0/src/sound_internal.hh
+Log:
+Workaround to fix &quot;silent F3 bug&quot;:
+ - Coalesce sounds only when their positions are at most
+   in 30 grids distance.
+(Explanation: When pressing F3 in levels with two actors at
+large distances, sometimes you can't hear the shatter. This
+is due to the missing volume-readjustment during coalescing.
+This workaround here is only temporary until the volume can
+be readjusted or coalescing is removed in favour of a priority
+system.)
+
+
+Modified: branches/1.0/src/sound.cc
+===================================================================
+--- branches/1.0/src/sound.cc	2007-04-27 22:57:32 UTC (rev 701)
++++ branches/1.0/src/sound.cc	2007-04-29 11:58:22 UTC (rev 702)
+@@ -242,12 +242,14 @@
+     Mix_Volume(channel, ecl::Clamp(mixvol, 0, MIX_MAX_VOLUME));
+ }
+ 
+-int SoundEngine_SDL::already_playing (const SoundName &amp;name)
++int SoundEngine_SDL::already_playing (const SoundEvent &amp;s)
+ {
+     for (size_t i=0; i&lt;m_channelinfo.size(); ++i) {
+         const SoundEvent &amp;se = m_channelinfo[i];
+ 
+-        if (se.active &amp;&amp; se.name == name &amp;&amp; se.playing_time &lt; 0.05)
++        if (se.active &amp;&amp; se.name == s.name &amp;&amp; se.playing_time &lt; 0.05
++            &amp;&amp; (!se.has_position || !s.has_position ||
++		ecl::length(se.position - s.position) &lt; 30))
+             return static_cast&lt;int&gt; (i);
+     }
+     return -1;
+@@ -274,7 +276,7 @@
+ 
+ bool SoundEngine_SDL::play_sound (const SoundEvent &amp;s)
+ {
+-    int channel = already_playing (s.name);
++    int channel = already_playing (s);
+     if (channel != -1) {
+         MutexLock (m_instance-&gt;m_mutex);
+         SoundEvent &amp;se = m_channelinfo [channel];
+
+Modified: branches/1.0/src/sound_internal.hh
+===================================================================
+--- branches/1.0/src/sound_internal.hh	2007-04-27 22:57:32 UTC (rev 701)
++++ branches/1.0/src/sound_internal.hh	2007-04-29 11:58:22 UTC (rev 702)
+@@ -217,7 +217,7 @@
+         Mix_Chunk *cache_sound(const std::string &amp;name);
+ 
+         void update_channel (int channel);
+-        int already_playing (const SoundName &amp;name);
++        int already_playing (const SoundEvent &amp;s);
+ 
+ 
+         static void channel_finished (int channel);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000138.html">[Enigma-game-svn] r701 - branches/1.0/data
+</A></li>
+	<LI>Next message: <A HREF="000140.html">[Enigma-game-svn] r703 - in branches/1.0: lib-src/enigma-core	src/lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#139">[ date ]</a>
+              <a href="thread.html#139">[ thread ]</a>
+              <a href="subject.html#139">[ subject ]</a>
+              <a href="author.html#139">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

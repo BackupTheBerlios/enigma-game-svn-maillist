@@ -1,0 +1,189 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r896 - in trunk: doc/reference src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r896%20-%20in%20trunk%3A%20doc/reference%20src&In-Reply-To=%3C200710071218.l97CIwTl019377%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000327.html">
+   <LINK REL="Next"  HREF="000329.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r896 - in trunk: doc/reference src</H1>
+    <B>andreasl at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r896%20-%20in%20trunk%3A%20doc/reference%20src&In-Reply-To=%3C200710071218.l97CIwTl019377%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r896 - in trunk: doc/reference src">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Sun Oct  7 14:18:58 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000327.html">[Enigma-game-svn] r895 - in homepage/input: . lotm
+</A></li>
+        <LI>Next message: <A HREF="000329.html">[Enigma-game-svn] r897 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#328">[ date ]</a>
+              <a href="thread.html#328">[ thread ]</a>
+              <a href="subject.html#328">[ subject ]</a>
+              <a href="author.html#328">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2007-10-07 14:18:57 +0200 (Sun, 07 Oct 2007)
+New Revision: 896
+
+Modified:
+   trunk/doc/reference/enigma-ref.texi
+   trunk/src/items.cc
+   trunk/src/stones_complex.cc
+   trunk/src/stones_simple.cc
+Log:
+Fixing some minor bugs:
+ - Shogun-item now deactives itself when it finds that the
+   activating shogun-stone vanished without sending a proper
+   message.
+ - Shogun-stone now sends a proper message on removal.
+ - Fixed several segfaults that result from removing a
+   shogun-stone via a self-triggered action.
+ - typos
+Refman:
+ - Added a small explanation to the glass stone table.
+Remark: 
+ - In ShogunStone::on_impulse, the identification of the
+   new stone happens via getId.
+
+
+Modified: trunk/doc/reference/enigma-ref.texi
+===================================================================
+--- trunk/doc/reference/enigma-ref.texi	2007-10-05 19:41:29 UTC (rev 895)
++++ trunk/doc/reference/enigma-ref.texi	2007-10-07 12:18:57 UTC (rev 896)
+@@ -4681,6 +4681,16 @@
+ @item st-beads @tab - @tab pass @tab no
+ @end multitable
+ 
++These entries can be visualized as follows: A glassstone is transparent for
++laser light, if it is not dark, or if it is hollow. Exception is
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{st-beads}, whose irregular sides would scatter the beam. A glassstone
++can always be passed by invisible actors, with three exceptions:
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{st-glass3}, whose inside is filled with red stripes, and the two movables
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{st-glass1_move} and @code{st-glass2_move} which have a non-glass frame
++which the actor can use to move the stone. @code{st-glass_move} does not have 
++such a frame and cannot be moved by an invisible actor.
++
++
+ @node Breakable Stones, Oxyd Compatibility Stones, Glassstones, Stones
+ @subsection Breakable Stones
+ 
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2007-10-05 19:41:29 UTC (rev 895)
++++ trunk/src/items.cc	2007-10-07 12:18:57 UTC (rev 896)
+@@ -1529,6 +1529,8 @@
+     if (activated) {
+         if (st == 0) {
+             warning(&quot;stone_change: Stone disappeared w/o sending me a proper message!&quot;);
++            activated = false;
++            world::PerformAction(this, false);
+         }
+     }
+ }
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2007-10-05 19:41:29 UTC (rev 895)
++++ trunk/src/stones_complex.cc	2007-10-07 12:18:57 UTC (rev 896)
+@@ -1868,8 +1868,8 @@
+ 
+         void add_hole(Holes h) {
+             set_attrib(&quot;holes&quot;, get_holes() | h);
++            init_model();
+             notify_item();
+-            init_model();
+         }
+ 
+         void on_creation (GridPos p) {
+@@ -1877,6 +1877,12 @@
+             notify_item();
+         }
+ 
++        void on_removal(GridPos p) {
++            Stone::on_removal(p);
++            if (Item *it = GetItem(p))
++                SendMessage(it, &quot;noshogun&quot;);
++        }
++
+         void on_impulse(const Impulse&amp; impulse);
+ 
+         void init_model() {
+@@ -1949,8 +1955,8 @@
+     // Remove/modify source stone:
+     if (Holes newholes = Holes(holes &amp; ~smallest)) {
+         set_holes(newholes);
++        init_model();
+         notify_item();
+-        init_model();
+     }
+     else {
+         if (Value v = getAttr(&quot;name&quot;)) old_name = v.get_string(); // store name of disappearing stone
+@@ -1966,8 +1972,13 @@
+     }
+     else {                       // create new
+         target = new ShogunStone(smallest);
++        int targetId = target-&gt;getId();
+         SetStone(destpos, target);
+-        target-&gt;on_move();
++        // Shogunstone might have disappeared via some triggered action.
++        // Most important example: Last box in a sokoban.
++        if (Stone *st = GetStone(destpos))
++            if (st-&gt;getId() == targetId)
++                st-&gt;on_move();
+     }
+ 
+     if (!old_name.empty())
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2007-10-05 19:41:29 UTC (rev 895)
++++ trunk/src/stones_simple.cc	2007-10-07 12:18:57 UTC (rev 896)
+@@ -966,7 +966,7 @@
+ \endverbatim
+ 
+ Note: There are two flavors of st-wood which may be specified
+-by using st-wood1 or st-wood2, and a two related kinds: st-flrock,
++by using st-wood1 or st-wood2, and two related kinds: st-flrock,
+ which creates the unburnable fl-rock and denies fire under it, and 
+ the burnable st-hay, which leaves the burnable but stable fl-hay
+ behind.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000327.html">[Enigma-game-svn] r895 - in homepage/input: . lotm
+</A></li>
+	<LI>Next message: <A HREF="000329.html">[Enigma-game-svn] r897 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#328">[ date ]</a>
+              <a href="thread.html#328">[ thread ]</a>
+              <a href="subject.html#328">[ subject ]</a>
+              <a href="author.html#328">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

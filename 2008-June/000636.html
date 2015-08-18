@@ -1,0 +1,255 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1202 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1202%20-%20trunk/src&In-Reply-To=%3C200806291813.m5TIDkQj010848%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000635.html">
+   
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1202 - trunk/src</H1>
+    <B>ral at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1202%20-%20trunk/src&In-Reply-To=%3C200806291813.m5TIDkQj010848%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1202 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Jun 29 20:13:46 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000635.html">[Enigma-game-svn] r1201 - trunk/doc/reference
+</A></li>
+        
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#636">[ date ]</a>
+              <a href="thread.html#636">[ thread ]</a>
+              <a href="subject.html#636">[ subject ]</a>
+              <a href="author.html#636">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-06-29 20:13:38 +0200 (Sun, 29 Jun 2008)
+New Revision: 1202
+
+Modified:
+   trunk/src/items.cc
+   trunk/src/items.hh
+Log:
+Trunk 1.1: new API reengineering
+- Strip item: first partial implementaion
+  - 16 variations: it_strip, it_strip_w,... it_strip_nesw 
+  - correct physics in width and height
+- fix: potential memory smasher on shutdown caused by it_sensor
+Note:
+- stip uses bluesand images (edit getModelName() to set it to it_strip0...)
+- objects.xml declarations missing
+- it-hstrip, it-vstrip mappings to new strip still missing
+
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-06-29 13:52:46 UTC (rev 1201)
++++ trunk/src/items.cc	2008-06-29 18:13:38 UTC (rev 1202)
+@@ -3280,8 +3280,8 @@
+     }
+ 
+     ItemTraits Sensor::traits[4] = {
+-        {&quot;it_sensor&quot;,  it_sensor,  itf_static},
+-        {&quot;it_sensor&quot;,  it_inversesensor,  itf_static},
++        {&quot;it_sensor&quot;,  it_sensor,  itf_static}, 
++        {&quot;it_sensor_inverse&quot;,  it_inversesensor,  itf_static},
+         {&quot;it_sensor_filter1&quot;, it_signalfilter1, itf_static | itf_invisible, 0.0},  // DAT only
+         {&quot;it_sensor_filter0&quot;, it_signalfilter0, itf_static | itf_invisible, 0.0}   // DAT only
+     };
+@@ -3839,7 +3839,7 @@
+     DEF_TRAITS(Pencil, &quot;it-pencil&quot;, it_pencil);
+ }
+ 
+-/* -------------------- it-death -------------------- */
++/* -------------------- Death Item  -------------------- */
+     class DeathItem : public Item {
+         CLONEOBJ(DeathItem);
+         DECL_TRAITS;
+@@ -3877,7 +3877,115 @@
+     
+     DEF_TRAITSF(DeathItem, &quot;it_death&quot;, it_death, itf_static | itf_indestructible);
+ 
++/* -------------------- Strip Items  -------------------- */
++    class StripItem : public Item {
++        CLONEOBJ(StripItem);
++        DECL_TRAITS_ARRAY(16, traitsIdx());
++        
++    public:
++        static void setup();
++                
++        StripItem(std::string connections);
++        
++        // Object interface
++        virtual std::string getClass() const;
+ 
++        // StateObject interface
++        virtual void setState(int extState);
++        
++        // GridObject interface
++        virtual std::string getModelName() const;
++        virtual void init_model();
++                
++        // Items interface
++        virtual bool covers_floor(ecl::V2 pos) const;
++        
++    private:
++        int traitsIdx() const;
++    };
++    
++    
++    void StripItem::setup() {
++        RegisterItem(new StripItem(&quot;&quot;));
++        RegisterItem(new StripItem(&quot;w&quot;));
++        RegisterItem(new StripItem(&quot;s&quot;));
++        RegisterItem(new StripItem(&quot;sw&quot;));
++        RegisterItem(new StripItem(&quot;e&quot;));
++        RegisterItem(new StripItem(&quot;ew&quot;));
++        RegisterItem(new StripItem(&quot;es&quot;));
++        RegisterItem(new StripItem(&quot;esw&quot;));
++        RegisterItem(new StripItem(&quot;n&quot;));
++        RegisterItem(new StripItem(&quot;nw&quot;));
++        RegisterItem(new StripItem(&quot;ns&quot;));
++        RegisterItem(new StripItem(&quot;nsw&quot;));
++        RegisterItem(new StripItem(&quot;ne&quot;));
++        RegisterItem(new StripItem(&quot;new&quot;));
++        RegisterItem(new StripItem(&quot;nes&quot;));
++        RegisterItem(new StripItem(&quot;nesw&quot;));
++    }
++    
++    StripItem::StripItem(std::string connections) {
++        setAttr(&quot;connections&quot;, connections);
++    }
++        
++    std::string StripItem::getClass() const {
++        return &quot;it_strip&quot;;
++    }
++    
++    void StripItem::setState(int extState) {
++        // block state set
++    }
++    
++    std::string StripItem::getModelName() const {
++//        return getClass();
++        return &quot;st_bluesand&quot;;
++    }
++    
++    void StripItem::init_model() {
++        // need to bypass Item's implementation
++        GridObject::init_model();
++    }
++
++    bool StripItem::covers_floor(ecl::V2 pos) const {
++        if (GridPos(pos) != get_pos())
++            return false;
++
++        const double MAXDIST = 6.0/32;
++        
++        double ycenter = get_pos().y + 0.5;
++        double xcenter = get_pos().x + 0.5;
++        DirectionBits cbits = getConnections();
++        
++        return (((fabs(pos[1] - ycenter) &lt;= MAXDIST) 
++                &amp;&amp; (((pos[0] &lt;= xcenter) &amp;&amp; (cbits &amp; WESTBIT)) || ((pos[0] &gt;= xcenter) &amp;&amp; (cbits &amp; EASTBIT))))
++                || ((fabs(pos[0] - xcenter) &lt;= MAXDIST) 
++                &amp;&amp; (((pos[1] &lt;= ycenter) &amp;&amp; (cbits &amp; NORTHBIT)) || ((pos[1] &gt;= ycenter) &amp;&amp; (cbits &amp; SOUTHBIT)))))
++                ? true : false;
++    }
++        
++    int StripItem::traitsIdx() const {
++        return getConnections();
++    }
++
++    ItemTraits StripItem::traits[16] = {
++        {&quot;it_strip&quot;,  it_strip,  itf_static},
++        {&quot;it_strip_w&quot;,  it_strip_w,  itf_static},
++        {&quot;it_strip_s&quot;,  it_strip_s,  itf_static},
++        {&quot;it_strip_sw&quot;,  it_strip_sw,  itf_static},
++        {&quot;it_strip_e&quot;,  it_strip_e,  itf_static},
++        {&quot;it_strip_ew&quot;,  it_strip_ew,  itf_static},
++        {&quot;it_strip_es&quot;,  it_strip_es,  itf_static},
++        {&quot;it_strip_esw&quot;,  it_strip_esw,  itf_static},
++        {&quot;it_strip_n&quot;,  it_strip_n,  itf_static},
++        {&quot;it_strip_nw&quot;,  it_strip_nw,  itf_static},
++        {&quot;it_strip_ns&quot;,  it_strip_ns,  itf_static},
++        {&quot;it_strip_nsw&quot;,  it_strip_nsw,  itf_static},
++        {&quot;it_strip_ne&quot;,  it_strip_ne,  itf_static},
++        {&quot;it_strip_new&quot;,  it_strip_new,  itf_static},
++        {&quot;it_strip_nes&quot;,  it_strip_nes,  itf_static},
++        {&quot;it_strip_nesw&quot;,  it_strip_nesw,  itf_static}
++    };
++
+ /* -------------------- HStrip and VStrip -------------------- */
+ namespace
+ {
+@@ -4186,6 +4294,7 @@
+     RegisterItem (new Spring2);
+     RegisterItem (new Springboard);
+     RegisterItem (new Squashed);
++    StripItem::setup();
+     RegisterItem (new SurpriseItem);
+     RegisterItem (new Sword(false));
+     Register (&quot;it_sword_new&quot;, new Sword(true));
+
+Modified: trunk/src/items.hh
+===================================================================
+--- trunk/src/items.hh	2008-06-29 13:52:46 UTC (rev 1201)
++++ trunk/src/items.hh	2008-06-29 18:13:38 UTC (rev 1202)
+@@ -115,6 +115,22 @@
+         it_spring2,
+         it_springboard,
+         it_squashed,
++        it_strip,
++        it_strip_w,
++        it_strip_s,
++        it_strip_sw,
++        it_strip_e,
++        it_strip_ew,
++        it_strip_es,
++        it_strip_esw,
++        it_strip_n,
++        it_strip_nw,
++        it_strip_ns,
++        it_strip_nsw,
++        it_strip_ne,
++        it_strip_new,
++        it_strip_nes,
++        it_strip_nesw,
+         it_surprise,
+         it_sword,
+         it_tinyhill,
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000635.html">[Enigma-game-svn] r1201 - trunk/doc/reference
+</A></li>
+	
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#636">[ date ]</a>
+              <a href="thread.html#636">[ thread ]</a>
+              <a href="subject.html#636">[ subject ]</a>
+              <a href="author.html#636">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

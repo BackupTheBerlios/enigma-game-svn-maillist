@@ -1,0 +1,1346 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1279 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-August/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1279%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200808202300.m7KN0IeS004143%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000708.html">
+   <LINK REL="Next"  HREF="000710.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1279 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1279%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200808202300.m7KN0IeS004143%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1279 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Aug 21 01:00:18 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000708.html">[Enigma-game-svn] r1278 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000710.html">[Enigma-game-svn] r1280 - in trunk: data data/levels/lib src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#709">[ date ]</a>
+              <a href="thread.html#709">[ thread ]</a>
+              <a href="subject.html#709">[ subject ]</a>
+              <a href="author.html#709">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-08-21 01:00:11 +0200 (Thu, 21 Aug 2008)
+New Revision: 1279
+
+Added:
+   trunk/src/stones/PullStone.cc
+   trunk/src/stones/PullStone.hh
+   trunk/src/stones/SwapStone.cc
+   trunk/src/stones/SwapStone.hh
+   trunk/src/stones/YieldingStone.cc
+   trunk/src/stones/YieldingStone.hh
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/actors.cc
+   trunk/src/actors.hh
+   trunk/src/ox_peroxyd.cc
+   trunk/src/stones.cc
+   trunk/src/stones_complex.cc
+   trunk/src/stones_internal.hh
+   trunk/src/stones_simple.cc
+Log:
+Trunk 1.1: new API reengineering
+- replace YieldedGridStone by Stone subclass YieldingStone
+  - fix crashing on stones that suicide on set or move
+- pull stone reengineering:
+  - renamed to st_pull
+  - preserve identity on moves:
+    - can now be used with rubberband and wires
+    - can be named and attributed
+  - ensure that pull does not press triggers on both affected grids
+    while moving
+  - made light transparent
+- swap stone reengineering:
+  - renamed to st_swap
+  - preserve identity on moves:
+    - can now be used with rubberband and wires
+    - can be named and attributed
+  - ensure that swap does not press triggers on both affected grids
+    while moving
+- fix brake on shattering actors on pull stone swaps
+- fix plain_move and firebreak: 
+  - fall on changing floors
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-08-20 22:53:31 UTC (rev 1278)
++++ trunk/data/api1init.lua	2008-08-20 23:00:11 UTC (rev 1279)
+@@ -193,6 +193,7 @@
+     st_oneway_white_w = &quot;st-oneway_white-w&quot;,
+     st_panel = &quot;st-wood_001&quot;,
+     st_polarswitch = &quot;st-polarswitch&quot;,
++    st_pull = &quot;st-pull&quot;,
+     st_rotator_cw = &quot;st-rotator-right&quot;,
+     st_rotator_ccw = &quot;st-rotator-left&quot;,
+     st_rotator_cw_movable = &quot;st-rotator_move-right&quot;,
+@@ -207,6 +208,7 @@
+     st_shogun_sl = &quot;st-shogun-sl&quot;,
+     st_shogun_ml = &quot;st-shogun-ml&quot;,
+     st_shogun_sml = &quot;st-shogun-sml&quot;,
++    st_swap = &quot;st-swap&quot;,
+     st_switch = &quot;st-switch&quot;,
+     st_switch_black = &quot;st-switch_black&quot;,
+     st_switch_white = &quot;st-switch_white&quot;,
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-08-20 22:53:31 UTC (rev 1278)
++++ trunk/data/schemas/objects.xml	2008-08-20 23:00:11 UTC (rev 1279)
+@@ -79,14 +79,15 @@
+     &lt;msg name=&quot;_brush&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_capture&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_explosion&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;_freeze&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_glasses&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_hit&quot; type=&quot;object&quot;/&gt;
+     &lt;msg name=&quot;_init&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_jumping&quot; type=&quot;bool&quot;/&gt;
+-    &lt;msg name=&quot;_performaction&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_model_reanimated&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_passed&quot; type=&quot;nil&quot;/&gt;            &lt;!-- check type--&gt;
+     &lt;msg name=&quot;_performaction&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;_revive&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_shogun&quot; type=&quot;int&quot;/&gt;
+     &lt;msg name=&quot;_spitter&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_start&quot; type=&quot;nil&quot;/&gt;
+@@ -692,6 +693,11 @@
+       &lt;msg name=&quot;off&quot;/&gt;
+       &lt;msg name=&quot;signal&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_pull&quot;&gt;
++      &lt;attr name=&quot;state&quot; rw=&quot;r&quot;/&gt;
++      &lt;msg name=&quot;_freeze&quot;/&gt;
++      &lt;msg name=&quot;_revive&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_rotator&quot;&gt;
+       &lt;attr name=&quot;counterclock&quot;/&gt;
+       &lt;attr name=&quot;movable&quot; rw=&quot;rw&quot;/&gt;
+@@ -742,6 +748,9 @@
+     &lt;object name=&quot;st_shogun_sml&quot;&gt;
+       &lt;attr name=&quot;flavor&quot; value=&quot;sml&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_swap&quot;&gt;
++      &lt;attr name=&quot;state&quot; rw=&quot;r&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_switch&quot;&gt;
+       &lt;attr name=&quot;color&quot;/&gt;
+       &lt;attr name=&quot;instant&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-08-20 22:53:31 UTC (rev 1278)
++++ trunk/src/Makefile.am	2008-08-20 23:00:11 UTC (rev 1279)
+@@ -263,6 +263,8 @@
+ 	stones/OxydStone.hh	\
+ 	stones/PolarSwitchStone.cc	\
+ 	stones/PolarSwitchStone.hh	\
++	stones/PullStone.cc	\
++	stones/PullStone.hh	\
+ 	stones/RotatorStone.cc	\
+ 	stones/RotatorStone.hh	\
+ 	stones/RubberbandStone.cc	\
+@@ -271,6 +273,8 @@
+ 	stones/ScissorsStone.hh	\
+ 	stones/ShogunStone.cc	\
+ 	stones/ShogunStone.hh	\
++	stones/SwapStone.cc	\
++	stones/SwapStone.hh	\
+ 	stones/Switch.cc	\
+ 	stones/Switch.hh	\
+ 	stones/TimerStone.cc	\
+@@ -278,7 +282,9 @@
+ 	stones/Turnstile.cc	\
+ 	stones/Turnstile.hh	\
+ 	stones/WindowStone.cc	\
+-	stones/WindowStone.hh
++	stones/WindowStone.hh	\
++	stones/YieldingStone.cc	\
++	stones/YieldingStone.hh
+ 
+ datadir = @datadir@
+ 
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2008-08-20 22:53:31 UTC (rev 1278)
++++ trunk/src/actors.cc	2008-08-20 23:00:11 UTC (rev 1279)
+@@ -268,6 +268,11 @@
+     if (m.message == &quot;_init&quot;) {
+         startingpos = get_pos();
+         return Value();
++    } else if (m.message == &quot;_freeze&quot;) {
++        m_actorinfo.frozen_vel = m_actorinfo.vel;
++        m_actorinfo.vel = ecl::V2();
++    } else if (m.message == &quot;_revive&quot;) {
++        m_actorinfo.vel = m_actorinfo.frozen_vel;        
+     }
+     return StateObject::message(m);
+ }
+
+Modified: trunk/src/actors.hh
+===================================================================
+--- trunk/src/actors.hh	2008-08-20 22:53:31 UTC (rev 1278)
++++ trunk/src/actors.hh	2008-08-20 23:00:11 UTC (rev 1279)
+@@ -76,6 +76,7 @@
+         GridPos gridpos;        // Grid position for pos
+         const Field *field;     // Field of pos
+         ecl::V2 vel;            // Velocity
++        ecl::V2 frozen_vel;     // Velocity backup for forzen actors
+         ecl::V2 pos_force;      // Extrapolated position for global force calc
+         ecl::V2 forceacc;       // Force accumulator
+         double charge;          // Electric charge
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-08-20 22:53:31 UTC (rev 1278)
++++ trunk/src/ox_peroxyd.cc	2008-08-20 23:00:11 UTC (rev 1279)
+@@ -335,7 +335,7 @@
+     &quot;st-rock8&quot;,                 // PerOxyd stone 0x90
+     &quot;st_rotator_ccw_movable&quot;,   // PerOxyd stone 0x91
+     &quot;st_rotator_cw_movable&quot;,    // PerOxyd stone 0x92
+-    &quot;st-swap&quot;,                  // PerOxyd stone 0x93
++    &quot;st_swap&quot;,                  // PerOxyd stone 0x93
+     &quot;st-spitter&quot;,               // PerOxyd stone 0x94
+     0,                          // PerOxyd stone 0x95 (dynamite holder, will implememnt it)(levels: 41 184 200)
+     &quot;st_rubberband&quot;,            // PerOxyd stone 0x96
+
+Added: trunk/src/stones/PullStone.cc
+===================================================================
+--- trunk/src/stones/PullStone.cc	2008-08-20 22:53:31 UTC (rev 1278)
++++ trunk/src/stones/PullStone.cc	2008-08-20 23:00:11 UTC (rev 1279)
+@@ -0,0 +1,145 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/PullStone.hh&quot;
++#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;server.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    PullStone::PullStone() : YieldingStone() {
++    }
++    
++    PullStone::~PullStone() {
++        GameTimer.remove_alarm(this);
++    }
++    
++    PullStone* PullStone::clone() {
++        return new PullStone(*this);
++    }
++    
++    std::string PullStone::getClass() const {
++        return &quot;st_pull&quot;;
++    }
++
++    void PullStone::setState(int extState) {
++        // reject any write attempts
++    }
++    
++    void PullStone::init_model() {
++        set_model(&quot;st-pull&quot;);
++    }
++    
++    bool PullStone::is_floating() const {
++        // a moving pull stone should press just one of the two affected grids at each
++        // point of time. The vanishing part is the proxy of the other exchanged stone.
++        // Thus it inherits the floating behaviour from it. 
++        return (state == VANISHING &amp;&amp; 
++                (yieldedStone == NULL || yieldedStone-&gt;is_floating())); 
++    }
++    
++    bool PullStone::is_sticky(const Actor *a) const {
++        return true;   // independent of floating behaviour
++    }
++    
++    bool PullStone::is_removable() const {
++        return state == IDLE;
++    }
++    
++    bool PullStone::is_transparent(Direction d) const {
++        return true;
++    }
++    
++    void PullStone::on_impulse(const Impulse&amp; impulse) {
++        if (state != IDLE)
++            return;
++
++        GridPos oldPos = get_pos();
++        GridPos newPos = move(oldPos, reverse(impulse.dir));
++        Stone *otherStone = GetStone(newPos);
++    
++        if (!IsInsideLevel(newPos) || (otherStone &amp;&amp; (!otherStone-&gt;is_removable() || 
++                (IsLevelBorder(newPos) &amp;&amp; server::GameCompatibility != GAMET_ENIGMA)))) {
++            propagateImpulse(impulse);
++            return;                 // avoid unremoveable and border stones
++        }
++        
++        PullStone *vanishStone = dynamic_cast&lt;PullStone *&gt;(MakeObject(&quot;st_pull&quot;));
++        vanishStone-&gt;state = VANISHING;
++        
++        YieldStone(oldPos);
++        SetStone(oldPos, vanishStone);
++        vanishStone-&gt;yieldStone(otherStone);
++        vanishStone-&gt;set_model(std::string(&quot;st-pull&quot;) + to_suffix(impulse.dir));
++        GameTimer.set_alarm(vanishStone, 0.09, false);
++        
++        SetStone(newPos, this);
++        state = APPEARING;
++        set_model(std::string(&quot;st-pull&quot;) + to_suffix(reverse(impulse.dir)));
++        GameTimer.set_alarm(this, 0.09, false);
++
++        // search for affected actors
++        std::vector&lt;Actor*&gt; found_actors;
++        const double   range_one_field = 1.415; // approx. 1 field [ &gt; sqrt(1+1) ]
++        GetActorsInRange(newPos.center(), range_one_field, found_actors);
++        std::vector&lt;Actor*&gt;::iterator e = found_actors.end();
++        ObjectList actors;
++        for (std::vector&lt;Actor*&gt;::iterator i = found_actors.begin(); i != e; ++i) {
++            Actor *actor = *i;
++            GridPos actor_pos(actor-&gt;get_pos());
++    
++            if (actor_pos == newPos) { // if the actor is in the dest field
++                actors.push_back(actor);
++                SendMessage(actor, &quot;_freeze&quot;);
++
++                ecl::V2 mid_dest = actor-&gt;get_pos();
++                mid_dest[0] = ecl::Clamp&lt;double&gt; (mid_dest[0], oldPos.x+0.01, oldPos.x+0.99);
++                mid_dest[1] = ecl::Clamp&lt;double&gt; (mid_dest[1], oldPos.y+0.01, oldPos.y+0.99);
++                WarpActor(actor, mid_dest[0], mid_dest[1], false);                
++            }
++        }
++        vanishStone-&gt;setAttr(&quot;$frozen_actors&quot;, actors);
++
++        sound_event(&quot;moveslow&quot;);
++        propagateImpulse(impulse);
++    }
++    
++    void PullStone::alarm() {
++        if (state == APPEARING) {
++            state = IDLE;
++            if (isDisplayable())
++                init_model();
++        } else if (state == VANISHING) {
++            ObjectList actors = getAttr(&quot;$frozen_actors&quot;);
++            for (ObjectList::iterator itr = actors.begin(); itr != actors.end(); ++itr)
++                SendMessage(*itr, &quot;_revive&quot;);
++            setStone();
++        } else
++            ASSERT(false, XLevelRuntime, &quot;PullStone: alarm called with inconsistent state&quot;);
++    }
++        
++    DEF_TRAITSM(PullStone, &quot;st_pull&quot;, st_pull, MOVABLE_IRREGULAR);
++    
++    BOOT_REGISTER_START
++        BootRegister(new PullStone(), &quot;st_pull&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/PullStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/PullStone.hh
+===================================================================
+--- trunk/src/stones/PullStone.hh	2008-08-20 22:53:31 UTC (rev 1278)
++++ trunk/src/stones/PullStone.hh	2008-08-20 23:00:11 UTC (rev 1279)
+@@ -0,0 +1,72 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef PULLSTONE_HH
++#define PULLSTONE_HH
++
++#include &quot;stones/YieldingStone.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++#include &quot;util.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class PullStone : public YieldingStone, public TimeHandler {
++        DECL_TRAITS;
++        
++    private:
++        enum iState {
++            IDLE,       ///&lt;  
++            APPEARING,  ///&lt; 
++            VANISHING   ///&lt; 
++        };
++        
++    public:
++        PullStone();
++        ~PullStone();
++        PullStone* clone();
++        
++        // Object interface
++        virtual std::string getClass() const;
++        
++        // StateObject interface
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        
++        // Stone interface
++        virtual bool is_floating() const;
++        virtual bool is_sticky(const Actor *a) const;
++        virtual bool is_removable() const;
++        virtual bool is_transparent(Direction d) const;
++        virtual void on_impulse(const Impulse&amp; impulse);
++        
++        // TimeHandler interface
++        virtual void alarm();
++
++    private:
++        
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/PullStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/SwapStone.cc
+===================================================================
+--- trunk/src/stones/SwapStone.cc	2008-08-20 22:53:31 UTC (rev 1278)
++++ trunk/src/stones/SwapStone.cc	2008-08-20 23:00:11 UTC (rev 1279)
+@@ -0,0 +1,118 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/SwapStone.hh&quot;
++#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;server.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    SwapStone::SwapStone() : YieldingStone() {
++    }
++    
++    SwapStone::~SwapStone() {
++        GameTimer.remove_alarm(this);
++    }
++    
++    SwapStone* SwapStone::clone() {
++        return new SwapStone(*this);
++    }
++    
++    std::string SwapStone::getClass() const {
++        return &quot;st_swap&quot;;
++    }
++
++    void SwapStone::setState(int extState) {
++        // reject any write attempts
++    }
++    
++    void SwapStone::init_model() {
++        set_model(&quot;st-swap&quot;);
++    }
++    
++    bool SwapStone::is_floating() const {
++        // a moving swap stone should press just one of the two affected grids at each
++        // point of time. The vanishing part is the proxy of the other exchanged stone.
++        // Thus it inherits the floating behaviour from it. 
++        return (state == VANISHING &amp;&amp; 
++                (yieldedStone == NULL || yieldedStone-&gt;is_floating())); 
++    }
++    
++    bool SwapStone::is_sticky(const Actor *a) const {
++        return true;   // independent of floating behaviour
++    }
++    
++    bool SwapStone::is_removable() const {
++        return state == IDLE;
++    }
++    
++    void SwapStone::on_impulse(const Impulse&amp; impulse) {
++        if (state != IDLE)
++            return;
++
++        GridPos oldPos = get_pos();
++        GridPos newPos = move(oldPos, impulse.dir);
++        Stone *otherStone = GetStone(newPos);
++    
++        if (!IsInsideLevel(newPos) || !otherStone || !otherStone-&gt;is_removable() || 
++                (IsLevelBorder(newPos) &amp;&amp; server::GameCompatibility != GAMET_ENIGMA)) {
++            propagateImpulse(impulse);
++            return;                 // avoid unremoveable and border stones
++        }
++        
++        SwapStone *vanishStone = dynamic_cast&lt;SwapStone *&gt;(MakeObject(&quot;st_swap&quot;));
++        vanishStone-&gt;state = VANISHING;
++        
++        YieldStone(oldPos);
++        SetStone(oldPos, vanishStone);
++        vanishStone-&gt;yieldStone(otherStone);
++        vanishStone-&gt;set_model(std::string(&quot;st-swap&quot;) + to_suffix(reverse(impulse.dir)));
++        GameTimer.set_alarm(vanishStone, 0.1, false);
++        
++        SetStone(newPos, this);
++        state = APPEARING;
++        set_model(std::string(&quot;st-swap&quot;) + to_suffix(impulse.dir));
++        GameTimer.set_alarm(this, 0.1, false);
++
++
++        sound_event(&quot;moveslow&quot;);
++        server::IncMoveCounter(1);
++        propagateImpulse(impulse);
++    }
++    
++    void SwapStone::alarm() {
++        if (state == APPEARING) {
++            state = IDLE;
++            if (isDisplayable())
++                init_model();
++        } else if (state == VANISHING) {
++            setStone();
++        } else
++            ASSERT(false, XLevelRuntime, &quot;SwapStone: alarm called with inconsistent state&quot;);
++    }
++        
++    DEF_TRAITSM(SwapStone, &quot;st_swap&quot;, st_swap, MOVABLE_IRREGULAR);
++    
++    BOOT_REGISTER_START
++        BootRegister(new SwapStone(), &quot;st_swap&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/SwapStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/SwapStone.hh
+===================================================================
+--- trunk/src/stones/SwapStone.hh	2008-08-20 22:53:31 UTC (rev 1278)
++++ trunk/src/stones/SwapStone.hh	2008-08-20 23:00:11 UTC (rev 1279)
+@@ -0,0 +1,71 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef SWAPSTONE_HH
++#define SWAPSTONE_HH
++
++#include &quot;stones/YieldingStone.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++#include &quot;util.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class SwapStone : public YieldingStone, public TimeHandler {
++        DECL_TRAITS;
++        
++    private:
++        enum iState {
++            IDLE,       ///&lt;  
++            APPEARING,  ///&lt; 
++            VANISHING   ///&lt; 
++        };
++        
++    public:
++        SwapStone();
++        ~SwapStone();
++        SwapStone* clone();
++        
++        // Object interface
++        virtual std::string getClass() const;
++        
++        // StateObject interface
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        
++        // Stone interface
++        virtual bool is_floating() const;
++        virtual bool is_sticky(const Actor *a) const;
++        virtual bool is_removable() const;
++        virtual void on_impulse(const Impulse&amp; impulse);
++        
++        // TimeHandler interface
++        virtual void alarm();
++
++    private:
++        
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/SwapStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/YieldingStone.cc
+===================================================================
+--- trunk/src/stones/YieldingStone.cc	2008-08-20 22:53:31 UTC (rev 1278)
++++ trunk/src/stones/YieldingStone.cc	2008-08-20 23:00:11 UTC (rev 1279)
+@@ -0,0 +1,69 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/YieldingStone.hh&quot;
++#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    void YieldingStone::dispose() {
++         if (yieldedStone != NULL) {
++            SendMessage(yieldedStone, &quot;disconnect&quot;);
++            DisposeObject(yieldedStone);
++         }
++         if (yieldedModel != NULL)
++            delete yieldedModel;
++         yieldedStone = NULL;
++         yieldedModel = NULL;
++         delete this;
++    }
++
++    void YieldingStone::yieldStone(Stone *st) {
++        if (st != NULL) {
++            ASSERT(yieldedStone == NULL, XLevelRuntime, &quot;YieldingStone: internal error of double yielding&quot;); 
++            yieldedStone = st;
++            GridPos pos = st-&gt;get_pos();
++            yieldedModel = display::YieldModel(GridLoc(GRID_STONES, pos));
++            YieldStone(pos);
++            yieldedStone-&gt;setOwnerPos(get_pos());   // the stone id owned at the new position
++        }
++    }
++    
++    void YieldingStone::setStone() {
++        GridPos pos = get_pos();
++        SendMessage(this, &quot;disconnect&quot;);
++        YieldStone(pos);
++        if (yieldedStone != NULL) {
++            int id = yieldedStone-&gt;getId();
++            SetStone(pos, yieldedStone);
++            if (Object::getObject(id) != NULL) { // not killed?
++                display::SetModel(GridLoc(GRID_STONES, pos), yieldedModel);
++                yieldedStone-&gt;on_move();    // continue animations -- this is buggy if the stone has another
++                                            // model on the new position like st-chameleon
++                if (Object::getObject(id) != NULL)   // not killed?
++                    SendMessage(yieldedStone, &quot;_model_reanimated&quot;);  // temp fix: reset bad models
++            }
++            yieldedStone = NULL;
++            yieldedModel = NULL;
++        }
++        DisposeObject(this);
++    }
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/YieldingStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/YieldingStone.hh
+===================================================================
+--- trunk/src/stones/YieldingStone.hh	2008-08-20 22:53:31 UTC (rev 1278)
++++ trunk/src/stones/YieldingStone.hh	2008-08-20 23:00:11 UTC (rev 1279)
+@@ -0,0 +1,44 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef YIELDINGSTONE_HH
++#define YIELDINGSTONE_HH
++
++#include &quot;stones.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class YieldingStone : public Stone {
++        
++    public:
++        void dispose();
++        
++    protected:
++        Stone *yieldedStone;
++        display::Model *yieldedModel;
++        
++        void yieldStone(Stone *st);
++        void setStone();
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/YieldingStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-08-20 22:53:31 UTC (rev 1278)
++++ trunk/src/stones.cc	2008-08-20 23:00:11 UTC (rev 1279)
+@@ -419,46 +419,6 @@
+ }
+ 
+ 
+-/* -------------------- YieldedGridStone -------------------- */
+-
+-YieldedGridStone::YieldedGridStone(Stone *st)
+-: stone(st)
+-{
+-    GridPos pos = stone-&gt;get_pos();
+-    model       = display::YieldModel(GridLoc(GRID_STONES, pos));
+-    YieldStone(pos);
+-    st-&gt;setOwnerPos(pos);   // the stone remains owned at the old position
+-}
+-
+-YieldedGridStone::~YieldedGridStone() 
+-{
+-    ASSERT(!stone, XLevelRuntime,
+-        &quot;YieldedGridStone: destructor called though stone still exists&quot;);
+-    ASSERT(!model, XLevelRuntime,
+-        &quot;YieldedGridStone: destructor called though model still exists&quot;);
+-}
+-
+-void YieldedGridStone::set_stone(GridPos pos) 
+-{
+-    SetStone(pos, stone);
+-    display::SetModel(GridLoc(GRID_STONES, stone-&gt;get_pos()), model);
+-    stone-&gt;on_move();    // continue animations -- this is buggy if the stone has another
+-                         // model on the new position like st-chameleon
+-    SendMessage(stone, &quot;_model_reanimated&quot;);  // temp fix: reset bad models
+-    stone = 0;
+-    model = 0;
+-}
+-
+-void YieldedGridStone::dispose() 
+-{
+-    SendMessage(stone, &quot;disconnect&quot;);
+-    stone-&gt;dispose();
+-    delete model;
+-    stone = 0;
+-    model = 0;
+-}
+-
+-
+ /* -------------------- Oxyd compatibility stones -------------------- */
+ 
+ namespace
+@@ -812,8 +772,8 @@
+             }
+             return Stone::message(m);
+         }
+-        void on_move() {
+-            Stone::on_move();
++        void on_floor_change() {
++//            Stone::on_move();
+             GridPos p = get_pos();
+             if (Floor *fl = GetFloor (p)) {
+                 if (fl-&gt;is_kind(&quot;fl-abyss&quot;)) {
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-08-20 22:53:31 UTC (rev 1278)
++++ trunk/src/stones_complex.cc	2008-08-20 23:00:11 UTC (rev 1279)
+@@ -39,209 +39,6 @@
+ 
+ namespace enigma { 
+ 
+-/* -------------------- PullStone -------------------- */
+-
+-// When pushed this stone acts like pulled.
+-// When pushed by an actor it exchanges its position with the actor.
+-
+-namespace
+-{
+-    struct PulledActor {
+-        // Variables
+-        Actor *actor;
+-        V2     speed;
+-
+-        // Constructor
+-        PulledActor(Actor *actor_, const V2&amp; speed_)
+-        : actor(actor_), speed(speed_)
+-        {
+-        }
+-
+-    };
+-
+-    class PullInfo {
+-        list&lt;PulledActor&gt;  actors;
+-        YieldedGridStone  *ystone;
+-
+-    public:
+-        PullInfo(Stone *st)
+-        : ystone(st ? new YieldedGridStone(st) : 0)
+-        {}
+-        ~PullInfo() { delete ystone; }
+-
+-        void add_actor(Actor *actor, const V2&amp; speed) {
+-            actors.push_back(PulledActor(actor, speed));
+-        }
+-
+-        list&lt;PulledActor&gt;&amp; get_actors() { return actors; }
+-
+-        void set_stone(GridPos pos) { if (ystone) ystone-&gt;set_stone(pos); }
+-        void dispose() { if (ystone) ystone-&gt;dispose(); }
+-    };
+-
+-
+-    class PullStone : public Stone, public TimeHandler {
+-        DECL_TRAITS;
+-        // Variables.
+-        enum State { IDLE, MOVING, VANISHED } state;
+-        Direction  m_movedir;
+-        PullInfo  *pull_info;   // information about moved objects (only valid during pull)
+-
+-    public:
+-        PullStone();
+-        ~PullStone();
+-
+-    private:
+-        // Object interface.
+-        PullStone *clone();
+-        void       dispose();
+-        
+-        // Stone interface.
+-        void actor_hit(const StoneContact &amp;sc) {
+-            if (state == IDLE)
+-                maybe_push_stone(sc);
+-        }
+-        void on_impulse(const Impulse&amp; impulse);
+-        bool is_removable() const {
+-            return state == IDLE;
+-        }
+-
+-        // TimeHandler interface.
+-        void alarm();
+-
+-        // Functions.
+-        void change_state(State new_state);
+-        void set_move_state(bool appearing, Direction move_dir);
+-
+-    };
+-    DEF_TRAITSM(PullStone, &quot;st-pull&quot;, st_pull, MOVABLE_IRREGULAR);    
+-}
+-
+-PullStone::PullStone()
+-: state(IDLE), m_movedir(NODIR) , pull_info(0)
+-{}
+-
+-PullStone::~PullStone() {
+-    GameTimer.remove_alarm(this);
+-    delete pull_info;
+-}
+-
+-PullStone *PullStone::clone() {
+-    PullStone *other = new PullStone(*this);
+-    other-&gt;pull_info = 0;
+-    return other;
+-}
+-
+-void PullStone::dispose() {
+-    if (state == MOVING &amp;&amp; pull_info != 0)
+-        pull_info-&gt;dispose();
+-    delete this;
+-}
+-
+-void PullStone::set_move_state (bool appearing, Direction move_dir) {
+-    if (appearing) {
+-        m_movedir = move_dir;
+-        // only the half-stone on the new field gets an alarm
+-        // wherein it completes the move
+-        GameTimer.set_alarm(this, 0.09, false);
+-    }
+-    else
+-        m_movedir = reverse(move_dir);
+-    change_state(MOVING);
+-}
+-
+-void PullStone::change_state (State new_state) {
+-    switch (new_state) {
+-    case IDLE: set_model(&quot;st-pull&quot;); break;
+-    case MOVING: {
+-            string mname = string(&quot;st-pull&quot;) + to_suffix(m_movedir);
+-            set_model(mname);
+-            break;
+-        }
+-    case VANISHED: break;
+-    }
+-    state = new_state;
+-}
+-
+-void PullStone::alarm() {
+-    ASSERT(state == MOVING, XLevelRuntime, &quot;PullStone: alarm called with inconsistent state&quot;);
+-    GridPos oldpos = move (get_pos(), reverse(m_movedir));
+-
+-    // remove the disappearing half of the PullStone :
+-    PullStone *oldStone = dynamic_cast&lt;PullStone*&gt;(GetStone(oldpos));
+-    ASSERT(oldStone, XLevelRuntime, &quot;PullStone: oldStone non-existent in alarm&quot;);
+-    oldStone-&gt;change_state(VANISHED);
+-    KillStone(oldpos);
+-
+-    if (pull_info) {            // have other objects been moved ?
+-        pull_info-&gt;set_stone(oldpos); // re-sets any pulled stone
+-
+-        // set pulled actor(s):
+-        list&lt;PulledActor&gt;::iterator e = pull_info-&gt;get_actors().end();
+-        for (list&lt;PulledActor&gt;::iterator i = pull_info-&gt;get_actors().begin(); i != e; ++i) {
+-            PulledActor&amp; pulled = *i;
+-            pulled.actor-&gt;get_actorinfo()-&gt;vel = pulled.speed;
+-        }
+-        delete pull_info;
+-        pull_info = 0;
+-    }
+-
+-    change_state(IDLE);
+-}
+-
+-void PullStone::on_impulse(const Impulse&amp; impulse) 
+-{
+-    if (state != IDLE)
+-        return;
+-
+-    Direction       move_dir    = reverse(impulse.dir);
+-    const GridPos&amp;  oldPos      = get_pos();
+-    GridPos         newPos      = move(oldPos, move_dir);
+-    Stone          *other_stone = GetStone(newPos);
+-
+-    if (!IsInsideLevel(newPos) || (other_stone &amp;&amp; (!other_stone-&gt;is_removable() || 
+-        (IsLevelBorder(newPos) &amp;&amp; server::GameCompatibility != GAMET_ENIGMA)))) {
+-        return;                 // avoid unremoveable and border stones
+-    }
+-
+-    PullStone *newStone = this-&gt;clone();    // TODO never ever clone a world's object!! reengineering!
+-
+-    if (other_stone) {
+-        // yield other_stone:
+-        newStone-&gt;pull_info = new PullInfo(other_stone);
+-    }
+-    else {
+-        newStone-&gt;pull_info = new PullInfo(0);
+-    }
+-
+-    // search for affected actors
+-    vector&lt;Actor*&gt; found_actors;
+-    const double   range_one_field = 1.415; // approx. 1 field [ &gt; sqrt(1+1) ]
+-    GetActorsInRange(newPos.center(), range_one_field, found_actors);
+-    vector&lt;Actor*&gt;::iterator e = found_actors.end();
+-    for (vector&lt;Actor*&gt;::iterator i = found_actors.begin(); i != e; ++i) {
+-        Actor     *actor     = *i;
+-        GridPos    actor_pos(actor-&gt;get_pos());
+-
+-        if (actor_pos == newPos) { // if the actor is in the dest field
+-            V2 vel = actor-&gt;get_vel();
+-            V2 mid_dest = actor-&gt;get_pos();
+-
+-            mid_dest[0] = ecl::Clamp&lt;double&gt; (mid_dest[0], oldPos.x+0.01, oldPos.x+0.99);
+-            mid_dest[1] = ecl::Clamp&lt;double&gt; (mid_dest[1], oldPos.y+0.01, oldPos.y+0.99);
+-            WarpActor(actor, mid_dest[0], mid_dest[1], false);
+-
+-            newStone-&gt;pull_info-&gt;add_actor(actor, vel);
+-        }
+-    }
+-
+-    SetStone(newPos, newStone);
+-    newStone-&gt;set_move_state(true, move_dir);
+-    set_move_state(false, move_dir);
+-
+-    sound_event(&quot;moveslow&quot;);
+-}
+-
+ /* -------------------- Volcano -------------------- */
+ namespace
+ {
+@@ -1338,8 +1135,6 @@
+ 
+     Register(new MovableImpulseStone);
+ 
+-    Register (new PullStone);
+-
+     Register( new VolcanoStone);
+     Register(&quot;st-volcano_inactive&quot;, new VolcanoStone(VolcanoStone::INACTIVE));
+     Register(&quot;st-volcano_active&quot;, new VolcanoStone(VolcanoStone::ACTIVE));
+
+Modified: trunk/src/stones_internal.hh
+===================================================================
+--- trunk/src/stones_internal.hh	2008-08-20 22:53:31 UTC (rev 1278)
++++ trunk/src/stones_internal.hh	2008-08-20 23:00:11 UTC (rev 1279)
+@@ -52,30 +52,6 @@
+        stone. */
+     bool maybe_push_stone (const StoneContact &amp;sc);
+ 
+-/* -------------------- YieldedGridStone -------------------- */
+-
+-    // allows to completely remove a Stone and its model
+-    // for a short time
+-    //
+-    // - &quot;delays&quot; animation
+-    //
+-    // @@@ FIXME: alarms have to be disabled as well
+-
+-    class YieldedGridStone {
+-        Stone   *stone;
+-        display::Model *model;
+-
+-        YieldedGridStone(const YieldedGridStone&amp;);
+-        YieldedGridStone&amp; operator = (const YieldedGridStone&amp;);
+-    public:
+-
+-        YieldedGridStone(Stone *st);
+-        ~YieldedGridStone();
+-
+-        void set_stone(enigma::GridPos pos);
+-        void dispose();
+-    };
+-
+ } // namespace enigma
+ 
+ #endif
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-08-20 22:53:31 UTC (rev 1278)
++++ trunk/src/stones_simple.cc	2008-08-20 23:00:11 UTC (rev 1279)
+@@ -374,147 +374,6 @@
+     DEF_TRAITS(ChameleonStone, &quot;st-chameleon&quot;, st_chameleon);
+ }
+ 
+-
+-/* -------------------- SwapStone -------------------- */
+-
+-namespace
+-{
+-    class SwapStone : public Stone, public TimeHandler {
+-        DECL_TRAITS;    
+-    public:
+-        SwapStone();
+-        ~SwapStone();
+-    private:
+-        // Object interface
+-        SwapStone *clone();
+-        void       dispose();
+-
+-        // GridObject interface
+-        void init_model();
+-        void on_removal(GridPos p);
+-
+-        // Stone interface
+-        void on_impulse (const Impulse &amp;impulse);
+-        bool is_removable() const { return state == IDLE; }
+-        void actor_hit (const StoneContact &amp;sc);
+-
+-        // TimeHandler interface
+-        void alarm();
+-
+-        // Variables :
+-        enum State { IDLE, COME, GO } state;
+-        YieldedGridStone *in_exchange_with;
+-        Direction         move_dir;
+-    };
+-    DEF_TRAITSM(SwapStone, &quot;st-swap&quot;, st_swap, MOVABLE_IRREGULAR);
+-}
+-
+-SwapStone::SwapStone()
+-: state(IDLE),
+-  in_exchange_with(0),
+-  move_dir(NODIR)
+-{}
+-
+-SwapStone::~SwapStone() {
+-    GameTimer.remove_alarm(this);
+-}
+-
+-SwapStone *SwapStone::clone() {
+-    SwapStone *other        = new SwapStone(*this);
+-    other-&gt;in_exchange_with = 0;
+-    return other;
+-}
+-
+-void SwapStone::dispose() {
+-    if (state == COME &amp;&amp; in_exchange_with != 0) {
+-        in_exchange_with-&gt;dispose();
+-        delete in_exchange_with;
+-    }
+-    delete this;
+-}
+-
+-void SwapStone::on_removal(GridPos p) {
+-    if (state == COME) {
+-        GameTimer.remove_alarm(this);
+-        GridPos oldPos = move(get_pos(), reverse(move_dir));
+-        SwapStone *other = dynamic_cast&lt;SwapStone *&gt;(GetStone(oldPos));
+-        if (other != NULL) {
+-            other-&gt;state = IDLE;
+-            other-&gt;init_model();
+-        }
+-    }
+-    GridObject::on_removal(p);
+-}
+-
+-/* Animation finished; put the &quot;swapped&quot; stone to its new position. */
+-void SwapStone::alarm()
+-{
+-    GridPos oldPos = move(get_pos(), reverse(move_dir));
+-
+-    // Set the swapped stone (this also kills the old (inactive) swap stone)
+-    in_exchange_with-&gt;set_stone(oldPos);
+-    delete in_exchange_with;
+-    in_exchange_with = 0;
+-
+-    state = IDLE;
+-    init_model();
+-//    sound_event (&quot;moveslow&quot;);
+-}
+-
+-void SwapStone::on_impulse(const Impulse&amp; impulse) 
+-{
+-    if (state == IDLE) {
+-        GridPos oldp = get_pos();
+-        GridPos newp = move(oldp, impulse.dir);
+-
+-        // never swap beyond the world and for non enigma modes do not swap to
+-        // border as well.
+-        if (IsInsideLevel(newp) &amp;&amp;
+-                (server::GameCompatibility == GAMET_ENIGMA || !IsLevelBorder(newp))) {
+-            Stone *other = GetStone(newp);
+-            if (other &amp;&amp; other-&gt;is_removable()) {
+-                SwapStone *newStone = new SwapStone;
+-                newStone-&gt;state            = COME;
+-                newStone-&gt;in_exchange_with = new YieldedGridStone(other); // yields 'other'
+-                newStone-&gt;move_dir         = impulse.dir;
+-
+-                GameTimer.set_alarm(newStone, 0.1, false);
+-
+-                SetStone(newp, newStone);
+-
+-                state    = GO;
+-                move_dir = impulse.dir;
+-                init_model();
+-
+-                sound_event (&quot;moveslow&quot;);
+-                server::IncMoveCounter(1);
+-            }
+-        }
+-    }
+-}
+-
+-void SwapStone::actor_hit(const StoneContact &amp;sc) {
+-    Direction dir = get_push_direction (sc);
+-    if (dir != NODIR) {
+-        send_impulse(get_pos(), dir);
+-    }
+-}
+-
+-void SwapStone::init_model() {
+-    static const char *models_come[] = { &quot;st-swap-w&quot;, &quot;st-swap-s&quot;, &quot;st-swap-e&quot;, &quot;st-swap-n&quot; };
+-    static const char *models_go[] =   { &quot;st-swap-e&quot;, &quot;st-swap-n&quot;, &quot;st-swap-w&quot;, &quot;st-swap-s&quot; };
+-
+-    const char *model = 0;
+-    switch (state) {
+-    case IDLE: model = &quot;st-swap&quot;; break;
+-    case COME: model = models_come[move_dir]; break;
+-    case GO:   model = models_go[move_dir]; break;
+-    }
+-
+-    set_model(model);
+-}
+-
+-
+ /* -------------------- BlockStone -------------------- */
+ 
+ namespace
+@@ -1658,6 +1517,10 @@
+ 
+         bool is_sticky(const Actor *) const 
+         { return false; }
++        
++        void on_move() {
++            // we are not floating, but we do not shatter actors when swapped or pulled
++        }
+     };
+     DEF_TRAITSM(BrakeStone, &quot;st-brake&quot;, st_brake, MOVABLE_BREAKABLE);
+ }
+@@ -1823,7 +1686,7 @@
+                 Stone::actor_hit(sc);
+         }
+ 
+-        void on_move() {
++        void on_floor_change() {
+             GridPos p = get_pos();
+             if (Floor *fl = GetFloor (p)) {
+                 if (fl-&gt;is_kind(&quot;fl-abyss&quot;)) {
+@@ -1901,8 +1764,6 @@
+     Register(new Stone_break(&quot;st-break_gray&quot;));
+     Register(new Stone_movebreak);
+     Register(new Stonebrush);
+-    Register(new SwapStone);
+-
+     Register(new ThiefStone);
+ 
+     Register(new RandomWoodenStone); // random flavor
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000708.html">[Enigma-game-svn] r1278 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000710.html">[Enigma-game-svn] r1280 - in trunk: data data/levels/lib src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#709">[ date ]</a>
+              <a href="thread.html#709">[ thread ]</a>
+              <a href="subject.html#709">[ subject ]</a>
+              <a href="author.html#709">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,179 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1624 - in trunk: data data/schemas src/actors	src/items
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1624%20-%20in%20trunk%3A%20data%20data/schemas%20src/actors%0A%09src/items&In-Reply-To=%3C200904122214.n3CMEahB032474%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001053.html">
+   <LINK REL="Next"  HREF="001055.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1624 - in trunk: data data/schemas src/actors	src/items</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1624%20-%20in%20trunk%3A%20data%20data/schemas%20src/actors%0A%09src/items&In-Reply-To=%3C200904122214.n3CMEahB032474%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1624 - in trunk: data data/schemas src/actors	src/items">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon Apr 13 00:14:36 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001053.html">[Enigma-game-svn] r1623 - homepage/input
+</A></li>
+        <LI>Next message: <A HREF="001055.html">[Enigma-game-svn] r1625 - trunk/doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1054">[ date ]</a>
+              <a href="thread.html#1054">[ thread ]</a>
+              <a href="subject.html#1054">[ subject ]</a>
+              <a href="author.html#1054">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-04-13 00:14:35 +0200 (Mon, 13 Apr 2009)
+New Revision: 1624
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/actors/Balls.cc
+   trunk/src/items/Bomb.cc
+   trunk/src/items/Bottle.cc
+Log:
+Trunk 1.1:
+- it_bottle: 
+  - new attribute &quot;interval&quot;, default 5, time of drunkeness
+  - new attribute &quot;text&quot;, like it_document the bottle contains a message
+      instead of booze
+- it_bomb: direct explosion on cannonball hit
+- fix autotile resolver assertion handling: reenable 4th argument (offset)
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2009-04-12 20:47:39 UTC (rev 1623)
++++ trunk/data/api2init.lua	2009-04-12 22:14:35 UTC (rev 1624)
+@@ -564,7 +564,7 @@
+     local args = {...}
+     for i, rule in ipairs(args) do
+         assert_type(rule, &quot;res.autotile argument &quot; .. (i+1) .. &quot; (rule &quot; .. i .. &quot;)&quot;, 2, &quot;table&quot;)
+-        assert_bool((#rule == 2) or (#rule == 3), &quot;res.autotile rule &quot;..i..&quot; has wrong number of arguments (must be 2, 3, or 4).&quot;, 2)
++        assert_bool((#rule &gt;= 2) and (#rule &lt;= 4), &quot;res.autotile rule &quot;..i..&quot; has wrong number of arguments (must be 2, 3, or 4).&quot;, 2)
+         local template_pos = 2
+         local string_pos = {1,2}
+         if #rule &gt;= 3  then
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2009-04-12 20:47:39 UTC (rev 1623)
++++ trunk/data/schemas/objects.xml	2009-04-12 22:14:35 UTC (rev 1624)
+@@ -491,6 +491,8 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;it_bomb_white_burning&quot; init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;it_bottle&quot;&gt;
++      &lt;attr name=&quot;interval&quot; default=&quot;5&quot;/&gt;
++      &lt;attr name=&quot;text&quot;/&gt;
+       &lt;msg name=&quot;_brush&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;it_bottle_idle&quot;&gt;
+
+Modified: trunk/src/actors/Balls.cc
+===================================================================
+--- trunk/src/actors/Balls.cc	2009-04-12 20:47:39 UTC (rev 1623)
++++ trunk/src/actors/Balls.cc	2009-04-12 22:14:35 UTC (rev 1624)
+@@ -129,7 +129,7 @@
+                 return true;
+             }
+             else if (m.message == &quot;_booze&quot;) {
+-                m_drunk_rest_time += 5.0; // Drunken for 5 more seconds
++                m_drunk_rest_time += (int)m.value; // Drunken for 5 more seconds
+                 return true;
+             }
+         }
+
+Modified: trunk/src/items/Bomb.cc
+===================================================================
+--- trunk/src/items/Bomb.cc	2009-04-12 20:47:39 UTC (rev 1623)
++++ trunk/src/items/Bomb.cc	2009-04-12 22:14:35 UTC (rev 1624)
+@@ -47,11 +47,11 @@
+     }
+     
+     Value Bomb::message(const Message &amp;m) {
+-        if (m.message == &quot;ignite&quot;  || m.message == &quot;_explosion&quot;|| m.message == &quot;_cannonball&quot;) {
++        if (m.message == &quot;ignite&quot;  || m.message == &quot;_explosion&quot;) {
+             if (isDisplayable())
+                 burn();
+             return Value();
+-        } else if (m.message == &quot;explode&quot; ) {
++        } else if (m.message == &quot;explode&quot; || m.message == &quot;_cannonball&quot;) {
+             if (isDisplayable())
+                 explode();
+             return Value();
+
+Modified: trunk/src/items/Bottle.cc
+===================================================================
+--- trunk/src/items/Bottle.cc	2009-04-12 20:47:39 UTC (rev 1623)
++++ trunk/src/items/Bottle.cc	2009-04-12 22:14:35 UTC (rev 1624)
+@@ -19,8 +19,10 @@
+  */
+ 
+ #include &quot;items/Bottle.hh&quot;
++#include &quot;client.hh&quot;
+ //#include &quot;errors.hh&quot;
+ //#include &quot;main.hh&quot;
++#include &quot;lev/Proxy.hh&quot;
+ #include &quot;world.hh&quot;
+ 
+ namespace enigma {
+@@ -63,8 +65,18 @@
+     }
+     
+     ItemAction Bottle::activate(Actor *a, GridPos) {
+-        if (state == IDLE) {
+-            if (!SendMessage(a, &quot;_booze&quot;).to_bool())
++        if (Value v = getAttr(&quot;text&quot;)) {
++            std::string txt(v);
++            lev::Proxy *level = lev::Proxy::loadedLevel();
++            // after complete switch to Proxy as levelloader the following
++            // conditional can be abolished
++            if (level)
++                // translate text
++                txt = level-&gt;getLocalizedString(txt);
++            client::Msg_ShowText(txt, true);
++            return ITEM_KILL;          // remove from inventory
++        } else if (state == IDLE) {
++            if (!SendMessage(a, &quot;_booze&quot;, getAttr(&quot;interval&quot;)).to_bool())
+                 return ITEM_KEEP;
+         }
+         return ITEM_DROP;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001053.html">[Enigma-game-svn] r1623 - homepage/input
+</A></li>
+	<LI>Next message: <A HREF="001055.html">[Enigma-game-svn] r1625 - trunk/doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1054">[ date ]</a>
+              <a href="thread.html#1054">[ thread ]</a>
+              <a href="subject.html#1054">[ subject ]</a>
+              <a href="author.html#1054">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

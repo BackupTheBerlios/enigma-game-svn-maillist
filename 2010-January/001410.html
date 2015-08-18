@@ -1,0 +1,363 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1984 - in trunk: data/schemas src src/actors
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2010-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1984%20-%20in%20trunk%3A%20data/schemas%20src%20src/actors&In-Reply-To=%3C201001101841.o0AIffuX005629%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001409.html">
+   <LINK REL="Next"  HREF="001411.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1984 - in trunk: data/schemas src src/actors</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1984%20-%20in%20trunk%3A%20data/schemas%20src%20src/actors&In-Reply-To=%3C201001101841.o0AIffuX005629%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1984 - in trunk: data/schemas src src/actors">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Jan 10 19:41:41 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001409.html">[Enigma-game-svn] r1983 - homepage/input
+</A></li>
+        <LI>Next message: <A HREF="001411.html">[Enigma-game-svn] r1985 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1410">[ date ]</a>
+              <a href="thread.html#1410">[ thread ]</a>
+              <a href="subject.html#1410">[ subject ]</a>
+              <a href="author.html#1410">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2010-01-10 19:41:40 +0100 (Sun, 10 Jan 2010)
+New Revision: 1984
+
+Modified:
+   trunk/data/schemas/objects.xml
+   trunk/src/actors.hh
+   trunk/src/actors/HorseActor.cc
+   trunk/src/actors/HorseActor.hh
+   trunk/src/world.cc
+Log:
+Trunk 1.1:
+- ac_horse: improve automatic move behaviour
+  - add attribute &quot;destidx&quot; representing the index of the current destination
+  - add attribute &quot;loop&quot;, default true, indicating if destidx 0 follows last
+       valid destination index
+  - add attribute &quot;steady&quot;, default true, indicating algorithm:
+      - true, force does always direct to next target position (old behaviour,
+          with big loops in trajectory
+      - false, force deaccelarates horse when reaching target, directly reach
+          target with minimum hit of other tiles
+  - in case a destination position is covered by a stone the target is now
+      reached, allowing horses to target and hit switches, stoneimpulses, etc.
+  - on every reached destination position the actors target action is performed
+      allowing the author to reprogram the destination
+Note:
+- these actor steering algorithms will likely be supported by other actors in
+  future as well
+- these algorithms are the basis for future keyboard based control of Sokoban
+  like levels.
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2010-01-07 22:34:16 UTC (rev 1983)
++++ trunk/data/schemas/objects.xml	2010-01-10 18:41:40 UTC (rev 1984)
+@@ -22,6 +22,7 @@
+     &lt;attr name=&quot;counterclock&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;checkerboard&quot; type=&quot;int&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;destination&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;destidx&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;999&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;essential&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;2&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;essential_id&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;eternal&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+@@ -209,6 +210,9 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;ac_horse&quot;&gt;
+       &lt;attr name=&quot;destination&quot;/&gt;
++      &lt;attr name=&quot;destidx&quot;/&gt;
++      &lt;attr name=&quot;loop&quot; default=&quot;true&quot;/&gt;
++      &lt;attr name=&quot;steady&quot; default=&quot;true&quot;/&gt;
+       &lt;attr name=&quot;strength&quot; default=&quot;10.0&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;ac_killer&quot;&gt;
+
+Modified: trunk/src/actors/HorseActor.cc
+===================================================================
+--- trunk/src/actors/HorseActor.cc	2010-01-07 22:34:16 UTC (rev 1983)
++++ trunk/src/actors/HorseActor.cc	2010-01-10 18:41:40 UTC (rev 1984)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2008 Ronald Lamprecht
++ * Copyright (C) 2008,2009,2010 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -19,7 +19,7 @@
+  */
+ 
+ #include &quot;actors/HorseActor.hh&quot;
+-//#include &quot;errors.hh&quot;
++#include &quot;errors.hh&quot;
+ //#include &quot;main.hh&quot;
+ #include &quot;world.hh&quot;
+ 
+@@ -27,42 +27,101 @@
+ 
+ /* -------------------- Horse  -------------------- */
+ 
+-    Horse::Horse() : Actor (traits), m_targetidx(-1), m_target() {
+-        setAttr(&quot;strength&quot;, 10.0);
++    Horse::Horse() : Actor (traits), destidx(0), target(), strength(10) {
++        objFlags |= OBJBIT_STEADY;
+     }
+ 
+     std::string Horse::getClass() const {
+         return &quot;ac_horse&quot;;
+     }
+ 
++    Value Horse::getAttr(const std::string &amp;key) const {
++        if (key == &quot;destination&quot;) {
++            return destination;
++        } else if (key == &quot;destidx&quot;) { 
++            return destidx;
++        } else if (key == &quot;steady&quot;) { 
++            return (bool)(objFlags &amp; OBJBIT_STEADY);
++        } else if (key == &quot;strength&quot;) { 
++            return strength;
++        } else
++            return Actor::getAttr(key);
++    }
++    
++    void Horse::setAttr(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;destination&quot;) {
++            destination = val;
++            if (destination.getType() == Value::NIL)
++                objFlags &amp;= ~OBJBIT_AUTOMOVE;
++            else {
++                destidx = 0;
++                objFlags |= OBJBIT_NEWDEST;
++            }
++        } else if (key == &quot;destidx&quot;) { 
++            destidx = val;
++            if (destidx &gt;= 0)
++                objFlags |= OBJBIT_NEWDEST;
++            else
++                objFlags &amp;= ~OBJBIT_AUTOMOVE;
++        } else if (key == &quot;steady&quot;) {
++            if (val.to_bool())
++                 objFlags |= OBJBIT_STEADY;
++            else
++                 objFlags &amp;= ~OBJBIT_STEADY;
++        } else if (key == &quot;strength&quot;) { 
++            strength = val;
++            if (strength &lt; 0)
++                objFlags &amp;= ~OBJBIT_AUTOMOVE;
++        } else
++            Actor::setAttr(key, val);
++        
++        if (strength &gt;= 0 &amp;&amp;  destidx &gt;= 0 &amp;&amp; getAttr(&quot;destination&quot;).getType() != Value::NIL)
++            objFlags |= OBJBIT_AUTOMOVE;
++    }
++
+     bool Horse::is_dead() const {
+         return false;
+     }
+     
+-    void Horse::think(double dtime)  {
+-        double force = getAttr(&quot;strength&quot;);
+-        update_target ();
+-        if (m_targetidx != -1) {
+-            add_force(normalize(m_target - get_pos()) * force);
++    void Horse::think(double dtime) {
++        if (objFlags &amp; OBJBIT_AUTOMOVE) {
++            updateTarget();
++            if (objFlags &amp; OBJBIT_AUTOMOVE) {
++                if (!(objFlags &amp; OBJBIT_STEADY) &amp;&amp; 
++                        ecl::square(get_vel()) * 0.6 / strength &gt; ecl::length(target - get_pos()) - 0.05)
++                    add_force(- normalize(get_vel()) * strength);
++                else                
++                    add_force(normalize(target - get_pos()) * strength);
++            }
+         }
+         Actor::think(dtime);
+     }
+ 
+-    void Horse::update_target() {
+-        ecl::V2 newPos;
+-        if (m_targetidx == -1) {
+-            // no target defined so far
+-            if (getDestinationByIndex(0, newPos)) {
+-                m_target = newPos;
+-                m_targetidx = 0;
++    void Horse::stoneBounce(const StoneContact &amp;sc) {
++        if ((objFlags &amp; OBJBIT_AUTOMOVE) &amp;&amp; (sc.stonepos == GridPos(target))) {
++            updateTarget(true);           
++        }
++        Actor::stoneBounce(sc);
++    }
++    
++    void Horse::updateTarget(bool touched) {
++        if (objFlags &amp; OBJBIT_NEWDEST) {
++            // target not defined so far
++            ASSERT(getDestinationByIndex(destidx, target), XLevelRuntime, &quot;Horse actor missing valid destination&quot;);
++            objFlags &amp;= ~OBJBIT_NEWDEST;
++        } else if (touched || length(target - get_pos()) &lt; ((objFlags &amp; OBJBIT_STEADY) ? 0.2 : 0.1)) {
++            int id = getId();  // in future user might kill actors on callback
++            performAction(true);
++            // target reached or? try next one
++            if ((Object::getObject(id) != NULL)  &amp;&amp; (objFlags &amp; OBJBIT_AUTOMOVE) &amp;&amp; 
++                    !getDestinationByIndex(++destidx, target)) {
++                if (getAttr(&quot;loop&quot;).to_bool()) {
++                    destidx = 0;     // failed -&gt; start anew
++                    getDestinationByIndex(destidx, target);
++                } else
++                    objFlags &amp;= ~OBJBIT_AUTOMOVE;
+             }
+-        } else if (length(m_target - get_pos()) &lt; 0.2) {
+-            // target reached or? try next one
+-            if (getDestinationByIndex(++m_targetidx, newPos)) {
+-                m_target = newPos;
+-            } else
+-                m_targetidx = -1;     // failed -&gt; start anew
+-        } 
++        }
+     }
+     
+     ActorTraits Horse::traits = {&quot;ac_horse&quot;, ac_horse, 1&lt;&lt;ac_horse, 24.0/64, 1.2};
+
+Modified: trunk/src/actors/HorseActor.hh
+===================================================================
+--- trunk/src/actors/HorseActor.hh	2010-01-07 22:34:16 UTC (rev 1983)
++++ trunk/src/actors/HorseActor.hh	2010-01-10 18:41:40 UTC (rev 1984)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2008 Ronald Lamprecht
++ * Copyright (C) 2008,2009,2010 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -32,23 +32,34 @@
+         CLONEACTOR(Horse);
+         DECL_ACTORTRAITS;
+  
++    private:
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_AUTOMOVE     =  1&lt;&lt;24,   ///&lt; Actor is moved automatically 
++            OBJBIT_NEWDEST      =  1&lt;&lt;25,   ///&lt; Actor's destination or strength has changed
++            OBJBIT_STEADY       =  1&lt;&lt;26    ///&lt; Force on actor directs always to next destination
++        };
+    public:
+         Horse();
+         
+         // Object interface.
+         virtual std::string getClass() const;
+-
++        virtual Value getAttr(const std::string &amp;key) const;
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++ 
+         // Actor interface
+         virtual bool is_dead() const;
+-        virtual void think (double dtime);
++        virtual void think(double dtime);
++        virtual void stoneBounce(const StoneContact &amp;sc);
+ 
+     private:
+         // Variables
+-        int m_targetidx;
+-        ecl::V2 m_target;
++        double strength;
++        Value destination;
++        int destidx;
++        ecl::V2 target;
+         
+         // Private methods
+-        void update_target();
++        void updateTarget(bool touched =false);
+     };
+ 
+ } // namespace enigma
+
+Modified: trunk/src/actors.hh
+===================================================================
+--- trunk/src/actors.hh	2010-01-07 22:34:16 UTC (rev 1983)
++++ trunk/src/actors.hh	2010-01-10 18:41:40 UTC (rev 1984)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008,2009,2010 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -67,6 +68,8 @@
+ #define MAX_CONTACTS 7
+ 
+     struct Field;
++    struct StoneContact;
++
+     /*!  
+      * This class contains the information the physics engine
+      * maintains about dynamic objects (&quot;actors&quot;).
+@@ -165,6 +168,7 @@
+         void show();
+ 
+         void add_force (const ecl::V2 &amp;f);
++        virtual void stoneBounce(const StoneContact &amp;sc) {};
+ 
+         /* ---------- Accessors ---------- */
+         ActorInfo *get_actorinfo();
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2010-01-07 22:34:16 UTC (rev 1983)
++++ trunk/src/world.cc	2010-01-10 18:41:40 UTC (rev 1984)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004,2005 Daniel Heck
+- * Copyright (C) 2007,2008,2009 Ronald Lamprecht
++ * Copyright (C) 2007,2008,2009,2010 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -1175,6 +1175,7 @@
+                     if (slow_collision) stone-&gt;actor_touch(sc);
+                     else stone-&gt;actor_hit(sc);
+ 
++                    a-&gt;stoneBounce(sc);
+                     if (!slow_collision) {
+                         client::Msg_Sparkle (sc.contact_point);
+                         double volume = std::max (0.25, length(ai.vel)/8);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001409.html">[Enigma-game-svn] r1983 - homepage/input
+</A></li>
+	<LI>Next message: <A HREF="001411.html">[Enigma-game-svn] r1985 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1410">[ date ]</a>
+              <a href="thread.html#1410">[ thread ]</a>
+              <a href="subject.html#1410">[ subject ]</a>
+              <a href="author.html#1410">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

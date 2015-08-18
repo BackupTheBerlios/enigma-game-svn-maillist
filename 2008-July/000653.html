@@ -1,0 +1,231 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1219 - in trunk: data/schemas src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1219%20-%20in%20trunk%3A%20data/schemas%20src&In-Reply-To=%3C200807072124.m67LOBop031343%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000652.html">
+   <LINK REL="Next"  HREF="000654.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1219 - in trunk: data/schemas src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1219%20-%20in%20trunk%3A%20data/schemas%20src&In-Reply-To=%3C200807072124.m67LOBop031343%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1219 - in trunk: data/schemas src">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon Jul  7 23:24:11 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000652.html">[Enigma-game-svn] r1218 - in trunk/data: . gfx32 gfx40 gfx48 gfx64
+</A></li>
+        <LI>Next message: <A HREF="000654.html">[Enigma-game-svn] r1220 - in trunk/src: . others
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#653">[ date ]</a>
+              <a href="thread.html#653">[ thread ]</a>
+              <a href="subject.html#653">[ subject ]</a>
+              <a href="author.html#653">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-07-07 23:24:10 +0200 (Mon, 07 Jul 2008)
+New Revision: 1219
+
+Modified:
+   trunk/data/schemas/objects.xml
+   trunk/src/items.cc
+   trunk/src/lua.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1: new API reengineering
+- add checkerboard attribute for stones and items
+- fix disposal of unused checkerboard objects
+- autonaming of objects: switch from linear to O(1) random based algorithm
+- fix kill method of groups to support Other
+- fix disposal of Other: do unname
+- it_rubberband:
+  - allow nearest Object syntax &quot;@@&quot; for attribute &quot;anchor2&quot; to get the
+    dynamic nearest anchor.
+  - performAction on succesfull activation
+Note:
+- You can no longer rely on autonamed objects like &quot;myname#&quot; to receive
+  consecutive numbers according to their row by row appearence in the map.
+  User autotile resolvers for addressing single instances.
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-07-07 13:50:04 UTC (rev 1218)
++++ trunk/data/schemas/objects.xml	2008-07-07 21:24:10 UTC (rev 1219)
+@@ -11,6 +11,7 @@
+     &lt;attr name=&quot;color&quot; type=&quot;int&quot; default=&quot;nil&quot; min=&quot;0&quot; max=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;connections&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;counterclock&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;checkerboard&quot; type=&quot;int&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;destination&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;faces&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;fellows&quot; type=&quot;group&quot; default=&quot;nil&quot; rw=&quot;r&quot;/&gt;
+@@ -90,6 +91,7 @@
+   &lt;zoo&gt;
+     &lt;object name=&quot;&quot; abstract=&quot;true&quot; states=&quot;2&quot;&gt;
+       &lt;attr name=&quot;action&quot;/&gt;
++      &lt;attr name=&quot;checkerboard&quot;/&gt;
+       &lt;attr name=&quot;inverse&quot;/&gt;
+       &lt;attr name=&quot;name&quot;/&gt;
+       &lt;attr name=&quot;nopaction&quot;/&gt;
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-07-07 13:50:04 UTC (rev 1218)
++++ trunk/src/items.cc	2008-07-07 21:24:10 UTC (rev 1219)
+@@ -4193,11 +4193,13 @@
+         // TODO: MultiplayerGame: Defaulttarget is second actor!
+ 
+         // Get actor or stone with the name, given in &quot;connect_to&quot;:
+-        Object *anchor2 = getAttr(&quot;anchor2&quot;);
++        ObjectList ol = getAttr(&quot;anchor2&quot;).getObjectList(a);
+         
+         // Target does NOT exist, Drop Item
+-        if (anchor2 == NULL)
++        if (ol.size() == 0)
+             return ITEM_DROP;
++
++        Object *anchor2 = ol.front();
+             
+         // The mode attribute &quot;scissor&quot; defines, if when using an it-rubberband,
+         // other rubberbands to the actor will be cut of or not, true means they will. false is default.
+@@ -4218,6 +4220,7 @@
+             obj-&gt;setAttr(&quot;max&quot;, getAttr(&quot;max&quot;));
+             obj-&gt;setAttr(&quot;min&quot;, getAttr(&quot;min&quot;));
+             AddOther(dynamic_cast&lt;Other *&gt;(obj));
++            performAction(true);
+         }
+ 
+         return ITEM_KILL;
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-07-07 13:50:04 UTC (rev 1218)
++++ trunk/src/lua.cc	2008-07-07 21:24:10 UTC (rev 1219)
+@@ -1214,6 +1214,9 @@
+     if (obj) {   // ignore not existing object
+         GridObject *gobj;
+         switch (obj-&gt;getObjectType()) {
++            case Object::OTHER :
++                KillOther(dynamic_cast&lt;Other *&gt;(obj));
++                break;
+             case Object::FLOOR :
+                 gobj = dynamic_cast&lt;GridObject*&gt;(obj);
+                 KillFloor(gobj-&gt;get_pos());
+@@ -1326,9 +1329,9 @@
+         catch (const XLevelRuntime &amp;e) {
+             throwLuaError (L, e.what());
+         }
+-        catch (...) {
+-            throwLuaError (L, &quot;uncaught exception&quot;);
+-        }
++//        catch (...) {
++//            throwLuaError (L, &quot;uncaught exception x&quot;);
++//        }
+     }
+     push_value(L, answer);
+     return 1;
+@@ -1850,20 +1853,38 @@
+     switch (obj-&gt;getObjectType()) {
+         case Object::FLOOR :
+             if (Value odd = obj-&gt;getAttr(&quot;checkerboard&quot;)) {
+-                if ((xi+yi)%2 != (int)odd)
++                if ((xi+yi)%2 != (int)odd) {
++                    DisposeObject(obj);
+                     break;
++                }
+             }
+             SetFloor(GridPos(xi,yi), dynamic_cast&lt;Floor *&gt;(obj));
+             break;
+         case Object::STONE :
+-            if (!onlyFloors)
++            if (!onlyFloors) {
++                if (Value odd = obj-&gt;getAttr(&quot;checkerboard&quot;)) {
++                    if ((xi+yi)%2 != (int)odd) {
++                        DisposeObject(obj);
++                        break;
++                    }
++                }
+                 SetStone(GridPos(xi,yi), dynamic_cast&lt;Stone *&gt;(obj));
+-            else
++            } else {
+                 DisposeObject(obj);
++            }
+             break;
+         case Object::ITEM  :
+-            if (!onlyFloors)
++            if (!onlyFloors) {
++                if (Value odd = obj-&gt;getAttr(&quot;checkerboard&quot;)) {
++                    if ((xi+yi)%2 != (int)odd) {
++                        DisposeObject(obj);
++                        break;
++                    }
++                }
+                 SetItem(GridPos(xi,yi), dynamic_cast&lt;Item *&gt;(obj));
++            } else {
++                DisposeObject(obj);
++            }
+             break;
+         case Object::ACTOR :
+             if (!onlyFloors) {
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-07-07 13:50:04 UTC (rev 1218)
++++ trunk/src/world.cc	2008-07-07 21:24:10 UTC (rev 1219)
+@@ -310,7 +310,8 @@
+     if (name.size() &gt; 0 &amp;&amp; name[name.size() - 1] == '#') {
+         // auto name object with a unique name
+         int i;
+-        for (i = 1; get_named(name + ecl::strf(&quot;%d&quot;,i)) != NULL; i++);
++//        for (i = 1; get_named(name + ecl::strf(&quot;%d&quot;,i)) != NULL; i++);
++        for (i = IntegerRand(1,999999); get_named(name + ecl::strf(&quot;%d&quot;,i)) != NULL; i = IntegerRand(1,999999));
+         unique_name = name + ecl::strf(&quot;%d&quot;,i);
+     }
+     m_objnames.insert(unique_name, obj); // [name] = obj;
+@@ -1884,7 +1885,7 @@
+                 level-&gt;rubberbands.erase(j);
+             }
+         }
+-        o-&gt;dispose();
++        DisposeObject(o);
+     }
+ }
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000652.html">[Enigma-game-svn] r1218 - in trunk/data: . gfx32 gfx40 gfx48 gfx64
+</A></li>
+	<LI>Next message: <A HREF="000654.html">[Enigma-game-svn] r1220 - in trunk/src: . others
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#653">[ date ]</a>
+              <a href="thread.html#653">[ thread ]</a>
+              <a href="subject.html#653">[ subject ]</a>
+              <a href="author.html#653">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

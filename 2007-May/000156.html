@@ -1,0 +1,137 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r719 - in branches/1.0: data src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r719%20-%20in%20branches/1.0%3A%20data%20src&In-Reply-To=%3C200705051634.l45GYYLR021896%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000155.html">
+   <LINK REL="Next"  HREF="000157.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r719 - in branches/1.0: data src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r719%20-%20in%20branches/1.0%3A%20data%20src&In-Reply-To=%3C200705051634.l45GYYLR021896%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r719 - in branches/1.0: data src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat May  5 18:34:34 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000155.html">[Enigma-game-svn] r718 - in branches/1.0: . data/schemas doc etc
+</A></li>
+        <LI>Next message: <A HREF="000157.html">[Enigma-game-svn] r720 - in branches/1.0: doc/reference	lib-src/enigma-core
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#156">[ date ]</a>
+              <a href="thread.html#156">[ thread ]</a>
+              <a href="subject.html#156">[ subject ]</a>
+              <a href="author.html#156">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-05-05 18:34:32 +0200 (Sat, 05 May 2007)
+New Revision: 719
+
+Modified:
+   branches/1.0/data/startup.lua
+   branches/1.0/src/main.cc
+Log:
+Branch 1.0: 
+- finish 718 windows startup mode
+- add &quot;--pref dirname&quot;: write prefs and userdata to dirname
+
+
+Modified: branches/1.0/data/startup.lua
+===================================================================
+--- branches/1.0/data/startup.lua	2007-05-04 20:20:57 UTC (rev 718)
++++ branches/1.0/data/startup.lua	2007-05-05 16:34:32 UTC (rev 719)
+@@ -29,7 +29,7 @@
+ -- Set default values for options
+ options = {
+     MouseSpeed        = 7.0,
+-    FullScreen        = 1,
++    FullScreen        = 0,
+     Nozoom            = 1,
+     InGameMusic       = 0,                  -- no music during the game
+     Difficulty        = 2,                  -- hard
+
+Modified: branches/1.0/src/main.cc
+===================================================================
+--- branches/1.0/src/main.cc	2007-05-04 20:20:57 UTC (rev 718)
++++ branches/1.0/src/main.cc	2007-05-05 16:34:32 UTC (rev 719)
+@@ -113,15 +113,15 @@
+ {
+     printf(&quot;Usage: %s [options] [level files]\n\n&quot;
+            &quot;Available options :\n\n&quot;
+-           &quot;    --nosound      Disable music and sound\n&quot;
+-           &quot;    --nomusic      Disable music\n&quot;
+-           &quot;    --window -w    Run in a window; do not enter fullscreen mode\n&quot;
+-           &quot;    --help -h      Show this help\n&quot;
+-           &quot;    --version      Print the executable's version number\n&quot;
+-           &quot;    --nograb       Do not use exclusive mouse/keyboard access\n&quot;
+-           &quot;    --data -d path Load data from additional directory\n&quot;
+-           &quot;    --lang -l lang Set game language\n&quot;
+-           &quot;    --pref -p file Use filename for preferences\n&quot;
++           &quot;    --nosound       Disable music and sound\n&quot;
++           &quot;    --nomusic       Disable music\n&quot;
++           &quot;    --window -w     Run in a window; do not enter fullscreen mode\n&quot;
++           &quot;    --help -h       Show this help\n&quot;
++           &quot;    --version       Print the executable's version number\n&quot;
++           &quot;    --nograb        Do not use exclusive mouse/keyboard access\n&quot;
++           &quot;    --data -d path  Load data from additional directory\n&quot;
++           &quot;    --lang -l lang  Set game language\n&quot;
++           &quot;    --pref -p file  Use filename or dirname for preferences\n&quot;
+            &quot;\n&quot;,
+            app.progCallPath.c_str()
+            );
+@@ -473,7 +473,17 @@
+     
+     
+     // prefPath
+-    if (haveHome) {
++    if (prefFilename.find_first_of(ecl::PathSeparators) != std::string::npos) {
++        // pref is a path - absolute or home relative
++        prefPath = ecl::ExpandPath(prefFilename);
++        if (!ecl::FolderExists(prefPath))
++            if(!ecl::FolderCreate(prefPath)) {
++                fprintf(stderr, (&quot;Error cannot create pref directory.\n&quot;));
++                exit(1);
++            }
++        userStdPath = prefPath; // default if pref is a path
++        prefPath = prefPath + ecl::PathSeparator + &quot;.&quot; + PREFFILENAME; // include pref in user data path
++    } else if (haveHome) {
+         prefPath = ecl::ExpandPath(&quot;~&quot;);
+         if (!ecl::FolderExists(prefPath))
+             // may happen on Windows
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000155.html">[Enigma-game-svn] r718 - in branches/1.0: . data/schemas doc etc
+</A></li>
+	<LI>Next message: <A HREF="000157.html">[Enigma-game-svn] r720 - in branches/1.0: doc/reference	lib-src/enigma-core
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#156">[ date ]</a>
+              <a href="thread.html#156">[ thread ]</a>
+              <a href="subject.html#156">[ subject ]</a>
+              <a href="author.html#156">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

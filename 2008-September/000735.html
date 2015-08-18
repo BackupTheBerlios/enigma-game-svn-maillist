@@ -1,0 +1,351 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1305 - in trunk: data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1305%20-%20in%20trunk%3A%20data/schemas%20src%20src/stones&In-Reply-To=%3C200809052252.m85MqLY3026324%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000734.html">
+   <LINK REL="Next"  HREF="000736.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1305 - in trunk: data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1305%20-%20in%20trunk%3A%20data/schemas%20src%20src/stones&In-Reply-To=%3C200809052252.m85MqLY3026324%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1305 - in trunk: data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Sep  6 00:52:21 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000734.html">[Enigma-game-svn] r1304 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000736.html">[Enigma-game-svn] r1306 - in trunk: data data/gfx32 data/gfx40	data/gfx48 src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#735">[ date ]</a>
+              <a href="thread.html#735">[ thread ]</a>
+              <a href="subject.html#735">[ subject ]</a>
+              <a href="author.html#735">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-09-06 00:52:18 +0200 (Sat, 06 Sep 2008)
+New Revision: 1305
+
+Modified:
+   trunk/data/schemas/objects.xml
+   trunk/src/items.cc
+   trunk/src/stones/BoulderStone.cc
+   trunk/src/stones/LightPassengerStone.cc
+   trunk/src/stones/PullStone.cc
+   trunk/src/stones/RotatorStone.cc
+   trunk/src/stones/RubberbandStone.cc
+   trunk/src/stones/SwapStone.cc
+   trunk/src/stones/Turnstile.cc
+   trunk/src/stones/WindowStone.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1: 
+- meditation: just another misspelled &quot;volcano&quot; fix
+- temp. fix for blackbomb explosion beneath brake
+- fix r1270: actors resting near a passable stone refused move on an actor hit
+- window stone fixes:
+  - refuse actor entry from other grids on face movement
+  - avoid actors being pushed beneath a window face or stone on a face movement
+- revert superfluous kill checks on some objects introduced in r1301
+  (keep necessary ones on shogun and turnstile)
+
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-09-04 23:03:51 UTC (rev 1304)
++++ trunk/data/schemas/objects.xml	2008-09-05 22:52:18 UTC (rev 1305)
+@@ -196,7 +196,7 @@
+     &lt;object name=&quot;it_meditation_hill&quot;&gt;
+       &lt;attr name=&quot;state&quot; value=&quot;2&quot;/&gt;
+     &lt;/object&gt;
+-    &lt;object name=&quot;it_meditation_vulcano&quot;&gt;
++    &lt;object name=&quot;it_meditation_volcano&quot;&gt;
+       &lt;attr name=&quot;state&quot; value=&quot;3&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;it_pipe&quot;&gt;
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-09-04 23:03:51 UTC (rev 1304)
++++ trunk/src/items.cc	2008-09-05 22:52:18 UTC (rev 1305)
+@@ -1060,8 +1060,8 @@
+         void explode() {
+             GridPos p = get_pos();
+             sound_event (&quot;blackbomb&quot;);
+-            SendExplosionEffect(p, EXPLOSION_BLACKBOMB);
+             replace(&quot;it-explosion3&quot;);
++            SendExplosionEffect(p, EXPLOSION_BLACKBOMB);  // may kill the bomb by another explosion1 set by brake
+         }
+     };
+     DEF_ITEMTRAITSF(BlackBomb, &quot;it-blackbomb&quot;, it_blackbomb,
+@@ -1095,7 +1095,7 @@
+             GridPos p = get_pos();
+             sound_event (&quot;whitebomb&quot;);
+             replace(&quot;it-explosion3&quot;);
+-            SendExplosionEffect(p, EXPLOSION_WHITEBOMB);
++            SendExplosionEffect(p, EXPLOSION_WHITEBOMB); // may kill the bomb by another explosion1 set by brake
+         }
+ 
+     public:
+
+Modified: trunk/src/stones/BoulderStone.cc
+===================================================================
+--- trunk/src/stones/BoulderStone.cc	2008-09-04 23:03:51 UTC (rev 1304)
++++ trunk/src/stones/BoulderStone.cc	2008-09-05 22:52:18 UTC (rev 1305)
+@@ -157,10 +157,8 @@
+         if (impulse.sender &amp;&amp; impulse.sender-&gt;is_kind(&quot;st_rotator&quot;)) {
+             setDir(impulse.dir);  // activate
+         }
+-        int id = getId();
+         move_stone(impulse.dir);  // due to rotator and impulsestone
+-        if (Object::getObject(id) != NULL)   // not killed?
+-            propagateImpulse(impulse);
++        propagateImpulse(impulse);
+     }
+ 
+     Direction BoulderStone::getDir() const {
+
+Modified: trunk/src/stones/LightPassengerStone.cc
+===================================================================
+--- trunk/src/stones/LightPassengerStone.cc	2008-09-04 23:03:51 UTC (rev 1304)
++++ trunk/src/stones/LightPassengerStone.cc	2008-09-05 22:52:18 UTC (rev 1305)
+@@ -172,10 +172,8 @@
+         Actor *a = dynamic_cast&lt;Actor*&gt;(impulse.sender);
+         if (a == NULL &amp;&amp; ((objFlags &amp; OBJBIT_LIGHTNEWDIRS) == NODIRBIT || state == OFF 
+                 || server::GameCompatibility != GAMET_ENIGMA)) {
+-            int id = getId();
+             move_stone(impulse.dir);
+-            if (Object::getObject(id) != NULL)   // not killed?
+-                propagateImpulse(impulse);
++            propagateImpulse(impulse);
+         }
+     }
+     
+
+Modified: trunk/src/stones/PullStone.cc
+===================================================================
+--- trunk/src/stones/PullStone.cc	2008-09-04 23:03:51 UTC (rev 1304)
++++ trunk/src/stones/PullStone.cc	2008-09-05 22:52:18 UTC (rev 1305)
+@@ -86,8 +86,6 @@
+             return;                 // avoid unremoveable and border stones
+         }
+         
+-        int id = getId();
+-        
+         PullStone *vanishStone = dynamic_cast&lt;PullStone *&gt;(MakeObject(&quot;st_pull&quot;));
+         vanishStone-&gt;state = VANISHING;
+         
+@@ -124,11 +122,9 @@
+         }
+         vanishStone-&gt;setAttr(&quot;$frozen_actors&quot;, actors);
+ 
+-        if (Object::getObject(id) != NULL) {  // not killed?
+-            sound_event(&quot;moveslow&quot;);
+-            propagateImpulse(impulse);
+-        }
+-    }
++        sound_event(&quot;moveslow&quot;);
++        propagateImpulse(impulse);
++     }
+     
+     void PullStone::alarm() {
+         if (state == APPEARING) {
+
+Modified: trunk/src/stones/RotatorStone.cc
+===================================================================
+--- trunk/src/stones/RotatorStone.cc	2008-09-04 23:03:51 UTC (rev 1304)
++++ trunk/src/stones/RotatorStone.cc	2008-09-05 22:52:18 UTC (rev 1305)
+@@ -118,10 +118,8 @@
+ 
+     void RotatorStone::on_impulse(const Impulse&amp; impulse) {
+         if (objFlags &amp; OBJBIT_MOVABLE) {
+-            int id = getId();
+             move_stone(impulse.dir);
+-            if (Object::getObject(id) != NULL)   // not killed?
+-                propagateImpulse(impulse);
++            propagateImpulse(impulse);
+         }
+     }
+     
+
+Modified: trunk/src/stones/RubberbandStone.cc
+===================================================================
+--- trunk/src/stones/RubberbandStone.cc	2008-09-04 23:03:51 UTC (rev 1304)
++++ trunk/src/stones/RubberbandStone.cc	2008-09-05 22:52:18 UTC (rev 1305)
+@@ -68,11 +68,8 @@
+     void RubberbandStone::on_impulse (const Impulse&amp; impulse) {
+         Actor *a = dynamic_cast&lt;Actor *&gt;(impulse.sender);
+         if (a &amp;&amp; player::WieldedItemIs (a, &quot;it_magicwand&quot;)) {
+-            int id = getId();
+             move_stone(impulse.dir);
+-            if (Object::getObject(id) != NULL)   // not killed?
+-                propagateImpulse(impulse);
+-        }
++            propagateImpulse(impulse);
+     }
+ 
+     DEF_TRAITSM(RubberbandStone, &quot;st_rubberband&quot;, st_rubberband, MOVABLE_STANDARD);
+
+Modified: trunk/src/stones/SwapStone.cc
+===================================================================
+--- trunk/src/stones/SwapStone.cc	2008-09-04 23:03:51 UTC (rev 1304)
++++ trunk/src/stones/SwapStone.cc	2008-09-05 22:52:18 UTC (rev 1305)
+@@ -85,8 +85,6 @@
+             return;                 // avoid unremoveable and border stones
+         }
+ 
+-        int id = getId();
+-        
+         SwapStone *vanishStone = dynamic_cast&lt;SwapStone *&gt;(MakeObject(&quot;st_swap&quot;));
+         vanishStone-&gt;state = VANISHING;
+         
+@@ -105,10 +103,8 @@
+                 it-&gt;on_stonehit(this);
+ 
+         server::IncMoveCounter(1);
+-        if (Object::getObject(id) != NULL) {  // not killed?
+-            sound_event(&quot;moveslow&quot;);
+-            propagateImpulse(impulse);
+-        }
++        sound_event(&quot;moveslow&quot;);
++        propagateImpulse(impulse);
+     }
+     
+     void SwapStone::alarm() {
+
+Modified: trunk/src/stones/Turnstile.cc
+===================================================================
+--- trunk/src/stones/Turnstile.cc	2008-09-04 23:03:51 UTC (rev 1304)
++++ trunk/src/stones/Turnstile.cc	2008-09-05 22:52:18 UTC (rev 1305)
+@@ -433,10 +433,10 @@
+             if (a != stay) {
+                 bool clockwise = (a == ROTR);
+                 Actor *actor = dynamic_cast&lt;Actor*&gt;(impulse.sender);
+-                Log &lt;&lt; &quot;Turnstile impulse &quot; &lt;&lt; get_id(pivot) &lt;&lt; &quot; - &quot;&lt;&lt;st_turnstile_green &lt;&lt;&quot;\n&quot;;
++//                Log &lt;&lt; &quot;Turnstile impulse &quot; &lt;&lt; get_id(pivot) &lt;&lt; &quot; - &quot;&lt;&lt;st_turnstile_green &lt;&lt;&quot;\n&quot;;
+                 if (get_id(pivot) == st_turnstile_green &amp;&amp; actor != NULL &amp;&amp;
+                         player::WieldedItemIs(actor, &quot;it_wrench&quot;)) {
+-                    Log &lt;&lt; &quot;Turnstile Wand\n&quot;;
++//                    Log &lt;&lt; &quot;Turnstile Wand\n&quot;;
+                     clockwise = !clockwise;
+                 }
+                 pivot-&gt;rotate(clockwise, impulse.sender, this); // ROTR is clockwise
+@@ -447,7 +447,7 @@
+             move_stone(impulse.dir);
+         }
+         
+-        if (Object::getObject(id) != NULL)   // not killed?
++        if (Object::getObject(id) != NULL)   // not killed - on pivot action?
+             propagateImpulse(impulse);
+     }
+ 
+
+Modified: trunk/src/stones/WindowStone.cc
+===================================================================
+--- trunk/src/stones/WindowStone.cc	2008-09-04 23:03:51 UTC (rev 1304)
++++ trunk/src/stones/WindowStone.cc	2008-09-05 22:52:18 UTC (rev 1305)
+@@ -216,6 +216,7 @@
+     }
+     
+     bool WindowStone::tryInnerPull(Direction dir, Actor *initiator) {
++        static double eps = 3.0/32;   // thickness of a window face
+         DirectionBits faces = getFaces();
+         GridPos w_pos(get_pos());
+         GridPos w_pos_neighbor = move(w_pos, dir);
+@@ -259,13 +260,32 @@
+                                 || ((dir == SOUTH) &amp;&amp; (dest[1] - r &lt; w_pos.y + 1) &amp;&amp; (a_pos == w_pos_neighbor))
+                                 || ((dir == NORTH) &amp;&amp; (dest[1] + r &gt; w_pos.y) &amp;&amp; (a_pos == w_pos_neighbor))) {
+                             // we do not have to worry about the level border as no face can be pushed to the border
+-                            dest[0] = (dir == EAST) ? (w_pos.x + 1 + r) : ((dir == WEST) ? (w_pos.x - r) : dest[0]);
+-                            dest[1] = (dir == SOUTH) ? (w_pos.y + 1 + r): ((dir == NORTH) ? (w_pos.y - r) : dest[1]);
++                            if (dir == EAST || dir == WEST) {
++                                dest[0] = (dir == EAST) ? (w_pos.x + 1 + r) : (w_pos.x - r) ;
++                                if (stone &amp;&amp; has_dir(stone-&gt;getFaces(), NORTH))
++                                   dest[1] = ecl::Max(dest[1], w_pos.y + r + eps);
++                                else if (GetStone(move(w_pos, NORTH)) != NULL)
++                                   dest[1] = ecl::Max(dest[1], w_pos.y + r);
++                                if (stone &amp;&amp; has_dir(stone-&gt;getFaces(), SOUTH))
++                                   dest[1] = ecl::Min(dest[1], w_pos.y + 1 - r - eps);
++                                else if (GetStone(move(w_pos, SOUTH)) != NULL)
++                                   dest[1] = ecl::Min(dest[1], w_pos.y + 1 - r);
++                            } else {
++                                dest[1] = (dir == SOUTH) ? (w_pos.y + 1 + r): ((dir == NORTH) ? (w_pos.y - r) : dest[1]);
++                                if (stone &amp;&amp; has_dir(stone-&gt;getFaces(), WEST))
++                                   dest[0] = ecl::Max(dest[0], w_pos.x + r + eps);
++                                else if (GetStone(move(w_pos, WEST)) != NULL)
++                                   dest[0] = ecl::Max(dest[0], w_pos.x + r);
++                                if (stone &amp;&amp; has_dir(stone-&gt;getFaces(), EAST))
++                                   dest[0] = ecl::Min(dest[0], w_pos.x + 1 - r - eps);
++                                else if (GetStone(move(w_pos, EAST)) != NULL)
++                                   dest[0] = ecl::Min(dest[0], w_pos.x + 1 - r);
++                            }
+                             WarpActor(a, dest[0], dest[1], true);
+                         }
+                     }
+                 }
+-                
++                TouchStone(get_pos());  // avoid another actor getting below a moved window face
+                 return true;
+             }
+         }
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-09-04 23:03:51 UTC (rev 1304)
++++ trunk/src/world.cc	2008-09-05 22:52:18 UTC (rev 1305)
+@@ -1119,7 +1119,7 @@
+         if (Stone *stone = GetStone(sc.stonepos)) {
+             stone-&gt;actor_contact(sc.actor);
+             
+-            if (a-&gt;get_gridpos() != sc.stonepos) {
++            if (a-&gt;get_gridpos() != sc.stonepos &amp;&amp; !sc.ignore &amp;&amp; sc.response == STONE_REBOUND) {
+                 // remove collision forces components from actor-actor collisions 
+                 // in direction of stone
+                 double normal_component = sc.normal * ai.collforce;            
+@@ -2039,6 +2039,8 @@
+ 
+ void TouchStone(GridPos pos) {
+     level-&gt;changed_stones.push_back(pos);
++    if (level-&gt;registerCriticalPositions)
++        level-&gt;collisionCriticalPositions.push_back(pos);
+ }
+ 
+ void SetScrambleIntensity (int intensity) {
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000734.html">[Enigma-game-svn] r1304 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000736.html">[Enigma-game-svn] r1306 - in trunk: data data/gfx32 data/gfx40	data/gfx48 src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#735">[ date ]</a>
+              <a href="thread.html#735">[ thread ]</a>
+              <a href="subject.html#735">[ subject ]</a>
+              <a href="author.html#735">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

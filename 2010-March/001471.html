@@ -1,0 +1,274 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r2047 - in trunk: data/levels/lib doc/reference
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2010-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2047%20-%20in%20trunk%3A%20data/levels/lib%20doc/reference&In-Reply-To=%3C201003172238.o2HMcJcI007789%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001470.html">
+   <LINK REL="Next"  HREF="001472.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r2047 - in trunk: data/levels/lib doc/reference</H1>
+    <B>andreasl at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2047%20-%20in%20trunk%3A%20data/levels/lib%20doc/reference&In-Reply-To=%3C201003172238.o2HMcJcI007789%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r2047 - in trunk: data/levels/lib doc/reference">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Wed Mar 17 23:38:19 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001470.html">[Enigma-game-svn] r2046 - in trunk/data: . levels/enigma_cross	levels/enigma_peroxyd levels/enigma_viii
+</A></li>
+        <LI>Next message: <A HREF="001472.html">[Enigma-game-svn] r2048 - in trunk/data: .	levels/enigma_experimental
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1471">[ date ]</a>
+              <a href="thread.html#1471">[ thread ]</a>
+              <a href="subject.html#1471">[ subject ]</a>
+              <a href="author.html#1471">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2010-03-17 23:38:13 +0100 (Wed, 17 Mar 2010)
+New Revision: 2047
+
+Modified:
+   trunk/data/levels/lib/libsoko.xml
+   trunk/data/levels/lib/libsoko_designlist.xml
+   trunk/doc/reference/enigma-ref.texi
+Log:
+Trunk:
+ - Libsoko: Stabilize maxdesign-argument for compatibility,
+   for this purpose, a constant table &quot;MAXDESIGN&quot; has been introduced.
+   In addition, the default maxdesign-number now is fixed to 150
+   instead of the current length of the design list.
+ - Use of watercracks in allcrack-endphase and add cracks to the
+   outer floors, so the user can guess that cracks might appear.
+ - Fix of designs #35, #140, and #145.
+ - Use secure autorespawn, this allows for more dangerous designs.
+ - Corresponding Refman-entries.
+Todo:
+ - libsoko doesn't handle Sokoban-levels correctly, if they are
+   not path-connected -- this happens in seldom cases for design
+   causes, like in Mas Microban #134.
+ - Mas Microban #133 doesn't work for (yet) unknown reasons.
+
+
+Modified: trunk/data/levels/lib/libsoko.xml
+===================================================================
+--- trunk/data/levels/lib/libsoko.xml	2010-03-14 20:20:55 UTC (rev 2046)
++++ trunk/data/levels/lib/libsoko.xml	2010-03-17 22:38:13 UTC (rev 2047)
+@@ -37,6 +37,7 @@
+ -- RESOLVE_LINES = 3
+ -- RESOLVE_WAVES = 4
+ -- RESOLVE_ORIENTED = 5
++-- MAXDESIGN
+ GOAL_HOOK_DEFAULT = 0
+ GOAL_HOOK_RALF = 1
+ lib.soko.MAX_HEIGHT = 10000  -- If you have to change this, change it before any other call to lib.soko.
+@@ -220,8 +221,19 @@
+     else
+         assert_type(map, &quot;lib.soko.design_from_description first argument&quot;, 2, &quot;map&quot;)
+         design = lib.lua.deep_copy(lib.soko_designlist.list[lib.soko.number_from_level(
+-                     map, maxdesignnumber or #lib.soko_designlist.list)])
++                     map, maxdesignnumber or MAXDESIGN[1.1])])
+     end
++    if (design == nil) then
++        error(&quot;The requested design is not available -- maybe you tried to run &quot;
++            ..&quot;this level with an outdated version of Enigma?&quot;, 3)
++    end
++    if (type(design) ~= &quot;table&quot;) then
++        error(&quot;libsoko: Internal error: The requested design is not of type table, &quot;
++            ..&quot;but of type &quot; .. type(design) .. &quot;.&quot;, 3)    
++    end
++    if design.endp == nil then
++        design.endp = {}
++    end
+     return design
+ end
+ 
+@@ -871,7 +883,7 @@
+ function lib.soko.endphase_allcrack()
+     for j = 1, #lib.soko.polist.way do
+         if not -it(lib.soko.polist.way[j]) then
+-            wo[lib.soko.polist.way[j]] = {&quot;it_crack_m&quot;}
++            wo[lib.soko.polist.way[j]] = {&quot;it_crack&quot;, flavor = &quot;water&quot;, state = MEDIUM}
+         end
+     end  
+ end
+@@ -948,7 +960,10 @@
+     map:paste(small_map, po(dx, dy))
+     map.defaultkey = &quot;  &quot;
+ 
+-    wo[&quot;ConserveLevel&quot;] = false
++    -- Global variables
++    wo[&quot;ConserveLevel&quot;] = true
++    wo[&quot;AutoRespawn&quot;] = true
++    wo[&quot;AllowSuicide&quot;] = false
+     wo[&quot;ShowMoves&quot;] = true
+     wo[&quot;FollowGrid&quot;] = false
+     wo[&quot;FollowMethod&quot;] = FOLLOW_SCROLL
+
+Modified: trunk/data/levels/lib/libsoko_designlist.xml
+===================================================================
+--- trunk/data/levels/lib/libsoko_designlist.xml	2010-03-14 20:20:55 UTC (rev 2046)
++++ trunk/data/levels/lib/libsoko_designlist.xml	2010-03-17 22:38:13 UTC (rev 2047)
+@@ -108,6 +108,23 @@
+ RESOLVE_WAVES = 4
+ RESOLVE_ORIENTED = 5
+ 
++-- The MAXDESIGN-constant is a read-only list to hold the number of available
++-- designs in each version of Enigma.
++MAXDESIGN = {}
++MAXDESIGN[1.1] = 150
++setmetatable(MAXDESIGN,
++    {__index = function(self, key)
++         if rawget(self, key) == nil then
++             error(&quot;The requested designs are not available -- maybe you tried to run &quot;
++                 ..&quot;this level with an outdated version of Enigma?&quot;, 2)
++         else
++             return rawget(self, key)
++         end
++     end,
++     __newindex = function(self, key, value)
++         error(&quot;The MAXDESIGN-constant is read-only.&quot;, 2)
++     end})
++
+ -- The default design must not be nested!
+ lib.soko_designlist.default = {
+     wall = &quot;st_plaster&quot;,
+@@ -321,7 +338,7 @@
+                  give = &quot;it_sword&quot;,
+                  alg = &quot;block&quot;}},
+  [23] = {inf = &quot;fl_wood&quot;,
+-         outf = &quot;fl_abyss&quot;,
++         outf = {&quot;fl_abyss&quot;, {&quot;it_nil&quot;, &quot;it_crack_s&quot;, &quot;it_crack_m&quot;, &quot;it_crack_l&quot;, res = {RESOLVE_RANDOM, 20, 1, 1, 1}}},
+          wall = {&quot;st_rawglass&quot;, {&quot;fl_wood&quot;, &quot;fl_abyss&quot;, res = RESOLVE_CHECKERBOARD}},
+          box = &quot;st_plop&quot;,
+          door = {&quot;st_blocker&quot;, &quot;fl_wood&quot;},
+@@ -430,7 +447,7 @@
+          box = &quot;st_plop&quot;,
+          door = &quot;st_blocker&quot;,
+          oxyd = &quot;b&quot;,
+-         endp = {goal = &quot;fl_swamp&quot;,
++         endp = {goal = {&quot;fl_swamp&quot;, &quot;it_nil&quot;},
+                  alg = &quot;ralf&quot;}},
+  [36] = {inf = &quot;fl_bright&quot;,
+          outf = &quot;fl_abyss&quot;,
+@@ -708,7 +725,10 @@
+          oxyd = &quot;b&quot;,
+          endp = {alg = &quot;circle&quot;}},
+  [68] = {inf = &quot;fl_samba&quot;,
+-         outf = &quot;fl_space&quot;,
++         outf = {&quot;fl_water&quot;, &quot;fl_samba&quot;,
++                 {&quot;fl_samba&quot;, ti{&quot;it_crack_s&quot;, flavor = &quot;water&quot;}},
++                 {&quot;fl_samba&quot;, ti{&quot;it_crack_m&quot;, flavor = &quot;water&quot;}},
++                 {&quot;fl_samba&quot;, ti{&quot;it_crack_l&quot;, flavor = &quot;water&quot;}}, res = RESOLVE_WAVES},
+          wall = &quot;st_tigris&quot;,
+          box = &quot;st_brownie&quot;,
+          door = &quot;st_door_a&quot;,
+@@ -1156,7 +1176,12 @@
+          endp = {goal = &quot;st_rawglass&quot;,
+                  alg = &quot;vortex&quot;}},
+ [119] = {inf = &quot;fl_redslab&quot;,
+-         outf = {&quot;fl_blueslab&quot;, &quot;st_disco_light&quot;},
++         outf = {&quot;fl_blueslab&quot;, &quot;st_disco_light&quot;,
++                 {&quot;it_nil&quot;,
++                  ti{&quot;it_crack_s&quot;, flavor = &quot;water&quot;},
++                  ti{&quot;it_crack_m&quot;, flavor = &quot;water&quot;},
++                  ti{&quot;it_crack_l&quot;, flavor = &quot;water&quot;},
++                  res = {RESOLVE_RANDOM, 3, 1, 1, 1}}},
+          wall = &quot;st_redmarble&quot;,
+          box = &quot;st_plop&quot;,
+          door = &quot;st_door_a&quot;,
+@@ -1334,7 +1359,7 @@
+          endp = {inf = {&quot;fl_white&quot;, &quot;fl_fake_abyss&quot;, res = RESOLVE_CHECKERBOARD},
+                  goal = {&quot;st_nil&quot;, &quot;it_nil&quot;, {&quot;fl_white&quot;, &quot;fl_fake_abyss&quot;, res = RESOLVE_CHECKERBOARD}},
+                  alg = &quot;ralf&quot;}},
+-[140] = {inf = ti{&quot;fl_bast&quot;, friction = 3.0},
++[140] = {inf = ti{&quot;fl_bast&quot;, friction = 7.0, adhesion = 2.0},
+          outf = {&quot;fl_lawn_e4&quot;, &quot;fl_lawn_e2&quot;, &quot;fl_lawn_e1&quot;, &quot;fl_lawn_e3&quot;, res = RESOLVE_WAVES},
+          wall = {&quot;st_brownpyramid&quot;, &quot;fl_lawn_b&quot;},
+          box = &quot;st_brownie&quot;,
+@@ -1380,10 +1405,10 @@
+          outf = {&quot;fl_sand&quot;, {&quot;it_landmine&quot;, &quot;it_bottle_broken&quot;, &quot;it_nil&quot;, res = {RESOLVE_RANDOM, 3, 1, 15}}},
+          wall = {&quot;st_greenbrown&quot;, &quot;fl_sand&quot;},
+          box = &quot;st_lightglass_movable&quot;,
+-         door = &quot;st_door_a&quot;,
++         door = {&quot;st_door_a&quot;, ti{&quot;fl_dunes&quot;, friction = 3.0, adhesion = 1.0}},
+          oxyd = &quot;a&quot;,
+          endp = {goal = &quot;st_lightglass_hollow&quot;,
+-                 alg = &quot;allcrack&quot;, max_pairs = 1}},
++                 alg = &quot;ralf&quot;}},
+ [146] = {inf = &quot;fl_dark&quot;,
+          outf = {&quot;fl_abyss&quot;, {&quot;st_grate_cross&quot;, &quot;st_nil&quot;, res = {RESOLVE_RANDOM, 1, 10}}},
+          wall = &quot;st_granite&quot;,
+
+Modified: trunk/doc/reference/enigma-ref.texi
+===================================================================
+--- trunk/doc/reference/enigma-ref.texi	2010-03-14 20:20:55 UTC (rev 2046)
++++ trunk/doc/reference/enigma-ref.texi	2010-03-17 22:38:13 UTC (rev 2047)
+@@ -23020,6 +23020,7 @@
+ @item @b{Syntax Samples:}
+ @example
+ lib.soko.create_sokoball(many_levels, 13, 48)
++lib.soko.create_sokoball(many_levels, 12, nil, MAXDESIGN[1.1])
+ @end example
+ 
+ @item @b{Details:}
+@@ -23038,8 +23039,22 @@
+ 
+ *Uniquely means: The design might change when the design list is enlarged.
+ 
++The number of available designs is 150 in Enigma 1.1, which equals the constant
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{MAXDESIGN[1.1]}. However, further versions of Enigma might support more
++designs. If a multilevel is loaded with a (numerically given) maxdesign number
++which is larger than the number of available designs, only those levels will be
++available for play whose calculated design number is supported, all others will
++show an error message. However, it is better to use the MAXDESIGN-constants.
++These will always raise an error, when the requested designs are not available.
++The MAXDESIGN-constants are read-only.
++
++If both the design argument as well as the maxdesign-number are
++omitted, the original 150 designs will be used as fallback, no matter which
++version of Enigma is running.
++
+ To define own designs, please consult
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{data/levels/lib/libsoko_designlist.xml}.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{data/levels/lib/libsoko_designlist.xml}
++or use @ref{libimport} in the first place.
+ 
+ Returns width and height of new Enigma level.
+ @end table
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001470.html">[Enigma-game-svn] r2046 - in trunk/data: . levels/enigma_cross	levels/enigma_peroxyd levels/enigma_viii
+</A></li>
+	<LI>Next message: <A HREF="001472.html">[Enigma-game-svn] r2048 - in trunk/data: .	levels/enigma_experimental
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1471">[ date ]</a>
+              <a href="thread.html#1471">[ thread ]</a>
+              <a href="subject.html#1471">[ subject ]</a>
+              <a href="author.html#1471">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

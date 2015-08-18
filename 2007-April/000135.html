@@ -1,0 +1,192 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r697 - branches/1.0/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r697%20-%20branches/1.0/src&In-Reply-To=%3C200704251943.l3PJh12M008954%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000134.html">
+   <LINK REL="Next"  HREF="000136.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r697 - branches/1.0/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r697%20-%20branches/1.0/src&In-Reply-To=%3C200704251943.l3PJh12M008954%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r697 - branches/1.0/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Apr 25 21:43:01 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000134.html">[Enigma-game-svn] r696 - in branches/1.0: . data/gfx doc doc/images	doc/images/flags25x15 etc src
+</A></li>
+        <LI>Next message: <A HREF="000136.html">[Enigma-game-svn] r698 - branches/1.0/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#135">[ date ]</a>
+              <a href="thread.html#135">[ thread ]</a>
+              <a href="subject.html#135">[ subject ]</a>
+              <a href="author.html#135">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-04-25 21:43:00 +0200 (Wed, 25 Apr 2007)
+New Revision: 697
+
+Modified:
+   branches/1.0/src/Inventory.cc
+   branches/1.0/src/Inventory.hh
+   branches/1.0/src/items.cc
+   branches/1.0/src/player.cc
+   branches/1.0/src/player.hh
+Log:
+Branch 1.0
+- fix add of empty it-bag's to a full inventory
+
+
+Modified: branches/1.0/src/Inventory.cc
+===================================================================
+--- branches/1.0/src/Inventory.cc	2007-04-24 21:01:57 UTC (rev 696)
++++ branches/1.0/src/Inventory.cc	2007-04-25 19:43:00 UTC (rev 697)
+@@ -144,7 +144,20 @@
+         std::rotate(m_items.begin(), m_items.end()-1, m_items.end());
+ }
+ 
++bool Inventory::willAddItem(Item *it) {
++    ItemHolder *holder = dynamic_cast&lt;ItemHolder*&gt;(it);
++    if (is_full()) {
++	return false;
++    } else if (holder != NULL &amp;&amp; holder-&gt;is_empty() &amp;&amp;
++	    (m_items.size() &gt;= max_items || dynamic_cast&lt;ItemHolder*&gt;(get_item(0)) != NULL)) {
++	// should add a bag that is empty, but first item in Inventory is itself
++	// a bag or Inventory is full -- avoid recursive bags
++	return false;
++    }
++    return true;  // we have space and item is not critical
++}
+ 
++
+ int Inventory::find(const std::string&amp; kind, size_t start_idx) const 
+ {
+     size_t size_ = size();
+
+Modified: branches/1.0/src/Inventory.hh
+===================================================================
+--- branches/1.0/src/Inventory.hh	2007-04-24 21:01:57 UTC (rev 696)
++++ branches/1.0/src/Inventory.hh	2007-04-25 19:43:00 UTC (rev 697)
+@@ -50,6 +50,7 @@
+         void rotate_right();
+         Item *get_item (size_t idx) const;
+         Item *yield_item (size_t idx);
++	bool willAddItem(Item *it);
+ 
+         int find(const std::string&amp; kind, size_t start_idx = 0) const;
+ 
+
+Modified: branches/1.0/src/items.cc
+===================================================================
+--- branches/1.0/src/items.cc	2007-04-24 21:01:57 UTC (rev 696)
++++ branches/1.0/src/items.cc	2007-04-25 19:43:00 UTC (rev 697)
+@@ -3220,7 +3220,7 @@
+         // Item interface
+         bool actor_hit (Actor *a) {
+             if (Item::actor_hit(a)) {
+-                if (Inventory *inv = player::MayPickup(a)) {
++                if (Inventory *inv = player::MayPickup(a, NULL)) {
+                     std::vector&lt;Item *&gt;::size_type oldSize = m_contents.size();
+                     inv-&gt;takeItemsFrom(this);
+                     if (oldSize != m_contents.size() &amp;&amp; inv-&gt;is_full()) {
+
+Modified: branches/1.0/src/player.cc
+===================================================================
+--- branches/1.0/src/player.cc	2007-04-24 21:01:57 UTC (rev 696)
++++ branches/1.0/src/player.cc	2007-04-25 19:43:00 UTC (rev 697)
+@@ -34,6 +34,7 @@
+ 
+ using namespace std;
+ using namespace enigma;
++using namespace world;
+ using world::Actor;
+ using enigma::Inventory;
+ 
+@@ -533,7 +534,7 @@
+ 
+ /*! Return pointer to inventory if actor may pick up items, 0
+    otherwise. */
+-Inventory *player::MayPickup(Actor *a) 
++Inventory *player::MayPickup(Actor *a, Item *it) 
+ {
+     int iplayer=-1;
+     a-&gt;int_attrib(&quot;player&quot;, &amp;iplayer);
+@@ -545,7 +546,7 @@
+     Inventory *inv = GetInventory(iplayer);
+     bool dont_pickup = players[iplayer].inhibit_pickup 
+         || a-&gt;is_flying()
+-        || inv-&gt;is_full()
++        || !inv-&gt;willAddItem(it)
+         || a-&gt;is_dead();
+ 
+     return dont_pickup ? 0 : inv;
+@@ -553,7 +554,7 @@
+ 
+ void player::PickupItem (Actor *a, GridPos p) 
+ {
+-    if (Inventory *inv = MayPickup(a)) {
++    if (Inventory *inv = MayPickup(a, GetField(p)-&gt;item)) {
+         if (Item *item = world::YieldItem(p)) {
+             item-&gt;on_pickup(a);
+             inv-&gt;add_item(item);
+@@ -565,7 +566,7 @@
+ 
+ void player::PickupStoneAsItem (Actor *a, enigma::GridPos p) 
+ {
+-    if (Inventory *inv = MayPickup(a)) 
++    if (Inventory *inv = MayPickup(a, GetField(p)-&gt;item)) 
+     {
+         if (world::Stone *stone = world::YieldStone(p)) 
+         {
+
+Modified: branches/1.0/src/player.hh
+===================================================================
+--- branches/1.0/src/player.hh	2007-04-24 21:01:57 UTC (rev 696)
++++ branches/1.0/src/player.hh	2007-04-25 19:43:00 UTC (rev 697)
+@@ -71,7 +71,7 @@
+         unsigned NumberOfRealPlayers();
+ 
+ 
+-        Inventory *MayPickup(Actor *a);
++        Inventory *MayPickup(Actor *a, Item *it);
+         Inventory *GetInventory(int iplayer);
+         Inventory *GetInventory(Actor *a);
+         bool       WieldedItemIs(Actor *a, const std::string &amp;kind);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000134.html">[Enigma-game-svn] r696 - in branches/1.0: . data/gfx doc doc/images	doc/images/flags25x15 etc src
+</A></li>
+	<LI>Next message: <A HREF="000136.html">[Enigma-game-svn] r698 - branches/1.0/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#135">[ date ]</a>
+              <a href="thread.html#135">[ thread ]</a>
+              <a href="subject.html#135">[ subject ]</a>
+              <a href="author.html#135">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

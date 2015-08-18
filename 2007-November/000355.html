@@ -1,0 +1,1284 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r923 - in trunk/src: . stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-November/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r923%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200711102010.lAAKA9nj007145%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000354.html">
+   <LINK REL="Next"  HREF="000356.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r923 - in trunk/src: . stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r923%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200711102010.lAAKA9nj007145%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r923 - in trunk/src: . stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Nov 10 21:10:09 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000354.html">[Enigma-game-svn] r922 - homepage/input
+</A></li>
+        <LI>Next message: <A HREF="000356.html">[Enigma-game-svn] r924 - trunk/data/levels/lib
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#355">[ date ]</a>
+              <a href="thread.html#355">[ thread ]</a>
+              <a href="subject.html#355">[ subject ]</a>
+              <a href="author.html#355">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-11-10 21:10:07 +0100 (Sat, 10 Nov 2007)
+New Revision: 923
+
+Modified:
+   trunk/src/lua.cc
+   trunk/src/stones/OxydStone.cc
+   trunk/src/stones/OxydStone.hh
+Log:
+Trunk 1.1: Fair Oxyd Distribution
+- new oxyd shuffling with min/max rules as described in new API draft 0.5
+- rule &quot;groups&quot; may be single objects or object names
+- rule with a single group may request linear=true or circular=true for
+  disallowing matching neighbour oxyds as given in the group sequence
+- log=&quot;solution&quot; lists the selected solution if added to any rule
+- log=&quot;count&quot; tests all possible solutions
+- log=&quot;all&quot; lists all possible solutions
+- new oxyd attribute &quot;noshuffle&quot; to avoid shuffling of a single oxyd
+- new color types FAKE, FART, BOLD (-2,-3,-4) called pseudocolors
+Note:
+- fair oxyd distribution requires given rules, &lt;= 32 oxyds, no more than
+  two oxyds of any standard color - otherwise the simple shuffle takes place
+- log=&quot;count&quot; may take more than 25 sec if 2 million distributions exist
+- log=&quot;all&quot; - check the count first!!
+- noshuffle is coded for fair shuffle but not yet tested, simple shuffle
+  still misses support
+- pseudooxyds are mainly prepared in the fair shuffle, but all other
+  code is still missing.
+
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2007-11-08 16:11:52 UTC (rev 922)
++++ trunk/src/lua.cc	2007-11-10 20:10:07 UTC (rev 923)
+@@ -26,9 +26,10 @@
+ #include &quot;server.hh&quot;
+ #include &quot;sound.hh&quot;
+ #include &quot;options.hh&quot;
++#include &quot;WorldProxy.hh&quot;
+ #include &quot;lev/Index.hh&quot;
+ #include &quot;lev/Proxy.hh&quot;
+-#include &quot;WorldProxy.hh&quot;
++#include &quot;stones/OxydStone.hh&quot;
+ #include &lt;list&gt;
+ 
+ #ifndef CXXLUA
+@@ -1857,6 +1858,102 @@
+     return 1;
+ }
+ 
++static int shuffleOxyd(lua_State *L) {
++    // world, {table}  -- table with 1=(group|obj|name), [2=(group|obj|name], 
++    //                               min=[number], max=[number], circular=true, linear=true
++    //                               log=(&quot;solution&quot;|&quot;count&quot;|&quot;all&quot;) 
++    OxydStone::LogType logFlag = OxydStone::NOTHING;
++    for (int i = 2; i &lt;= lua_gettop(L); i++) {
++        if (!is_table(L, i)) {
++            throwLuaError(L, &quot;Shuffle oxyds - rule is not a table&quot;);
++            return 0;
++        }
++        lua_rawgeti(L, i, 1);
++        if (!(is_group(L, -1) || is_object(L, -1) || lua_isstring(L, -1))) {
++            throwLuaError(L, &quot;Shuffle oxyds - rule first group fault&quot;);
++            return 0;
++        }
++        Value group1 = to_value(L, -1);
++        lua_pop(L, 1);
++        lua_rawgeti(L, i, 2);
++        if (!(is_group(L, -1) || is_object(L, -1) || lua_isstring(L, -1) || lua_isnil(L, -1))) {
++            throwLuaError(L, &quot;Shuffle oxyds - rule second group fault&quot;);
++            return 0;
++        }
++        Value group2 = to_value(L, -1);
++        bool is_pair = !lua_isnil(L, -1); 
++        lua_pop(L, 1);
++        
++        lua_getfield(L, i, &quot;log&quot;);
++        if (!lua_isnil(L, -1) &amp;&amp; lua_isstring(L, -1)) {
++            if (0 == strcmp(lua_tostring(L,-1), &quot;solution&quot;) &amp;&amp; logFlag &lt; OxydStone::SOLUTION) 
++                logFlag = OxydStone::SOLUTION;
++            else if (0 == strcmp(lua_tostring(L,-1), &quot;count&quot;) &amp;&amp; logFlag &lt; OxydStone::COUNT)
++                logFlag = OxydStone::COUNT;
++            else if (0 == strcmp(lua_tostring(L,-1), &quot;all&quot;) &amp;&amp; logFlag &lt; OxydStone::ALL)
++                logFlag = OxydStone::ALL;                
++        }
++        lua_pop(L, 1);
++        
++        unsigned short limit;
++        
++        lua_getfield(L, i, &quot;min&quot;);
++        if (!lua_isnil(L, -1)) {
++            limit = (unsigned short) ecl::Clamp&lt;int&gt;(lua_tointeger(L, -1), 0, OxydStone::numColorsAvailable());
++            OxydStone::addShuffleRule(is_pair ? OxydStone::RULE_PAIR_MIN : OxydStone::RULE_SINGLE_MIN, 
++                    (unsigned short) limit, group1, group2);
++        }
++        lua_pop(L, 1);
++
++        lua_getfield(L, i, &quot;max&quot;);
++        if (!lua_isnil(L, -1)) {
++            limit = (unsigned short) ecl::Clamp&lt;int&gt;(lua_tointeger(L, -1), 0, OxydStone::numColorsAvailable());            
++            OxydStone::addShuffleRule(is_pair ? OxydStone::RULE_PAIR_MAX : OxydStone::RULE_SINGLE_MAX, 
++                    (unsigned short) limit, group1, group2);
++        }
++        lua_pop(L, 1);
++
++        if (!is_pair) {
++            lua_getfield(L, i, &quot;linear&quot;);
++            if (lua_isboolean(L, -1) &amp;&amp; lua_toboolean(L, -1)) {
++                ObjectList oxyds = group1;
++                Object *firstOxyd = NULL;
++                for (ObjectList::iterator i = oxyds.begin(); i != oxyds.end(); ++i) {
++                    if (firstOxyd == NULL)
++                        firstOxyd = *i;
++                    else {
++                        OxydStone::addShuffleRule(OxydStone::RULE_PAIR_MAX, 0, Value(firstOxyd), Value(*i));
++                        firstOxyd = *i;
++                    }
++                }
++            }
++            lua_pop(L, 1);
++            
++            lua_getfield(L, i, &quot;circular&quot;);
++            if (lua_isboolean(L, -1) &amp;&amp; lua_toboolean(L, -1)) {
++                ObjectList oxyds = group1;
++                Object *firstOxyd = NULL;
++                Object *leftOxyd = NULL;
++                for (ObjectList::iterator i = oxyds.begin(); i != oxyds.end(); ++i) {
++                    if (firstOxyd == NULL) {
++                        firstOxyd = *i;
++                        leftOxyd = *i;
++                    } else {
++                        OxydStone::addShuffleRule(OxydStone::RULE_PAIR_MAX, 0, Value(leftOxyd), Value(*i));
++                        leftOxyd = *i;
++                    }
++                }
++                if (firstOxyd != NULL &amp;&amp; firstOxyd != leftOxyd)
++                    OxydStone::addShuffleRule(OxydStone::RULE_PAIR_MAX, 0, Value(firstOxyd), Value(leftOxyd));
++            }
++            lua_pop(L, 1);
++        }
++        
++    }
++    OxydStone::shuffleColors(logFlag);
++    return 0;
++}
++
+ MethodMap tileMethodeMap;
+ 
+ static int dispatchTileWriteAccess(lua_State *L) {
+@@ -2187,6 +2284,7 @@
+     {getFloor,                      &quot;fl&quot;},
+     {getItem,                       &quot;it&quot;},
+     {getStone,                      &quot;st&quot;},
++    {shuffleOxyd,                   &quot;shuffleOxyd&quot;},
+     {0,0}
+ };
+ 
+
+Modified: trunk/src/stones/OxydStone.cc
+===================================================================
+--- trunk/src/stones/OxydStone.cc	2007-11-08 16:11:52 UTC (rev 922)
++++ trunk/src/stones/OxydStone.cc	2007-11-10 20:10:07 UTC (rev 923)
+@@ -19,64 +19,194 @@
+  */
+ 
+ #include &quot;stones/OxydStone.hh&quot;
++#include &quot;errors.hh&quot;
++#include &quot;main.hh&quot;
+ #include &quot;server.hh&quot;
+ #include &quot;world.hh&quot;
+ 
+ namespace enigma {
+  
+-    OxydStone::InstanceList OxydStone::instances;
++    OxydStone::InstanceVector OxydStone::levelOxyds;
++    std::vector&lt;unsigned short&gt; OxydStone::colorsUsageCount;
++    unsigned short OxydStone::shuffledFakeCount;
++    unsigned short OxydStone::shuffledFartCount;
++    unsigned short OxydStone::shuffledBoldCount;
++    bool OxydStone::oddUnshuffledColor;
+     
+-    OxydStone * OxydStone::clone() { 
+-        OxydStone *o = new OxydStone(*this); 
+-        instances.push_back(o);
+-        if (server::EnigmaCompatibility &gt;= 1.10) {
+-            int color = ((instances.size() -1) / 2) % 8;
+-            o-&gt;set_attrib(&quot;color&quot;, color);
+-        }
+-        return o;
++    std::vector&lt;unsigned short&gt; OxydStone::randomOxydIds;
++    std::vector&lt;uint32_t&gt; OxydStone::groupsMembers;
++    std::vector&lt;uint32_t&gt; OxydStone::groupsSharedMembers;
++    std::list&lt;OxydStone::Rule&gt; OxydStone::singleRulesMin;
++    std::list&lt;OxydStone::Rule&gt; OxydStone::singleRulesMax;
++    std::list&lt;OxydStone::Rule&gt; OxydStone::pairRulesMin;
++    std::list&lt;OxydStone::Rule&gt; OxydStone::pairRulesMax;
++    std::list&lt;OxydStone::ShuffleFrame&gt; OxydStone::shuffleStack;
++    unsigned int OxydStone::logBadFrameCount;
++    
++    unsigned short OxydStone::numColorsAvailable() {
++        return COLORCOUNT;  // may dependent on enigma compatibility in future!
+     }
+     
+-    OxydStone::OxydStone()
+-    : PhotoStone(&quot;st-oxyd&quot;),
+-      state(CLOSED)
+-    {
+-        set_attrib(&quot;flavor&quot;, &quot;b&quot;);
+-        set_attrib(&quot;color&quot;, 0);
++    void OxydStone::addShuffleRule(RuleType type, unsigned short limit, Value group1, Value group2) {
++        Rule r;
++        
++        if (shuffleStack.size() == 0)
++            shuffleStack.push_back(ShuffleFrame());
++                
++        ShuffleFrame &amp;base = shuffleStack.front();
++        
++        r.groupId1 = groupId(group1);
++        r.groupId2 = groupId(group2);
++        r.ruleId = base.rulesLimit.size();
++        
++        base.rulesLimit.push_back(limit);
++        
++        switch (type) {
++            case RULE_SINGLE_MIN:
++                singleRulesMin.push_back(r);
++                break;
++            case RULE_SINGLE_MAX:
++                singleRulesMax.push_back(r);
++                break;
++            case RULE_PAIR_MIN:
++                pairRulesMin.push_back(r);
++                break;
++            case RULE_PAIR_MAX:
++                pairRulesMax.push_back(r);
++                break;
++        }
+     }
++        
++    unsigned short OxydStone::groupId(Value v) {
++        ASSERT(levelOxyds.size() &lt; 32, XLevelRuntime, &quot;Oxyd shuffle rule - error more than 32 oxyds&quot;);
++        
++        ObjectList objects = v;
++        uint32_t groupOxydMask = 0;
++        int count = 0;
++        for (ObjectList::iterator i = objects.begin(); i != objects.end(); ++i) {
++            for(unsigned short j = 0; j &lt; levelOxyds.size(); ++j) {
++                if ((*i) == levelOxyds[j]) {
++                    groupOxydMask |= 1 &lt;&lt; j;
++                    count++;
++                    break;
++                }
++            }
++        }
++        ASSERT(count == objects.size(), XLevelRuntime, &quot;Oxyd shuffle rule - group member identification error&quot;);
++        for(unsigned short j = 0; j &lt; groupsMembers.size(); ++j) {
++            if (groupOxydMask == groupsMembers[j])
++                return j;
++        }
++        groupsMembers.push_back(groupOxydMask);
++        return groupsMembers.size() - 1;
++    }
+     
+-    Value OxydStone::message(const string &amp;m, const Value &amp;val) 
+-    {
+-        if (m==&quot;closeall&quot;) {
+-            for (unsigned i=0; i&lt;instances.size(); ++i)
+-                instances[i]-&gt;change_state(CLOSING);
++    void OxydStone::initColors() {
++        if (colorsUsageCount.size() != 0)
++            return;  // we are already initialized!
++            
++        unsigned short numColors = numColorsAvailable();
++        colorsUsageCount = std::vector&lt;unsigned short&gt;(numColors);
++        std::vector&lt;unsigned short&gt;colorsUsageCountNoShuffle(numColors);
++        shuffledFakeCount = 0;
++        shuffledFartCount = 0;
++        shuffledBoldCount = 0;
++        oddUnshuffledColor = false;
++        
++        InstanceVector autocoloredOxyds;
++        size_t  isize = levelOxyds.size();
++        // count color usage
++        for (size_t i=0; i&lt;isize; ++i) {
++            int color = levelOxyds[i]-&gt;getAttr(&quot;color&quot;);
++            bool declineShuffle = levelOxyds[i]-&gt;getAttr(&quot;noshuffle&quot;);
++            if (color &gt;= 0 &amp;&amp; color &lt; numColors) {
++                colorsUsageCount[color]++;
++                if (declineShuffle) colorsUsageCountNoShuffle[color]++;
++            } else {
++                switch (color) {
++                    case AUTO:
++                        ASSERT(!declineShuffle, XLevelRuntime, &quot;Oxyd init colors - autocolored oxyd declined shuffle&quot;);
++                        autocoloredOxyds.push_back(levelOxyds[i]);
++                        break;
++                    case FAKE:
++                        if (!declineShuffle) shuffledFakeCount++;
++                        break;
++                    case FART:
++                        if (!declineShuffle) shuffledFartCount++;
++                        break;
++                    case BOLD:
++                        if (!declineShuffle) shuffledBoldCount++;
++                        break;
++                }
++            }
+         }
+-        else if (m==&quot;shuffle&quot;) {
+-            shuffle_colors();
++        bool onlyPairs = true;
++        // fill up unpaired oxyds with auto colored oxyds
++        for (int i = 0; i &lt; numColors; i++) {
++            if (colorsUsageCount[i] % 2 == 1) {
++                if (autocoloredOxyds.size() &gt; 0) {
++                    autocoloredOxyds.back()-&gt;set_attrib(&quot;color&quot;, i);
++                    autocoloredOxyds.pop_back();
++                    colorsUsageCount[i]++;
++                } else {
++                    onlyPairs = false;
++                    break;
++                }
++            }
++            if (colorsUsageCountNoShuffle[i] % 2 == 1) {
++                oddUnshuffledColor = true;
++            }
+         }
+-        else if (m==&quot;trigger&quot; || m==&quot;spitter&quot;) {
+-            maybe_open_stone();
++        // colors for remaining auto colored oxyds
++        Object *lastObject = NULL;     // keep reference of last colored oxyd
++        unsigned short lastColor;
++        if (autocoloredOxyds.size() % 2 == 1)   
++            onlyPairs = false;  // we will color pairs - one oxyd remains 
++        int dc = 0;
++        while (autocoloredOxyds.size() &gt; 0) {
++            int c = (dc/2) % numColors;
++            if (colorsUsageCount[c] &lt;= 2*(dc/2/numColors) + 1) {
++                lastColor = c;
++                lastObject = autocoloredOxyds.back();
++                lastObject-&gt;set_attrib(&quot;color&quot;, c);
++                autocoloredOxyds.pop_back();
++                colorsUsageCount[c]++;
++            }
++            dc++;
+         }
+-        else if (m==&quot;signal&quot; &amp;&amp; to_int(val) != 0) {
+-            maybe_open_stone();
++        // substitute odd oxyd with a fake one
++        if (!onlyPairs &amp;&amp; lastObject != NULL) {
++            lastObject-&gt;set_attrib(&quot;color&quot;, FAKE);
++            colorsUsageCount[lastColor]--;
++            shuffledFakeCount++;
+         }
+-        else if (m==&quot;init&quot;) {
+-            // odd number of oxyd stones in the level? no problem, turn a
+-            // random one into a fake oxyd
++    }
+     
+-            if (instances.size() % 2) {
+-                // &quot;odd number of oxyd stones&quot;;
+-                // TODO
++    void OxydStone::shuffleColors(LogType logFlag) {
++        initColors();
++        
++        unsigned short numColors = numColorsAvailable();
++        bool onlyPairs = true;
++        for (int i = 0; i &lt; numColors; i++) {
++            if (colorsUsageCount[i] != 0 &amp;&amp; colorsUsageCount[i] != 2) {
++                onlyPairs = false;
++                break;
+             }
+         }
+-        return Value();
++        
++        if (shuffleStack.size() &gt; 0  &amp;&amp; onlyPairs &amp;&amp; levelOxyds.size() &lt; 32)
++            fairShuffleColors(logFlag);
++        else
++            simpleShuffleColors();
+     }
+     
+-    void OxydStone::shuffle_colors() 
+-    {
++    void OxydStone::simpleShuffleColors() {
++        // TODO support for noshuffle and pseudo
++        
+         std::vector&lt;size_t&gt; closed_oxyds;
+-        size_t         isize = instances.size();
++        size_t  isize = levelOxyds.size();
+         for (size_t i=0; i&lt;isize; ++i) {
+-            if (instances[i]-&gt;state == CLOSED) {
++            if (levelOxyds[i]-&gt;animState == CLOSED) {
+                 closed_oxyds.push_back(i);
+             }
+         }
+@@ -87,8 +217,8 @@
+                 unsigned a = IntegerRand(0, static_cast&lt;int&gt; (size-2));
+                 if (a &gt;= i) ++a;        // make a always different from j
+     
+-                OxydStone *o1 = instances[closed_oxyds[i]];
+-                OxydStone *o2 = instances[closed_oxyds[a]];
++                OxydStone *o1 = levelOxyds[closed_oxyds[i]];
++                OxydStone *o2 = levelOxyds[closed_oxyds[a]];
+     
+                 Value icolor = o1-&gt;getAttr(&quot;color&quot;); 
+     
+@@ -98,15 +228,568 @@
+         }
+     }
+     
+-    void OxydStone::change_state(State newstate) 
+-    {
++    void OxydStone::fairShuffleColors(LogType logFlag) {        
++        // generate sequence of oxyds for randomness of distribution
++        // TODO exclude noshuffle pseudo oxyds
++        randomOxydIds = std::vector&lt;unsigned short&gt;(levelOxyds.size());
++        for (int i = 0; i &lt; randomOxydIds.size(); i++)
++            randomOxydIds[i] = i;
++        for (int i = 0; i &lt; randomOxydIds.size() - 1; i++) {
++            int j = IntegerRand(i, randomOxydIds.size() - 1);  // use enigma's internal rand!
++            unsigned short t = randomOxydIds[i];
++            randomOxydIds[i] = randomOxydIds[j];
++            randomOxydIds[j] = t;
++        }
++        
++//        log_shuffle_basis();
++        
++        if (groupsSharedMembers.size() == 0) {
++            // first shuffle call for given rules - initialize base frame
++            // TODO exclude noshuffle pseudo oxyds
++            
++            // evaluate all group members that are shared with another group
++            for (int i = 0; i &lt; groupsMembers.size(); i++) {
++                uint32_t shared = 0;
++                for (int j = 0; j &lt; groupsMembers.size(); j++) {
++                    if (i != j)
++                        shared |= (groupsMembers[i] &amp; groupsMembers[j]);
++                }
++                groupsSharedMembers.push_back(shared);
++            }
++            
++            // init oxyd pair candidates
++            uint32_t all = (1 &lt;&lt; (levelOxyds.size())) - 1;  // a 1 for every oxyd
++            unsigned short numOxyds = levelOxyds.size();
++            ShuffleFrame &amp;base = shuffleStack.front();
++            for (int i = 0; i &lt; numOxyds; i++) {
++                base.oxydsCandidatesCount.push_back(numOxyds - 1); // all but itself
++                base.oxydsCandidatesMask.push_back(all &amp; ~(1 &lt;&lt; i));   // all but itself
++            }
++            base.freeOxydsMask = all;
++            base.freePseudoCount = shuffledFakeCount + shuffledFartCount + shuffledBoldCount;
++            base.freePairsCount = 0;
++            for (int i = 0; i &lt; numColorsAvailable(); i++) {
++                base.freePairsCount += colorsUsageCount[i];
++            }
++            base.selOxyd1Mask = 0;  // no oxyd assigned in this frame
++            base.selOxyd2Mask = 0;
++            base.openedOxydIndex = 0;
++        }
++        log_shuffle_basis();
++        log_shuffle_stack();
++        logBadFrameCount = 0;
++        
++        if (logFlag == NOTHING) logFlag = SOLUTION;
++        
++        int result = evaluateTopFrame(logFlag);
++        
++        if (logFlag &gt;= COUNT)
++            Log &lt;&lt; &quot;Fair Shuffle found &quot; &lt;&lt; result &lt;&lt; &quot; solutions -  bad frames &quot; &lt;&lt; logBadFrameCount &lt;&lt; &quot;\n&quot;;
++        else if (logFlag == SOLUTION)
++            Log &lt;&lt; &quot;Fair Shuffle bad frames &quot; &lt;&lt; logBadFrameCount &lt;&lt; &quot;\n&quot;;
++        
++    }
++    
++    int OxydStone::evaluateTopFrame(LogType logFlag) {
++        unsigned short numOxyds = levelOxyds.size();
++        ShuffleFrame &amp;top = shuffleStack.back();
++        int solutionsCount = 0;
++                
++        // postprocess frame for chosen oxyds
++        if (top.selOxyd1Mask != 0) {   // skip for base frame
++            
++            // check that a chosen oxyd pair with both oxyds of given fixed color do 
++            // not mismatch in color - refuse on mismatch.
++            if (top.selOxyd2Mask != 0) {
++                OxydStone *o1 = levelOxyds[oxydId(top.selOxyd1Mask)];
++                OxydStone *o2 = levelOxyds[oxydId(top.selOxyd2Mask)];
++                if ((to_bool(o1-&gt;getAttr(&quot;noshuffle&quot;)) || blinking_or_opening(o1)) &amp;&amp;
++                        (to_bool(o2-&gt;getAttr(&quot;noshuffle&quot;)) || blinking_or_opening(o2)) &amp;&amp;
++                        (int)(o1-&gt;getAttr(&quot;color&quot;)) &gt;= 0 &amp;&amp;  (int)(o2-&gt;getAttr(&quot;color&quot;)) &gt;= 0 &amp;&amp;
++                        o1-&gt;getAttr(&quot;color&quot;) != o2-&gt;getAttr(&quot;color&quot;)) {
++                    logBadFrameCount++;
++                    return 0;
++                }
++            }
++            
++            // remove chosen oxyds from list of disposable oxyds  
++            top.freeOxydsMask &amp;= ~top.selOxyd1Mask &amp; ~top.selOxyd2Mask;
++            
++            // reduce free counts
++            if (top.selOxyd2Mask != 0)
++                top.freePairsCount--;
++            else
++                top.freePseudoCount--;
++            
++            // remove chosen oxyds from oxyd pair candidate lists
++            uint32_t imask = 1;
++            for (int i = 0; i &lt; numOxyds; i++, imask &lt;&lt;= 1) {
++                // need only to update oxyds that still need to be distributed
++                if (top.freeOxydsMask &amp; imask) {
++                    if (top.oxydsCandidatesMask[i] &amp; top.selOxyd1Mask) top.oxydsCandidatesCount[i]--;
++                    if (top.oxydsCandidatesMask[i] &amp; top.selOxyd2Mask) top.oxydsCandidatesCount[i]--;
++                    top.oxydsCandidatesMask[i] &amp;= top.freeOxydsMask;
++                }
++            }
++            
++            // reduce limits for affected rules
++            if (top.selOxyd2Mask != 0) {   // pseudooxyds can not affect rules 
++                for (std::list&lt;Rule&gt;::iterator itr = singleRulesMin.begin();
++                        itr != singleRulesMin.end(); ++itr) {
++                    uint32_t groupOxydMask = groupsMembers[(*itr).groupId1];
++                    if (groupOxydMask &amp; top.selOxyd1Mask &amp;&amp; groupOxydMask &amp; top.selOxyd2Mask)
++                        top.rulesLimit[(*itr).ruleId]--;
++                }
++                for (std::list&lt;Rule&gt;::iterator itr = singleRulesMax.begin();
++                        itr != singleRulesMax.end(); ++itr) {
++                    uint32_t groupOxydMask = groupsMembers[(*itr).groupId1];
++                    if (groupOxydMask &amp; top.selOxyd1Mask &amp;&amp; groupOxydMask &amp; top.selOxyd2Mask)
++                        top.rulesLimit[(*itr).ruleId]--;
++                }
++                for (std::list&lt;Rule&gt;::iterator itr = pairRulesMin.begin();
++                        itr != pairRulesMin.end(); ++itr) {
++                    uint32_t group1_oxyds = groupsMembers[(*itr).groupId1];
++                    uint32_t group2_oxyds = groupsMembers[(*itr).groupId2];
++                    if ((group1_oxyds &amp; top.selOxyd1Mask &amp;&amp; group2_oxyds &amp; top.selOxyd2Mask) ||
++                            (group1_oxyds &amp; top.selOxyd2Mask &amp;&amp; group2_oxyds &amp; top.selOxyd1Mask))
++                        top.rulesLimit[(*itr).ruleId]--;
++                }
++                for (std::list&lt;Rule&gt;::iterator itr = pairRulesMax.begin();
++                        itr != pairRulesMax.end(); ++itr) {
++                    uint32_t group1_oxyds = groupsMembers[(*itr).groupId1];
++                    uint32_t group2_oxyds = groupsMembers[(*itr).groupId2];
++                    if ((group1_oxyds &amp; top.selOxyd1Mask &amp;&amp; group2_oxyds &amp; top.selOxyd2Mask) ||
++                            (group1_oxyds &amp; top.selOxyd2Mask &amp;&amp; group2_oxyds &amp; top.selOxyd1Mask))
++                        top.rulesLimit[(*itr).ruleId]--;
++                }
++                
++            }
++        }
++        
++        // reduce pair candidates due to max rules
++        
++        // single group rules
++        for (std::list&lt;Rule&gt;::iterator itr = singleRulesMax.begin();
++                itr != singleRulesMax.end(); ++itr) {
++            if (top.rulesLimit[(*itr).ruleId] == 0) {
++                uint32_t hot_group_oxyds = groupsMembers[(*itr).groupId1] &amp; top.freeOxydsMask;
++                for (int j = 0; j &lt; numOxyds; j++) {
++                    if (hot_group_oxyds &amp; (1 &lt;&lt; j)) {
++                        // eliminate group mates from list of candidates
++                        top.oxydsCandidatesMask[j] &amp;= ~groupsMembers[(*itr).groupId1];
++                        top.oxydsCandidatesCount[j] = countOxyds(top.oxydsCandidatesMask[j]);
++                    }
++                }
++                top.rulesLimit[(*itr).ruleId] = -1;  // mark rule as fulfilled
++            }
++        }
++        // pair group rules
++        for (std::list&lt;Rule&gt;::iterator itr = pairRulesMax.begin();
++                itr != pairRulesMax.end(); ++itr) {
++            if (top.rulesLimit[(*itr).ruleId] == 0) {
++                uint32_t hot_group_oxyds1 = groupsMembers[(*itr).groupId1] &amp; top.freeOxydsMask;
++                uint32_t hot_group_oxyds2 = groupsMembers[(*itr).groupId2] &amp; top.freeOxydsMask;
++                for (int j = 0; j &lt; numOxyds; j++) {
++                    if (hot_group_oxyds1 &amp; (1 &lt;&lt; j)) {
++                        // eliminate pair group oxyds from list of candidates
++                        top.oxydsCandidatesMask[j] &amp;= ~groupsMembers[(*itr).groupId2];
++                        top.oxydsCandidatesCount[j] = countOxyds(top.oxydsCandidatesMask[j]);
++                    }
++                    // no else as a single oxyd can be in both groups
++                    if (hot_group_oxyds2 &amp; (1 &lt;&lt; j)) {  
++                        // eliminate pair group oxyds from list of candidates
++                        top.oxydsCandidatesMask[j] &amp;= ~groupsMembers[(*itr).groupId1];
++                        top.oxydsCandidatesCount[j] = countOxyds(top.oxydsCandidatesMask[j]);
++                    }
++                }
++                top.rulesLimit[(*itr).ruleId] = -1;  // mark rule as fulfilled
++            }
++        }
++
++
++        // check if we have a free oxyd without any possibility to assign it
++        if (top.freePseudoCount == 0) {
++            for (int j = 0; j &lt; numOxyds; j++) {
++                if (top.freeOxydsMask &amp; (1 &lt;&lt; j)) {
++                    if (top.oxydsCandidatesCount[j] == 0) {
++                        logBadFrameCount++;
++                        return 0;
++                    }
++                }
++            }
++        }
++        
++        // check if we are ready
++        if (top.freeOxydsMask == 0) {
++            // final complete min rules check
++            for (std::list&lt;Rule&gt;::iterator itr = singleRulesMin.begin();
++                    itr != singleRulesMin.end(); ++itr) {
++                if (top.rulesLimit[(*itr).ruleId] &gt; 0) {
++                    // min rule not fulfilled - sorry we do not have a solution
++                    logBadFrameCount++;
++                    return 0;
++                }
++            }
++            for (std::list&lt;Rule&gt;::iterator itr = pairRulesMin.begin();
++                    itr != pairRulesMin.end(); ++itr) {
++                if (top.rulesLimit[(*itr).ruleId] &gt; 0) {
++                    // min rule not fulfilled - sorry we do not have a solution
++                    logBadFrameCount++;
++                    return 0;
++                }
++            }
++            
++            // now it is official - we have a legal distribution
++//            log_shuffle_stack();
++            colorShuffleDistribtion(logFlag);
++            return 1;
++        }
++        
++        // quick partial check for min rules that can obviously not be fulfilled
++        for (std::list&lt;Rule&gt;::iterator itr = singleRulesMin.begin();
++                itr != singleRulesMin.end(); ++itr) {
++            if (top.rulesLimit[(*itr).ruleId] * 2 &gt; countOxyds(top.freeOxydsMask &amp; groupsMembers[(*itr).groupId1])) {
++                logBadFrameCount++;
++                return 0;
++            }
++        }
++        for (std::list&lt;Rule&gt;::iterator itr = pairRulesMin.begin();
++                itr != pairRulesMin.end(); ++itr) {
++            if ((top.rulesLimit[(*itr).ruleId] &gt; countOxyds(top.freeOxydsMask &amp; groupsMembers[(*itr).groupId1])) ||
++                    (top.rulesLimit[(*itr).ruleId] &gt; countOxyds(top.freeOxydsMask &amp; groupsMembers[(*itr).groupId2]))) {
++                logBadFrameCount++;
++                return 0;
++            }
++        }
++        
++        
++        // assign next oxyds
++        ShuffleFrame next = top;
++        next.selOxyd1Mask = 0;
++        next.selOxyd2Mask = 0;
++
++        // opened oxyd pairs first
++        for (;next.openedOxydIndex &lt; numOxyds; next.openedOxydIndex++) {
++            if (levelOxyds[next.openedOxydIndex]-&gt;animState == OPEN) {
++                int c = levelOxyds[next.openedOxydIndex]-&gt;getAttr(&quot;color&quot;);
++                for (int i = next.openedOxydIndex+1; i &lt; numOxyds; i++) {
++                    if (levelOxyds[i]-&gt;getAttr(&quot;color&quot;) == c) {
++                        next.selOxyd1Mask = 1 &lt;&lt; next.openedOxydIndex;
++                        next.selOxyd2Mask = 1 &lt;&lt; i;
++                        next.openedOxydIndex++;
++                        shuffleStack.push_back(next);    // add copy of next frame
++                        int result = evaluateTopFrame(logFlag);
++                        shuffleStack.pop_back();         // remove the copy
++                        return result;
++                    }
++                }
++            }
++        }
++        
++        // pairs of noshuffle standard oxyds including a possible blinking oxyd
++        // TODO - not essential but a speedup to select known pairs first
++        
++        
++        // fast handling of oxyd pairs mandatory due to min rules 
++        // bypass on existing noshuffles, bypass on COUNT &amp; ALL solutions
++        if (logFlag &lt; COUNT &amp;&amp; !oddUnshuffledColor) {
++            for (std::list&lt;Rule&gt;::iterator itr = singleRulesMin.begin();
++                    itr != singleRulesMin.end(); ++itr) {
++                // rule not yet fulfilled and group is disjoint in remaining members to all other groups 
++                if ((top.rulesLimit[(*itr).ruleId] &gt; 0) &amp;&amp; 
++                        ((groupsSharedMembers[(*itr).groupId1] &amp; top.freeOxydsMask) == 0)) {
++                    // we can assign a random pair in this group
++                    next.selOxyd1Mask = randomMember(groupsMembers[(*itr).groupId1] &amp; top.freeOxydsMask);
++                    next.selOxyd2Mask = randomMember(groupsMembers[(*itr).groupId1] &amp; top.freeOxydsMask
++                            &amp; ~next.selOxyd1Mask);
++                    shuffleStack.push_back(next);    // add copy of next frame
++                    int result = evaluateTopFrame(logFlag);
++                    shuffleStack.pop_back();         // remove the copy
++                    return result;
++                }
++            }
++            for (std::list&lt;Rule&gt;::iterator itr = pairRulesMin.begin();
++                    itr != pairRulesMin.end(); ++itr) {
++                // rule not yet fulfilled and groups are disjoint in remaining members to all other groups 
++                if ((top.rulesLimit[(*itr).ruleId] &gt; 0) &amp;&amp; 
++                        ((groupsSharedMembers[(*itr).groupId1] &amp; top.freeOxydsMask) == 0) &amp;&amp;
++                        ((groupsSharedMembers[(*itr).groupId2] &amp; top.freeOxydsMask) == 0) ) {
++                    // we can assign a random pair between these groups
++                    next.selOxyd1Mask = randomMember(groupsMembers[(*itr).groupId1] &amp; top.freeOxydsMask);
++                    next.selOxyd2Mask = randomMember(groupsMembers[(*itr).groupId2] &amp; top.freeOxydsMask);
++                    shuffleStack.push_back(next);    // add copy of next frame
++                    int result = evaluateTopFrame(logFlag);
++                    shuffleStack.pop_back();         // remove the copy
++                    return result;
++                }
++            }
++        }
++        
++        
++        
++        // unrestricted assignment of a new pair or a single pseudo
++        
++        // search oxyd with lowest degree of freedom for pair candidates
++        unsigned short minFreeOxydId = numOxyds;  // impossible id 
++        for (int i = 0; i &lt; numOxyds; i++) {
++            unsigned short j = randomOxydIds[i];
++            if (next.freeOxydsMask &amp; (1 &lt;&lt; j)) {
++                if (minFreeOxydId == numOxyds)
++                    minFreeOxydId = j;
++                else if (next.oxydsCandidatesCount[j] &lt; next.oxydsCandidatesCount[minFreeOxydId])
++                    minFreeOxydId = j;
++            }
++        }
++        // try to assign all pair candidates to this oxyd 
++        if (next.oxydsCandidatesCount[minFreeOxydId] &gt; 0) {
++            next.selOxyd1Mask = 1 &lt;&lt; minFreeOxydId;
++            uint32_t candidates = next.oxydsCandidatesMask[minFreeOxydId];
++            // check all candidates in random sequence
++            for (int i = 0; i &lt; numOxyds; i++) {
++                unsigned short j = randomOxydIds[i];
++                if (candidates &amp; (1 &lt;&lt; j)) {
++                    next.selOxyd2Mask = 1 &lt;&lt; j;
++                    shuffleStack.push_back(next);    // add copy of next frame
++                    int result = evaluateTopFrame(logFlag);
++                    shuffleStack.pop_back();         // remove the copy
++                    if (result &gt; 0 &amp;&amp; logFlag &lt; COUNT)  // found solution - finish
++                        return result;
++                    // sum solutions
++                    solutionsCount += result;
++                }
++            }
++        }
++        
++        // try to assign a single pseudo oxyd
++        // TODO
++        
++        return solutionsCount;
++    }
++    
++    void OxydStone::colorShuffleDistribtion(LogType logFlag) {
++        if (logFlag == COUNT)
++            return;
++            
++        unsigned short numColors = numColorsAvailable();
++        std::vector&lt;unsigned short&gt; colorsRemainCount = colorsUsageCount;
++        unsigned short remainFakeCount = shuffledFakeCount;
++        unsigned short remainFartCount = shuffledFartCount;
++        unsigned short remainBoldCount = shuffledBoldCount;
++        
++        // distribute colors of pairs with noshuffle, open, blinking oxyds and the pseudooxyds
++        for (std::list&lt;ShuffleFrame&gt;::iterator itr = shuffleStack.begin(); itr != shuffleStack.end(); ++itr) {
++            (*itr).isColored = false;
++            if ((*itr).selOxyd1Mask != 0) {
++                if ((*itr).selOxyd2Mask == 0) {
++                    // a single oxyd -- it must be a pseudo
++                    OxydStone *oxyd = levelOxyds[oxydId((*itr).selOxyd1Mask)];
++                    ASSERT((int)oxyd-&gt;getAttr(&quot;color&quot;) &lt; AUTO, XLevelRuntime, &quot;Oxyd shuffle - pseudo coloring error&quot;);
++                    ASSERT(shuffledFakeCount + shuffledFartCount + shuffledBoldCount &gt; 0, XLevelRuntime, &quot;Oxyd shuffle - to few pseudo colors&quot;);
++                    int i = IntegerRand(1, shuffledFakeCount + shuffledFartCount + shuffledBoldCount);  // use enigma's internal rand!
++                    if (i &lt;= shuffledFakeCount) {
++                        shuffledFakeCount--;
++                        oxyd-&gt;set_attrib(&quot;color&quot;, FAKE);
++                    } else if ( i &lt;= shuffledFakeCount + shuffledFartCount) {
++                        shuffledFartCount--;
++                        oxyd-&gt;set_attrib(&quot;color&quot;, FART);
++                    } else {
++                        shuffledBoldCount--;
++                        oxyd-&gt;set_attrib(&quot;color&quot;, BOLD);
++                    }
++                    (*itr).isColored = true;
++                } else {
++                    // check if one of the pairs oxyds determines the color
++                    OxydStone *oxyd1 = levelOxyds[oxydId((*itr).selOxyd1Mask)];
++                    OxydStone *oxyd2 = levelOxyds[oxydId((*itr).selOxyd2Mask)];
++                    int c = AUTO;
++                    if (oxyd1-&gt;animState == OPEN) {
++                        // a pair of opened oxyds - we need not to recolor
++                        // but we need to register the used color
++                        c = oxyd1-&gt;getAttr(&quot;color&quot;);
++                        colorsRemainCount[c] -= 2;                        
++                        (*itr).isColored = true;
++                    }
++                    else if (to_bool(oxyd1-&gt;getAttr(&quot;noshuffle&quot;)) || blinking_or_opening(oxyd1)) {
++                        c = oxyd1-&gt;getAttr(&quot;color&quot;);
++                        oxyd2-&gt;set_attrib(&quot;color&quot;, c);
++                        colorsRemainCount[c] -= 2;
++                        (*itr).isColored = true;
++                    }
++                    else if (to_bool(oxyd2-&gt;getAttr(&quot;noshuffle&quot;)) || blinking_or_opening(oxyd2)) {
++                        c = oxyd2-&gt;getAttr(&quot;color&quot;);
++                        oxyd1-&gt;set_attrib(&quot;color&quot;, c);
++                        colorsRemainCount[c] -= 2;
++                        (*itr).isColored = true;
++                    }
++                }
++            }
++        }
++        
++        // distribute free colorable oxyd pairs
++        
++        // shuffle remaining colors
++        std::vector&lt;unsigned short&gt; colorPairs;
++        for (int c = 0; c &lt; numColors; c++) {
++            for (int i = 0; i &lt; colorsRemainCount[c] / 2; i++) {
++                colorPairs.push_back(c);
++            }
++        }
++        for (int i = 0; i &lt; (int)colorPairs.size() - 1; i++) {  // cast is essential for sub.!
++            int j = IntegerRand(i, colorPairs.size() - 1);  // use enigma's internal rand!
++            unsigned short t = colorPairs[i];
++            colorPairs[i] = colorPairs[j];
++            colorPairs[j] = t;
++        }
++        // color the remaining pairs on the stack
++        int ci = 0;
++        for (std::list&lt;ShuffleFrame&gt;::iterator itr = shuffleStack.begin(); itr != shuffleStack.end(); ++itr) {
++            if (!(*itr).isColored &amp;&amp; (*itr).selOxyd1Mask != 0) {
++                levelOxyds[oxydId((*itr).selOxyd1Mask)]-&gt;set_attrib(&quot;color&quot;, colorPairs[ci]);
++                levelOxyds[oxydId((*itr).selOxyd2Mask)]-&gt;set_attrib(&quot;color&quot;, colorPairs[ci]);
++                ci++;
++            }
++        }
++         
++        
++        if (logFlag &gt; NOTHING) {
++            Log &lt;&lt; &quot;Shuffle solution found: &quot;;
++            int depth = 0;
++            for (std::list&lt;ShuffleFrame&gt;::iterator itr = shuffleStack.begin(); itr != shuffleStack.end(); ++itr, depth++) {
++                if ((*itr).selOxyd2Mask != 0)
++                    Log &lt;&lt; ecl::strf(&quot;(%d-%d),&quot;, oxydId((*itr).selOxyd1Mask), oxydId((*itr).selOxyd2Mask));
++                else if ((*itr).selOxyd1Mask != 0)
++                    Log &lt;&lt; ecl::strf(&quot;(%d),&quot;, oxydId((*itr).selOxyd1Mask));
++            }
++            Log &lt;&lt; std::endl;
++        }
++    }
++    
++    unsigned short OxydStone::countOxyds(uint32_t members) {
++        unsigned short numOxyds = levelOxyds.size();
++        unsigned short result = 0;
++        for (int j = 0; j &lt; numOxyds; j++) {
++            if (members &amp; 1)
++                result++;
++            members = members &gt;&gt; 1;
++        }
++        return result;
++    }
++    
++    uint32_t OxydStone::randomMember(uint32_t members) {
++        ASSERT(members != 0, XLevelRuntime, &quot;Oxyd shuffle - random member out of no selection&quot;);
++        
++        unsigned short numOxyds = levelOxyds.size();
++        for (int i = 0; i &lt; numOxyds; i++) {
++            uint32_t candidate = (1 &lt;&lt; randomOxydIds[i]);
++            if (members &amp; candidate) {
++                return candidate;
++            }
++        }
++        ASSERT(false, XLevelRuntime, &quot;Oxyd shuffle - random member no candidate found&quot;);
++        return 0;
++    }
++    
++    unsigned short OxydStone::oxydId(uint32_t mask) {
++        unsigned short numOxyds = levelOxyds.size();
++        for (unsigned short i = 0; i &lt; numOxyds; i++) {
++            if (mask == 1)
++                return i;
++            mask &gt;&gt;= 1;
++        }
++        ASSERT(false, XLevelRuntime, &quot;Oxyd shuffle - oxydId attempt to convert bad mask&quot;);
++    }
++    
++    void OxydStone::log_shuffle_basis() {
++        Log &lt;&lt; &quot;Oxyd Shuffle basis data\n&quot;;
++        for (int i=0; i &lt; groupsMembers.size(); i++)
++            Log &lt;&lt; ecl::strf(&quot;Group %d - %X\n&quot;, i, groupsMembers[i]);
++        for (int i=0; i &lt; groupsSharedMembers.size(); i++)
++            Log &lt;&lt; ecl::strf(&quot;Group shared members %d - %X\n&quot;, i, groupsSharedMembers[i]);
++        for (std::list&lt;Rule&gt;::iterator itr = singleRulesMin.begin();
++                itr != singleRulesMin.end(); ++itr)
++            Log &lt;&lt; ecl::strf(&quot;Single Min Rule - id %d - group %d\n&quot;, (*itr).ruleId, (*itr).groupId1); 
++        for (std::list&lt;Rule&gt;::iterator itr = singleRulesMax.begin();
++                itr != singleRulesMax.end(); ++itr)
++            Log &lt;&lt; ecl::strf(&quot;Single Max Rule - id %d - group %d\n&quot;, (*itr).ruleId, (*itr).groupId1); 
++        for (std::list&lt;Rule&gt;::iterator itr = pairRulesMin.begin();
++                itr != pairRulesMin.end(); ++itr)
++            Log &lt;&lt; ecl::strf(&quot;Pair Min Rule - id %d - group %d - group %d\n&quot;, (*itr).ruleId, (*itr).groupId1, (*itr).groupId2); 
++        for (std::list&lt;Rule&gt;::iterator itr = pairRulesMax.begin();
++                itr != pairRulesMax.end(); ++itr)
++            Log &lt;&lt; ecl::strf(&quot;Pair Max Rule - id %d - group %d - group %d\n&quot;, (*itr).ruleId, (*itr).groupId1, (*itr).groupId2);
++        for (int i=0; i &lt; randomOxydIds.size(); i++)
++            Log &lt;&lt; ecl::strf(&quot;Sequence %d - oxyd %d\n&quot;, i, randomOxydIds[i]);  
++    }
++    
++    void OxydStone::log_shuffle_stack() {
++        int depth = 0;
++        for (std::list&lt;ShuffleFrame&gt;::iterator itr = shuffleStack.begin(); itr != shuffleStack.end(); ++itr, depth++) {
++            Log &lt;&lt; ecl::strf(&quot;Stack frame %d -- freeOxydsMask %X\n&quot;, depth, (*itr).freeOxydsMask);
++            for (int i=0; i &lt; (*itr).oxydsCandidatesMask.size(); i++)
++                 Log &lt;&lt; ecl::strf(&quot;Oxyd %d - candidates %X - num %d\n&quot;, i, 
++                        (*itr).oxydsCandidatesMask[i], (*itr).oxydsCandidatesCount[i]);
++            for (int i=0; i &lt; (*itr).rulesLimit.size(); i++)
++                 Log &lt;&lt; ecl::strf(&quot;Rule %d - limit %d\n&quot;, i, (*itr).rulesLimit[i]);
++        }
++    }
++    
++    void OxydStone::invalidateShuffle() {
++        shuffleStack.clear();
++        groupsMembers.clear();
++        groupsSharedMembers.clear();
++        singleRulesMin.clear();
++        singleRulesMax.clear();
++        pairRulesMin.clear();
++        pairRulesMax.clear();
++        colorsUsageCount.clear();
++    }
++    
++    OxydStone::OxydStone() : PhotoStone(&quot;st-oxyd&quot;), animState (CLOSED) {
++        set_attrib(&quot;flavor&quot;, &quot;b&quot;);
++        set_attrib(&quot;color&quot;, AUTO);
++    }
++    
++    OxydStone * OxydStone::clone() { 
++        OxydStone *o = new OxydStone(*this); 
++        levelOxyds.push_back(o);
++        invalidateShuffle();
++        return o;
++    }
++    
++    void OxydStone::dispose() {
++        levelOxyds.erase(find(levelOxyds.begin(), levelOxyds.end(), this));
++        invalidateShuffle();
++        delete this;
++    }
++    
++    Value OxydStone::message(const string &amp;m, const Value &amp;val) {
++        if (m==&quot;closeall&quot;) {
++            for (unsigned i=0; i&lt;levelOxyds.size(); ++i)
++                levelOxyds[i]-&gt;change_state(CLOSING);
++        }
++        else if (m==&quot;shuffle&quot;) {
++            shuffleColors();
++        }
++        else if (m==&quot;trigger&quot; || m==&quot;spitter&quot;) {
++            maybe_open_stone();
++        }
++        else if (m==&quot;signal&quot; &amp;&amp; to_int(val) != 0) {
++            maybe_open_stone();
++        }
++        else if (m==&quot;init&quot;) {
++            initColors();
++        }
++        return Value();
++    }
++    
++    void OxydStone::change_state(State newstate) {
+         string flavor(getAttr(&quot;flavor&quot;,&quot;a&quot;));
+         string color(getAttr(&quot;color&quot;, 0));
+     
+         string modelname = string(&quot;st-oxyd&quot;) + flavor + color;
+     
+-        State oldstate = state;
+-        state = newstate;
++        State oldstate = animState;
++        animState = newstate;
+     
+         switch (newstate) {
+         case CLOSED:
+@@ -127,8 +810,8 @@
+             }
+             /* If this was the last closed oxyd stone, finish the
+                level */
+-            if (find_if(instances.begin(),instances.end(),not_open)
+-                    == instances.end()) {
++            if (find_if(levelOxyds.begin(),levelOxyds.end(),not_open)
++                    == levelOxyds.end()) {
+                 server::FinishLevel();
+             }
+             break;
+@@ -144,7 +827,7 @@
+     
+         case CLOSING:
+             if (oldstate == CLOSED || oldstate==CLOSING) {
+-                state = oldstate;
++                animState = oldstate;
+                 return;
+             }
+     
+@@ -159,23 +842,23 @@
+     }
+     
+     void OxydStone::animcb() {
+-        if (state == CLOSING)
++        if (animState == CLOSING)
+             change_state(CLOSED);
+-        else if (state == OPENING)
++        else if (animState == OPENING)
+             change_state(BLINKING);
+-        else if (state == OPEN)
++        else if (animState == OPEN)
+             change_state(OPEN); // set the right model
+     }
+     
+     void OxydStone::maybe_open_stone() {
+-        if (state == CLOSED || state == CLOSING) {
++        if (animState == CLOSED || animState == CLOSING) {
+             Value mycolor = getAttr(&quot;color&quot;);
+     
+             // Is another oxyd stone currently blinking?
+-            InstanceList::iterator i;
+-            i=find_if(instances.begin(), instances.end(), blinking_or_opening);
++            InstanceVector::iterator i;
++            i=find_if(levelOxyds.begin(), levelOxyds.end(), blinking_or_opening);
+     
+-            if (i != instances.end()) {
++            if (i != levelOxyds.end()) {
+     
+                 bool can_open;
+     
+@@ -184,7 +867,7 @@
+                     // open both stones. Close one of them otherwise.
+                     // (This is the Oxyd behaviour; it doesn't work with
+                     // some Enigma levels.)
+-                    can_open = (mycolor == (*i)-&gt;getAttr(&quot;color&quot;) &amp;&amp; (*i)-&gt;state==BLINKING);
++                    can_open = (mycolor == (*i)-&gt;getAttr(&quot;color&quot;) &amp;&amp; (*i)-&gt;animState==BLINKING);
+                 }
+                 else 
+                     can_open = (mycolor == (*i)-&gt;getAttr(&quot;color&quot;));
+@@ -208,8 +891,7 @@
+         maybe_open_stone();
+     }
+     
+-    void OxydStone::on_creation (GridPos) 
+-    {
++    void OxydStone::on_creation (GridPos) {
+         string flavor(getAttr(&quot;flavor&quot;, &quot;a&quot;));
+         set_model(string(&quot;st-oxyd&quot;) + flavor);
+         photo_activate();
+@@ -219,8 +901,7 @@
+         return !getAttr(&quot;static&quot;).to_bool();
+     }
+     
+-    void OxydStone::on_removal(GridPos p) 
+-    {
++    void OxydStone::on_removal(GridPos p) {
+         photo_deactivate();
+         kill_model (p);
+     }
+
+Modified: trunk/src/stones/OxydStone.hh
+===================================================================
+--- trunk/src/stones/OxydStone.hh	2007-11-08 16:11:52 UTC (rev 922)
++++ trunk/src/stones/OxydStone.hh	2007-11-10 20:10:07 UTC (rev 923)
+@@ -22,6 +22,7 @@
+ 
+ #include &quot;stones.hh&quot;
+ #include &quot;laser.hh&quot;
++#include &lt;stdint.h&gt;
+ 
+ /* -------------------- Oxyd stone -------------------- */
+ 
+@@ -57,54 +58,118 @@
+ 
+ namespace enigma {
+ 
++    /**
++     * 
++     */
+     class OxydStone : public PhotoStone {
+-        typedef std::vector&lt;OxydStone *&gt; InstanceList;
+-        static InstanceList instances;
+-        OxydStone * clone();
+-        void dispose() {
+-            instances.erase(find(instances.begin(), instances.end(), this));
+-            delete this;
+-        }
+-
+     public:
++        enum RuleType {RULE_SINGLE_MIN, RULE_SINGLE_MAX, RULE_PAIR_MIN, RULE_PAIR_MAX};
++        enum Color {BLUE = 0, RED, GREEN, YELLOW, CYAN, PURPLE, WHITE, BLACK, 
++            COLORCOUNT,
++            AUTO = -1,
++            FAKE = -2,
++            FART = -3,
++            BOLD = -4,
++            MIN  = -4
++        };
++        enum LogType {NOTHING, SOLUTION, COUNT, ALL};
++            
++        static unsigned short numColorsAvailable();
++        static void addShuffleRule(RuleType type, unsigned short limit, Value group1, Value group2 = Value());
++        static void shuffleColors(LogType logFlag = NOTHING);
++        
+         OxydStone();
++        
++        // Object interface
++        virtual OxydStone * clone();
++        virtual void dispose();
++        virtual Value message(const string &amp;m, const Value &amp;);
+ 
+-        static void shuffle_colors();
++        // Stone interface
++        virtual void actor_hit(const StoneContact &amp;sc);
++        virtual const char *collision_sound() { return &quot;stone&quot;; }
+         virtual bool is_removable() const;
+-    private:
+-        enum State { CLOSED, OPEN, OPENING, CLOSING, BLINKING };
+-        State state;
++        
++        // PhotoStone interface
++        virtual void notify_laseron() { maybe_open_stone(); }
++        virtual void notify_laseroff() {}
+ 
+-        // Stone interface
+-        void actor_hit(const StoneContact &amp;sc);
++        // ModelCallback interface  - Animation callback
++        virtual void animcb();
++    
++    protected:
++        // GridObject interface
+         void on_creation (GridPos p);
+         void on_removal (GridPos p);
+-        const char *collision_sound() { return &quot;stone&quot;; }
+-        virtual Value message(const string &amp;m, const Value &amp;);
++            
++    private:
++        enum State { CLOSED, OPEN, OPENING, CLOSING, BLINKING };
++        typedef std::vector&lt;OxydStone *&gt; InstanceVector;
++        typedef struct {
++            unsigned short ruleId;
++            unsigned short groupId1;
++            unsigned short groupId2;
++        } Rule;
++        typedef struct {
++                uint32_t freeOxydsMask;
++                unsigned short freePseudoCount;
++                unsigned short freePairsCount;
++                std::vector&lt;unsigned short&gt; oxydsCandidatesCount;
++                std::vector&lt;uint32_t&gt; oxydsCandidatesMask;
++                std::vector&lt;short&gt; rulesLimit;  // -1 means rule is fulfilled
++                uint32_t selOxyd1Mask;
++                uint32_t selOxyd2Mask;
++                unsigned short openedOxydIndex;
++                bool isColored;
++        } ShuffleFrame;
+ 
+-
+-        // PhotoStone interface
+-        void notify_laseron() { maybe_open_stone(); }
+-        void notify_laseroff() {}
+-
+-        // Animation callback
+-        void animcb();
+-
+-        // Private methods
+-        void maybe_open_stone();
+-        void change_state(State newstate);
+-
+-
++        static InstanceVector levelOxyds;
++        static std::vector&lt;unsigned short&gt; colorsUsageCount;
++        static unsigned short shuffledFakeCount;
++        static unsigned short shuffledFartCount;
++        static unsigned short shuffledBoldCount;
++        static bool oddUnshuffledColor;
++        
++        static std::vector&lt;unsigned short&gt; randomOxydIds;  // random sequence of oxyds
++        static std::vector&lt;uint32_t&gt; groupsMembers;
++        static std::vector&lt;uint32_t&gt; groupsSharedMembers;
++        static std::list&lt;Rule&gt; singleRulesMin;
++        static std::list&lt;Rule&gt; singleRulesMax;
++        static std::list&lt;Rule&gt; pairRulesMin;
++        static std::list&lt;Rule&gt; pairRulesMax;
++        static std::list&lt;ShuffleFrame&gt; shuffleStack;
++        static unsigned int logBadFrameCount;
++        
++        
++        static void initColors();
++        static void simpleShuffleColors();
++        static void fairShuffleColors(LogType logFlag = NOTHING);
++        static int  evaluateTopFrame(LogType logFlag = NOTHING);
++        static void colorShuffleDistribtion(LogType logFlag = NOTHING);
++        static void invalidateShuffle();
++        static unsigned short groupId(Value v);
++        static unsigned short countOxyds(uint32_t members);
++        static uint32_t randomMember(uint32_t members);
++        static unsigned short oxydId(uint32_t mask);
++        
++        static void log_shuffle_basis();
++        static void log_shuffle_stack();
++        
+         static bool blinking(OxydStone *a) {
+-            return (a-&gt;state==BLINKING);
++            return (a-&gt;animState == BLINKING);
+         }
+         static bool blinking_or_opening(OxydStone *a) {
+-            return (a-&gt;state==BLINKING || a-&gt;state == OPENING);
++            return (a-&gt;animState == BLINKING || a-&gt;animState == OPENING);
+         }
+         static bool not_open(OxydStone *a) {
+-            return !(a-&gt;state==OPEN || a-&gt;state==OPENING);
++            return !(a-&gt;animState == OPEN || a-&gt;animState == OPENING);
+         }
+ 
++        State animState;
++
++        // Private methods
++        void maybe_open_stone();
++        void change_state(State newstate);
+     };
+ } // namespace enigma
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000354.html">[Enigma-game-svn] r922 - homepage/input
+</A></li>
+	<LI>Next message: <A HREF="000356.html">[Enigma-game-svn] r924 - trunk/data/levels/lib
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#355">[ date ]</a>
+              <a href="thread.html#355">[ thread ]</a>
+              <a href="subject.html#355">[ subject ]</a>
+              <a href="author.html#355">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

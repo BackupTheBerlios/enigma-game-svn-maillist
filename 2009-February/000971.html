@@ -1,0 +1,179 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1541 - in branches/1.01: lib-src/enigma-core src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1541%20-%20in%20branches/1.01%3A%20lib-src/enigma-core%20src&In-Reply-To=%3C200902172325.n1HNPDCx013326%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000970.html">
+   <LINK REL="Next"  HREF="000972.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1541 - in branches/1.01: lib-src/enigma-core src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1541%20-%20in%20branches/1.01%3A%20lib-src/enigma-core%20src&In-Reply-To=%3C200902172325.n1HNPDCx013326%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1541 - in branches/1.01: lib-src/enigma-core src">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Feb 18 00:25:13 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000970.html">[Enigma-game-svn] r1540 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="000972.html">[Enigma-game-svn] r1542
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#971">[ date ]</a>
+              <a href="thread.html#971">[ thread ]</a>
+              <a href="subject.html#971">[ subject ]</a>
+              <a href="author.html#971">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-02-18 00:25:13 +0100 (Wed, 18 Feb 2009)
+New Revision: 1541
+
+Modified:
+   branches/1.01/lib-src/enigma-core/ecl_util.cc
+   branches/1.01/src/Makefile.am
+Log:
+Branch 1.01: merge trunk fix patch r1536
+- fix crash caused by formatting of long strings due to an instable buffer
+  reallocation that did not reinitialize vargs
+Note:
+- as vargs implementation is very system specific this bug did not cause
+  crashes on all systems.
+- Fedora, Debian 64 bit compilations are reported to be critical in respect to
+  this bug
+
+
+
+Modified: branches/1.01/lib-src/enigma-core/ecl_util.cc
+===================================================================
+--- branches/1.01/lib-src/enigma-core/ecl_util.cc	2009-02-17 23:23:27 UTC (rev 1540)
++++ branches/1.01/lib-src/enigma-core/ecl_util.cc	2009-02-17 23:25:13 UTC (rev 1541)
+@@ -63,39 +63,32 @@
+     return true;
+ }
+ 
+-namespace {
+-    string vstrf(const char *format, va_list argPtr) {
+-        static size_t  buf_size = 128;
+-        static char   *buffer   = new char[buf_size];
++std::string ecl::strf(const char *format, ...) {
++    static size_t  buf_size = 512;
++    static char   *buffer   = new char[buf_size];
++    
++    va_list argPtr;
++    size_t length;
+ 
+-        size_t length;
+-        while (1) {
+-            if (!buffer) {
+-                assert(buffer); // to stop when debugging
+-                return &quot;&lt;alloc problem&gt;&quot;;
+-            }
+-
+-            length = vsnprintf(buffer, buf_size, format, argPtr);
+-            if (length &lt; buf_size) break; // string fits into current buffer
+-
+-            // otherwise resize buffer :
+-            buf_size += buf_size/2;
+-            // fprintf(stderr, &quot;Reallocating vstrf-buffer to size=%u\n&quot;, buf_size);
+-            delete [] buffer;
+-            buffer    = new char[buf_size];
++    while (true) {
++        if (!buffer) {
++            assert(buffer); // to stop when debugging
++            return &quot;&lt;alloc problem&gt;&quot;;
+         }
+ 
+-        return string(buffer, length);
++        va_start(argPtr, format);
++        length = vsnprintf(buffer, buf_size, format, argPtr);
++        va_end(argPtr);
++        
++        if (length &gt;= 0 &amp;&amp; length &lt; buf_size - 1) 
++            // string fits into current buffer
++            return std::string(buffer, length);
++
++        // otherwise resize buffer :
++        buf_size *= 2;
++//        fprintf(stderr, &quot;Reallocating vstrf-buffer to size=%u\n&quot;, buf_size);
++        delete [] buffer;
++        buffer = new char[buf_size];
+     }
+ }
+ 
+-string ecl::strf(const char *format, ...)
+-{
+-    va_list argPtr;
+-    va_start(argPtr, format);
+-    string result = vstrf(format, argPtr);
+-    va_end(argPtr);
+-
+-    return result;
+-}
+-
+
+Modified: branches/1.01/src/Makefile.am
+===================================================================
+--- branches/1.01/src/Makefile.am	2009-02-17 23:23:27 UTC (rev 1540)
++++ branches/1.01/src/Makefile.am	2009-02-17 23:25:13 UTC (rev 1541)
+@@ -12,7 +12,7 @@
+ 
+ CXXFLAGS = @CXXFLAGS@\
+ 	-DSYSTEM_DATA_DIR=\&quot;$(datadir)/enigma\&quot; \
+-	-DLOCALEDIR=\&quot;$(localedir)\&quot; \
++	-DLOCALEDIR=\&quot;$(localedir_enigma)\&quot; \
+ 	-I$(top_srcdir)/lib-src/zipios++  \
+ 	-I$(top_builddir)/lib-src/zipios++ \
+ 	-I$(top_srcdir)/lib-src/lua \
+@@ -186,14 +186,14 @@
+ 
+ if MINGW32
+ 
+-  localedir := data/locale
++  localedir_enigma := data/locale
+   mingw_ldadd := enigma_ico.o -lws2_32
+   enigma_ico.o: enigma.rc enigma.ico
+ 	$(WINDRES) $(srcdir)/enigma.rc --include-dir=$(srcdir) -O coff -o enigma_ico.o
+ 
+ else # not MINGW32
+ 
+-  localedir = $(datadir)/locale
++  localedir_enigma := $(datadir)/locale
+   mingw_ldadd =
+ 
+ endif
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000970.html">[Enigma-game-svn] r1540 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="000972.html">[Enigma-game-svn] r1542
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#971">[ date ]</a>
+              <a href="thread.html#971">[ thread ]</a>
+              <a href="subject.html#971">[ subject ]</a>
+              <a href="author.html#971">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

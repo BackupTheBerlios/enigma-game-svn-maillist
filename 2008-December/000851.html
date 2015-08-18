@@ -1,0 +1,246 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1422 - trunk/src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-December/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1422%20-%20trunk/src/stones&In-Reply-To=%3C200812292229.mBTMThvX011312%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000850.html">
+   <LINK REL="Next"  HREF="000852.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1422 - trunk/src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1422%20-%20trunk/src/stones&In-Reply-To=%3C200812292229.mBTMThvX011312%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1422 - trunk/src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon Dec 29 23:29:43 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000850.html">[Enigma-game-svn] rev 1421
+</A></li>
+        <LI>Next message: <A HREF="000852.html">[Enigma-game-svn] r1423 - in trunk/src: . actors
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#851">[ date ]</a>
+              <a href="thread.html#851">[ thread ]</a>
+              <a href="subject.html#851">[ subject ]</a>
+              <a href="author.html#851">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-12-29 23:29:43 +0100 (Mon, 29 Dec 2008)
+New Revision: 1422
+
+Modified:
+   trunk/src/stones/StoneImpulse.cc
+   trunk/src/stones/StoneImpulse.hh
+Log:
+Trunk 1.1:
+- st_stoneimpulse:
+  - reverse st_stoneimpulse_new orientation attribute according to refman
+  - finetuning on behaviour on receiving and sending impulses per wire
+
+
+Modified: trunk/src/stones/StoneImpulse.cc
+===================================================================
+--- trunk/src/stones/StoneImpulse.cc	2008-12-29 20:27:59 UTC (rev 1421)
++++ trunk/src/stones/StoneImpulse.cc	2008-12-29 22:29:43 UTC (rev 1422)
+@@ -62,7 +62,7 @@
+         } else if (key == &quot;orientation&quot;) {
+             if (!isDisplayable()) {
+                 objFlags &amp;= ~OBJBIT_INCOMINGDIR;
+-                Direction incoming = to_direction(val); 
++                Direction incoming = reverse(to_direction(val)); 
+                 if (incoming != NODIR ) {
+                     objFlags |= (incoming &lt;&lt; 29) | OBJBIT_NOBACKFIRE;
+                 }
+@@ -73,7 +73,7 @@
+     
+     Value StoneImpulse::getAttr(const std::string &amp;key) const {
+         if (key == &quot;hollow&quot;) {
+-            return (bool)(objFlags &amp; OBJBIT_HOLLOW);
++            return isHollow();
+         } else if (key == &quot;movable&quot;) {
+             return (bool)(objFlags &amp; OBJBIT_MOVABLE);
+         } else if (key == &quot;steady&quot;) {
+@@ -125,16 +125,16 @@
+ 
+     void StoneImpulse::init_model() {
+         if (state == IDLE)
+-            set_model(ecl::strf(&quot;st-stoneimpulse%s&quot;, (objFlags &amp; OBJBIT_HOLLOW) ? &quot;-hollow&quot; : ((objFlags &amp; OBJBIT_STEADY) ? &quot;-steady&quot; : &quot;&quot;)));
++            set_model(ecl::strf(&quot;st-stoneimpulse%s&quot;, isHollow() ? &quot;-hollow&quot; : ((objFlags &amp; OBJBIT_STEADY) ? &quot;-steady&quot; : &quot;&quot;)));
+         else
+-            set_anim(ecl::strf(&quot;st-stoneimpulse%s-anim%d&quot;, (objFlags &amp; OBJBIT_HOLLOW) ? &quot;-hollow&quot; : &quot;&quot;,
++            set_anim(ecl::strf(&quot;st-stoneimpulse%s-anim%d&quot;, isHollow() ? &quot;-hollow&quot; : &quot;&quot;,
+                     state == EXPANDING ? 1 : 2));
+     }
+     
+     void StoneImpulse::on_creation(GridPos p) {
+         updateCurrentLightDirs();
+             
+-        if (!(objFlags &amp; OBJBIT_HOLLOW))
++        if (!isHollow())
+             activatePhoto();
+         
+         if (state == IDLE &amp;&amp; (objFlags &amp; OBJBIT_STEADY) &amp;&amp; (objFlags &amp; OBJBIT_LIGHTNEWDIRS))
+@@ -164,26 +164,27 @@
+     }
+     
+     bool StoneImpulse::is_floating() const {
+-        return objFlags &amp; OBJBIT_HOLLOW;
++        return isHollow();
+     }
+     
+     StoneResponse StoneImpulse::collision_response(const StoneContact &amp;sc) {
+-        return ((state != IDLE) || !(objFlags &amp; OBJBIT_HOLLOW)) ? STONE_REBOUND : STONE_PASS;
++        return ((state != IDLE) || !isHollow()) ? STONE_REBOUND : STONE_PASS;
+     }
+     
+     void StoneImpulse::actor_inside(Actor *a) {
+-        if ((state != IDLE) &amp;&amp; (objFlags &amp; OBJBIT_HOLLOW))
++        if ((state != IDLE) &amp;&amp; isHollow())
+             SendMessage(a, &quot;_shatter&quot;);
+     }
+     
+     void StoneImpulse::actor_hit(const StoneContact &amp;sc) {
+         if ((objFlags &amp; OBJBIT_MOVABLE) &amp;&amp; maybe_push_stone(sc))
+             return;                                      // stone did move on impulse
+-        else if (!(objFlags &amp; OBJBIT_HOLLOW)) 
++        else if (!isHollow()) 
+             sc.actor-&gt;send_impulse(sc.stonepos, NODIR);  // impulse on the slightest touch
+     }
+ 
+     void StoneImpulse::on_impulse(const Impulse&amp; impulse) {
++        Actor *hitman = NULL;
+         if ((objFlags &amp; OBJBIT_MOVABLE) &amp;&amp; (impulse.dir != NODIR)) {
+             // move stone without disturbing a running animation
+             display::Model *yieldedModel = display::YieldModel(GridLoc(GRID_STONES, get_pos()));
+@@ -193,20 +194,29 @@
+             display::SetModel(GridLoc(GRID_STONES, get_pos()), yieldedModel);
+             
+             // pulse only if not pushed with a wand
+-            Actor *hitman = dynamic_cast&lt;Actor*&gt;(impulse.sender);
++            hitman = dynamic_cast&lt;Actor*&gt;(impulse.sender);
+             if (hitman == NULL || !player::WieldedItemIs(hitman, &quot;it_magicwand&quot;)) {
+                 if (state == IDLE)
+-                    setIState(EXPANDING, NODIR);
++                    setIState(EXPANDING, impulse.dir);
+                 else if (didMove &amp;&amp; state != EXPANDING)
+                     // ensure that an impulse to neighbors will be emitted when moved
+                     objFlags |= OBJBIT_REPULSE;
+-            } else if (((objFlags &amp; OBJBIT_STEADY) &amp;&amp; (objFlags &amp; OBJBIT_LIGHTNEWDIRS) &amp;&amp; state == IDLE))
+-                setIState(EXPANDING);
++            } else if (((objFlags &amp; OBJBIT_STEADY) &amp;&amp; (objFlags &amp; OBJBIT_LIGHTNEWDIRS) &amp;&amp; state == IDLE)) {
++                setIState(EXPANDING, impulse.dir);
++            }
+         } else {
+             setIState(EXPANDING, impulse.dir);
+         }
+         
+-        propagateImpulse(impulse);
++        // direct impulse propagation
++        if (objFlags &amp; OBJBIT_MOVABLE) { 
++            if (hitman != NULL) {
++                objFlags &amp;= ~OBJBIT_PROPAGATE;
++                propagateImpulse(impulse);
++            } else
++                objFlags |= OBJBIT_PROPAGATE;
++        }
++        setAttr(&quot;$impulse_source&quot;, impulse.sender-&gt;getId());
+     }
+     
+     FreezeStatusBits StoneImpulse::get_freeze_bits() {
+@@ -248,11 +258,36 @@
+                         if (!(objFlags &amp; OBJBIT_NOBACKFIRE) || d != origin)
+                             send_impulse(move(p, d), d);
+                     }
++                    if (!(objFlags &amp; OBJBIT_MOVABLE) || (objFlags &amp; OBJBIT_PROPAGATE)) {
++                        propagateImpulse(Impulse(this, GridPos(-1,-1), 
++                                (Direction)((objFlags &amp; OBJBIT_INCOMINGDIR) &gt;&gt; 29)));
++                    }
++                    if (objFlags &amp; OBJBIT_MOVABLE)
++                        objFlags &amp;= ~OBJBIT_PROPAGATE;
+                     break;
+             }
+         }
+     }
+     
++    void StoneImpulse::propagateImpulse(const Impulse&amp; impulse) {
++        if (!impulse.byWire) {
++            ObjectList olist = getAttr(&quot;fellows&quot;);
++            int sourceId = getDefaultedAttr(&quot;$impulse_source&quot;, 0);
++            for (ObjectList::iterator it = olist.begin(); it != olist.end(); ++it) {
++                Stone *fellow = dynamic_cast&lt;Stone *&gt;(*it);
++                if (fellow != NULL &amp;&amp; fellow-&gt;getId() != sourceId) {
++                    Impulse wireImpulse(this, fellow-&gt;get_pos(), impulse.dir, true);
++                    fellow-&gt;on_impulse(wireImpulse);
++                }
++            }
++        }
++        setAttr(&quot;$impulse_source&quot;, 0);
++    }
++    
++    bool StoneImpulse::isHollow() const {
++        return (bool)(objFlags &amp; OBJBIT_HOLLOW) &amp;&amp; !(bool)(objFlags &amp; OBJBIT_MOVABLE);
++    }
++    
+     int StoneImpulse::traitsIdx() const {
+         if (objFlags &amp; OBJBIT_MOVABLE)
+             return 3;
+
+Modified: trunk/src/stones/StoneImpulse.hh
+===================================================================
+--- trunk/src/stones/StoneImpulse.hh	2008-12-29 20:27:59 UTC (rev 1421)
++++ trunk/src/stones/StoneImpulse.hh	2008-12-29 22:29:43 UTC (rev 1422)
+@@ -46,7 +46,8 @@
+         
+         enum ObjectPrivatFlagsBits {
+             OBJBIT_MOVABLE     =  1&lt;&lt;24,   ///&lt; Object is movable 
+-            OBJBIT_HOLLOW      =  1&lt;&lt;25,   ///&lt; 
++            OBJBIT_HOLLOW      =  1&lt;&lt;25,   ///&lt; hollow SI (exclusive usage with movalble feature!)
++            OBJBIT_PROPAGATE   =  1&lt;&lt;25,   ///&lt; only for movable SI mark impulse propagation on shrinking 
+             OBJBIT_STEADY      =  1&lt;&lt;26,   ///&lt; continuous laser light causes repeating impulses 
+             OBJBIT_REPULSE     =  1&lt;&lt;27,   ///&lt; pending impulse
+             OBJBIT_NOBACKFIRE  =  1&lt;&lt;28,   ///&lt; avoid sending impulse back into incoming direction
+@@ -84,6 +85,8 @@
+         
+     private:
+         void setIState(int newState, Direction incoming = NODIR);
++        void propagateImpulse(const Impulse&amp; impulse);
++        bool isHollow() const;
+         int traitsIdx() const;
+     };
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000850.html">[Enigma-game-svn] rev 1421
+</A></li>
+	<LI>Next message: <A HREF="000852.html">[Enigma-game-svn] r1423 - in trunk/src: . actors
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#851">[ date ]</a>
+              <a href="thread.html#851">[ thread ]</a>
+              <a href="subject.html#851">[ subject ]</a>
+              <a href="author.html#851">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

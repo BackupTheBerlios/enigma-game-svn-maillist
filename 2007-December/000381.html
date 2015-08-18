@@ -1,0 +1,173 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r949 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-December/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r949%20-%20trunk/src&In-Reply-To=%3C200712221213.lBMCDJu3023448%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000380.html">
+   <LINK REL="Next"  HREF="000382.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r949 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r949%20-%20trunk/src&In-Reply-To=%3C200712221213.lBMCDJu3023448%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r949 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Dec 22 13:13:19 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000380.html">[Enigma-game-svn] r948 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="000382.html">[Enigma-game-svn] r950 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#381">[ date ]</a>
+              <a href="thread.html#381">[ thread ]</a>
+              <a href="subject.html#381">[ subject ]</a>
+              <a href="author.html#381">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-12-22 13:13:17 +0100 (Sat, 22 Dec 2007)
+New Revision: 949
+
+Modified:
+   trunk/src/ox_oxyd1.cc
+   trunk/src/stones_complex.cc
+   trunk/src/stones_simple.cc
+Log:
+Trunk 1.1: 
+- add thief as signla multiplier
+- door_c destruction on dynamite, initially open type
+
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2007-12-21 23:47:39 UTC (rev 948)
++++ trunk/src/ox_oxyd1.cc	2007-12-22 12:13:17 UTC (rev 949)
+@@ -178,7 +178,7 @@
+     &quot;st-bigbrick-nw&quot;,           // Oxyd1 stone 0x16
+     &quot;st-plain_hole&quot;,            // Oxyd1 stone 0x17
+     &quot;st-oxyd-0x18&quot;,             // Oxyd1 stone 0x18
+-    &quot;st-glass1_hole&quot;,           // Oxyd1 stone 0x19
++    &quot;st-door_c-open&quot;,           // Oxyd1 stone 0x19
+     &quot;st-grate1&quot;,                // Oxyd1 stone 0x1a
+     &quot;st-grate2&quot;,                // Oxyd1 stone 0x1b
+     &quot;st-bug&quot;,                   // Oxyd1 stone 0x1c
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2007-12-21 23:47:39 UTC (rev 948)
++++ trunk/src/stones_complex.cc	2007-12-22 12:13:17 UTC (rev 949)
+@@ -1542,6 +1542,8 @@
+         State get_state() const { return state; }
+         void set_state(State st) { state=st; }
+ 
++        void change_state(State newstate) ;
++        virtual Value message(const string &amp;m, const Value &amp;);
+     private:
+         // DoorBase interface
+         virtual string model_basename() { return get_kind(); }
+@@ -1550,8 +1552,6 @@
+         virtual string closing_sound() const { return &quot;&quot;; }
+ 
+         // Private methods
+-        void change_state(State newstate) ;
+-        virtual Value message(const string &amp;m, const Value &amp;);
+ 
+         StoneResponse collision_response(const StoneContact &amp;sc);
+ 
+@@ -1700,7 +1700,36 @@
+         CLONEOBJ(Door_c);
+     public:
+         Door_c() : DoorBase(&quot;st-door_c&quot;) {}
++        Value message(const string &amp;m, const Value &amp;val) {
++            if (m == &quot;ignite&quot; &amp;&amp; server::GameCompatibility == GAMET_OXYD1) {
++                KillStone(get_pos());  // TODO animation &amp; sound
++                return Value();
++            } else {
++                return DoorBase::message(m, val);
++            }
++        }
+     };
++    
++    class Door_c_open : public DoorBase {  // a hack for oxyd compatibility tests
++        CLONEOBJ(Door_c_open);
++    public:
++        Door_c_open() : DoorBase(&quot;st-door_c&quot;, OPEN) {}
++        Value message(const string &amp;m, const Value &amp;val) {
++            State newstate = state;
++        
++            if (m == &quot;signal&quot;) {
++                newstate = val.to_bool() ? CLOSING : OPENING;  // inverted
++                if (newstate==OPENING &amp;&amp; (state==CLOSED || state==CLOSING))
++                    change_state(OPENING);
++                else if (newstate==CLOSING &amp;&amp; (state==OPEN || state==OPENING))
++                    change_state(CLOSING);
++                return Value();
++            } else {
++                return DoorBase::message(m, val);
++            }
++        }
++
++    };    
+ }
+ 
+ bool Door::is_transparent (Direction dir) const {
+@@ -3178,6 +3207,7 @@
+     Register(new Door_a);
+     Register(new Door_b);
+     Register(new Door_c);
++    Register(&quot;st-door_c-open&quot;, new Door_c_open);
+ 
+     Register(new HollowStoneImpulseStone);
+ 
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2007-12-21 23:47:39 UTC (rev 948)
++++ trunk/src/stones_simple.cc	2007-12-22 12:13:17 UTC (rev 949)
+@@ -1495,7 +1495,9 @@
+ }
+ 
+ Value ThiefStone::message(const string &amp;msg, const Value &amp;v) {
+-    if(msg == &quot;capture&quot; &amp;&amp; state == IDLE) {
++    if(msg == &quot;signal&quot; &amp;&amp; server::GameCompatibility != GAMET_ENIGMA) {
++        PerformAction(this, v.to_bool());  // signal multiplier
++    } else if(msg == &quot;capture&quot; &amp;&amp; state == IDLE) {
+         state = CAPTURED;
+         Item * it =  GetItem(get_pos());
+         
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000380.html">[Enigma-game-svn] r948 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="000382.html">[Enigma-game-svn] r950 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#381">[ date ]</a>
+              <a href="thread.html#381">[ thread ]</a>
+              <a href="subject.html#381">[ subject ]</a>
+              <a href="author.html#381">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

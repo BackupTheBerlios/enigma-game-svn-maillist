@@ -1,0 +1,176 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1324 - in trunk/data: . levels/lib
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1324%20-%20in%20trunk/data%3A%20.%20levels/lib&In-Reply-To=%3C200809142109.m8EL9stY010279%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000753.html">
+   <LINK REL="Next"  HREF="000755.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1324 - in trunk/data: . levels/lib</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1324%20-%20in%20trunk/data%3A%20.%20levels/lib&In-Reply-To=%3C200809142109.m8EL9stY010279%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1324 - in trunk/data: . levels/lib">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Sep 14 23:09:54 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000753.html">[Enigma-game-svn] r1323 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="000755.html">[Enigma-game-svn] r1325 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#754">[ date ]</a>
+              <a href="thread.html#754">[ thread ]</a>
+              <a href="subject.html#754">[ subject ]</a>
+              <a href="author.html#754">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-09-14 23:09:54 +0200 (Sun, 14 Sep 2008)
+New Revision: 1324
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/data/levels/lib/libpuzzle_3.xml
+Log:
+Trunk 1.1: new API reengineering
+- fix drawMap to call resolver finalizers
+- puzzle part 3:
+  - handle multiple hollow puzzle stone shuffling
+  - make resolver reusable for multiple drawMap usage
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2008-09-14 19:16:54 UTC (rev 1323)
++++ trunk/data/api2init.lua	2008-09-14 21:09:54 UTC (rev 1324)
+@@ -244,6 +244,15 @@
+                 end
+             end
+         end
++        -- Call resolver finalizers
++        local context = resolver
++        while type(context) == &quot;table&quot; do
++            local finalizer = context[2]
++            if type(finalizer) == &quot;function&quot; then
++               finalizer(context) 
++            end
++            context = context[3]
++        end
+     end
+ )
+ 
+
+Modified: trunk/data/levels/lib/libpuzzle_3.xml
+===================================================================
+--- trunk/data/levels/lib/libpuzzle_3.xml	2008-09-14 19:16:54 UTC (rev 1323)
++++ trunk/data/levels/lib/libpuzzle_3.xml	2008-09-14 21:09:54 UTC (rev 1324)
+@@ -16,7 +16,7 @@
+     &lt;/el:info&gt;
+     &lt;el:luamain&gt;&lt;![CDATA[
+ function res.puzzle_finalization(context)
+-    print(&quot;puzzle final - num pos &quot;..#context[5])
++--    print(&quot;puzzle final - num pos &quot;..#context[5])
+     local stones = {}
+     for i, ppos in ipairs(context[5]) do
+         local stone = st(context[5][i])
+@@ -41,7 +41,7 @@
+     local offsets = {po(-1,0), po(0,1), po(1,0), po(0,-1)}
+     local dirchars = {&quot;w&quot;,&quot;s&quot;,&quot;e&quot;,&quot;n&quot;}
+     for h, huddle in ipairs(huddles) do
+-        print(&quot;puzzle final - shuffle huddle of size &quot;..#huddle)
++--        print(&quot;puzzle final - shuffle huddle of size &quot;..#huddle)
+         local pfloors = fl(huddle)
+         local pushes = {}
+         local intensity = 0
+@@ -56,7 +56,7 @@
+         for puz in huddle do
+             for dir, offset in ipairs(offsets) do
+                 local cand = puz - offset
+-                if cand.x &gt;= 0 and cand.x &lt; width and cand.y &gt;= 0 and cand.y &lt; height then
++                if cand:exists() then
+                     local cfloor = fl(cand)
+                     if pfloors[cfloor] == nil then
+                         local may_push = true
+@@ -69,8 +69,7 @@
+                         if may_push then
+                             local length = 1
+                             local lpos = puz + offset
+-                            while lpos.x &gt;= 0 and lpos.x &lt; width and lpos.y &gt;= 0 and lpos.y &lt; height
+-                                    and pfloors[fl(lpos)] ~= nil do
++                            while lpos:exists() and pfloors[fl(lpos)] ~= nil do
+                                 length = length + 1
+                                 lpos = lpos + offset
+                             end
+@@ -84,20 +83,28 @@
+             end
+         end
+         intensity = intensity * #huddle
+-        local maxp = math.floor(math.sqrt(intensity))
+         while intensity &gt; 0 and #pushes &gt; 0 do
+             local pidx = random(#pushes)  -- select a random push pos/dir
+-            local nump = random(math.min(pushes[pidx][3],
+-                            math.max(maxp, intensity)))  -- number of pushes 
++            local puzz = st(pushes[pidx][1])
++            local dir = pushes[pidx][2]
++            local length = pushes[pidx][3]
++            local nextpuzz = st(puzz + offsets[dir + 1])
+             
+-            intensity = intensity - nump
+-            for i = 1, nump do 
+-                if not (st(pushes[pidx][1] + offsets[pushes[pidx][2] + 1]))[&quot;hollow&quot;] then
+-                    st(pushes[pidx][1]):pull_rotate(pushes[pidx][2])
+-                end
++            -- check for leading sequence of hollow puzzles
++            while length &gt; 2 and puzz[&quot;hollow&quot;] and nextpuzz[&quot;hollow&quot;] do
++                puzz = nextpuzz
++                nextpuzz = st(puzz + offsets[dir + 1])
++                length = length - 1
+             end
++            
++            if not nextpuzz[&quot;hollow&quot;] then
++                puzz:pull_rotate(dir)
++                intensity = intensity - 1
++            end
+         end
+     end
++    -- cleanup for subsequent calls
++    context[5] = {}
+ end
+ 
+ function res.puzzle_newtile(key, template, suffix)
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000753.html">[Enigma-game-svn] r1323 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="000755.html">[Enigma-game-svn] r1325 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#754">[ date ]</a>
+              <a href="thread.html#754">[ thread ]</a>
+              <a href="subject.html#754">[ subject ]</a>
+              <a href="author.html#754">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

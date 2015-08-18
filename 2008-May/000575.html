@@ -1,0 +1,366 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1142 - in trunk: data data/levels/lib src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1142%20-%20in%20trunk%3A%20data%20data/levels/lib%20src/stones&In-Reply-To=%3C200805132042.m4DKgLaP018592%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000574.html">
+   <LINK REL="Next"  HREF="000576.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1142 - in trunk: data data/levels/lib src/stones</H1>
+    <B>andreasl at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1142%20-%20in%20trunk%3A%20data%20data/levels/lib%20src/stones&In-Reply-To=%3C200805132042.m4DKgLaP018592%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1142 - in trunk: data data/levels/lib src/stones">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Tue May 13 22:42:21 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000574.html">[Enigma-game-svn] r1141 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000576.html">[Enigma-game-svn] r1143 - in trunk/src: . gui
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#575">[ date ]</a>
+              <a href="thread.html#575">[ thread ]</a>
+              <a href="subject.html#575">[ subject ]</a>
+              <a href="author.html#575">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2008-05-13 22:42:16 +0200 (Tue, 13 May 2008)
+New Revision: 1142
+
+Modified:
+   trunk/data/levels/lib/andreas_itemfreeze.xml
+   trunk/data/levels/lib/libluatools.xml
+   trunk/data/models-2d.lua
+   trunk/data/models.lua
+   trunk/src/stones/WindowStone.cc
+Log:
+Trunk:
+ - Adding libluatools.combinations: Effectively, create
+   a list of all n-ary numbers between 0 and 2^DEPTH,
+   with arbitrary digits of a given set.
+ - Fix crash when swapping an itemfreeze.
+ - Proposal for a rewrite of window-shadow-code
+   
+
+Modified: trunk/data/levels/lib/andreas_itemfreeze.xml
+===================================================================
+--- trunk/data/levels/lib/andreas_itemfreeze.xml	2008-05-12 10:36:39 UTC (rev 1141)
++++ trunk/data/levels/lib/andreas_itemfreeze.xml	2008-05-13 20:42:16 UTC (rev 1142)
+@@ -516,14 +516,20 @@
+         local current_stone = itemfreeze_stone[j]
+         local old_x = itemfreeze_pos_x[j]
+         local old_y = itemfreeze_pos_y[j]
+-        itemfreeze_pos_x[j], itemfreeze_pos_y[j] = enigma.GetPos(current_stone)
+-        --if (enigma.GetStone(itemfreeze_pos_x[j], itemfreeze_pos_y[j])
+-        --    ~= itemfreeze_stone[j]) then -- this doesn't work in lua 5!
+-        if (old_x ~= itemfreeze_pos_x[j]) or (old_y ~= itemfreeze_pos_y[j]) then
+-          -- Obviously, this stone has moved!
+-          enigma.EmitSound(current_stone, &quot;ballcollision&quot;)
+-          itemfreeze_look_for_floor(j, old_x, old_y)
+-          itemfreeze_look_for_item(j, old_x, old_y)
++        local new_x, new_y = enigma.GetPos(current_stone)
++        if (new_x &gt;= 0) and (new_y &gt;= 0) then
++          itemfreeze_pos_x[j], itemfreeze_pos_y[j] = new_x, new_y
++          --if (enigma.GetStone(itemfreeze_pos_x[j], itemfreeze_pos_y[j])
++          --    ~= itemfreeze_stone[j]) then -- this doesn't work in lua 5!
++          if (old_x ~= itemfreeze_pos_x[j]) or (old_y ~= itemfreeze_pos_y[j]) then
++            -- Obviously, this stone has moved!
++            enigma.EmitSound(current_stone, &quot;ballcollision&quot;)
++            itemfreeze_look_for_floor(j, old_x, old_y)
++            itemfreeze_look_for_item(j, old_x, old_y)
++          end
++        else
++          -- Stone has disappeared - probably swapped. Just do
++          -- as if nothing happened and wait.
+         end  
+       end
+     end
+
+Modified: trunk/data/levels/lib/libluatools.xml
+===================================================================
+--- trunk/data/levels/lib/libluatools.xml	2008-05-12 10:36:39 UTC (rev 1141)
++++ trunk/data/levels/lib/libluatools.xml	2008-05-13 20:42:16 UTC (rev 1142)
+@@ -170,6 +170,29 @@
+   return sequence2
+ end
+ 
++-- Return a table of all combinations of DEPTH entries,
++-- each of which is chosen from DIGITS.
++-- Example: luatools.combinations(3, {7, 8, &quot;a&quot;}) will return
++--   { {7,7,7}, {7,7,8}, {7,7,&quot;a&quot;}, {7,8,7}, {7,8,8}, {7,8,&quot;a&quot;},
++--     {7,&quot;a&quot;,7}, {7,&quot;a&quot;,8}, {7,&quot;a&quot;,&quot;a&quot;}, {8,7,7}, ... }
++-- Mathematically, it builds the leafs of an #DIGITS-ary tree
++-- of depth DEPTH.
++function luatools.combinations(depth, digits)
++  local all_combinations = {{}}
++  for _ = 1, depth do
++    local next_step = {}
++    for _, old_combination in pairs(all_combinations) do
++      for _, new_digit in pairs(digits) do
++        local new_combination = luatools.deep_copy(old_combination)
++        table.insert(new_combination, new_digit)
++        table.insert(next, new_combination)
++      end
++    end
++    all_combinations = next_step
++  end
++  return all_combinations
++end
++
+     ]]&gt;&lt;/el:luamain&gt;
+     &lt;el:i18n&gt;
+     &lt;/el:i18n&gt;
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-05-12 10:36:39 UTC (rev 1141)
++++ trunk/data/models-2d.lua	2008-05-13 20:42:16 UTC (rev 1142)
+@@ -1182,92 +1182,102 @@
+ 
+ -- st-window --
+ do
+-    local fg_window_blue = DefSubimages(&quot;st_window_blue&quot;, {modelname=&quot;fg-window_blue&quot;,w=4,h=4})
+-    local fg_window_green = DefSubimages(&quot;st_window_green&quot;, {modelname=&quot;fg-window_green&quot;,w=4,h=4})
++    local fg_window = {blue = DefSubimages(&quot;st_window_blue&quot;, {modelname=&quot;fg-window_blue&quot;,w=4,h=4}),
++                       green = DefSubimages(&quot;st_window_green&quot;, {modelname=&quot;fg-window_green&quot;,w=4,h=4}) }
+     local sh_windowx = DefSubimages(&quot;sh_window&quot;, {modelname=&quot;sh-windowx&quot;,w=2,h=4,imgw=ShadowSize,imgh=ShadowSize})
+-    local breaking_images_blue = DefSubimages(&quot;st_window_blue_break&quot;, {h=4})
+-    local breaking_images_green = DefSubimages(&quot;st_window_green_break&quot;, {h=4})
+-    
+-    local faces = 0
+-    local broken = 0
+-    local shadows = {}
+-    for W = 0, 1 do
+-      local Wfaces = faces
+-      for S = 0, 1 do
+-        local Sfaces = faces
+-        local shadows = shadows
+-        for E = 0, 1 do
+-          local Efaces = faces
+-          local shadows = shadows
+-          for N = 0, 1 do
+-            local Nfaces = faces
+-            local shadows = shadows
+-            for w = 0, 1-W do
+-              local wbroken = broken
+-              local shadows = shadows
+-              for s = 0, 1-S do
+-                local sbroken = broken
+-                local shadows = shadows
+-                for e = 0, 1-E do
+-                  local ebroken = broken
+-                  local shadows = shadows
+-                  for n = 0, 1-N do
+-                    local nbroken = broken
+-                    local shadows = {}
+-                    if W==1 then table.insert(shadows,&quot;sh-windowx1&quot;) end
+-                    if S==1 then table.insert(shadows,&quot;sh-windowx2&quot;) end
+-                    if E==1 then table.insert(shadows,&quot;sh-windowx3&quot;) end
+-                    if N==1 then table.insert(shadows,&quot;sh-windowx4&quot;) end
+-                    if w==1 then table.insert(shadows,&quot;sh-windowx5&quot;) end
+-                    if s==1 then table.insert(shadows,&quot;sh-windowx6&quot;) end
+-                    if e==1 then table.insert(shadows,&quot;sh-windowx7&quot;) end
+-                    if n==1 then table.insert(shadows,&quot;sh-windowx8&quot;) end
+-                    DefMultipleComposite(&quot;sh-windowx&quot;..faces..&quot;-&quot;..broken, shadows)
+-                    DefShModel(&quot;st_window_blue&quot;..faces..&quot;_&quot;..broken, &quot;fg-window_blue&quot;..(faces+broken+1), &quot;sh-windowx&quot;..faces..&quot;-&quot;..broken)
+-                    DefShModel(&quot;st_window_green&quot;..faces..&quot;_&quot;..broken, &quot;fg-window_green&quot;..(faces+broken+1), &quot;sh-windowx&quot;..faces..&quot;-&quot;..broken)
++    local breaking_images = {blue = DefSubimages(&quot;st_window_blue_break&quot;, {h=4}),
++                             green = DefSubimages(&quot;st_window_green_break&quot;, {h=4})}
+ 
+-                    local breaking_window_blue_names = {}
+-                    local breaking_window_green_names = {}
+-                    for j = 1, table.getn(breaking_images_blue) do
+-                        breaking_window_blue_names[j] = &quot;st-window_blue_breaking&quot;..faces..&quot;_&quot;..broken..&quot;-&quot;..j
+-                        breaking_window_green_names[j] = &quot;st-window_green_breaking&quot;..faces..&quot;_&quot;..broken..&quot;-&quot;..j
+-                        display.DefineComposite(breaking_window_blue_names[j], fg_window_blue[faces+broken+1], breaking_images_blue[j])
+-                        display.DefineComposite(breaking_window_green_names[j], fg_window_green[faces+broken+1], breaking_images_green[j])
+-                    end
+-                    local frames_blue = BuildFrames(breaking_window_blue_names, 130)
+-                    local frames_green = BuildFrames(breaking_window_green_names, 130)
+-                    DefAnim(&quot;st-window_blue&quot;..faces..&quot;_&quot;..broken..&quot;_anim_fg&quot;, frames_blue)
+-                    DefAnim(&quot;st-window_green&quot;..faces..&quot;_&quot;..broken..&quot;_anim_fg&quot;, frames_green)
+-                    DefShModel(&quot;st_window_blue&quot;..faces..&quot;_&quot;..broken..&quot;_anim&quot;, &quot;st-window_blue&quot;..faces..&quot;_&quot;..broken..&quot;_anim_fg&quot;, &quot;sh-windowx&quot;..faces..&quot;-&quot;..broken);
+-                    DefShModel(&quot;st_window_green&quot;..faces..&quot;_&quot;..broken..&quot;_anim&quot;, &quot;st-window_green&quot;..faces..&quot;_&quot;..broken..&quot;_anim_fg&quot;, &quot;sh-windowx&quot;..faces..&quot;-&quot;..broken);
++    local function name(combination, separator)
++      return combination.normal_faces..separator..combination.scratched_faces
++    end
+ 
+-
+-                    table.insert(shadows,&quot;sh-windowx8&quot;)
+-                    broken = nbroken + 8
+-                  end
+-                  table.insert(shadows,&quot;sh-windowx7&quot;)
+-                  broken = ebroken + 4
++    -- The window images are constructed in two steps.
++    -- 1) All possible combinations of the shadows are constructed
++    --    (for each direction: &quot;no shadow&quot;, &quot;normal face&quot;, &quot;scratched face&quot;,
++    --    represented as &quot;0, 1, 2&quot; in a table).
++    -- 2) Using the table of all possible combinations, all images
++    --    and animations of the window stones are constructed.
++    -- Step 1 works as follows: We start with direction 1 (North),
++    -- and all three possibilities for shadows to the North. At this
++    -- point, the images for shadows to North only are build.
++    -- As next, for each of the three North-possibilities, we
++    -- construct the East-possibilities, i.e. we now have 3*3 combinations
++    -- and 3*3-1 shadow-images. We continue with South and West.
++    -- The table &quot;all_combinations&quot; is after each pass of the &quot;direction&quot;-loop:
++    --  0) {{}}
++    --  1) {{0}, {1}, {2}}
++    --  2) {{0,0}, {0,1}, {0,2}, {1,0}, {1,1}, {1,2}, {2,0}, {2,1}, {2,2}}
++    --  3) {{0,0,0}, {0,0,1}, {0,0,2}, {0,1,0}, {0,1,1}, ... }
++    --  4) {{0,0,0,0}, {0,0,0,1}, {0,0,0,2}, {0,0,1,0}, ... }
++    -- Plus extra entries to count the number of normal_faces and
++    -- scratched_faces (to be exactly, the numbers binarily represent
++    -- the existence of the face).
++    local all_combinations = {{normal_faces = 0, scratched_faces = 0}}
++    DefAlias(&quot;sh-windowx0-0&quot;, &quot;invisible&quot;)
++    local base = {0, 1, 2}
++    for direction = 1, 4 do
++        local next_list = {}
++        for _, old_combination in pairs(all_combinations) do
++            for _, new_digit in pairs(base) do
++                -- Deep-copy old_combination to new_combination.
++                local new_combination = {}
++                for k, digit in pairs(old_combination) do
++                    new_combination[k] = digit
+                 end
+-                table.insert(shadows,&quot;sh-windowx6&quot;)
+-                broken = sbroken + 2
+-              end
+-              table.insert(shadows,&quot;sh-windowx5&quot;)
+-              broken = wbroken + 1
++                -- Add a new digit to new_combination and save it.
++                new_combination[direction] = new_digit
++                table.insert(next_list, new_combination)
++                -- If this combination adds a new face, create
++                -- the corresponding composite image, based on the
++                -- image of old_combination.
++                if new_digit ~= 0 then
++                    -- First, increase the &quot;number&quot; of faces.
++                    if new_digit == 1 then
++                        new_combination.normal_faces = new_combination.normal_faces
++                                + ({1,2,4,8})[direction]
++                    elseif new_digit == 2 then
++                        new_combination.scratched_faces = new_combination.scratched_faces
++                                + ({1,2,4,8})[direction]
++                    end
++                    -- Now compose the shadow image.
++                    display.DefineComposite(
++                            &quot;sh-windowx&quot;..name(new_combination, &quot;-&quot;),
++                            &quot;sh-windowx&quot;..name(old_combination, &quot;-&quot;),
++                            &quot;sh-windowx&quot;..(direction + ({0,4})[new_digit]))
++                end
+             end
+-            table.insert(shadows,&quot;sh-windowx4&quot;)
+-            broken = 0
+-            faces = Nfaces + 8
+-          end
+-          table.insert(shadows,&quot;sh-windowx3&quot;)
+-          faces = Efaces + 4
+         end
+-        table.insert(shadows,&quot;sh-windowx2&quot;)
+-        faces = Sfaces + 2
+-      end
+-      table.insert(shadows,&quot;sh-windowx1&quot;)
+-      faces = Wfaces + 1
++        all_combinations = next_list
+     end
+-    
++
++    for _, combination in pairs(all_combinations) do
++        -- Abbreviations. Note that sometimes &quot;-&quot; and sometimes &quot;_&quot; is
++        -- used as separator. Don't expect a pattern.
++        local total_faces = combination.normal_faces + combination.scratched_faces
++        local name1 = name(combination, &quot;-&quot;)
++        local name2 = name(combination, &quot;_&quot;)
++        for _, color in pairs({&quot;blue&quot;, &quot;green&quot;}) do
++            -- Normal stone (= not breaking)
++            DefShModel(&quot;st_window_&quot;..color..name2,
++                       &quot;fg-window_&quot;..color..(total_faces + 1),
++                       &quot;sh-windowx&quot;..name1)
++            -- Breaking animation
++            local breaking_window_names = {}
++            for j = 1, table.getn(breaking_images[color]) do
++                breaking_window_names[j] =
++                          &quot;st-window_&quot;..color..&quot;_breaking&quot;..name1..&quot;-&quot;..j
++                display.DefineComposite(breaking_window_names[j],
++                          fg_window[color][total_faces + 1],
++                          breaking_images[color][j])
++            end
++            local frames = BuildFrames(breaking_window_names, 130)
++            DefAnim(&quot;st-window_&quot;..color..name2..&quot;_anim_fg&quot;, frames)
++            DefShModel(&quot;st_window_&quot;..color..name2..&quot;_anim&quot;,
++                       &quot;st-window_&quot;..color..name2..&quot;_anim_fg&quot;,
++                       &quot;sh-windowx&quot;..name1);
++        end
++    end
+ end
+ 
+ -----------------
+
+Modified: trunk/data/models.lua
+===================================================================
+--- trunk/data/models.lua	2008-05-12 10:36:39 UTC (rev 1141)
++++ trunk/data/models.lua	2008-05-13 20:42:16 UTC (rev 1142)
+@@ -405,8 +405,7 @@
+ -- Define a multiple composite --
+ -- This function will compose a list of images
+ -- and store the result in &quot;name&quot;.
+--- At the moment, this function is only used for the
+--- shadows of &quot;st-window&quot;.
++-- As this function needs lots of memory, it's use is deprecated.
+ function DefMultipleComposite(name, imglist)
+     -- Assert imglist &gt;= 1!
+     local listsize = table.getn(imglist)
+
+Modified: trunk/src/stones/WindowStone.cc
+===================================================================
+--- trunk/src/stones/WindowStone.cc	2008-05-12 10:36:39 UTC (rev 1141)
++++ trunk/src/stones/WindowStone.cc	2008-05-13 20:42:16 UTC (rev 1142)
+@@ -124,8 +124,7 @@
+             }
+             uint32_t scratchDirs = ((objFlags &amp; OBJBIT_SCRATCHDIRS) &gt;&gt; 24);
+             set_model(ecl::strf(&quot;st_window_%s%d_%d&quot;, objFlags &amp; OBJBIT_SECURE ? &quot;green&quot; : &quot;blue&quot; , 
+-                    getFaces() &amp; ~scratchDirs, scratchDirs));
+-                    
++                    getFaces() &amp; ~scratchDirs, scratchDirs));                    
+         }
+     }
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000574.html">[Enigma-game-svn] r1141 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000576.html">[Enigma-game-svn] r1143 - in trunk/src: . gui
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#575">[ date ]</a>
+              <a href="thread.html#575">[ thread ]</a>
+              <a href="subject.html#575">[ subject ]</a>
+              <a href="author.html#575">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

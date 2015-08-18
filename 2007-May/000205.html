@@ -1,0 +1,235 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r768 - branches/eval/java/src/org/enigma_game/lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r768%20-%20branches/eval/java/src/org/enigma_game/lev&In-Reply-To=%3C200705282213.l4SMD4iv020145%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000204.html">
+   
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r768 - branches/eval/java/src/org/enigma_game/lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r768%20-%20branches/eval/java/src/org/enigma_game/lev&In-Reply-To=%3C200705282213.l4SMD4iv020145%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r768 - branches/eval/java/src/org/enigma_game/lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue May 29 00:13:04 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000204.html">[Enigma-game-svn] r767 - branches/eval
+</A></li>
+        
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#205">[ date ]</a>
+              <a href="thread.html#205">[ thread ]</a>
+              <a href="subject.html#205">[ subject ]</a>
+              <a href="author.html#205">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-05-29 00:13:03 +0200 (Tue, 29 May 2007)
+New Revision: 768
+
+Modified:
+   branches/eval/java/src/org/enigma_game/lev/LevelScore.java
+   branches/eval/java/src/org/enigma_game/lev/RatingManager.java
+   branches/eval/java/src/org/enigma_game/lev/ScoreManager.java
+Log:
+Branch eval:
+- add inherited user rating handling for top rated level eval
+
+
+Modified: branches/eval/java/src/org/enigma_game/lev/LevelScore.java
+===================================================================
+--- branches/eval/java/src/org/enigma_game/lev/LevelScore.java	2007-05-28 20:35:47 UTC (rev 767)
++++ branches/eval/java/src/org/enigma_game/lev/LevelScore.java	2007-05-28 22:13:03 UTC (rev 768)
+@@ -62,6 +62,7 @@
+     boolean fullEval = false;
+     Map&lt;Integer, String&gt; scoresDiff = new TreeMap&lt;Integer, String&gt;();
+     Map&lt;Integer, String&gt; scoresEasy = new TreeMap&lt;Integer, String&gt;();
++    Map&lt;Integer, String&gt; userRat = new TreeMap&lt;Integer, String&gt;();
+     
+     static void printWRStatistics(UserManager userMgr) {
+         Map&lt;String, Integer&gt; wrHoldersTotal = new HashMap&lt;String, Integer&gt;(wrHolders);
+@@ -205,11 +206,27 @@
+         return avgurNum;
+     }
+     
++    public int getInheritedRatingNum() {
++        return (parentScore != null) ? parentScore.getRatingNum() : 0;
++    }
++    
+     public double getRatingAvg() {
+-        if (avgurNum &gt;  0)
+-            return (double)avgurSum/avgurNum;
+-        else
+-            return -1;
++        double avgur = -1;
++        if (avgurNum &gt;  0 || (parentScore != null &amp;&amp; parentScore.getRatingNum() &gt; 0)) { 
++            int parentAddNum = 0;
++            double parentAddSum = 0;
++            if (parentScore != null &amp;&amp; avgurNum &lt; 10) {
++                if (parentScore.getRatingNum() &gt; 10 - avgurNum) {
++                    parentAddNum = 10 - avgurNum;
++                    parentAddSum = parentAddNum * parentScore.getRatingAvg();
++                } else if (parentScore.getRatingNum() &gt; 0) {
++                    parentAddNum = parentScore.getRatingNum();
++                    parentAddSum = parentAddNum * parentScore.getRatingAvg();
++                }
++            }
++            avgur = (avgurSum + parentAddSum) / (avgurNum + parentAddNum);
++        }
++        return avgur;
+     }
+     
+     public String getAuthor() {
+@@ -263,7 +280,7 @@
+         userEasySolved = false;
+     }
+     
+-    public void registerSolvage(String userName, String diffStr, String easyStr) {
++    public void registerSolvage(String userName, String diffStr, String easyStr, int urat) {
+         if (diffStr.length() &gt; 0)
+             userScoreDiff = Integer.parseInt(diffStr);
+         if (easyStr.length() &gt; 0)
+@@ -286,6 +303,14 @@
+                         tieUsers + &quot;+&quot; + userName); 
+             }
+         }
++        if (urat &gt;= 0) {
++            if (fullEval) {
++                String tieUsers = userRat.get(urat);
++                userRat.put(urat, tieUsers == null ? userName :
++                        tieUsers + &quot;+&quot; + userName); 
++            }
++        }
++        
+     }
+     
+     public void printLevelEvaluation() {
+@@ -303,6 +328,11 @@
+                     System.out.println(entry.getKey() + &quot;  &quot; +  entry.getValue());
+                 }
+             }
++            System.out.println(&quot;&quot;);
++            System.out.println(&quot;User ratings:&quot;);
++            for (Map.Entry&lt;Integer, String&gt; entry : userRat.entrySet()) {
++                System.out.println(entry.getKey() + &quot;  &quot; +  entry.getValue());
++            }
+         }
+     }
+     
+@@ -458,23 +488,28 @@
+         solvpd = solvnd * 10000 / numUsers;
+         elem.setAttributeNS(null, &quot;solvpd&quot;, Integer.toString(solvpd));
+         
+-        int avgur = -1;
+-        if (avgurNum &gt;  0 || (parentScore != null &amp;&amp; parentScore.getRatingNum() &gt; 0)) { 
+-            int parentAddNum = 0;
+-            double parentAddSum = 0;
+-            if (parentScore != null &amp;&amp; avgurNum &lt; 10) {
+-                if (parentScore.getRatingNum() &gt; 10 - avgurNum) {
+-                    parentAddNum = 10 - avgurNum;
+-                    parentAddSum = parentAddNum * parentScore.getRatingAvg();
+-                } else if (parentScore.getRatingNum() &gt; 0) {
+-                    parentAddNum = parentScore.getRatingNum();
+-                    parentAddSum = parentAddNum * parentScore.getRatingAvg();
+-                }
+-            }
+-            parentAddSum = 10 * parentAddSum;
+-            avgur = (avgurSum * 10 + (int)parentAddSum) / (avgurNum + parentAddNum);
++//         int avgur = -1;
++//         if (avgurNum &gt;  0 || (parentScore != null &amp;&amp; parentScore.getRatingNum() &gt; 0)) { 
++//             int parentAddNum = 0;
++//             double parentAddSum = 0;
++//             if (parentScore != null &amp;&amp; avgurNum &lt; 10) {
++//                 if (parentScore.getRatingNum() &gt; 10 - avgurNum) {
++//                     parentAddNum = 10 - avgurNum;
++//                     parentAddSum = parentAddNum * parentScore.getRatingAvg();
++//                 } else if (parentScore.getRatingNum() &gt; 0) {
++//                     parentAddNum = parentScore.getRatingNum();
++//                     parentAddSum = parentAddNum * parentScore.getRatingAvg();
++//                 }
++//             }
++//             parentAddSum = 10 * parentAddSum;
++//             avgur = (avgurSum * 10 + (int)parentAddSum) / (avgurNum + parentAddNum);
++//         }
++        int avgurInt = -1;
++        double avgur = getRatingAvg();
++        if (avgur &gt;=0) {
++            avgurInt = (int)(avgur * 10.0);
+         }
+-        elem.setAttributeNS(null, &quot;avgur&quot;, Integer.toString(avgur));
++        elem.setAttributeNS(null, &quot;avgur&quot;, Integer.toString(avgurInt));
+         
+         // worldrecord holder statistics
+         if (partOfCurDist) {
+
+Modified: branches/eval/java/src/org/enigma_game/lev/RatingManager.java
+===================================================================
+--- branches/eval/java/src/org/enigma_game/lev/RatingManager.java	2007-05-28 20:35:47 UTC (rev 767)
++++ branches/eval/java/src/org/enigma_game/lev/RatingManager.java	2007-05-28 22:13:03 UTC (rev 768)
+@@ -363,13 +363,13 @@
+             Collections.sort(topRatedLevel, compRating);
+             int topPosition = 1;
+             for (LevelScore ls : topRatedLevel) {
+-                if (ls.getRatingNum() &gt; 1) {
++                if (ls.isPartOfCurDist() &amp;&amp; (ls.getRatingNum() &gt; 1 || ls.getInheritedRatingNum() &gt; 2)) {
+                     Formatter formatterTopRatedLevel = new Formatter(Locale.US);
+-                    formatterTopRatedLevel.format(&quot;%5.2f  %d  %-23s by %-18s (%s)&quot;,  ls.getRatingAvg(),
+-                            ls.getRatingNum(), ls.getTitle(), ls.getAuthor(), ls.getId());
++                    formatterTopRatedLevel.format(&quot;%5.2f  %2d (%2d)  %-23s by %-18s (%s)&quot;,  ls.getRatingAvg(),
++                            ls.getRatingNum(), ls.getInheritedRatingNum(), ls.getTitle(), ls.getAuthor(), ls.getId());
+                     output.println(formatterTopRatedLevel.toString());
+                     topPosition++;
+-                    if (topPosition &gt; 50)
++                    if (topPosition &gt; 60)
+                         break;
+                 }
+             }
+
+Modified: branches/eval/java/src/org/enigma_game/lev/ScoreManager.java
+===================================================================
+--- branches/eval/java/src/org/enigma_game/lev/ScoreManager.java	2007-05-28 20:35:47 UTC (rev 767)
++++ branches/eval/java/src/org/enigma_game/lev/ScoreManager.java	2007-05-28 22:13:03 UTC (rev 768)
+@@ -200,7 +200,7 @@
+                     sumRatings += urat;
+                 }
+                 ls.registerSolvage(user, e.getAttribute(&quot;diff1&quot;), 
+-                        e.getAttribute(&quot;easy1&quot;));
++                        e.getAttribute(&quot;easy1&quot;), urat);
+             }
+             if (checkSec) {
+                 NamedNodeMap attrXMap = e.getAttributes();
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000204.html">[Enigma-game-svn] r767 - branches/eval
+</A></li>
+	
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#205">[ date ]</a>
+              <a href="thread.html#205">[ thread ]</a>
+              <a href="subject.html#205">[ subject ]</a>
+              <a href="author.html#205">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

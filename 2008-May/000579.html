@@ -1,0 +1,464 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1146 - in trunk: data src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1146%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200805152135.m4FLZve4009755%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000578.html">
+   <LINK REL="Next"  HREF="000580.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1146 - in trunk: data src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1146%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200805152135.m4FLZve4009755%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1146 - in trunk: data src">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu May 15 23:35:57 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000578.html">[Enigma-game-svn] r1145 - in trunk: data data/gfx32 data/gfx40	data/gfx48 src/stones
+</A></li>
+        <LI>Next message: <A HREF="000580.html">[Enigma-game-svn] r1147 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#579">[ date ]</a>
+              <a href="thread.html#579">[ thread ]</a>
+              <a href="subject.html#579">[ subject ]</a>
+              <a href="author.html#579">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-05-15 23:35:57 +0200 (Thu, 15 May 2008)
+New Revision: 1146
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/src/lua.cc
+Log:
+Trunk 1.1: new API
+- autotiling resolver added
+  generates tile declarations based on templates - see upcoming samples
+  and refman docu
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2008-05-14 23:59:04 UTC (rev 1145)
++++ trunk/data/api2init.lua	2008-05-15 21:35:57 UTC (rev 1146)
+@@ -133,22 +133,22 @@
+ res = {}
+ 
+ function res.random_implementation(context, evaluator, key, x, y)
+-    for hit_itr, hit_pair in ipairs(context[3]) do
++    for hit_itr, hit_pair in ipairs(context[4]) do
+         if key == hit_pair[1] then
+             local super = nil
+             if hit_pair[2] ~= nil then
+-                super = evaluator(context[2], hit_pair[2], x, y)
++                super = evaluator(context[3], hit_pair[2], x, y)
+             end
+             local repl_key
+-            local r = math.random(context[5])
++            local r = math.random(context[6])
+             local i = 1
+-            local s = context[4][i][2]
++            local s = context[5][i][2]
+             while s &lt; r do
+                 i = i + 1
+-                s = s + context[4][i][2]
++                s = s + context[5][i][2]
+             end
+-            repl_key = context[4][i][1]
+-            local replacement = evaluator(context[2], repl_key, x, y)
++            repl_key = context[5][i][1]
++            local replacement = evaluator(context[3], repl_key, x, y)
+             if super == nil then
+                 return replacement
+             elseif type(super) == &quot;table&quot; then
+@@ -159,7 +159,7 @@
+         end
+     end
+     -- key not found
+-    return evaluator(context[2], key, x, y)
++    return evaluator(context[3], key, x, y)
+ end
+ 
+ function res.random(subresolver, hits, replacements)
+@@ -192,9 +192,109 @@
+     for i, v in ipairs(repl_table) do
+         repl_sum = repl_sum + v[2]
+     end
+-    local context = {res.random_implementation, subresolver, hit_table, 
++    local context = {res.random_implementation, nil, subresolver, hit_table, 
+                       repl_table, repl_sum}
+     return context
+ end
+ 
++function res.autotile_newtile(key, template, substitution)
++    local decl = template:_declaration()  -- get a deep copy
++    local result
++    for i, tile in ipairs(decl) do
++        if type(tile) == &quot;string&quot; then
++            if result == nil then
++                result = ti[tile]
++            else
++                result = result .. ti[tile]
++            end
++        else
++            local at = {}   -- attribute table
++            for key, val in pairs(tile) do   -- a table
++                if type(val) ~= &quot;table&quot; then
++                    if type(val) == &quot;string&quot; then
++                        at[key] = string.gsub(val, &quot;%%%%&quot;, &quot;%%&quot;..substitution)
++                    else
++                        at[key] = val
++                    end
++                else
++                    local tt = {} 
++                    for j, token in ipairs(val) do
++                        if type(token) == &quot;string&quot; then
++                            tt[j] = string.gsub(token, &quot;%%%%&quot;, &quot;%%&quot;..substitution)
++                        else
++                            tt[j] = token
++                        end
++                    end
++                    at[key] = tt
++                end
++            end
++            if result == nil then
++                result = ti(at)
++            else
++                result = result .. ti(at)
++            end
++        end
++    end
++    ti[key] = result
++end
+ 
++function res.autotile_implementation(context, evaluator, key, x, y)
++    for i, rule in ipairs (context[4]) do
++        if #rule == 3 then   -- from, to substitution
++            --
++            local first = string.byte(rule[1], #rule[1])
++            local last = string.byte(rule[2], #rule[2])
++            local candidate = string.byte(key, #key)
++            
++            if #key == #rule[1] and string.sub(key, 1, -2) == string.sub(rule[1], 1, -2)
++                    and first &lt;= candidate and candidate &lt;= last then
++                if ti[key] == nil then
++                    res.autotile_newtile(key, ti[rule[3]], candidate - first)
++                end
++                return ti[key]
++            end
++        elseif string.find(key, rule[1], 1, true) == 1 then
++            -- prefix based substitution
++            if ti[key] == nil then
++                res.autotile_newtile(key, ti[rule[2]], string.sub(key, #(rule[1]) + 1))
++            end
++            return ti[key]
++        end
++    end
++    return evaluator(context[3], key, x, y)
++end
++
++function res.autotile(subresolver, ...)
++    -- syntax: ... = &lt;{prefixkey, template} | {fistkey, lastkey, template}&gt;
++    local args = {...}
++    -- TODO check args!
++    -- check tables contain only strings (2 or 3)
++    -- check in case of 3 that last &gt; first in last char, but equal in first chars,
++    for i, rule in ipairs(args) do
++        if type(rule) ~= &quot;table&quot; then
++            error(&quot;Resolver autotile rule &quot; .. i..&quot; is not a table&quot;, 2)
++        else
++            if #rule &lt; 2 or #rule &gt; 3 then
++                error(&quot;Resolver autotile rule &quot;..i..&quot; wrong number of arguments&quot;, 2)
++            end
++            for j, str in ipairs(rule) do
++                if type(str) ~= &quot;string&quot; then
++                    error(&quot;Resolver autotile rule &quot;..i..&quot; has not a string in position &quot;..j, 2)
++                end
++            end
++            if #rule == 3 then
++                local first = string.byte(rule[1], #rule[1])
++                local last  = string.byte(rule[2], #rule[2])
++                if #rule[2] ~= #rule[1] or string.sub(rule[2], 1, -2) ~= string.sub(rule[1], 1, -2)
++                        or first &gt; last then
++                    error(&quot;Resolver autotile rule &quot;..i..&quot; bad range start-end strings&quot;, 2)
++                end
++            end
++            if ti[rule[#rule]] == nil then
++                error(&quot;Resolver autotile missing template tile '&quot;..rule[#rule]..&quot;'&quot;, 2)
++            end
++        end
++    end
++    local context = {res.autotile_implementation, nil, subresolver, args}
++    return context
++end
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-05-14 23:59:04 UTC (rev 1145)
++++ trunk/src/lua.cc	2008-05-15 21:35:57 UTC (rev 1146)
+@@ -63,8 +63,8 @@
+ /**
+  * The tile dictionary or function that should be used to resolve tile keys.
+  */
+-#define LUA_ID_RESOLVER &quot;_RESOLVER&quot;
+-#define LUA_ID_FLOORKEY &quot;_FLOORKEY&quot;
++#define LUA_ID_RESOLVER  &quot;_RESOLVER&quot;
++#define LUA_ID_FLOORKEY  &quot;_FLOORKEY&quot;
+ 
+ using namespace std;
+ 
+@@ -1060,7 +1060,7 @@
+     return 1;
+ }
+ 
+-static int pushNewTile(lua_State *L, int numArgs) {
++static int pushNewTile(lua_State *L, int numArgs, std::string key=&quot;&quot;) {
+     // numArgs 1 or 2 of type (table|tile)
+     int *udata;
+     udata=(int *)lua_newuserdata(L,sizeof(int));   // position user object
+@@ -1084,6 +1084,10 @@
+         lua_pushvalue(L, -3);
+         lua_rawseti(L, -2, 2);
+     }
++    if (key != &quot;&quot;) {
++        lua_pushstring(L, key.c_str());
++        lua_rawseti(L, -2, 3);
++    }
+     lua_setmetatable(L, -2);    
+     return 1;
+ }
+@@ -1878,6 +1882,10 @@
+         throwLuaError(L, &quot;Resolver with false argument types&quot;);
+         return 0;
+     }
++    std::string key = lua_tostring(L, -3);
++    int x = lua_tointeger(L, -2);
++    int y = lua_tointeger(L, -1);
++    
+     if (is_tiles(L, -4)) {
+         lua_pushvalue(L, -3);       // duplicate key
+         lua_gettable(L, -5);        // get tile entry in table, remove key duplicate
+@@ -1894,7 +1902,8 @@
+         }
+         // check result - must be tile or table
+         if (!(is_tile(L, -1) || is_table(L, -1))) {
+-            throwLuaError(L, &quot;Tile key resolver error - expected tile or table as return value&quot;);
++            throwLuaError(L, ecl::strf(&quot;World init undefined tile '%s' at %d, %d&quot;, 
++                    key.c_str(), x, y).c_str());
+             return 0;
+         }
+         return 1;
+@@ -1912,7 +1921,8 @@
+         }        
+         // check result - must be tile or table
+         if (!(is_tile(L, -1) || is_table(L, -1))) {
+-            throwLuaError(L, &quot;Tile key resolver error - expected tile or table as return value&quot;);
++            throwLuaError(L, ecl::strf(&quot;World init undefined tile '%s' at %d, %d&quot;, 
++                    key.c_str(), x, y).c_str());
+             return 0;
+         }
+         return 1;
+@@ -1978,7 +1988,7 @@
+         return 0;
+     }
+     
+-    // remember resolver and default key for missing floors
++    // remember top resolver and default key for missing floors
+     lua_pushvalue(L, 2);
+     lua_setfield(L, LUA_REGISTRYINDEX, LUA_ID_RESOLVER);  
+     lua_pushvalue(L, 3);
+@@ -2042,6 +2052,9 @@
+             setObjectByKey(L, key, j, i, isDefault);
+         }
+     }
++    
++    // TODO finalization of resolvers
++    
+     lua_pushinteger(L, width);
+     lua_pushinteger(L, height);
+     return 2;
+@@ -2246,10 +2259,106 @@
+ }
+ 
+ static int dispatchTileReadAccess(lua_State *L) {
++    // tile, key
++    if (lua_isstring(L, 2)) {
++        std::string keyStr = lua_tostring(L, 2);
++        MethodMap::iterator iter = tileMethodeMap.find(keyStr);
++        if (iter != tileMethodeMap.end()) {
++            // call method
++            lua_pushcfunction(L, iter-&gt;second);
++            return 1;
++        }
++    }
+     throwLuaError(L, &quot;Tile: illegal read access&quot;);
+     return 0;
+ }
+ 
++static void tileDeclForTable(lua_State *L) {
++    // table (declaration), table (the result copy)
++    if (lua_objlen(L, -2) == 0)   // empty declaration table 
++        return;
++    // deep copy of all table entries
++    lua_newtable(L);    // the table copy for the result
++    lua_pushnil(L);  // first key
++    while (lua_next(L, -4) != 0) {
++         // key is at index -2 and value at index -1
++         // ignore all keys besides strings - ignore key 1, the object type
++         lua_pushvalue(L, -2); // a copy of key for work
++         if (lua_istable(L, -2)) {
++            // a token as value - we need a deep copy
++            lua_newtable(L);    // the table copy for the result
++            lua_pushnil(L);  // first key
++            while (lua_next(L, -4) != 0) {
++                 // key is at index -2 and value at index -1
++                 // ignore all keys besides strings - ignore key 1, the object type
++                 lua_pushvalue(L, -2); // a copy of key for work
++                 lua_pushvalue(L, -2); // a copy of value for work - no tokens within tokens allowed!
++                 lua_rawset(L, -5);    // store
++                 lua_pop(L, 1);  // remove value, leave original key for loop
++            }
++         } else {
++            // all other values are no references - a copy is sufficient
++            lua_pushvalue(L, -2); // a copy of value for work
++         }
++         lua_rawset(L, -5);    // store
++         lua_pop(L, 1);  // remove original value, leave original key for loop
++    }
++    
++    int resultsize = lua_objlen(L, -2);   // last index of result table
++    lua_rawseti(L, -2, resultsize + 1);   // append tile key
++    return;
++}
++
++static int tileDeclForTile(lua_State *L, bool isTop = false) {
++    // tile, table (the result)
++    
++    // this is a recursive function - ensure enough space on the stack
++    if (lua_gettop(L) &gt;  LUA_MINSTACK - 5)
++        lua_checkstack(L, 10);         // guarantee another 10 free slots
++        
++    lua_getmetatable(L, -2);
++    if (!isTop) {
++        lua_rawgeti(L, -1, 3);    // tile key or nil
++        if (!lua_isnil(L, -1)) {
++            int resultsize = lua_objlen(L, -3);   // last index of result table
++            lua_rawseti(L, -3, resultsize + 1);   // append tile key
++            lua_pop(L, 1);     // metatable
++            return 0;
++        }
++        lua_pop(L, 1);     // tile key 
++    }
++    
++    lua_rawgeti(L, -1, 1);    // first tile part
++    lua_pushvalue(L, -3);     // result table
++    if (is_tile(L, -2))
++        tileDeclForTile(L);
++    else
++        tileDeclForTable(L);
++    lua_pop(L, 2);  // tile or table and 
++    lua_rawgeti(L, -1, 2);    // second optional tile part
++    if (!lua_isnil(L, -1)) {
++        lua_pushvalue(L, -3);     // result table
++        if (is_tile(L, -2))
++            tileDeclForTile(L);
++        else
++            tileDeclForTable(L);
++        lua_pop(L, 1);  // result table
++    }
++    lua_pop(L, 2);  // tile or table or nil + metatable
++    return 0;
++}
++
++static int tileDeclaration(lua_State *L) {
++    // tile
++    if (lua_gettop(L) != 1) {
++        throwLuaError(L, &quot;Tile declaration with illegal arguments&quot;);
++        return 0;
++    }
++    lua_newtable(L); // the result
++    tileDeclForTile(L, true);
++    return 1;
++}
++
+ static int appendTile(lua_State *L) {
+     // (tile|table) .. (tile|table)
+     if (!((is_tile(L, 1)||is_table(L, 1)) &amp;&amp; (is_tile(L, 1)||is_table(L, 1)))) {
+@@ -2278,7 +2387,7 @@
+         return 0;
+     }
+     lua_getmetatable(L, 1);
+-    lua_rawgeti(L, -1, 1);   // content table
++    lua_rawgeti(L, -1, 1);    // content table
+     lua_pushvalue(L, 2);      // copy key
+     lua_rawget(L, -2);        // check for existing entry in table
+     return 1;
+@@ -2290,11 +2399,11 @@
+         throwLuaError(L, &quot;Tiles: key is not a string&quot;);
+         return 0;
+     }
+-    if (is_table(L, 3)) {
++    if (is_table(L, 3) || is_tile(L, 3)) {
+         // convert table to a tile
+-        pushNewTile(L, 1);
++        pushNewTile(L, 1, lua_tostring(L, 2));
+         lua_remove(L, 3);   
+-    } else if (!is_tile(L, 3)) {
++    } else {
+         throwLuaError(L, &quot;Tiles: value is not a tile or table&quot;);
+         return 0;
+     }
+@@ -2571,7 +2680,7 @@
+ static CFunction worldMethods[] = {
+     {createWorld,                   &quot;create&quot;},
+     {registerWorldUserMethod,       &quot;_register&quot;},
+-    {evaluateKey,                    &quot;_evaluate&quot;},
++    {evaluateKey,                   &quot;_evaluate&quot;},
+     {getFloor,                      &quot;fl&quot;},
+     {getItem,                       &quot;it&quot;},
+     {getStone,                      &quot;st&quot;},
+@@ -2587,6 +2696,7 @@
+ };
+ 
+ static CFunction tileMethods[] = {
++    {tileDeclaration,               &quot;_declaration&quot;},
+     {0,0}
+ };
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000578.html">[Enigma-game-svn] r1145 - in trunk: data data/gfx32 data/gfx40	data/gfx48 src/stones
+</A></li>
+	<LI>Next message: <A HREF="000580.html">[Enigma-game-svn] r1147 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#579">[ date ]</a>
+              <a href="thread.html#579">[ thread ]</a>
+              <a href="subject.html#579">[ subject ]</a>
+              <a href="author.html#579">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

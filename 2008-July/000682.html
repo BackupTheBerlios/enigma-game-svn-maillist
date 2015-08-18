@@ -1,0 +1,3917 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1248 - in trunk/src: . items stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1248%20-%20in%20trunk/src%3A%20.%20items%20stones&In-Reply-To=%3C200807292204.m6TM4IXD002779%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000681.html">
+   
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1248 - in trunk/src: . items stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1248%20-%20in%20trunk/src%3A%20.%20items%20stones&In-Reply-To=%3C200807292204.m6TM4IXD002779%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1248 - in trunk/src: . items stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Jul 30 00:04:18 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000681.html">[Enigma-game-svn] r1247 - trunk/src
+</A></li>
+        
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#682">[ date ]</a>
+              <a href="thread.html#682">[ thread ]</a>
+              <a href="subject.html#682">[ subject ]</a>
+              <a href="author.html#682">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-07-30 00:04:16 +0200 (Wed, 30 Jul 2008)
+New Revision: 1248
+
+Added:
+   trunk/src/items/
+   trunk/src/items/BlockerItem.cc
+   trunk/src/items/BlockerItem.hh
+   trunk/src/items/GlassesItem.cc
+   trunk/src/items/GlassesItem.hh
+Modified:
+   trunk/src/Makefile.am
+   trunk/src/actors.cc
+   trunk/src/floors.cc
+   trunk/src/items.cc
+   trunk/src/items.hh
+   trunk/src/ox_extra.cc
+   trunk/src/ox_magnum.cc
+   trunk/src/ox_oxyd1.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/oxyd.cc
+   trunk/src/oxyd_internal.hh
+   trunk/src/player.cc
+   trunk/src/stones.cc
+   trunk/src/stones/ActorImpulseStone.cc
+   trunk/src/stones/DeathStone.cc
+   trunk/src/stones/LightPassengerStone.cc
+   trunk/src/stones/WindowStone.cc
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+   trunk/src/world.hh
+Log:
+Trunk 1.1: new API reengineering
+- drop item,stone,actor id based template repositories
+- switch oxyd* item tables back to kind strings
+- rename item TRAITS macros to differ from stone macros
+- new dir src/items
+- start extracting item classes to new dir
+- make use of Glasses Spot enum by header inclusion instead of numbers
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/Makefile.am	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -197,6 +197,10 @@
+ 	lev/ScoreManager.hh	\
+ 	lev/VolatileIndex.cc	\
+ 	lev/VolatileIndex.hh	\
++	items/BlockerItem.cc	\
++	items/BlockerItem.hh	\
++	items/GlassesItem.cc	\
++	items/GlassesItem.hh	\
+ 	others/Other.cc		\
+ 	others/Other.hh		\
+ 	others/Rubberband.cc	\
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/actors.cc	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -584,11 +584,11 @@
+     }
+     else if (Item *it = GetItem(p)) {
+         if (!has_flags(it, itf_indestructible))
+-            SetItem (p, it_explosion3);
++            SetItem (p, MakeItem(&quot;it-explosion3&quot;));
+     }
+     else if (Floor *fl = GetFloor(p)) {
+         if (fl-&gt;is_destructible())
+-            SetItem (p, it_explosion3);
++            SetItem (p, MakeItem(&quot;it-explosion3&quot;));
+     }
+     KillActor (this);
+ }
+
+Modified: trunk/src/floors.cc
+===================================================================
+--- trunk/src/floors.cc	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/floors.cc	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -213,7 +213,7 @@
+ }
+ 
+ bool Floor::force_fire() {
+-    SetItem(get_pos(), it_burnable_ignited);
++    SetItem(get_pos(), MakeItem(&quot;it-burnable-ignited&quot;));
+     fire_countdown = 0;
+     return true;
+ }
+@@ -374,7 +374,7 @@
+         SetFloor(p, MakeFloor(get_firetransform().c_str()));
+     // Remember, at this point &quot;this&quot; may be destroyed.
+     if(!GetFloor(p)-&gt;has_firetype(flft_noash))
+-        SetItem(p, it_burnable_ash);
++        SetItem(p, MakeItem(&quot;it-burnable-ash&quot;));
+     return true; // fire extinguished  
+ }
+ 
+@@ -403,7 +403,7 @@
+     if(cont_fire)
+         // continue burning
+         //   -&gt; put animation
+-        SetItem(p, it_burnable_burning);
++        SetItem(p, MakeItem(&quot;it-burnable-burning&quot;));
+     else
+         stop_fire(false);
+ }
+@@ -930,7 +930,7 @@
+         enigma::Inventory *inv = player::GetInventory(m_affected_actor);
+         if (inv &amp;&amp; inv-&gt;size() &gt; 0) {
+             if (bag == NULL) {
+-                bag = MakeItem(it_bag);
++                bag = MakeItem(&quot;it-bag&quot;);
+                 bag-&gt;setOwnerPos(get_pos());
+             }
+             int i = IntegerRand (0, int (inv-&gt;size()-1));
+@@ -943,7 +943,7 @@
+     if(Item *it = GetItem(get_pos())) {
+         if (!(it-&gt;get_traits().flags &amp; itf_static)) {
+             if (bag == NULL) {
+-                bag = MakeItem(it_bag);
++                bag = MakeItem(&quot;it-bag&quot;);
+                 bag-&gt;setOwnerPos(get_pos());                
+             }
+             dynamic_cast&lt;ItemHolder *&gt;(bag)-&gt;add_item(YieldItem(get_pos())); 
+
+Added: trunk/src/items/BlockerItem.cc
+===================================================================
+--- trunk/src/items/BlockerItem.cc	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/items/BlockerItem.cc	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -0,0 +1,191 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;items/BlockerItem.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++
++    BlockerItem::BlockerItem(bool shrinked_recently) {
++        state = shrinked_recently ? NEW : IDLE;
++    }
++
++    BlockerItem::~BlockerItem() {
++        GameTimer.remove_alarm (this);
++    }
++
++    BlockerItem * BlockerItem::clone() {
++        BlockerItem * dup = new BlockerItem(*this);
++        NameObject(dup, &quot;$BlockerItem#&quot;);  // auto name object to avoid problems with object values
++        return dup;
++    }
++    
++    void BlockerItem::dispose() {
++        delete this;
++    }
++
++    Value BlockerItem::message(const Message &amp;m) {
++        if (m.message == &quot;_init&quot;) { 
++            if (Stone *st = GetStone(get_pos())) {
++                if (st-&gt;is_kind(&quot;st_boulder&quot;))
++                    if (state == IDLE &amp;&amp; server::GameCompatibility != GAMET_PEROXYD)
++                        setIState(UNLOCKED);
++                    else if (state == NEW || server::GameCompatibility != GAMET_PEROXYD)
++                        setIState(LOCKED);
++            }
++            return Item::message(m);    // pass on init message
++        } else if (m.message ==&quot;_performaction&quot;) {
++            performAction(true);
++            return Value();
++        }
++        return Item::message(m);
++    }
++    
++    void BlockerItem::toggleState() {
++        if (state == UNLOCKED) {  // revoke pending grow/close
++            setIState(LOCKED);
++        }
++        else {
++            setState(0);  // close
++        }
++    }
++    
++    int BlockerItem::externalState() const {
++        return 1;   // always open -- st_blocker is closed
++    }
++    
++    void BlockerItem::setState(int extState) {
++        if (extState == 1) {         // open (shrink)
++            if (state == UNLOCKED)   //   revoke pending grow/close
++                setIState(LOCKED);
++        }
++        else {                       // close (grow)
++            switch (state) {
++                case LOCKED:
++                    setIState(UNLOCKED);  // close when stone is removed
++                    break;
++                case UNLOCKED:
++                    break;                // will close anyway when stone is removed
++                case IDLE:
++                case NEW:
++                    grow();                    
++                    break;
++            }
++        }
++    }
++    
++    void BlockerItem::on_creation(GridPos p) {
++        if (state == NEW) {
++            GameTimer.set_alarm(this, 0.5, false);
++        }
++        Item::on_creation(p);
++    }
++
++    void BlockerItem::on_removal(GridPos p) {
++        setIState(IDLE);
++        Item::on_removal(p);
++    }
++
++    void BlockerItem::init_model() {
++        set_model(&quot;it-blocker&quot;);
++    }
++    
++    void BlockerItem::actor_leave(Actor *a) {
++        if (Value v = getAttr(&quot;autoclose&quot;)) {
++            if (v.to_bool()) {
++                setState(0);     // close
++            }
++        }
++    }
++    
++    void BlockerItem::stone_change(Stone *st) {
++        if (st != NULL) {
++            if (st-&gt;is_kind(&quot;st_boulder&quot;)) { // boulder arrived
++                switch (state) {
++                    case IDLE:
++                        setIState(UNLOCKED);  // will grow when boulder moves away
++                        break;
++                    case NEW:
++                        setIState(LOCKED);    // will not grow when boulder moves away
++                        break;
++                    case UNLOCKED:
++                    case LOCKED:
++                        // two BoulderStones running directly next to each other
++                        // let second pass as well (correct? siegfried says yes)
++                        // note: all stone moves are handled in a timestep before
++                        //   the world informs the items about stone changes
++                        break;
++                }
++            }
++            else { // any other stone
++                setIState(LOCKED);
++            }
++        }
++        else {              // stone disappeared
++            switch (state) {
++                case LOCKED:
++                    setIState(IDLE);
++                    break;
++                case UNLOCKED:
++                    grow();
++                    break;
++                case IDLE:
++                case NEW:
++                    // no action
++                    break;
++            }
++        }
++    }
++
++    void BlockerItem::alarm() {
++        if (state == NEW) { // BoulderStone did not arrive in time
++            setIState(IDLE);
++        }
++    }
++
++    void BlockerItem::setIState(iState newState) {
++        if (state != newState) {
++            if (state == NEW)
++                GameTimer.remove_alarm(this);
++            else if (newState == NEW)
++                GameTimer.set_alarm(this, 0.5, false);
++            state = newState;
++        }
++    }
++    
++    void BlockerItem::grow() {
++        Stone *st = MakeStone(&quot;st_blocker_new&quot;);
++        SetStone(get_pos(), st);
++        transferIdentity(st);
++        if (Value v = getAttr(&quot;autoclose&quot;))
++            st-&gt;setAttr(&quot;autoclose&quot;, v); 
++        SendMessage(st, &quot;_performaction&quot;);
++        kill();
++    }
++
++    DEF_ITEMTRAITSF(BlockerItem, &quot;it_blocker&quot;, it_blocker, itf_static);
++
++    BOOT_REGISTER_START
++        BootRegister(new BlockerItem(false), &quot;it_blocker&quot;);
++        BootRegister(new BlockerItem(true), &quot;it_blocker_new&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/items/BlockerItem.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/BlockerItem.hh
+===================================================================
+--- trunk/src/items/BlockerItem.hh	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/items/BlockerItem.hh	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -0,0 +1,94 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef BLOCKERITEM_HH
++#define BLOCKERITEM_HH
++
++#include &quot;items.hh&quot;
++
++#include &quot;enigma.hh&quot;
++
++namespace enigma {
++    /**
++     * A door like object that can be opened and closed by a BoulderStone. This item
++     * represents the open state of the door. The closed state is represented by a
++     * BlockerStone.&lt;p&gt;
++     * If a BoulderStone moves over a BlockerItem the BlockerItem starts growing and
++     * replaces itself by a BlockerStone. But other Stones can be pushed over a
++     * BlockerItem without causing its transformation. &lt;p&gt;
++     * It fully supports the door messages &quot;open&quot;, &quot;close&quot;, &quot;toggle&quot;, &quot;signal&quot; and
++     * attribute &quot;state&quot;. If the item is blocked by a stone the messages will not
++     * cause an instant growing. But the message will be remembered in the internal
++     * state and the item acts as soon as the stone moves away.&lt;p&gt;
++     * An initial BlockerItem with a BoulderStone on top will grow as soon as it moves
++     * away. An initial it_blocker_new with a BloulderStone on top will not grow when
++     * the stone moves away.&lt;p&gt;
++     * Note that this is the only door object that allows a stone to be pushed through.
++     * A BlockerItem can be killed by a BrakeItem being dropped.
++     */
++    class BlockerItem : public Item, public TimeHandler {
++        DECL_ITEMTRAITS;
++    private:
++        enum iState {
++            IDLE,       ///&lt; neutral state
++            NEW,        ///&lt; a new BlockerItem that replaced a recently shrinked BlockerStone -
++                        ///&lt; a BoulderStone is awaited, but it has to arrive in time 
++            LOCKED,     ///&lt; a stone covers the BlockerItem and locked it, so it will not grow
++                        ///&lt; when the stone moves away. This is the state that a BoulderStone causes
++                        ///&lt; on its first visit immediatly after shrinking the BlockerStone
++            UNLOCKED    ///&lt; a stone covers the BlockerItem and unlocked it, so it will grow
++                        ///&lt; when the stone moves away. This is the state that a BoulderStone causes
++                        ///&lt; on its second visit when moving onto an idle BlockerItem. The blocker
++                        ///&lt; will grow when the stones moves away
++        };
++
++    public:
++        BlockerItem(bool shrinked_recently);
++        ~BlockerItem();
++
++        // Object interface
++        virtual BlockerItem *clone();
++        virtual void dispose();
++        virtual Value message(const Message &amp;m);
++
++        // StateObject interface
++        virtual void toggleState();
++        virtual int externalState() const;
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
++        virtual void init_model();
++        virtual void actor_leave(Actor *a);
++
++        // Item interface
++        virtual void stone_change(Stone *st);
++
++        // TimeHandler interface
++        virtual void alarm();
++    
++    private:
++        void setIState(iState newState);
++        void grow();
++    };
++    
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/items/BlockerItem.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/GlassesItem.cc
+===================================================================
+--- trunk/src/items/GlassesItem.cc	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/items/GlassesItem.cc	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -0,0 +1,98 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;items/GlassesItem.hh&quot;
++
++#include &quot;Inventory.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;player.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    void Glasses::updateGlasses() {
++        Inventory *ci = player::GetInventory(player::CurrentPlayer());
++        int newVisibility = 0;
++        int i = -1;
++        while ((i = ci-&gt;find(&quot;it_glasses&quot;, i+1)) != -1) {
++            Glasses *gl = dynamic_cast&lt;Glasses *&gt;(ci-&gt;get_item(i));
++            newVisibility |= gl-&gt;state;
++        }
++        if (newVisibility != server::GlassesVisibility) {
++            server::GlassesVisibility = newVisibility;
++            BroadcastMessage(&quot;_glasses&quot;, newVisibility, GridLayerBits(GRID_ITEMS_BIT | GRID_STONES_BIT));
++        }
++    }
++    
++    Glasses::Glasses(int initState) {
++        state = initState;
++    }
++    
++    int Glasses::maxState() const {
++        return MAX;
++    }
++    
++    void Glasses::toggleState() {
++        // ignore toggle
++    }
++    
++    void Glasses::setState(int extState) {
++        state = extState;
++        if (isDisplayable()) {
++            init_model();
++        } else {
++            // maybe part of players inventory
++            updateGlasses();
++            player::RedrawInventory();
++        }
++    }
++    
++    void Glasses::init_model() {
++        if (state &gt; 0)
++            set_model(&quot;it_glasses&quot;);
++        else
++            set_model(&quot;it_glasses_broken&quot;);
++    }
++    
++    void Glasses::on_drop(Actor *a) {
++        updateGlasses();
++    }
++    void Glasses::on_pickup(Actor *a) {
++        updateGlasses();
++    }
++    void Glasses::on_stonehit(Stone *) {
++        sound_event (&quot;shatter&quot;);
++        setState(0);
++    }
++        
++    int Glasses::traitsIdx() const {
++        return state != 0 ? 0 : 1;
++    }
++
++    ItemTraits Glasses::traits[2] = {
++        {&quot;it_glasses&quot;,  it_glasses,  itf_none},
++        {&quot;it_glasses_broken&quot;,  it_glasses_broken,  itf_none}
++    };
++
++    BOOT_REGISTER_START
++        BootRegister(new Glasses(0), &quot;it_glasses_broken&quot;);
++        BootRegister(new Glasses(Glasses::DEATH + Glasses::HOLLOW + Glasses::LIGHTPASSENGER), &quot;it_glasses&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/items/GlassesItem.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/GlassesItem.hh
+===================================================================
+--- trunk/src/items/GlassesItem.hh	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/items/GlassesItem.hh	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -0,0 +1,68 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef GLASSESITEM_HH
++#define GLASSESITEM_HH
++
++#include &quot;items.hh&quot;
++
++#include &quot;actors.hh&quot;
++#include &quot;stones.hh&quot;
++
++namespace enigma {
++    class Glasses : public Item {
++        CLONEOBJ(Glasses);
++        DECL_ITEMTRAITS_ARRAY(2, traitsIdx());
++
++    public:
++        enum Spot {
++            NOTHING         =  0,   // broken glasses
++            DEATH           =  1,
++            HOLLOW          =  2,
++            ACTORIMPULSE    =  4,
++            SENSOR          =  8,
++            LIGHTPASSENGER  = 16,
++            TRAP            = 32,
++            MAX             = 63
++        };
++        
++        static void updateGlasses();
++                
++        Glasses(int initState);
++        
++        // StateObject interface
++        virtual int maxState() const;
++        virtual void toggleState();
++        virtual void setState(int extState);
++        
++        // GridObject interface
++        virtual void init_model();
++        
++        // Items interface
++        virtual void on_drop(Actor *a);
++        virtual void on_pickup(Actor *a);
++        virtual void on_stonehit(Stone *st);
++        
++    private:
++        int traitsIdx() const;
++    };
++    
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/items/GlassesItem.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/items.cc	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -18,6 +18,8 @@
+  *
+  */
+ 
++#include &quot;items.hh&quot;
++
+ #include &quot;errors.hh&quot;
+ #include &quot;main.hh&quot;
+ #include &quot;display.hh&quot;
+@@ -29,6 +31,7 @@
+ #include &quot;Inventory.hh&quot;
+ #include &quot;ItemHolder.hh&quot;
+ #include &quot;lev/Proxy.hh&quot;
++#include &quot;items/GlassesItem.hh&quot;
+ 
+ #include &quot;ecl_util.hh&quot;
+ 
+@@ -45,44 +48,6 @@
+ using ecl::V2;
+ 
+ 
+-/* -------------------- Macros -------------------- */
+-
+-#define DEF_ITEM(classname, kindname, kindid)   \
+-    class classname : public Item {             \
+-        CLONEOBJ(classname);                    \
+-        DECL_TRAITS;                            \
+-    public:                                     \
+-        classname() {}                          \
+-    };                                          \
+-    DEF_TRAITS(classname, kindname, kindid)
+-
+-#define DEF_ITEMF(classname, kindname, kindid, flags)   \
+-    class classname : public Item {             \
+-        CLONEOBJ(classname);                    \
+-        DECL_TRAITS;                            \
+-    public:                                     \
+-        classname() {}                          \
+-    };                                          \
+-    DEF_TRAITSF(classname, kindname, kindid, flags)
+-
+-#define DECL_TRAITS                                             \
+-        static ItemTraits traits;                               \
+-        const ItemTraits &amp;get_traits() const { return traits; }
+-
+-#define DECL_TRAITS_ARRAY(n, subtype_expr)                                      \
+-        static ItemTraits traits[n];                                            \
+-        const ItemTraits &amp;get_traits() const { return traits[subtype_expr]; }
+-
+-#define DEF_TRAITS(classname, name, id)         \
+-    ItemTraits classname::traits = { name, id, itf_none, 0.0 }
+-
+-#define DEF_TRAITSF(classname, name, id, flags)         \
+-    ItemTraits classname::traits = { name, id, flags, 0.0 }
+-
+-#define DEF_TRAITSR(classname, name, id, radius)         \
+-    ItemTraits classname::traits = { name, id, 0, radius }
+-
+-
+ namespace enigma {
+ 
+ /* -------------------- Item implementation -------------------- */
+@@ -94,9 +59,9 @@
+     KillItem(get_pos());
+ }
+ 
+-void Item::replace(ItemID id)
++void Item::replace(std::string kind)
+ {
+-    Item *newitem = MakeItem (id);
++    Item *newitem = MakeItem(kind.c_str());
+     transferName(newitem);          // TODO check where transfer of identity is better
+     setup_successor(newitem);           // hook for subclasses
+     SetItem (get_pos(), newitem);
+@@ -137,7 +102,7 @@
+ 
+ void Item::processLight(Direction d) {
+     if (get_traits().flags &amp; itf_inflammable) {
+-        replace (it_explosion1);
++        replace(&quot;it-explosion1&quot;);
+     } else
+         GridObject::processLight(d);
+ }
+@@ -206,7 +171,7 @@
+ /* -------------------- DummyItem -------------------- */
+     class Dummyitem : public Item {
+         CLONEOBJ(Dummyitem);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         void on_pickup(Actor *) {
+             int code = getAttr(&quot;code&quot;);
+@@ -219,32 +184,32 @@
+     public:
+         Dummyitem() {}
+     };
+-    DEF_TRAITSF(Dummyitem, &quot;it-dummy&quot;, it_dummy, itf_fireproof);
++    DEF_ITEMTRAITSF(Dummyitem, &quot;it-dummy&quot;, it_dummy, itf_fireproof);
+ 
+ /* -------------------- Cherry -------------------- */
+ 
+     class Cherry : public Item {
+         CLONEOBJ(Cherry);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+         ItemAction activate(Actor *actor, GridPos) {
+             SendMessage (actor, &quot;invisibility&quot;);
+             return ITEM_KILL;
+         }
+ 
+         void on_stonehit(Stone *) {
+-            replace(it_squashed);
++            replace(&quot;it-squashed&quot;);
+         }
+     public:
+         Cherry() {
+         }
+     };
+-    DEF_TRAITS(Cherry, &quot;it-cherry&quot;, it_cherry);
++    DEF_ITEMTRAITS(Cherry, &quot;it-cherry&quot;, it_cherry);
+ 
+ /* -------------------- Squashed Cherry -------------------- */
+ 
+     class Squashed : public Item {
+         CLONEOBJ(Squashed);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         virtual Value message (const Message &amp;m) {
+             if (enigma_server::GameCompatibility == GAMET_ENIGMA) {
+@@ -261,14 +226,14 @@
+         Squashed() {
+         }
+     };
+-    DEF_TRAITSF(Squashed, &quot;it-squashed&quot;, it_squashed, itf_static);
++    DEF_ITEMTRAITSF(Squashed, &quot;it-squashed&quot;, it_squashed, itf_static);
+ 
+ 
+ /* -------------------- Weight -------------------- */
+ 
+     class Weight : public Item {
+         CLONEOBJ(Weight);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         void on_pickup(Actor *a) {
+            ActorInfo *ai = a-&gt;get_actorinfo();
+@@ -280,13 +245,13 @@
+     public:
+ 	Weight() {}
+     };
+-    DEF_TRAITS(Weight, &quot;it-weight&quot;, it_weight);
++    DEF_ITEMTRAITS(Weight, &quot;it-weight&quot;, it_weight);
+ 
+ /* -------------------- Pin -------------------- */
+ 
+     class Pin : public Item {
+         CLONEOBJ(Pin);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         void on_pickup(Actor *a) {
+             a-&gt;set_spikes(true);
+@@ -297,33 +262,33 @@
+     public:
+         Pin() {}
+     };
+-    DEF_TRAITS(Pin, &quot;it-pin&quot;, it_pin);
++    DEF_ITEMTRAITS(Pin, &quot;it-pin&quot;, it_pin);
+ 
+ /* -------------------- Banana -------------------- */
+ 
+     class Banana : public Item {
+         CLONEOBJ(Banana);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         void processLight(Direction d) {
+             sound_event (&quot;itemtransform&quot;);
+-            replace(it_cherry);
++            replace(&quot;it-cherry&quot;);
+         }
+ 
+         void on_stonehit(Stone *) {
+-            replace(it_squashed);
++            replace(&quot;it-squashed&quot;);
+         }
+ 
+     public:
+         Banana() {}
+     };
+-    DEF_TRAITS(Banana, &quot;it-banana&quot;, it_banana);
++    DEF_ITEMTRAITS(Banana, &quot;it-banana&quot;, it_banana);
+ 
+ /* -------------------- Sword -------------------- */
+ 
+     class Sword : public Item, public TimeHandler {
+         CLONEOBJ(Sword);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+     public:
+         Sword(bool isNew);
+@@ -373,13 +338,13 @@
+             activatePhoto();        
+     }
+     
+-    DEF_TRAITS(Sword, &quot;it_sword&quot;, it_sword);
++    DEF_ITEMTRAITS(Sword, &quot;it_sword&quot;, it_sword);
+ 
+ /* -------------------- Hammer -------------------- */
+ 
+     class Hammer : public Item, public TimeHandler {
+         CLONEOBJ(Hammer);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+     public:
+         Hammer(bool isNew);
+@@ -428,14 +393,14 @@
+             activatePhoto();        
+     }
+     
+-    DEF_TRAITS(Hammer, &quot;it_hammer&quot;, it_hammer);
++    DEF_ITEMTRAITS(Hammer, &quot;it_hammer&quot;, it_hammer);
+ 
+ 
+ /* -------------------- ExtraLife -------------------- */
+ 
+     class ExtraLife : public Item, public TimeHandler {
+         CLONEOBJ(ExtraLife);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+         
+     public:
+         ExtraLife(bool isNew);
+@@ -486,7 +451,7 @@
+     void ExtraLife::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
+         if (added_dirs(oldDirs, newDirs) != 0) {
+             sound_event (&quot;itemtransform&quot;);
+-            replace(it_glasses);
++            replace(&quot;it_glasses&quot;);
+         }
+     }
+     
+@@ -499,13 +464,13 @@
+             activatePhoto();        
+     }
+ 
+-    DEF_TRAITS(ExtraLife, &quot;it_extralife&quot;, it_extralife);
++    DEF_ITEMTRAITS(ExtraLife, &quot;it_extralife&quot;, it_extralife);
+ 
+ /* -------------------- Umbrella -------------------- */
+ 
+     class Umbrella : public Item, public TimeHandler {
+         CLONEOBJ(Umbrella);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+     public:
+         Umbrella(bool isNew);
+@@ -548,7 +513,7 @@
+     void Umbrella::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
+         if (added_dirs(oldDirs, newDirs) != 0 &amp;&amp; server::GameCompatibility != enigma::GAMET_PEROXYD) {
+             sound_event (&quot;itemtransform&quot;);
+-            replace(it_explosion1);
++            replace(&quot;it-explosion1&quot;);
+         }
+     }
+     
+@@ -562,14 +527,14 @@
+             activatePhoto();        
+     }
+ 
+-    DEF_TRAITS (Umbrella, &quot;it_umbrella&quot;, it_umbrella);
++    DEF_ITEMTRAITS (Umbrella, &quot;it_umbrella&quot;, it_umbrella);
+ 
+ /* -------------------- Spoon -------------------- */
+ namespace
+ {
+     class Spoon : public Item {
+         CLONEOBJ(Spoon);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         ItemAction activate(Actor *a, GridPos) {
+             SendMessage(a, &quot;suicide&quot;);
+@@ -579,7 +544,7 @@
+         Spoon()
+         {}
+     };
+-    DEF_TRAITS(Spoon, &quot;it-spoon&quot;, it_spoon);
++    DEF_ITEMTRAITS(Spoon, &quot;it-spoon&quot;, it_spoon);
+ }
+ 
+ /* -------------------- Booze -------------------- */
+@@ -588,7 +553,7 @@
+ {
+     class Booze : public Item {
+ 	CLONEOBJ(Booze);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+     public:
+ 	Booze() {
+ 	}
+@@ -599,10 +564,10 @@
+ 	}
+     void on_stonehit(Stone *) {
+         sound_event(&quot;shatter&quot;);
+-        replace(it_booze_broken);
++        replace(&quot;it-booze-broken&quot;);
+     }
+     };
+-    DEF_TRAITS(Booze, &quot;it-booze&quot;, it_booze);
++    DEF_ITEMTRAITS(Booze, &quot;it-booze&quot;, it_booze);
+ }
+ 
+ /* -------------------- Broken Booze -------------------- */
+@@ -610,7 +575,7 @@
+ {
+     class BrokenBooze : public Item {
+         CLONEOBJ(BrokenBooze);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         bool actor_hit(Actor *a) {
+             ActorInfo &amp;ai = * a-&gt;get_actorinfo();
+@@ -634,14 +599,14 @@
+         BrokenBooze() {}
+     };
+ 
+-    DEF_TRAITSF(BrokenBooze, &quot;it-booze-broken&quot;, it_booze_broken, itf_static | itf_indestructible);
++    DEF_ITEMTRAITSF(BrokenBooze, &quot;it-booze-broken&quot;, it_booze_broken, itf_static | itf_indestructible);
+ }
+ 
+ /* -------------------- Brush -------------------- */
+     /* Can &quot;paint&quot; some stones and remove ash. */
+     class Brush : public Item {
+         CLONEOBJ(Brush);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+     public:
+         Brush();
+@@ -659,7 +624,7 @@
+         return ITEM_DROP;
+     }
+     
+-    DEF_TRAITSF(Brush, &quot;it_brush&quot;, it_brush, itf_inflammable);
++    DEF_ITEMTRAITSF(Brush, &quot;it_brush&quot;, it_brush, itf_inflammable);
+ 
+ 
+ 
+@@ -669,7 +634,7 @@
+ 
+     class Coin : public Item {
+         CLONEOBJ(Coin);
+-        DECL_TRAITS_ARRAY(3, state);
++        DECL_ITEMTRAITS_ARRAY(3, state);
+ 
+     public:
+         Coin(int type);
+@@ -784,19 +749,19 @@
+ 
+     class Hill : public HillHollow {
+         CLONEOBJ(Hill);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+     public:
+         Hill() : HillHollow(HILL) {}
+     };
+-    DEF_TRAITSF(Hill, &quot;it-hill&quot;, it_hill, itf_static | itf_fireproof);
++    DEF_ITEMTRAITSF(Hill, &quot;it-hill&quot;, it_hill, itf_static | itf_fireproof);
+ 
+     class TinyHill : public HillHollow {
+         CLONEOBJ(TinyHill);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+     public:
+         TinyHill() : HillHollow(TINYHILL) {}
+     };
+-    DEF_TRAITSF(TinyHill, &quot;it-tinyhill&quot;, it_tinyhill, itf_static | itf_fireproof);
++    DEF_ITEMTRAITSF(TinyHill, &quot;it-tinyhill&quot;, it_tinyhill, itf_static | itf_fireproof);
+ 
+     /*
+      * Hollows are special in that they can end the current level
+@@ -804,7 +769,7 @@
+      */
+     class Hollow : public HillHollow {
+         CLONEOBJ(Hollow);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+     public:
+         Hollow(Type t = HOLLOW);
+         // Object interface.
+@@ -825,16 +790,16 @@
+         Actor *whiteball;   // The small white ball that is currently being tracked
+         double enter_time;  // ... when did it enter the hollow?
+     };
+-    DEF_TRAITSF(Hollow, &quot;it-hollow&quot;, it_hollow, itf_static | itf_fireproof);
++    DEF_ITEMTRAITSF(Hollow, &quot;it-hollow&quot;, it_hollow, itf_static | itf_fireproof);
+ 
+ 
+     class TinyHollow : public Hollow {
+         CLONEOBJ(TinyHollow);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+     public:
+         TinyHollow() : Hollow(TINYHOLLOW) {}
+     };
+-    DEF_TRAITSF(TinyHollow, &quot;it-tinyhollow&quot;, it_tinyhollow, itf_static | itf_fireproof);
++    DEF_ITEMTRAITSF(TinyHollow, &quot;it-tinyhollow&quot;, it_tinyhollow, itf_static | itf_fireproof);
+ 
+ }
+ 
+@@ -910,8 +875,8 @@
+ 
+ void HillHollow::transmute(Type newtype)
+ {
+-    static ItemID newmodel[] = { it_hill, it_hollow, it_tinyhill, it_tinyhollow };
+-    replace (newmodel[newtype]);
++    static char *newmodel[] = { &quot;it-hill&quot;, &quot;it-hollow&quot;, &quot;it-tinyhill&quot;, &quot;it_tinyhollow&quot; };
++    replace(newmodel[newtype]);
+ }
+ 
+ 
+@@ -1022,7 +987,7 @@
+ {
+     class Spring1 : public Item {
+         CLONEOBJ(Spring1);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+     public:
+         Spring1() {}
+     private:
+@@ -1032,11 +997,11 @@
+             return ITEM_KEEP;
+         }
+     };
+-    DEF_TRAITS(Spring1, &quot;it-spring1&quot;, it_spring1);
++    DEF_ITEMTRAITS(Spring1, &quot;it-spring1&quot;, it_spring1);
+ 
+     class Spring2 : public Item {
+         CLONEOBJ(Spring2);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+     public:
+         Spring2() {}
+     private:
+@@ -1052,7 +1017,7 @@
+             }
+         }
+     };
+-    DEF_TRAITS(Spring2, &quot;it-spring2&quot;, it_spring2);
++    DEF_ITEMTRAITS(Spring2, &quot;it-spring2&quot;, it_spring2);
+ }
+ 
+ 
+@@ -1061,7 +1026,7 @@
+ {
+     class Springboard : public Item {
+         CLONEOBJ(Springboard);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         bool actor_hit(Actor *a) {
+             const double ITEM_RADIUS = 0.3;
+@@ -1080,7 +1045,7 @@
+     public:
+         Springboard() {}
+     };
+-    DEF_TRAITSF(Springboard, &quot;it-springboard&quot;, it_springboard, itf_static);
++    DEF_ITEMTRAITSF(Springboard, &quot;it-springboard&quot;, it_springboard, itf_static);
+ }
+ 
+ 
+@@ -1093,7 +1058,7 @@
+ {
+     class Brake : public Item {
+         CLONEOBJ(Brake);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+     public:
+         Brake() {}
+ 
+@@ -1119,7 +1084,7 @@
+             return ITEM_DROP;
+         }
+     };
+-    DEF_TRAITS(Brake, &quot;it-brake&quot;, it_brake);
++    DEF_ITEMTRAITS(Brake, &quot;it-brake&quot;, it_brake);
+ }
+ 
+ 
+@@ -1142,7 +1107,7 @@
+     // Explode but do nothing else.
+     class Explosion1 : public Explosion {
+         CLONEOBJ(Explosion1);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         void animcb() {
+             kill();
+@@ -1151,18 +1116,18 @@
+         Explosion1()
+         {}
+     };
+-    DEF_TRAITSF(Explosion1, &quot;it-explosion1&quot;, it_explosion1, itf_static |
++    DEF_ITEMTRAITSF(Explosion1, &quot;it-explosion1&quot;, it_explosion1, itf_static |
+                 itf_animation | itf_indestructible | itf_norespawn | itf_fireproof);
+ 
+     // Explode and leave a hole in the ground.
+     class Explosion2 : public Explosion {
+         CLONEOBJ(Explosion2);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         void animcb() {
+             if (Floor *fl = GetFloor(get_pos()))
+                 if (fl-&gt;is_destructible())
+-                    replace(it_hollow);
++                    replace(&quot;it-hollow&quot;);
+                 else
+                     kill();
+         }
+@@ -1170,19 +1135,19 @@
+         Explosion2()
+         {}
+     };
+-    DEF_TRAITSF(Explosion2, &quot;it-explosion2&quot;, it_explosion2, itf_static |
++    DEF_ITEMTRAITSF(Explosion2, &quot;it-explosion2&quot;, it_explosion2, itf_static |
+                 itf_animation | itf_indestructible | itf_norespawn | itf_fireproof);
+ 
+ 
+     // Explode and shatter the floor.
+     class Explosion3 : public Explosion {
+         CLONEOBJ(Explosion3);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         void animcb() {
+             if (Floor *fl = GetFloor(get_pos()))
+                 if (fl-&gt;is_destructible())
+-                    replace(it_debris);
++                    replace(&quot;it-debris&quot;);
+                 else
+                     kill();
+         }
+@@ -1190,7 +1155,7 @@
+         Explosion3()
+         {}
+     };
+-    DEF_TRAITSF(Explosion3, &quot;it-explosion3&quot;, it_explosion3, itf_static |
++    DEF_ITEMTRAITSF(Explosion3, &quot;it-explosion3&quot;, it_explosion3, itf_static |
+                 itf_animation | itf_indestructible | itf_norespawn | itf_fireproof);
+ }
+ 
+@@ -1202,7 +1167,7 @@
+ {
+     class Document : public Item {
+         CLONEOBJ(Document);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         ItemAction activate(Actor *, GridPos)
+         {
+@@ -1231,7 +1196,7 @@
+             }
+ 
+             if (explode)
+-                replace (it_explosion1);
++                replace(&quot;it-explosion1&quot;);
+             return Value();
+         }
+     public:
+@@ -1239,7 +1204,7 @@
+             setAttr(&quot;text&quot;, &quot;&quot;);
+         }
+     };
+-    DEF_TRAITSF(Document, &quot;it-document&quot;, it_document, itf_inflammable);
++    DEF_ITEMTRAITSF(Document, &quot;it-document&quot;, it_document, itf_inflammable);
+ }
+ 
+ 
+@@ -1248,7 +1213,7 @@
+ {
+     class Dynamite : public Item {
+         CLONEOBJ(Dynamite);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+     public:
+         Dynamite() : state(IDLE) {}
+     private:
+@@ -1279,12 +1244,12 @@
+                 // In space, an it-dynamite explodes to an it-sherd:
+                 // HOT FIX
+                 //replace(it_sherd);
+-                replace(it_hollow);
++                replace(&quot;it-hollow&quot;);
+             } else if (model == &quot;fl-ice&quot;) {
+                 // In ice, an it-dynamite explodes to an it-crack2:
+-                replace(it_crack2);
++                replace(&quot;it-crack2&quot;);
+             } else {
+-                SetItem(p, it_explosion2);
++                SetItem(p, MakeItem(&quot;it-explosion2&quot;));
+             }
+         }
+ 
+@@ -1313,7 +1278,7 @@
+             return Item::actor_hit(a);
+         }
+     };
+-    DEF_TRAITSF(Dynamite, &quot;it-dynamite&quot;, it_dynamite,
++    DEF_ITEMTRAITSF(Dynamite, &quot;it-dynamite&quot;, it_dynamite,
+                 itf_indestructible | itf_fireproof);
+ }
+ 
+@@ -1403,7 +1368,7 @@
+ {
+     class BlackBomb : public BombBase  {
+         CLONEOBJ(BlackBomb);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+     public:
+         BlackBomb (bool burning=false)
+         : BombBase(burning)
+@@ -1414,19 +1379,19 @@
+             GridPos p = get_pos();
+             sound_event (&quot;blackbomb&quot;);
+             SendExplosionEffect(p, EXPLOSION_BLACKBOMB);
+-            replace (it_explosion3);
++            replace(&quot;it-explosion3&quot;);
+         }
+     };
+-    DEF_TRAITSF(BlackBomb, &quot;it-blackbomb&quot;, it_blackbomb,
++    DEF_ITEMTRAITSF(BlackBomb, &quot;it-blackbomb&quot;, it_blackbomb,
+                 itf_static | itf_indestructible | itf_fireproof);
+ 
+     class BlackBombBurning : public BlackBomb {
+         CLONEOBJ(BlackBombBurning);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+     public:
+         BlackBombBurning() : BlackBomb(true) {}
+     };
+-    DEF_TRAITSF(BlackBombBurning, &quot;it-blackbomb_burning&quot;,
++    DEF_ITEMTRAITSF(BlackBombBurning, &quot;it-blackbomb_burning&quot;,
+                 it_blackbomb_burning,
+                 itf_static | itf_indestructible | itf_norespawn | itf_fireproof);
+ }
+@@ -1441,13 +1406,13 @@
+ {
+     class WhiteBomb : public BombBase  {
+         CLONEOBJ(WhiteBomb);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         const char *burn_anim() const { return &quot;it-whitebomb-burning&quot;; }
+         void explode() {
+             GridPos p = get_pos();
+             sound_event (&quot;whitebomb&quot;);
+-            replace (it_explosion3);
++            replace(&quot;it-explosion3&quot;);
+             SendExplosionEffect(p, EXPLOSION_WHITEBOMB);
+         }
+ 
+@@ -1455,7 +1420,7 @@
+         WhiteBomb()
+         {}
+     };
+-    DEF_TRAITSF(WhiteBomb, &quot;it-whitebomb&quot;, it_whitebomb,
++    DEF_ITEMTRAITSF(WhiteBomb, &quot;it-whitebomb&quot;, it_whitebomb,
+                 itf_static | itf_indestructible | itf_fireproof);
+ }
+ 
+@@ -1478,7 +1443,7 @@
+      */
+     class Trigger : public Item {
+         CLONEOBJ(Trigger);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+     public:
+         Trigger();
+         
+@@ -1504,7 +1469,7 @@
+ 
+     };
+ 
+-    DEF_TRAITSF(Trigger, &quot;it_trigger&quot;, it_trigger, itf_static | itf_indestructible);
++    DEF_ITEMTRAITSF(Trigger, &quot;it_trigger&quot;, it_trigger, itf_static | itf_indestructible);
+     
+     Trigger::Trigger() {
+         setAttr(&quot;invisible&quot;, false);
+@@ -1668,7 +1633,7 @@
+ 
+     class SeedWood : public Seed {
+         CLONEOBJ(SeedWood);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         const char* get_stone_name() {
+             return &quot;st-wood-growing&quot;;
+@@ -1678,11 +1643,11 @@
+         SeedWood()
+         {}
+     };
+-    DEF_TRAITSR(SeedWood, &quot;it-seed&quot;, it_seed, 0.2f);
++    DEF_ITEMTRAITSR(SeedWood, &quot;it-seed&quot;, it_seed, 0.2f);
+ 
+     class SeedNowood : public Seed {
+         CLONEOBJ(SeedNowood);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         const char* get_stone_name() {
+             return &quot;st-greenbrown-growing&quot;;
+@@ -1691,11 +1656,11 @@
+         SeedNowood()
+         {}
+     };
+-    DEF_TRAITSR(SeedNowood, &quot;it-seed_nowood&quot;, it_seed_nowood, 0.2f);
++    DEF_ITEMTRAITSR(SeedNowood, &quot;it-seed_nowood&quot;, it_seed_nowood, 0.2f);
+ 
+     class SeedVolcano : public Seed {
+         CLONEOBJ(SeedVolcano);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         const char* get_stone_name() {
+             return &quot;st-volcano-growing&quot;;
+@@ -1704,7 +1669,7 @@
+         SeedVolcano()
+         {}
+     };
+-    DEF_TRAITSR(SeedVolcano, &quot;it-seed_volcano&quot;, it_seed_volcano, 0.2f);
++    DEF_ITEMTRAITSR(SeedVolcano, &quot;it-seed_volcano&quot;, it_seed_volcano, 0.2f);
+ }
+ 
+ 
+@@ -1720,7 +1685,7 @@
+ {
+     class ShogunDot : public Item {
+         CLONEOBJ(ShogunDot);
+-        DECL_TRAITS_ARRAY(3, subtype);
++        DECL_ITEMTRAITS_ARRAY(3, subtype);
+     public:
+         static void setup() {
+             RegisterItem (new ShogunDot(SMALL));
+@@ -1796,7 +1761,7 @@
+        
+     public:
+         CLONEOBJ(Magnet);
+-        DECL_TRAITS_ARRAY(2, state);
++        DECL_ITEMTRAITS_ARRAY(2, state);
+ 
+         Magnet(bool isOn);
+         
+@@ -1919,7 +1884,7 @@
+         
+     public:
+         CLONEOBJ(WormHole);
+-        DECL_TRAITS_ARRAY(2, state &amp; 1);
++        DECL_ITEMTRAITS_ARRAY(2, state &amp; 1);
+         
+         WormHole(bool isOn);
+         
+@@ -2107,7 +2072,7 @@
+ 
+     public:
+         CLONEOBJ(Vortex);
+-        DECL_TRAITS_ARRAY(2, is_open());
++        DECL_ITEMTRAITS_ARRAY(2, is_open());
+         
+         Vortex(bool opened);
+         virtual ~Vortex();
+@@ -2387,7 +2352,7 @@
+ {
+     class YinYang : public Item {
+         CLONEOBJ(YinYang);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+     public:
+         YinYang()
+         {}
+@@ -2407,7 +2372,7 @@
+             return ITEM_KEEP;
+         }
+     };
+-    DEF_TRAITS(YinYang, &quot;it-yinyang&quot;, it_yinyang);
++    DEF_ITEMTRAITS(YinYang, &quot;it-yinyang&quot;, it_yinyang);
+ }
+ 
+ 
+@@ -2416,7 +2381,7 @@
+ {
+     class Spade : public Item {
+         CLONEOBJ(Spade);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         ItemAction activate(Actor *, GridPos p) {
+             if (Item *it=GetItem(p)) {
+@@ -2429,7 +2394,7 @@
+     public:
+         Spade() {}
+     };
+-    DEF_TRAITS(Spade, &quot;it-spade&quot;, it_spade);
++    DEF_ITEMTRAITS(Spade, &quot;it-spade&quot;, it_spade);
+ }
+ 
+ 
+@@ -2439,12 +2404,12 @@
+     class Pipe : public Item {
+         CLONEOBJ(Pipe);
+         int subtype;
+-        DECL_TRAITS_ARRAY(10, subtype);
++        DECL_ITEMTRAITS_ARRAY(10, subtype);
+ 
+         Pipe(int stype) : subtype(stype) {}
+         virtual Value message(const Message &amp;m) {
+             if (m.message == &quot;_explosion&quot;) {
+-                replace (it_explosion1);
++                replace(&quot;it-explosion1&quot;);
+                 return Value();
+             }
+             return Item::message(m);
+@@ -2476,7 +2441,7 @@
+ {
+     class Puller : public Item {
+         CLONEOBJ (Puller);
+-        DECL_TRAITS_ARRAY(4, get_orientation());
++        DECL_ITEMTRAITS_ARRAY(4, get_orientation());
+ 
+         bool active;
+         Direction m_direction;
+@@ -2510,7 +2475,7 @@
+             }
+             
+             sound_event (&quot;dynamite&quot;);
+-            replace (it_explosion1);
++            replace(&quot;it-explosion1&quot;);
+         }
+ 
+ 	Direction get_orientation() const {
+@@ -2548,7 +2513,7 @@
+ {
+     class Crack : public Item {
+         CLONEOBJ(Crack);
+-        DECL_TRAITS_ARRAY(4, get_type());
++        DECL_ITEMTRAITS_ARRAY(4, get_type());
+ 
+     public:
+         static void setup() {
+@@ -2606,7 +2571,7 @@
+                     if (Item *it = GetItem(p))
+                         SendMessage (it, &quot;crack&quot;);
+                     else if (do_crack())
+-                        SetItem(p, it_crack0);
++                        SetItem(p, MakeItem(&quot;it-crack0&quot;));
+                 }
+             }
+         }
+@@ -2640,7 +2605,7 @@
+                 }
+             } else if (m.message == &quot;heat&quot;) {
+                 sound_event (&quot;crack&quot;);
+-                replace(it_debris);
++                replace(&quot;it-debris&quot;);
+                 return true;
+             }
+             return Item::message(m);
+@@ -2668,7 +2633,7 @@
+ {
+     class Debris : public Item {
+         CLONEOBJ(Debris);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         bool actor_hit(Actor *a) {
+             SendMessage(a, &quot;fall&quot;);
+@@ -2682,7 +2647,7 @@
+     public:
+         Debris() {}
+     };
+-    DEF_TRAITSF(Debris, &quot;it-debris&quot;, it_debris,
++    DEF_ITEMTRAITSF(Debris, &quot;it-debris&quot;, it_debris,
+                 itf_static | itf_animation | itf_indestructible | itf_fireproof);
+ }
+ 
+@@ -2696,7 +2661,7 @@
+ 
+     class Burnable : public Item {
+         CLONEOBJ(Burnable);
+-        DECL_TRAITS_ARRAY(6, state);
++        DECL_ITEMTRAITS_ARRAY(6, state);
+     public:
+         static void setup() {
+             RegisterItem (new Burnable(IDLE));
+@@ -2775,7 +2740,7 @@
+     /*! This items can extinguish burning floor. */
+     class Extinguisher : public Item {
+         CLONEOBJ(Extinguisher);
+-        DECL_TRAITS_ARRAY(3, get_load());
++        DECL_ITEMTRAITS_ARRAY(3, get_load());
+     public:
+         static void setup() {
+             RegisterItem (new Extinguisher(0));
+@@ -2795,7 +2760,7 @@
+             if (Item *it = GetItem(p)) {
+                 SendMessage (it, &quot;extinguish&quot;);
+             } else {
+-                SetItem (p, it_burnable_fireproof);
++                SetItem (p, MakeItem(&quot;it-burnable-fireproof&quot;));
+             }
+         }
+ 
+@@ -2849,7 +2814,7 @@
+       white marble. */
+     class FlagBlack : public Item {
+         CLONEOBJ(FlagBlack);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         void on_drop(Actor *) {
+             player::SetRespawnPositions(get_pos(), true);
+@@ -2861,11 +2826,11 @@
+     public:
+         FlagBlack() {}
+     };
+-    DEF_TRAITS(FlagBlack, &quot;it-flagblack&quot;, it_flagblack);
++    DEF_ITEMTRAITS(FlagBlack, &quot;it-flagblack&quot;, it_flagblack);
+ 
+     class FlagWhite : public Item {
+         CLONEOBJ(FlagWhite);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         void on_drop(Actor *) {
+             player::SetRespawnPositions(get_pos(), false);
+@@ -2879,245 +2844,16 @@
+         {}
+     };
+ 
+-    DEF_TRAITS(FlagWhite, &quot;it-flagwhite&quot;, it_flagwhite);
++    DEF_ITEMTRAITS(FlagWhite, &quot;it-flagwhite&quot;, it_flagwhite);
+ }
+ 
+ 
+-
+-/* -------------------- Blocker item -------------------- */
+-
+-
+-    /**
+-     * A door like object that can be opened and closed by a BoulderStone. This item
+-     * represents the open state of the door. The closed state is represented by a
+-     * BlockerStone.&lt;p&gt;
+-     * If a BoulderStone moves over a BlockerItem the BlockerItem starts growing and
+-     * replaces itself by a BlockerStone. But other Stones can be pushed over a
+-     * BlockerItem without causing its transformation. &lt;p&gt;
+-     * It fully supports the door messages &quot;open&quot;, &quot;close&quot;, &quot;toggle&quot;, &quot;signal&quot; and
+-     * attribute &quot;state&quot;. If the item is blocked by a stone the messages will not
+-     * cause an instant growing. But the message will be remembered in the internal
+-     * state and the item acts as soon as the stone moves away.&lt;p&gt;
+-     * An initial BlockerItem with a BoulderStone on top will grow as soon as it moves
+-     * away. An initial it_blocker_new with a BloulderStone on top will not grow when
+-     * the stone moves away.&lt;p&gt;
+-     * Note that this is the only door object that allows a stone to be pushed through.
+-     * A BlockerItem can be killed by a BrakeItem being dropped.
+-     */
+-    class BlockerItem : public Item, public TimeHandler {
+-        DECL_TRAITS;
+-    private:
+-        enum iState {
+-            IDLE,       ///&lt; neutral state
+-            NEW,        ///&lt; a new BlockerItem that replaced a recently shrinked BlockerStone -
+-                        ///&lt; a BoulderStone is awaited, but it has to arrive in time 
+-            LOCKED,     ///&lt; a stone covers the BlockerItem and locked it, so it will not grow
+-                        ///&lt; when the stone moves away. This is the state that a BoulderStone causes
+-                        ///&lt; on its first visit immediatly after shrinking the BlockerStone
+-            UNLOCKED    ///&lt; a stone covers the BlockerItem and unlocked it, so it will grow
+-                        ///&lt; when the stone moves away. This is the state that a BoulderStone causes
+-                        ///&lt; on its second visit when moving onto an idle BlockerItem. The blocker
+-                        ///&lt; will grow when the stones moves away
+-        };
+-
+-    public:
+-        BlockerItem(bool shrinked_recently);
+-        ~BlockerItem();
+-
+-        // Object interface
+-        virtual BlockerItem *clone();
+-        virtual void dispose();
+-        virtual Value message(const Message &amp;m);
+-
+-        // StateObject interface
+-        virtual void toggleState();
+-        virtual int externalState() const;
+-        virtual void setState(int extState);
+-
+-        // GridObject interface
+-        virtual void on_creation(GridPos p);
+-        virtual void on_removal(GridPos p);
+-        virtual void init_model();
+-        virtual void actor_leave(Actor *a);
+-
+-        // Item interface
+-        virtual void stone_change(Stone *st);
+-
+-        // TimeHandler interface
+-        virtual void alarm();
+-    
+-    private:
+-        void setIState(iState newState);
+-        void grow();
+-    };
+-    
+-    DEF_TRAITSF(BlockerItem, &quot;it_blocker&quot;, it_blocker, itf_static);
+-
+-
+-    BlockerItem::BlockerItem(bool shrinked_recently) {
+-        state = shrinked_recently ? NEW : IDLE;
+-    }
+-
+-    BlockerItem::~BlockerItem() {
+-        GameTimer.remove_alarm (this);
+-    }
+-
+-    BlockerItem * BlockerItem::clone() {
+-        BlockerItem * dup = new BlockerItem(*this);
+-        NameObject(dup, &quot;$BlockerItem#&quot;);  // auto name object to avoid problems with object values
+-        return dup;
+-    }
+-    
+-    void BlockerItem::dispose() {
+-        delete this;
+-    }
+-
+-    Value BlockerItem::message(const Message &amp;m) {
+-        if (m.message == &quot;_init&quot;) { 
+-            if (Stone *st = GetStone(get_pos())) {
+-                if (st-&gt;is_kind(&quot;st_boulder&quot;))
+-                    if (state == IDLE &amp;&amp; server::GameCompatibility != GAMET_PEROXYD)
+-                        setIState(UNLOCKED);
+-                    else if (state == NEW || server::GameCompatibility != GAMET_PEROXYD)
+-                        setIState(LOCKED);
+-            }
+-            return Item::message(m);    // pass on init message
+-        } else if (m.message ==&quot;_performaction&quot;) {
+-            performAction(true);
+-            return Value();
+-        }
+-        return Item::message(m);
+-    }
+-    
+-    void BlockerItem::toggleState() {
+-        if (state == UNLOCKED) {  // revoke pending grow/close
+-            setIState(LOCKED);
+-        }
+-        else {
+-            setState(0);  // close
+-        }
+-    }
+-    
+-    int BlockerItem::externalState() const {
+-        return 1;   // always open -- st_blocker is closed
+-    }
+-    
+-    void BlockerItem::setState(int extState) {
+-        if (extState == 1) {         // open (shrink)
+-            if (state == UNLOCKED)   //   revoke pending grow/close
+-                setIState(LOCKED);
+-        }
+-        else {                       // close (grow)
+-            switch (state) {
+-                case LOCKED:
+-                    setIState(UNLOCKED);  // close when stone is removed
+-                    break;
+-                case UNLOCKED:
+-                    break;                // will close anyway when stone is removed
+-                case IDLE:
+-                case NEW:
+-                    grow();                    
+-                    break;
+-            }
+-        }
+-    }
+-    
+-    void BlockerItem::on_creation(GridPos p) {
+-        if (state == NEW) {
+-            GameTimer.set_alarm(this, 0.5, false);
+-        }
+-        Item::on_creation(p);
+-    }
+-
+-    void BlockerItem::on_removal(GridPos p) {
+-        setIState(IDLE);
+-        Item::on_removal(p);
+-    }
+-
+-    void BlockerItem::init_model() {
+-        set_model(&quot;it-blocker&quot;);
+-    }
+-    
+-    void BlockerItem::actor_leave(Actor *a) {
+-        if (Value v = getAttr(&quot;autoclose&quot;)) {
+-            if (v.to_bool()) {
+-                setState(0);     // close
+-            }
+-        }
+-    }
+-    
+-    void BlockerItem::stone_change(Stone *st) {
+-        if (st != NULL) {
+-            if (st-&gt;is_kind(&quot;st_boulder&quot;)) { // boulder arrived
+-                switch (state) {
+-                    case IDLE:
+-                        setIState(UNLOCKED);  // will grow when boulder moves away
+-                        break;
+-                    case NEW:
+-                        setIState(LOCKED);    // will not grow when boulder moves away
+-                        break;
+-                    case UNLOCKED:
+-                    case LOCKED:
+-                        // two BoulderStones running directly next to each other
+-                        // let second pass as well (correct? siegfried says yes)
+-                        // note: all stone moves are handled in a timestep before
+-                        //   the world informs the items about stone changes
+-                        break;
+-                }
+-            }
+-            else { // any other stone
+-                setIState(LOCKED);
+-            }
+-        }
+-        else {              // stone disappeared
+-            switch (state) {
+-                case LOCKED:
+-                    setIState(IDLE);
+-                    break;
+-                case UNLOCKED:
+-                    grow();
+-                    break;
+-                case IDLE:
+-                case NEW:
+-                    // no action
+-                    break;
+-            }
+-        }
+-    }
+-
+-    void BlockerItem::alarm() {
+-        if (state == NEW) { // BoulderStone did not arrive in time
+-            setIState(IDLE);
+-        }
+-    }
+-
+-    void BlockerItem::setIState(iState newState) {
+-        if (state != newState) {
+-            if (state == NEW)
+-                GameTimer.remove_alarm(this);
+-            else if (newState == NEW)
+-                GameTimer.set_alarm(this, 0.5, false);
+-            state = newState;
+-        }
+-    }
+-    
+-    void BlockerItem::grow() {
+-        Stone *st = MakeStone(&quot;st_blocker_new&quot;);
+-        SetStone(get_pos(), st);
+-        transferIdentity(st);
+-        if (Value v = getAttr(&quot;autoclose&quot;))
+-            st-&gt;setAttr(&quot;autoclose&quot;, v); 
+-        SendMessage(st, &quot;_performaction&quot;);
+-        kill();
+-    }
+-
+-
+ /* -------------------- Ring -------------------- */
+ namespace
+ {
+     class Ring : public Item {
+         CLONEOBJ(Ring);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+     public:
+         Ring() {}
+ 
+@@ -3131,7 +2867,7 @@
+             return ITEM_DROP;
+         }
+     };
+-    DEF_TRAITS(Ring, &quot;it-ring&quot;, it_ring);
++    DEF_ITEMTRAITS(Ring, &quot;it-ring&quot;, it_ring);
+ }
+ 
+ //----------------------------------------
+@@ -3146,7 +2882,7 @@
+ {
+     class OxydBridge : public Item {
+         CLONEOBJ(OxydBridge);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         virtual Value message(const Message &amp;m) {
+             if (m.message == &quot;signal&quot;) {
+@@ -3163,12 +2899,12 @@
+     public:
+         OxydBridge() {}
+     };
+-    DEF_TRAITSF(OxydBridge, &quot;it-bridge-oxyd&quot;, it_bridge_oxyd,
++    DEF_ITEMTRAITSF(OxydBridge, &quot;it-bridge-oxyd&quot;, it_bridge_oxyd,
+                 itf_static | itf_indestructible | itf_invisible | itf_fireproof);
+ 
+     class OxydBridgeActive : public OxydBridge {
+         CLONEOBJ(OxydBridgeActive);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         void on_creation (GridPos p) {
+             Floor *floor = GetFloor (p);
+@@ -3177,7 +2913,7 @@
+     public:
+         OxydBridgeActive() {}
+     };
+-    DEF_TRAITSF(OxydBridgeActive, &quot;it-bridge-oxyd_active&quot;, it_bridge_oxyd_active,
++    DEF_ITEMTRAITSF(OxydBridgeActive, &quot;it-bridge-oxyd_active&quot;, it_bridge_oxyd_active,
+                 itf_static | itf_indestructible | itf_invisible | itf_fireproof);
+ }
+ 
+@@ -3189,7 +2925,7 @@
+    activated only once. */
+     class Sensor : public Item {
+         CLONEOBJ(Sensor);
+-        DECL_TRAITS_ARRAY(4, traitsIdx());
++        DECL_ITEMTRAITS_ARRAY(4, traitsIdx());
+     private:
+         enum ObjectPrivatFlagsBits {
+             OBJBIT_ISFILTER  =   1&lt;&lt;24    ///&lt; sensor that filters signals, too
+@@ -3263,7 +2999,7 @@
+     }
+     
+     void Sensor::init_model() {
+-        if (getAttr(&quot;invisible&quot;).to_bool() &amp;&amp; ((server::GlassesVisibility &amp; 8) == 0))
++        if (getAttr(&quot;invisible&quot;).to_bool() &amp;&amp; ((server::GlassesVisibility &amp; Glasses::SENSOR) == 0))
+             set_model(&quot;invisible&quot;);
+         else
+             set_model(&quot;it_sensor&quot;);
+@@ -3312,13 +3048,13 @@
+ {
+     class EasyKillStone : public Item {
+         CLONEOBJ(EasyKillStone);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         virtual Value message(const Message &amp;m);
+     public:
+         EasyKillStone() {}
+     };
+-    DEF_TRAITSF(EasyKillStone, &quot;it-easykillstone&quot;,
++    DEF_ITEMTRAITSF(EasyKillStone, &quot;it-easykillstone&quot;,
+                 it_easykillstone, itf_invisible | itf_fireproof);
+ }
+ 
+@@ -3350,7 +3086,7 @@
+ {
+     class EasyKeepStone : public Item {
+         CLONEOBJ(EasyKeepStone);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         virtual Value message(const Message &amp;m) {
+             if (m.message == &quot;_init&quot;) {
+@@ -3366,7 +3102,7 @@
+     public:
+         EasyKeepStone() {}
+     };
+-    DEF_TRAITSF(EasyKeepStone, &quot;it-easykeepstone&quot;, it_easykeepstone,
++    DEF_ITEMTRAITSF(EasyKeepStone, &quot;it-easykeepstone&quot;, it_easykeepstone,
+                 itf_invisible | itf_fireproof);
+ }
+ 
+@@ -3375,7 +3111,7 @@
+ {
+     class OnePKillStone : public Item {
+         CLONEOBJ (OnePKillStone);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         virtual Value message (const Message &amp;m) {
+             if (m.message == &quot;_init&quot;) {
+@@ -3389,12 +3125,12 @@
+     public:
+         OnePKillStone () {}
+     };
+-    DEF_TRAITSF(OnePKillStone, &quot;it-1pkillstone&quot;, it_1pkillstone,
++    DEF_ITEMTRAITSF(OnePKillStone, &quot;it-1pkillstone&quot;, it_1pkillstone,
+                 itf_invisible | itf_fireproof);
+ 
+     class TwoPKillStone : public Item {
+         CLONEOBJ (TwoPKillStone);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         virtual Value message (const Message &amp;m) {
+             if (m.message == &quot;_init&quot;) {
+@@ -3408,124 +3144,14 @@
+     public:
+         TwoPKillStone () {}
+     };
+-    DEF_TRAITSF(TwoPKillStone, &quot;it-2pkillstone&quot;, it_2pkillstone,
++    DEF_ITEMTRAITSF(TwoPKillStone, &quot;it-2pkillstone&quot;, it_2pkillstone,
+                 itf_invisible | itf_fireproof);
+ }
+ 
+-
+-/* -------------------- Glasses -------------------- */
+-    class Glasses : public Item {
+-        CLONEOBJ(Glasses);
+-        DECL_TRAITS_ARRAY(2, traitsIdx());
+-
+-    public:
+-        enum Spot {
+-            NOTHING         =  0,   // broken glasses
+-            DEATH           =  1,
+-            HOLLOW          =  2,
+-            ACTORIMPULSE    =  4,
+-            SENSOR          =  8,
+-            LIGHTPASSENGER  = 16,
+-            TRAP            = 32,
+-            MAX             = 63
+-        };
+-        
+-        static void updateGlasses();
+-        static void setup();
+-                
+-        Glasses(int initState);
+-        
+-        // StateObject interface
+-        virtual int maxState() const;
+-        virtual void toggleState();
+-        virtual void setState(int extState);
+-        
+-        // GridObject interface
+-        virtual void init_model();
+-        
+-        // Items interface
+-        virtual void on_drop(Actor *a);
+-        virtual void on_pickup(Actor *a);
+-        virtual void on_stonehit(Stone *st);
+-        
+-    private:
+-        int traitsIdx() const;
+-    };
+-    
+-    void Glasses::updateGlasses() {
+-        Inventory *ci = player::GetInventory(player::CurrentPlayer());
+-        int newVisibility = 0;
+-        int i = -1;
+-        while ((i = ci-&gt;find(&quot;it_glasses&quot;, i+1)) != -1) {
+-            Glasses *gl = dynamic_cast&lt;Glasses *&gt;(ci-&gt;get_item(i));
+-            newVisibility |= gl-&gt;state;
+-        }
+-        if (newVisibility != server::GlassesVisibility) {
+-            server::GlassesVisibility = newVisibility;
+-            BroadcastMessage(&quot;_glasses&quot;, newVisibility, GridLayerBits(GRID_ITEMS_BIT | GRID_STONES_BIT));
+-        }
+-    }
+-    
+-    void Glasses::setup() {
+-        RegisterItem (new Glasses(0));
+-        RegisterItem (new Glasses(DEATH + HOLLOW + LIGHTPASSENGER));
+-    }
+-    
+-    Glasses::Glasses(int initState) {
+-        state = initState;
+-    }
+-    
+-    int Glasses::maxState() const {
+-        return MAX;
+-    }
+-    
+-    void Glasses::toggleState() {
+-        // ignore toggle
+-    }
+-    
+-    void Glasses::setState(int extState) {
+-        state = extState;
+-        if (isDisplayable()) {
+-            init_model();
+-        } else {
+-            // maybe part of players inventory
+-            updateGlasses();
+-            player::RedrawInventory();
+-        }
+-    }
+-    
+-    void Glasses::init_model() {
+-        if (state &gt; 0)
+-            set_model(&quot;it_glasses&quot;);
+-        else
+-            set_model(&quot;it_glasses_broken&quot;);
+-    }
+-    
+-    void Glasses::on_drop(Actor *a) {
+-        updateGlasses();
+-    }
+-    void Glasses::on_pickup(Actor *a) {
+-        updateGlasses();
+-    }
+-    void Glasses::on_stonehit(Stone *) {
+-        sound_event (&quot;shatter&quot;);
+-        setState(0);
+-    }
+-        
+-    int Glasses::traitsIdx() const {
+-        return state != 0 ? 0 : 1;
+-    }
+-
+-    ItemTraits Glasses::traits[2] = {
+-        {&quot;it_glasses&quot;,  it_glasses,  itf_none},
+-        {&quot;it_glasses_broken&quot;,  it_glasses_broken,  itf_none}
+-    };
+-
+-
+ /* -------------------- Invisible Trap -------------------- */
+     class Trap : public Item {
+         CLONEOBJ(Trap);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+     
+     public:
+         Trap();
+@@ -3565,7 +3191,7 @@
+     }
+     
+     void Trap::init_model() {
+-        if (state == 0 &amp;&amp; ((server::GlassesVisibility &amp; 32) == 0))
++        if (state == 0 &amp;&amp; ((server::GlassesVisibility &amp; Glasses::TRAP) == 0))
+             set_model(&quot;invisible&quot;);
+         else
+             set_model(&quot;it_trap&quot;);
+@@ -3587,13 +3213,13 @@
+         return false;
+     }
+         
+-    DEF_TRAITSF(Trap, &quot;it_trap&quot;, it_trap, itf_static | itf_fireproof);
++    DEF_ITEMTRAITSF(Trap, &quot;it_trap&quot;, it_trap, itf_static | itf_fireproof);
+ 
+ 
+ /* -------------------- Landmine -------------------- */
+     class Landmine : public Item {
+         CLONEOBJ(Landmine);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+     public:
+         Landmine();
+@@ -3625,16 +3251,16 @@
+     
+ 	void Landmine::explode() {
+         sound_event (&quot;landmine&quot;);
+-        replace(it_explosion2);
++        replace(&quot;it-explosion2&quot;);
+ 	}
+ 
+-    DEF_TRAITSF(Landmine, &quot;it_landmine&quot;, it_landmine, itf_static);
++    DEF_ITEMTRAITSF(Landmine, &quot;it_landmine&quot;, it_landmine, itf_static);
+ 
+ 
+ /* -------------------- Cross -------------------- */
+     class Cross : public Item, public TimeHandler {
+         CLONEOBJ(Cross);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+     public:
+         virtual ~Cross();
+@@ -3696,7 +3322,7 @@
+         performAction(true);
+     }
+     
+-    DEF_TRAITSF(Cross, &quot;it_cross&quot;, it_cross, itf_static);
++    DEF_ITEMTRAITSF(Cross, &quot;it_cross&quot;, it_cross, itf_static);
+ 
+ 
+ 
+@@ -3704,7 +3330,7 @@
+ namespace
+ {
+     class Bag : public Item, public enigma::ItemHolder {
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         enum { BAGSIZE = 13 };
+         vector&lt;Item *&gt; m_contents;
+@@ -3800,7 +3426,7 @@
+             ecl::delete_sequence (m_contents.begin(), m_contents.end());
+         }
+     };
+-    DEF_TRAITS(Bag, &quot;it-bag&quot;, it_bag);
++    DEF_ITEMTRAITS(Bag, &quot;it-bag&quot;, it_bag);
+ }
+ 
+ /* -------------------- pencil -------------------- */
+@@ -3808,7 +3434,7 @@
+ {
+     class Pencil : public Item {
+         CLONEOBJ(Pencil);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         ItemAction activate(Actor * a, GridPos p) {
+             if (enigma_server::GameCompatibility == GAMET_ENIGMA) {
+@@ -3831,9 +3457,9 @@
+                 if (model == &quot;fl-abyss&quot; || model == &quot;fl-water&quot; || model == &quot;fl-swamp&quot;) {
+                     return ITEM_KEEP;
+                 } else  if (model == &quot;fl-ice&quot;) {
+-                    SetItem (p, it_crack1);
++                    SetItem (p, MakeItem(&quot;it-crack1&quot;));
+                 } else {
+-                    SetItem (p, it_cross);
++                    SetItem (p, MakeItem(&quot;it-cross&quot;));
+                 }
+                 return ITEM_KILL;
+             }
+@@ -3843,13 +3469,13 @@
+         Pencil() {}
+     };
+ 
+-    DEF_TRAITS(Pencil, &quot;it-pencil&quot;, it_pencil);
++    DEF_ITEMTRAITS(Pencil, &quot;it-pencil&quot;, it_pencil);
+ }
+ 
+ /* -------------------- Death Item  -------------------- */
+     class DeathItem : public Item {
+         CLONEOBJ(DeathItem);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+         
+     public:
+         DeathItem();
+@@ -3882,12 +3508,12 @@
+         return false;
+     }
+     
+-    DEF_TRAITSF(DeathItem, &quot;it_death&quot;, it_death, itf_static | itf_indestructible);
++    DEF_ITEMTRAITSF(DeathItem, &quot;it_death&quot;, it_death, itf_static | itf_indestructible);
+ 
+ /* -------------------- Strip Items  -------------------- */
+     class StripItem : public Item {
+         CLONEOBJ(StripItem);
+-        DECL_TRAITS_ARRAY(16, traitsIdx());
++        DECL_ITEMTRAITS_ARRAY(16, traitsIdx());
+         
+     public:
+         static void setup();
+@@ -4032,23 +3658,23 @@
+ 
+     class SurpriseItem : public Item {
+         CLONEOBJ(SurpriseItem);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         void on_drop (Actor *) {
+-            static ItemID items[] = {
+-                it_umbrella,
+-                it_spring1,
+-                it_dynamite,
+-                it_coffee,
+-                it_hammer
++            static char *items[] = {
++                &quot;it_umbrella&quot;,
++                &quot;it-spring1&quot;,
++                &quot;it-dynamite&quot;,
++                &quot;it-coffee&quot;,
++                &quot;it_hammer&quot;
+             };
+-            replace (items[enigma::IntegerRand (0, 4)]);
++            replace(items[enigma::IntegerRand (0, 4)]);
+         }
+     public:
+         SurpriseItem() {
+         }
+     };
+-    DEF_TRAITS(SurpriseItem, &quot;it-surprise&quot;, it_surprise);
++    DEF_ITEMTRAITS(SurpriseItem, &quot;it-surprise&quot;, it_surprise);
+ }
+ 
+ /* -------------------- ChangeFloorItem -------------------- */
+@@ -4056,7 +3682,7 @@
+ {
+     class ChangeFloorItem : public Item {
+         CLONEOBJ(ChangeFloorItem);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         void exchange_floor (const char *a, const char *b) {
+             GridPos p = get_pos();
+@@ -4082,7 +3708,7 @@
+         ChangeFloorItem() {
+         }
+     };
+-    DEF_TRAITSF(ChangeFloorItem, &quot;it-changefloor&quot;, it_changefloor,
++    DEF_ITEMTRAITSF(ChangeFloorItem, &quot;it-changefloor&quot;, it_changefloor,
+                 itf_static | itf_invisible);
+ }
+ 
+@@ -4129,7 +3755,7 @@
+ 
+     class Drop : public Item {
+         CLONEOBJ (Drop);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+         ItemAction activate(Actor *a, GridPos)
+         {
+@@ -4141,7 +3767,7 @@
+             if (id == ac_blackball || id == ac_whiteball) {
+                 // Kill ALL rubberbands connected with the actor:
+                 SendMessage(a, &quot;disconnect&quot;);
+-                Actor *rotor = MakeActor (ac_rotor);
++                Actor *rotor = MakeActor(&quot;ac-rotor&quot;);
+                 rotor-&gt;setAttr(&quot;mouseforce&quot;, Value (1.0));
+                 rotor-&gt;setAttr(&quot;controllers&quot;, Value (iplayer+1));
+                 rotor-&gt;setAttr(&quot;player&quot;, Value (iplayer));
+@@ -4167,13 +3793,13 @@
+     public:
+         Drop() {}
+     };
+-    DEF_TRAITS(Drop, &quot;it-drop&quot;, it_drop);
++    DEF_ITEMTRAITS(Drop, &quot;it-drop&quot;, it_drop);
+ }
+ 
+ /* -------------------- Rubberband Item-------------------- */
+     class RubberbandItem : public Item {
+         CLONEOBJ(RubberbandItem);
+-        DECL_TRAITS;
++        DECL_ITEMTRAITS;
+ 
+     public:
+         RubberbandItem();
+@@ -4232,7 +3858,7 @@
+         return ITEM_KILL;
+     }
+     
+-    DEF_TRAITS(RubberbandItem, &quot;it_rubberband&quot;, it_rubberband);
++    DEF_ITEMTRAITS(RubberbandItem, &quot;it_rubberband&quot;, it_rubberband);
+ 
+ 
+ /* -------------------- Functions -------------------- */
+@@ -4243,8 +3869,6 @@
+     RegisterItem (new Banana);
+     RegisterItem (new BlackBomb);
+     RegisterItem (new BlackBombBurning);
+-    Register (&quot;it_blocker_new&quot;, new BlockerItem(true));
+-    RegisterItem (new BlockerItem(false));
+     RegisterItem (new Booze);
+     RegisterItem (new Brake);
+     RegisterItem (new BrokenBooze);
+@@ -4273,7 +3897,6 @@
+     RegisterItem (new FlagBlack);
+     RegisterItem (new FlagWhite);
+     RegisterItem (new Floppy);
+-    Glasses::setup();
+     RegisterItem (new Hammer(false));
+     Register (&quot;it_hammer_new&quot;, new Hammer(true));
+     RegisterItem (new Hill);
+
+Modified: trunk/src/items.hh
+===================================================================
+--- trunk/src/items.hh	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/items.hh	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -185,7 +185,7 @@
+ 
+         /* ---------- Public methods ---------- */
+         void kill();
+-        void replace (ItemID id);
++        void replace(std::string kind);
+ 
+         /* ---------- Virtual functions ---------- */
+         const char *get_kind() const;
+@@ -277,6 +277,44 @@
+ 
+     void InitItems();
+     
++    
++/* --------------------  Item Macros -------------------- */
++
++#define DEF_ITEM(classname, kindname, kindid)   \
++    class classname : public Item {             \
++        CLONEOBJ(classname);                    \
++        DECL_ITEMTRAITS;                            \
++    public:                                     \
++        classname() {}                          \
++    };                                          \
++    DEF_ITEMTRAITS(classname, kindname, kindid)
++
++#define DEF_ITEMF(classname, kindname, kindid, flags)   \
++    class classname : public Item {             \
++        CLONEOBJ(classname);                    \
++        DECL_ITEMTRAITS;                            \
++    public:                                     \
++        classname() {}                          \
++    };                                          \
++    DEF_ITEMTRAITSF(classname, kindname, kindid, flags)
++
++#define DECL_ITEMTRAITS                                             \
++        static ItemTraits traits;                               \
++        const ItemTraits &amp;get_traits() const { return traits; }
++
++#define DECL_ITEMTRAITS_ARRAY(n, subtype_expr)                                      \
++        static ItemTraits traits[n];                                            \
++        const ItemTraits &amp;get_traits() const { return traits[subtype_expr]; }
++
++#define DEF_ITEMTRAITS(classname, name, id)         \
++    ItemTraits classname::traits = { name, id, itf_none, 0.0 }
++
++#define DEF_ITEMTRAITSF(classname, name, id, flags)         \
++    ItemTraits classname::traits = { name, id, flags, 0.0 }
++
++#define DEF_ITEMTRAITSR(classname, name, id, radius)         \
++    ItemTraits classname::traits = { name, id, 0, radius }
++    
+ } // namespace enigma
+ 
+ #endif
+
+Modified: trunk/src/ox_extra.cc
+===================================================================
+--- trunk/src/ox_extra.cc	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/ox_extra.cc	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -24,15 +24,9 @@
+ // defining PLAIN_SPEC_ONLY only shows xxx_floor_map, xxx_stone_map and xxx_item_map
+ // Note:  the xxx_item_map changes it's type (ItemID -&gt; const char *)
+ 
+-#define ITEMSPEC(i) #i
+-#define ITEMMAPTYPE const char *
+-
+ #else
+ // Standard enigma section :
+ 
+-#define ITEMSPEC(i) i
+-#define ITEMMAPTYPE enigma::ItemID
+-
+ #include &quot;oxyd_internal.hh&quot;
+ using namespace enigma;
+ 
+@@ -313,73 +307,73 @@
+     // codes &gt;= 0xbc are unused
+ };
+ 
+-ITEMMAPTYPE oxyd::oxydextra_item_map[256] = {
+-    ITEMSPEC(it_none),                    // OxydExtra item 0x00
+-    ITEMSPEC(it_extralife),               // OxydExtra item 0x01
+-    ITEMSPEC(it_document),                // OxydExtra item 0x02
+-    ITEMSPEC(it_document),                // OxydExtra item 0x03
+-    ITEMSPEC(it_hammer),                  // OxydExtra item 0x04
+-    ITEMSPEC(it_coffee),                  // OxydExtra item 0x05
+-    ITEMSPEC(it_cherry),                  // OxydExtra item 0x06
+-    ITEMSPEC(it_umbrella),                // OxydExtra item 0x07
+-    ITEMSPEC(it_MISSING),                 // OxydExtra item 0x08
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x09
+-    ITEMSPEC(it_dynamite),                // OxydExtra item 0x0a
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x0b
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x0c
+-    ITEMSPEC(it_crack0),                  // OxydExtra item 0x0d
+-    ITEMSPEC(it_crack1),                  // OxydExtra item 0x0e
+-    ITEMSPEC(it_crack2),                  // OxydExtra item 0x0f
+-    ITEMSPEC(it_crack3),                  // OxydExtra item 0x10
+-    ITEMSPEC(it_coin1),                   // OxydExtra item 0x11
+-    ITEMSPEC(it_coin2),                   // OxydExtra item 0x12
+-    ITEMSPEC(it_coin4),                   // OxydExtra item 0x13
+-    ITEMSPEC(it_key_a),                   // OxydExtra item 0x14
+-    ITEMSPEC(it_key_b),                   // OxydExtra item 0x15
+-    ITEMSPEC(it_key_c),                   // OxydExtra item 0x16
+-    ITEMSPEC(it_floppy),                  // OxydExtra item 0x17
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x18
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x19
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x1a
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x1b
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x1c
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x1d
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x1e
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x1f
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x20
+-    ITEMSPEC(it_spade),                   // OxydExtra item 0x21
+-    ITEMSPEC(it_surprise),                // OxydExtra item 0x22
+-    ITEMSPEC(it_pin),                     // OxydExtra item 0x23
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x24
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x25
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x26
+-    ITEMSPEC(it_bag),                     // OxydExtra item 0x27
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x28
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x29
+-    ITEMSPEC(it_sensor),                  // OxydExtra item 0x2a
+-    ITEMSPEC(it_shogun_s),                // OxydExtra item 0x2b
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x2c
+-    ITEMSPEC(it_vortex_open),             // OxydExtra item 0x2d
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x2e
+-    ITEMSPEC(it_wormhole_on),             // OxydExtra item 0x2f
+-    ITEMSPEC(it_hill),                    // OxydExtra item 0x30
+-    ITEMSPEC(it_tinyhill),                // OxydExtra item 0x31
+-    ITEMSPEC(it_hollow),                  // OxydExtra item 0x32
+-    ITEMSPEC(it_tinyhollow),              // OxydExtra item 0x33
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x34
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x35
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x36
+-    ITEMSPEC(it_bridge_oxyd),             // OxydExtra item 0x37
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x38
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x39
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x3a
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x3b
+-    ITEMSPEC(it_MISSING),                 // OxydExtra item 0x3c
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x3d
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x3e
+-    ITEMSPEC(it_UNUSED),                  // OxydExtra item 0x3f
+-    ITEMSPEC(it_trigger),                 // OxydExtra item 0x40
+-    ITEMSPEC(it_brush),                   // OxydExtra item 0x41
+-    ITEMSPEC(it_banana),                  // OxydExtra item 0x42
++const char* oxyd::oxydextra_item_map[256] = {
++    IT_INVALID,                    // OxydExtra item 0x00
++    &quot;it_extralife&quot;,               // OxydExtra item 0x01
++    IT_EXTERNAL,                // OxydExtra item 0x02
++    IT_EXTERNAL,                // OxydExtra item 0x03
++    &quot;it_hammer&quot;,                  // OxydExtra item 0x04
++    &quot;it-coffee&quot;,                  // OxydExtra item 0x05
++    &quot;it-cherry&quot;,                  // OxydExtra item 0x06
++    &quot;it_umbrella&quot;,                // OxydExtra item 0x07
++    IT_MISSING,                 // OxydExtra item 0x08
++    UNUSED,                  // OxydExtra item 0x09
++    &quot;it-dynamite&quot;,                // OxydExtra item 0x0a
++    UNUSED,                  // OxydExtra item 0x0b
++    UNUSED,                  // OxydExtra item 0x0c
++    &quot;it-crack0&quot;,                  // OxydExtra item 0x0d
++    &quot;it-crack1&quot;,                  // OxydExtra item 0x0e
++    &quot;it-crack2&quot;,                  // OxydExtra item 0x0f
++    &quot;it-crack3&quot;,                  // OxydExtra item 0x10
++    &quot;it_coin_s&quot;,                   // OxydExtra item 0x11
++    &quot;it_coin_m&quot;,                   // OxydExtra item 0x12
++    &quot;it_coin_l&quot;,                   // OxydExtra item 0x13
++    &quot;it_key_a&quot;,                   // OxydExtra item 0x14
++    &quot;it_key_b&quot;,                   // OxydExtra item 0x15
++    &quot;it_key_c&quot;,                   // OxydExtra item 0x16
++    &quot;it_floppy&quot;,                  // OxydExtra item 0x17
++    UNUSED,                  // OxydExtra item 0x18
++    UNUSED,                  // OxydExtra item 0x19
++    UNUSED,                  // OxydExtra item 0x1a
++    UNUSED,                  // OxydExtra item 0x1b
++    UNUSED,                  // OxydExtra item 0x1c
++    UNUSED,                  // OxydExtra item 0x1d
++    UNUSED,                  // OxydExtra item 0x1e
++    UNUSED,                  // OxydExtra item 0x1f
++    UNUSED,                  // OxydExtra item 0x20
++    &quot;it-spade&quot;,                   // OxydExtra item 0x21
++    &quot;it-surprise&quot;,                // OxydExtra item 0x22
++    &quot;it-pin&quot;,                     // OxydExtra item 0x23
++    UNUSED,                  // OxydExtra item 0x24
++    UNUSED,                  // OxydExtra item 0x25
++    UNUSED,                  // OxydExtra item 0x26
++    &quot;it-bag&quot;,                     // OxydExtra item 0x27
++    UNUSED,                  // OxydExtra item 0x28
++    UNUSED,                  // OxydExtra item 0x29
++    &quot;it_sensor&quot;,                  // OxydExtra item 0x2a
++    &quot;it-shogun-s&quot;,                // OxydExtra item 0x2b
++    UNUSED,                  // OxydExtra item 0x2c
++    &quot;it_vortex_open&quot;,             // OxydExtra item 0x2d
++    UNUSED,                  // OxydExtra item 0x2e
++    &quot;it_wormhole_on&quot;,             // OxydExtra item 0x2f
++    &quot;it-hill&quot;,                    // OxydExtra item 0x30
++    &quot;it-tinyhill&quot;,                // OxydExtra item 0x31
++    &quot;it-hollow&quot;,                  // OxydExtra item 0x32
++    &quot;it-tinyhollow&quot;,              // OxydExtra item 0x33
++    UNUSED,                  // OxydExtra item 0x34
++    UNUSED,                  // OxydExtra item 0x35
++    UNUSED,                  // OxydExtra item 0x36
++    &quot;it-bridge-oxyd&quot;,             // OxydExtra item 0x37
++    UNUSED,                  // OxydExtra item 0x38
++    UNUSED,                  // OxydExtra item 0x39
++    UNUSED,                  // OxydExtra item 0x3a
++    UNUSED,                  // OxydExtra item 0x3b
++    IT_MISSING,                 // OxydExtra item 0x3c
++    UNUSED,                  // OxydExtra item 0x3d
++    UNUSED,                  // OxydExtra item 0x3e
++    UNUSED,                  // OxydExtra item 0x3f
++    &quot;it_trigger&quot;,                 // OxydExtra item 0x40
++    &quot;it_brush&quot;,                   // OxydExtra item 0x41
++    &quot;it-banana&quot;,                  // OxydExtra item 0x42
+     // codes &gt;= 0x43 are unused
+ };
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/ox_magnum.cc	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -24,15 +24,9 @@
+ // defining PLAIN_SPEC_ONLY only shows xxx_floor_map, xxx_stone_map and xxx_item_map
+ // Note:  the xxx_item_map changes it's type (ItemID -&gt; const char *)
+ 
+-#define ITEMSPEC(i) #i
+-#define ITEMMAPTYPE const char *
+-
+ #else
+ // Standard enigma section :
+ 
+-#define ITEMSPEC(i) i
+-#define ITEMMAPTYPE enigma::ItemID
+-
+ #include &quot;oxyd_internal.hh&quot;
+ using namespace enigma;
+ 
+@@ -295,110 +289,110 @@
+     // codes &gt;= 0xaa are unused
+ };
+ 
+-ITEMMAPTYPE oxyd::oxydmag_item_map[256] = {
+-    ITEMSPEC(it_none),          // OxydMagnum item 0x00
+-    ITEMSPEC(it_extralife),     // OxydMagnum item 0x01
+-    ITEMSPEC(it_EXTERNAL),      // OxydMagnum item 0x02 document 1
+-    ITEMSPEC(it_EXTERNAL),      // OxydMagnum item 0x03 document 2
+-    ITEMSPEC(it_hammer),        // OxydMagnum item 0x04
+-    ITEMSPEC(it_coffee),        // OxydMagnum item 0x05
+-    ITEMSPEC(it_cherry),        // OxydMagnum item 0x06
+-    ITEMSPEC(it_umbrella),      // OxydMagnum item 0x07
+-    ITEMSPEC(it_glasses),       // OxydMagnum item 0x08
+-    ITEMSPEC(it_glasses_broken), // OxydMagnum item 0x09
+-    ITEMSPEC(it_dynamite),      // OxydMagnum item 0x0a
+-    ITEMSPEC(it_blackbomb),     // OxydMagnum item 0x0b
+-    ITEMSPEC(it_whitebomb),     // OxydMagnum item 0x0c
+-    ITEMSPEC(it_crack0),        // OxydMagnum item 0x0d
+-    ITEMSPEC(it_crack1),        // OxydMagnum item 0x0e
+-    ITEMSPEC(it_crack2),        // OxydMagnum item 0x0f
+-    ITEMSPEC(it_crack3),        // OxydMagnum item 0x10
+-    ITEMSPEC(it_coin1),         // OxydMagnum item 0x11
+-    ITEMSPEC(it_coin2),         // OxydMagnum item 0x12
+-    ITEMSPEC(it_coin4),         // OxydMagnum item 0x13
+-    ITEMSPEC(it_key_a),         // OxydMagnum item 0x14
+-    ITEMSPEC(it_key_b),         // OxydMagnum item 0x15
+-    ITEMSPEC(it_key_c),         // OxydMagnum item 0x16
+-    ITEMSPEC(it_floppy),        // OxydMagnum item 0x17
+-    ITEMSPEC(it_sword),         // OxydMagnum item 0x18
+-    ITEMSPEC(it_flagwhite),     // OxydMagnum item 0x19
+-    ITEMSPEC(it_flagblack),     // OxydMagnum item 0x1a
+-    ITEMSPEC(it_ring),          // OxydMagnum item 0x1b
+-    ITEMSPEC(it_pipe_wn),       // OxydMagnum item 0x1c
+-    ITEMSPEC(it_pipe_sw),       // OxydMagnum item 0x1d
+-    ITEMSPEC(it_pipe_ne),       // OxydMagnum item 0x1e
+-    ITEMSPEC(it_pipe_es),       // OxydMagnum item 0x1f
+-    ITEMSPEC(it_pipe_v),        // OxydMagnum item 0x20
+-    ITEMSPEC(it_pipe_h),        // OxydMagnum item 0x21
+-    ITEMSPEC(it_spade),         // OxydMagnum item 0x22
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x23
+-    ITEMSPEC(it_pin),           // OxydMagnum item 0x24
+-    ITEMSPEC(it_seed),          // OxydMagnum item 0x25
+-    ITEMSPEC(it_spring2),       // OxydMagnum item 0x26
+-    ITEMSPEC(it_spring1),       // OxydMagnum item 0x27
+-    ITEMSPEC(it_bag),           // OxydMagnum item 0x28
+-    ITEMSPEC(it_magnet_off),    // OxydMagnum item 0x29
+-    ITEMSPEC(it_inversesensor), // OxydMagnum item 0x2a
+-    ITEMSPEC(it_sensor),        // OxydMagnum item 0x2b
+-    ITEMSPEC(it_shogun_s),      // OxydMagnum item 0x2c
+-    ITEMSPEC(it_vortex_open),   // OxydMagnum item 0x2d
+-    ITEMSPEC(it_vortex_closed), // OxydMagnum item 0x2e
+-    ITEMSPEC(it_wormhole_on),   // OxydMagnum item 0x2f
+-    ITEMSPEC(it_hill),          // OxydMagnum item 0x30
+-    ITEMSPEC(it_tinyhill),      // OxydMagnum item 0x31
+-    ITEMSPEC(it_hollow),        // OxydMagnum item 0x32
+-    ITEMSPEC(it_tinyhollow),    // OxydMagnum item 0x33
+-    ITEMSPEC(it_strip_ns),      // OxydMagnum item 0x34
+-    ITEMSPEC(it_strip_ew),      // OxydMagnum item 0x35
+-    ITEMSPEC(it_springboard),   // OxydMagnum item 0x36
+-    ITEMSPEC(it_MISSING),       // OxydMagnum item 0x37
+-    ITEMSPEC(it_bridge_oxyd),   // OxydMagnum item 0x38
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x39
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x3a
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x3b
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x3c
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x3d
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x3e
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x3f
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x40
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x41
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x42
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x43
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x44
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x45
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x46
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x47
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x48
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x49
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x4a
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x4b
+-    ITEMSPEC(it_springboard),   // OxydMagnum item 0x4c
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x4d
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x4e
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x4f
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x50
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x51
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x52
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x53
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x54
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x55
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x56
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x57
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x58
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x59
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x5a
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x5b
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x5c
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x5d
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x5e
+-    ITEMSPEC(it_signalfilter1), // OxydMagnum item 0x5f
+-    ITEMSPEC(it_drop),          // OxydMagnum item 0x60 (drunk)
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x61 (rev. breaking area)
+-    ITEMSPEC(it_UNUSED),        // OxydMagnum item 0x62 (player exchange)
+-    ITEMSPEC(it_trigger),       // OxydMagnum item 0x63
+-    ITEMSPEC(it_puller_n),      // OxydMagnum item 0x64
+-    ITEMSPEC(it_puller_s),      // OxydMagnum item 0x65
+-    ITEMSPEC(it_puller_w),      // OxydMagnum item 0x66
+-    ITEMSPEC(it_puller_e),      // OxydMagnum item 0x67
++const char* oxyd::oxydmag_item_map[256] = {
++    IT_INVALID,          // OxydMagnum item 0x00
++    &quot;it_extralife&quot;,     // OxydMagnum item 0x01
++    IT_EXTERNAL,      // OxydMagnum item 0x02 document 1
++    IT_EXTERNAL,      // OxydMagnum item 0x03 document 2
++    &quot;it_hammer&quot;,        // OxydMagnum item 0x04
++    &quot;it-coffee&quot;,        // OxydMagnum item 0x05
++    &quot;it-cherry&quot;,        // OxydMagnum item 0x06
++    &quot;it_umbrella&quot;,      // OxydMagnum item 0x07
++    &quot;it_glasses&quot;,       // OxydMagnum item 0x08
++    &quot;it_glasses_broken&quot;, // OxydMagnum item 0x09
++    &quot;it-dynamite&quot;,      // OxydMagnum item 0x0a
++    &quot;it-blackbomb&quot;,     // OxydMagnum item 0x0b
++    &quot;it-whitebomb&quot;,     // OxydMagnum item 0x0c
++    &quot;it-crack0&quot;,        // OxydMagnum item 0x0d
++    &quot;it-crack1&quot;,        // OxydMagnum item 0x0e
++    &quot;it-crack2&quot;,        // OxydMagnum item 0x0f
++    &quot;it-crack3&quot;,        // OxydMagnum item 0x10
++    &quot;it_coin_s&quot;,         // OxydMagnum item 0x11
++    &quot;it_coin_m&quot;,         // OxydMagnum item 0x12
++    &quot;it_coin_l&quot;,         // OxydMagnum item 0x13
++    &quot;it_key_a&quot;,         // OxydMagnum item 0x14
++    &quot;it_key_b&quot;,         // OxydMagnum item 0x15
++    &quot;it_key_c&quot;,         // OxydMagnum item 0x16
++    &quot;it_floppy&quot;,        // OxydMagnum item 0x17
++    &quot;it_sword&quot;,         // OxydMagnum item 0x18
++    &quot;it-flagwhite&quot;,     // OxydMagnum item 0x19
++    &quot;it-flagblack&quot;,     // OxydMagnum item 0x1a
++    &quot;it-ring&quot;,          // OxydMagnum item 0x1b
++    &quot;it-pipe-wn&quot;,       // OxydMagnum item 0x1c
++    &quot;it-pipe-sw&quot;,       // OxydMagnum item 0x1d
++    &quot;it-pipe-ne&quot;,       // OxydMagnum item 0x1e
++    &quot;it-pipe-es&quot;,       // OxydMagnum item 0x1f
++    &quot;it-pipe-v&quot;,        // OxydMagnum item 0x20
++    &quot;it-pipe-h&quot;,        // OxydMagnum item 0x21
++    &quot;it-spade&quot;,         // OxydMagnum item 0x22
++    UNUSED,        // OxydMagnum item 0x23
++    &quot;it-pin&quot;,           // OxydMagnum item 0x24
++    &quot;it-seed&quot;,          // OxydMagnum item 0x25
++    &quot;it-spring2&quot;,       // OxydMagnum item 0x26
++    &quot;it-spring1&quot;,       // OxydMagnum item 0x27
++    &quot;it-bag&quot;,           // OxydMagnum item 0x28
++    &quot;it_magnet_off&quot;,    // OxydMagnum item 0x29
++    &quot;it_inversesensor&quot;, // OxydMagnum item 0x2a
++    &quot;it_sensor&quot;,        // OxydMagnum item 0x2b
++    &quot;it-shogun-s&quot;,      // OxydMagnum item 0x2c
++    &quot;it_vortex_open&quot;,   // OxydMagnum item 0x2d
++    &quot;it_vortex_closed&quot;, // OxydMagnum item 0x2e
++    &quot;it_wormhole_on&quot;,   // OxydMagnum item 0x2f
++    &quot;it-hill&quot;,          // OxydMagnum item 0x30
++    &quot;it-tinyhill&quot;,      // OxydMagnum item 0x31
++    &quot;it-hollow&quot;,        // OxydMagnum item 0x32
++    &quot;it-tinyhollow&quot;,    // OxydMagnum item 0x33
++    &quot;it_strip_ns&quot;,      // OxydMagnum item 0x34
++    &quot;it_strip_ew&quot;,      // OxydMagnum item 0x35
++    &quot;it-springboard&quot;,   // OxydMagnum item 0x36
++    IT_MISSING,       // OxydMagnum item 0x37
++    &quot;it-bridge-oxyd&quot;,   // OxydMagnum item 0x38
++    UNUSED,        // OxydMagnum item 0x39
++    UNUSED,        // OxydMagnum item 0x3a
++    UNUSED,        // OxydMagnum item 0x3b
++    UNUSED,        // OxydMagnum item 0x3c
++    UNUSED,        // OxydMagnum item 0x3d
++    UNUSED,        // OxydMagnum item 0x3e
++    UNUSED,        // OxydMagnum item 0x3f
++    UNUSED,        // OxydMagnum item 0x40
++    UNUSED,        // OxydMagnum item 0x41
++    UNUSED,        // OxydMagnum item 0x42
++    UNUSED,        // OxydMagnum item 0x43
++    UNUSED,        // OxydMagnum item 0x44
++    UNUSED,        // OxydMagnum item 0x45
++    UNUSED,        // OxydMagnum item 0x46
++    UNUSED,        // OxydMagnum item 0x47
++    UNUSED,        // OxydMagnum item 0x48
++    UNUSED,        // OxydMagnum item 0x49
++    UNUSED,        // OxydMagnum item 0x4a
++    UNUSED,        // OxydMagnum item 0x4b
++    &quot;it-springboard&quot;,   // OxydMagnum item 0x4c
++    UNUSED,        // OxydMagnum item 0x4d
++    UNUSED,        // OxydMagnum item 0x4e
++    UNUSED,        // OxydMagnum item 0x4f
++    UNUSED,        // OxydMagnum item 0x50
++    UNUSED,        // OxydMagnum item 0x51
++    UNUSED,        // OxydMagnum item 0x52
++    UNUSED,        // OxydMagnum item 0x53
++    UNUSED,        // OxydMagnum item 0x54
++    UNUSED,        // OxydMagnum item 0x55
++    UNUSED,        // OxydMagnum item 0x56
++    UNUSED,        // OxydMagnum item 0x57
++    UNUSED,        // OxydMagnum item 0x58
++    UNUSED,        // OxydMagnum item 0x59
++    UNUSED,        // OxydMagnum item 0x5a
++    UNUSED,        // OxydMagnum item 0x5b
++    UNUSED,        // OxydMagnum item 0x5c
++    UNUSED,        // OxydMagnum item 0x5d
++    UNUSED,        // OxydMagnum item 0x5e
++    &quot;it_sensor_filter1&quot;, // OxydMagnum item 0x5f
++    &quot;it-drop&quot;,          // OxydMagnum item 0x60 (drunk)
++    UNUSED,        // OxydMagnum item 0x61 (rev. breaking are)
++    UNUSED,        // OxydMagnum item 0x62 (player exchange)
++    &quot;it_trigger&quot;,       // OxydMagnum item 0x63
++    &quot;it-puller-n&quot;,      // OxydMagnum item 0x64
++    &quot;it-puller-s&quot;,      // OxydMagnum item 0x65
++    &quot;it-puller-w&quot;,      // OxydMagnum item 0x66
++    &quot;it-puller-e&quot;,      // OxydMagnum item 0x67
+     // codes &gt;= 0x68 are unused
+ };
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/ox_oxyd1.cc	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -24,13 +24,9 @@
+ // defining PLAIN_SPEC_ONLY only shows xxx_floor_map, xxx_stone_map and xxx_item_map
+ // Note:  the xxx_item_map changes it's type (ItemID -&gt; const char *)
+ 
+-#define ITEMSPEC(i) #i
+-#define ITEMMAPTYPE const char *
+ 
+ #else
+ // Standard enigma section :
+-#define ITEMSPEC(i) i
+-#define ITEMMAPTYPE ItemID
+ 
+ #include &quot;server.hh&quot;
+ #include &quot;oxyd_internal.hh&quot;
+@@ -309,103 +305,103 @@
+     // codes &gt;= 0x9a are unused
+ };
+ 
+-ITEMMAPTYPE oxyd::oxyd1_item_map[256] = {
+-    ITEMSPEC(it_none),                    // 0x00
+-    ITEMSPEC(it_extralife),               // 0x01
+-    ITEMSPEC(it_EXTERNAL),                // 0x02 document 1
+-    ITEMSPEC(it_EXTERNAL),                // 0x03 document 2
+-    ITEMSPEC(it_hammer),                  // 0x04
+-    ITEMSPEC(it_coffee),                  // 0x05
+-    ITEMSPEC(it_cherry),                  // 0x06
+-    ITEMSPEC(it_umbrella),                // 0x07
+-    ITEMSPEC(it_glasses),                 // 0x08
+-    ITEMSPEC(it_glasses_broken),          // 0x09
+-    ITEMSPEC(it_dynamite),                // 0x0a
+-    ITEMSPEC(it_blackbomb),               // 0x0b
+-    ITEMSPEC(it_whitebomb),               // 0x0c
+-    ITEMSPEC(it_crack0),                  // 0x0d
+-    ITEMSPEC(it_crack1),                  // 0x0e
+-    ITEMSPEC(it_crack2),                  // 0x0f
+-    ITEMSPEC(it_crack3),                  // 0x10
+-    ITEMSPEC(it_coin1),                   // 0x11
+-    ITEMSPEC(it_coin2),                   // 0x12
+-    ITEMSPEC(it_coin4),                   // 0x13
+-    ITEMSPEC(it_key_a),                   // 0x14
+-    ITEMSPEC(it_key_b),                   // 0x15
+-    ITEMSPEC(it_key_c),                   // 0x16
+-    ITEMSPEC(it_floppy),                  // 0x17
+-    ITEMSPEC(it_sword),                   // 0x18
+-    ITEMSPEC(it_flagwhite),               // 0x19
+-    ITEMSPEC(it_flagblack),               // 0x1a
+-    ITEMSPEC(it_ring),                    // 0x1b
+-    ITEMSPEC(it_pipe_wn),                 // 0x1c
+-    ITEMSPEC(it_pipe_sw),                 // 0x1d
+-    ITEMSPEC(it_pipe_ne),                 // 0x1e
+-    ITEMSPEC(it_pipe_es),                 // 0x1f
+-    ITEMSPEC(it_pipe_v),                  // 0x20
+-    ITEMSPEC(it_pipe_h),                  // 0x21
+-    ITEMSPEC(it_spade),                   // 0x22
+-    ITEMSPEC(it_surprise),                // 0x23
+-    ITEMSPEC(it_pin),                     // 0x24
+-    ITEMSPEC(it_seed),                    // 0x25
+-    ITEMSPEC(it_spring2),                 // 0x26
+-    ITEMSPEC(it_spring1),                 // 0x27
+-    ITEMSPEC(it_bag),                     // 0x28
+-    ITEMSPEC(it_magnet_off),              // 0x29
+-    ITEMSPEC(it_inversesensor),           // 0x2a
+-    ITEMSPEC(it_sensor),                  // 0x2b
+-    ITEMSPEC(it_shogun_s),                // 0x2c
+-    ITEMSPEC(it_vortex_open),             // 0x2d
+-    ITEMSPEC(it_vortex_closed),           // 0x2e
+-    ITEMSPEC(it_wormhole_on),             // 0x2f
+-    ITEMSPEC(it_hill),                    // 0x30
+-    ITEMSPEC(it_tinyhill),                // 0x31
+-    ITEMSPEC(it_hollow),                  // 0x32
+-    ITEMSPEC(it_tinyhollow),              // 0x33
+-    ITEMSPEC(it_strip_ns),                // 0x34
+-    ITEMSPEC(it_strip_ew),                // 0x35
+-    ITEMSPEC(it_springboard),             // 0x36
+-    ITEMSPEC(it_bridge_oxyd),             // 0x37 bridge active
+-    ITEMSPEC(it_bridge_oxyd),             // 0x38 bridge inactive
+-    ITEMSPEC(it_bridge_oxyd_active),      // 0x39 walkable bridge (?)
+-    ITEMSPEC(it_UNUSED),                  // 0x3a
+-    ITEMSPEC(it_UNUSED),                  // 0x3b
+-    ITEMSPEC(it_UNUSED),                  // 0x3c
+-    ITEMSPEC(it_UNUSED),                  // 0x3d
+-    ITEMSPEC(it_UNUSED),                  // 0x3e
+-    ITEMSPEC(it_UNUSED),                  // 0x3f
+-    ITEMSPEC(it_UNUSED),                  // 0x40
+-    ITEMSPEC(it_UNUSED),                  // 0x41
+-    ITEMSPEC(it_UNUSED),                  // 0x42
+-    ITEMSPEC(it_UNUSED),                  // 0x43
+-    ITEMSPEC(it_UNUSED),                  // 0x44
+-    ITEMSPEC(it_UNUSED),                  // 0x45
+-    ITEMSPEC(it_UNUSED),                  // 0x46
+-    ITEMSPEC(it_UNUSED),                  // 0x47
+-    ITEMSPEC(it_UNUSED),                  // 0x48
+-    ITEMSPEC(it_UNUSED),                  // 0x49
+-    ITEMSPEC(it_UNUSED),                  // 0x4a
+-    ITEMSPEC(it_UNUSED),                  // 0x4b
+-    ITEMSPEC(it_UNUSED),                  // 0x4c
+-    ITEMSPEC(it_UNUSED),                  // 0x4d
+-    ITEMSPEC(it_UNUSED),                  // 0x4e
+-    ITEMSPEC(it_UNUSED),                  // 0x4f
+-    ITEMSPEC(it_UNUSED),                  // 0x50
+-    ITEMSPEC(it_UNUSED),                  // 0x51
+-    ITEMSPEC(it_UNUSED),                  // 0x52
+-    ITEMSPEC(it_UNUSED),                  // 0x53
+-    ITEMSPEC(it_UNUSED),                  // 0x54
+-    ITEMSPEC(it_UNUSED),                  // 0x55
+-    ITEMSPEC(it_UNUSED),                  // 0x56
+-    ITEMSPEC(it_UNUSED),                  // 0x57
+-    ITEMSPEC(it_UNUSED),                  // 0x58
+-    ITEMSPEC(it_UNUSED),                  // 0x59
+-    ITEMSPEC(it_UNUSED),                  // 0x5a
+-    ITEMSPEC(it_UNUSED),                  // 0x5b
+-    ITEMSPEC(it_UNUSED),                  // 0x5c
+-    ITEMSPEC(it_UNUSED),                  // 0x5d
+-    ITEMSPEC(it_UNUSED),                  // 0x5e
+-    ITEMSPEC(it_sensor),                  // 0x5f
+-    ITEMSPEC(it_drop),                    // 0x60    drop (turns actor into rotor)
++const char *oxyd::oxyd1_item_map[256] = {
++    IT_INVALID,                   // 0x00
++    &quot;it_extralife&quot;,               // 0x01
++    IT_EXTERNAL,                  // 0x02 document 1
++    IT_EXTERNAL,                  // 0x03 document 2
++    &quot;it_hammer&quot;,                  // 0x04
++    &quot;it-coffee&quot;,                  // 0x05
++    &quot;it-cherry&quot;,                  // 0x06
++    &quot;it_umbrella&quot;,                // 0x07
++    &quot;it_glasses&quot;,                 // 0x08
++    &quot;it_glasses_broken&quot;,          // 0x09
++    &quot;it-dynamite&quot;,                // 0x0a
++    &quot;it-blackbomb&quot;,               // 0x0b
++    &quot;it-whitebomb&quot;,               // 0x0c
++    &quot;it-crack0&quot;,                  // 0x0d
++    &quot;it-crack1&quot;,                  // 0x0e
++    &quot;it-crack2&quot;,                  // 0x0f
++    &quot;it-crack3&quot;,                  // 0x10
++    &quot;it_coin_s&quot;,                  // 0x11
++    &quot;it_coin_m&quot;,                  // 0x12
++    &quot;it_coin_l&quot;,                  // 0x13
++    &quot;it_key_a&quot;,                   // 0x14
++    &quot;it_key_b&quot;,                   // 0x15
++    &quot;it_key_c&quot;,                   // 0x16
++    &quot;it_floppy&quot;,                  // 0x17
++    &quot;it_sword&quot;,                   // 0x18
++    &quot;it-flagwhite&quot;,               // 0x19
++    &quot;it-flagblack&quot;,               // 0x1a
++    &quot;it-ring&quot;,                    // 0x1b
++    &quot;it-pipe-wn&quot;,                 // 0x1c
++    &quot;it-pipe-sw&quot;,                 // 0x1d
++    &quot;it-pipe-ne&quot;,                 // 0x1e
++    &quot;it-pipe-es&quot;,                 // 0x1f
++    &quot;it-pipe-v&quot;,                  // 0x20
++    &quot;it-pipe-h&quot;,                  // 0x21
++    &quot;it-spade&quot;,                   // 0x22
++    &quot;it-surprise&quot;,                // 0x23
++    &quot;it-pin&quot;,                     // 0x24
++    &quot;it-seed&quot;,                    // 0x25
++    &quot;it-spring2&quot;,                 // 0x26
++    &quot;it-spring1&quot;,                 // 0x27
++    &quot;it-bag&quot;,                     // 0x28
++    &quot;it_magnet_off&quot;,              // 0x29
++    &quot;it_inversesensor&quot;,           // 0x2a
++    &quot;it_sensor&quot;,                  // 0x2b
++    &quot;it-shogun-s&quot;,                // 0x2c
++    &quot;it_vortex_open&quot;,             // 0x2d
++    &quot;it_vortex_closed&quot;,           // 0x2e
++    &quot;it_wormhole_on&quot;,             // 0x2f
++    &quot;it-hill&quot;,                    // 0x30
++    &quot;it-tinyhill&quot;,                // 0x31
++    &quot;it-hollow&quot;,                  // 0x32
++    &quot;it-tinyhollow&quot;,              // 0x33
++    &quot;it_strip_ns&quot;,                // 0x34
++    &quot;it_strip_ew&quot;,                // 0x35
++    &quot;it-springboard&quot;,             // 0x36
++    &quot;it-bridge-oxyd&quot;,             // 0x37 bridge active
++    &quot;it-bridge-oxyd&quot;,             // 0x38 bridge inactive
++    &quot;it-bridge-oxyd_active&quot;,      // 0x39 walkable bridge (?&quot;
++    UNUSED,                  // 0x3a
++    UNUSED,                  // 0x3b
++    UNUSED,                  // 0x3c
++    UNUSED,                  // 0x3d
++    UNUSED,                  // 0x3e
++    UNUSED,                  // 0x3f
++    UNUSED,                  // 0x40
++    UNUSED,                  // 0x41
++    UNUSED,                  // 0x42
++    UNUSED,                  // 0x43
++    UNUSED,                  // 0x44
++    UNUSED,                  // 0x45
++    UNUSED,                  // 0x46
++    UNUSED,                  // 0x47
++    UNUSED,                  // 0x48
++    UNUSED,                  // 0x49
++    UNUSED,                  // 0x4a
++    UNUSED,                  // 0x4b
++    UNUSED,                  // 0x4c
++    UNUSED,                  // 0x4d
++    UNUSED,                  // 0x4e
++    UNUSED,                  // 0x4f
++    UNUSED,                  // 0x50
++    UNUSED,                  // 0x51
++    UNUSED,                  // 0x52
++    UNUSED,                  // 0x53
++    UNUSED,                  // 0x54
++    UNUSED,                  // 0x55
++    UNUSED,                  // 0x56
++    UNUSED,                  // 0x57
++    UNUSED,                  // 0x58
++    UNUSED,                  // 0x59
++    UNUSED,                  // 0x5a
++    UNUSED,                  // 0x5b
++    UNUSED,                  // 0x5c
++    UNUSED,                  // 0x5d
++    UNUSED,                  // 0x5e
++    &quot;it_sensor&quot;,                  // 0x5f
++    &quot;it-drop&quot;,                    // 0x60    drop (turns actor into rotor)
+     // codes &gt;= 0x61 are unused
+ };
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/ox_peroxyd.cc	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -24,15 +24,9 @@
+ // defining PLAIN_SPEC_ONLY only shows xxx_floor_map, xxx_stone_map and xxx_item_map
+ // Note:  the xxx_item_map changes it's type (ItemID -&gt; const char *)
+ 
+-#define ITEMSPEC(i) #i
+-#define ITEMMAPTYPE const char *
+-
+ #else
+ // Standard enigma section :
+ 
+-#define ITEMSPEC(i) i
+-#define ITEMMAPTYPE enigma::ItemID
+-
+ #include &quot;server.hh&quot;
+ #include &quot;oxyd_internal.hh&quot;
+ 
+@@ -384,129 +378,129 @@
+ };
+ 
+ 
+-ITEMMAPTYPE oxyd::peroxyd_item_map[256] = {
+-    ITEMSPEC(it_none),                    // 0x00
+-    ITEMSPEC(it_extralife),               // 0x01
+-    ITEMSPEC(it_EXTERNAL),                // 0x02 document 1
+-    ITEMSPEC(it_EXTERNAL),                // 0x03 document 2
+-    ITEMSPEC(it_hammer),                  // 0x04
+-    ITEMSPEC(it_coffee),                  // 0x05
+-    ITEMSPEC(it_cherry),                  // 0x06
+-    ITEMSPEC(it_umbrella),                // 0x07
+-    ITEMSPEC(it_glasses),                 // 0x08
+-    ITEMSPEC(it_glasses_broken),          // 0x09
+-    ITEMSPEC(it_dynamite),                // 0x0a
+-    ITEMSPEC(it_blackbomb),               // 0x0b
+-    ITEMSPEC(it_whitebomb),               // 0x0c
+-    ITEMSPEC(it_crack0),                  // 0x0d
+-    ITEMSPEC(it_crack1),                  // 0x0e
+-    ITEMSPEC(it_crack2),                  // 0x0f
+-    ITEMSPEC(it_crack3),                  // 0x10
+-    ITEMSPEC(it_coin1),                   // 0x11
+-    ITEMSPEC(it_coin2),                   // 0x12
+-    ITEMSPEC(it_coin4),                   // 0x13
+-    ITEMSPEC(it_key_a),                   // 0x14
+-    ITEMSPEC(it_key_b),                   // 0x15
+-    ITEMSPEC(it_key_c),                   // 0x16
+-    ITEMSPEC(it_floppy),                  // 0x17
+-    ITEMSPEC(it_flagwhite),               // 0x18
+-    ITEMSPEC(it_flagblack),               // 0x19
+-    ITEMSPEC(it_ring),                    // 0x1a
+-    ITEMSPEC(it_pipe_wn),                 // 0x1b
+-    ITEMSPEC(it_pipe_sw),                 // 0x1c
+-    ITEMSPEC(it_pipe_ne),                 // 0x1d
+-    ITEMSPEC(it_pipe_es),                 // 0x1e
+-    ITEMSPEC(it_pipe_v),                  // 0x1f
+-    ITEMSPEC(it_pipe_h),                  // 0x20
+-    ITEMSPEC(it_spade),                   // 0x21
+-    ITEMSPEC(it_surprise),                // 0x22
+-    ITEMSPEC(it_pin),                     // 0x23
+-    ITEMSPEC(it_seed),                    // 0x24
+-    ITEMSPEC(it_spring2),                 // 0x25
+-    ITEMSPEC(it_spring1),                 // 0x26
+-    ITEMSPEC(it_bag),                     // 0x27
+-    ITEMSPEC(it_magnet_off),              // 0x28
+-    ITEMSPEC(it_signalfilter0),           // 0x29
+-    ITEMSPEC(it_signalfilter1),           // 0x2a
+-    ITEMSPEC(it_shogun_s),                // 0x2b
+-    ITEMSPEC(it_shogun_l),                // 0x2c
+-    ITEMSPEC(it_vortex_open),             // 0x2d
+-    ITEMSPEC(it_vortex_closed),           // 0x2e
+-    ITEMSPEC(it_wormhole_on),             // 0x2f XXX
+-    ITEMSPEC(it_hill),                    // 0x30
+-    ITEMSPEC(it_tinyhill),                // 0x31
+-    ITEMSPEC(it_hollow),                  // 0x32
+-    ITEMSPEC(it_tinyhollow),              // 0x33
+-    ITEMSPEC(it_strip_ns),                // 0x34
+-    ITEMSPEC(it_strip_ew),                // 0x35
+-    ITEMSPEC(it_springboard),             // 0x36
+-    ITEMSPEC(it_MISSING),                 // 0x37
+-    ITEMSPEC(it_bridge_oxyd),             // 0x38
+-    ITEMSPEC(it_UNUSED),                  // 0x39
+-    ITEMSPEC(it_UNUSED),                  // 0x3a
+-    ITEMSPEC(it_UNUSED),                  // 0x3b
+-    ITEMSPEC(it_cross),                   // 0x3c
+-    ITEMSPEC(it_spoon),                   // 0x3d
+-    ITEMSPEC(it_MISSING),                 // 0x3e rubber band
+-    ITEMSPEC(it_changefloor),             // 0x3f
+-    ITEMSPEC(it_trigger),                 // 0x40
+-    ITEMSPEC(it_brush),                   // 0x41
+-    ITEMSPEC(it_banana),                  // 0x42
+-    ITEMSPEC(it_pencil),                  // 0x43
+-    ITEMSPEC(it_brake),                   // 0x44
+-    ITEMSPEC(it_squashed),                // 0x45
+-    ITEMSPEC(it_blocker),                 // 0x46
+-    ITEMSPEC(it_magicwand),               // 0x47
+-    ITEMSPEC(it_wrench),                  // 0x48
+-    ITEMSPEC(it_UNUSED),                  // 0x49
+-    ITEMSPEC(it_odometer),                // 0x4a
+-    ITEMSPEC(it_puller_n),                // 0x4b
+-    ITEMSPEC(it_puller_s),                // 0x4c
+-    ITEMSPEC(it_puller_w),                // 0x4d
+-    ITEMSPEC(it_puller_e),                // 0x4e
+-    ITEMSPEC(it_UNUSED),                  // 0x4f
+-    ITEMSPEC(it_UNUSED),                  // 0x50
+-    ITEMSPEC(it_MISSING),                 // 0x51 puller left, active
+-    ITEMSPEC(it_UNUSED),                  // 0x52
+-    ITEMSPEC(it_MISSING),                 // 0x53 oxyd on floor (?)
+-    ITEMSPEC(it_UNUSED),                  // 0x54
+-    ITEMSPEC(it_UNUSED),                  // 0x55
+-    ITEMSPEC(it_UNUSED),                  // 0x56
+-    ITEMSPEC(it_UNUSED),                  // 0x57
+-    ITEMSPEC(it_MISSING),                 // 0x58 oxyd on floor
+-    ITEMSPEC(it_MISSING),                 // 0x59 oxyd on floor
+-    ITEMSPEC(it_UNUSED),                  // 0x5a
+-    ITEMSPEC(it_UNUSED),                  // 0x5b
+-    ITEMSPEC(it_UNUSED),                  // 0x5c
+-    ITEMSPEC(it_UNUSED),                  // 0x5d
+-    ITEMSPEC(it_UNUSED),                  // 0x5e
+-    ITEMSPEC(it_UNUSED),                  // 0x5f
+-    ITEMSPEC(it_UNUSED),                  // 0x60
+-    ITEMSPEC(it_UNUSED),                  // 0x61
+-    ITEMSPEC(it_UNUSED),                  // 0x62
+-    ITEMSPEC(it_UNUSED),                  // 0x63
+-    ITEMSPEC(it_UNUSED),                  // 0x64
+-    ITEMSPEC(it_UNUSED),                  // 0x65
+-    ITEMSPEC(it_UNUSED),                  // 0x66
+-    ITEMSPEC(it_UNUSED),                  // 0x67
+-    ITEMSPEC(it_UNUSED),                  // 0x68
+-    ITEMSPEC(it_UNUSED),                  // 0x69
+-    ITEMSPEC(it_blackbomb_burning),       // 0x6a
+-    ITEMSPEC(it_UNUSED),                  // 0x6b
+-    ITEMSPEC(it_UNUSED),                  // 0x6c
+-    ITEMSPEC(it_UNUSED),                  // 0x6d
+-    ITEMSPEC(it_UNUSED),                  // 0x6e
+-    ITEMSPEC(it_UNUSED),                  // 0x6f
+-    ITEMSPEC(it_UNUSED),                  // 0x70
+-    ITEMSPEC(it_UNUSED),                  // 0x71
+-    ITEMSPEC(it_UNUSED),                  // 0x72
+-    ITEMSPEC(it_UNUSED),                  // 0x73
+-    ITEMSPEC(it_UNUSED),                  // 0x74
+-    ITEMSPEC(it_UNUSED),                  // 0x75
+-    ITEMSPEC(it_easykillstone),           // 0x76
+-    ITEMSPEC(it_easykeepstone),           // 0x77
+-    ITEMSPEC(it_2pkillstone),             // 0x78
+-    ITEMSPEC(it_1pkillstone),             // 0x79
++const char *oxyd::peroxyd_item_map[256] = {
++    IT_INVALID,                   // 0x00
++    &quot;it_extralife&quot;,               // 0x01
++    IT_EXTERNAL,                  // 0x02 document 1
++    IT_EXTERNAL,                  // 0x03 document 2
++    &quot;it_hammer&quot;,                  // 0x04
++    &quot;it-coffee&quot;,                  // 0x05
++    &quot;it-cherry&quot;,                  // 0x06
++    &quot;it_umbrella&quot;,                // 0x07
++    &quot;it_glasses&quot;,                 // 0x08
++    &quot;it_glasses_broken&quot;,          // 0x09
++    &quot;it-dynamite&quot;,                // 0x0a
++    &quot;it-blackbomb&quot;,               // 0x0b
++    &quot;it-whitebomb&quot;,               // 0x0c
++    &quot;it-crack0&quot;,                  // 0x0d
++    &quot;it-crack1&quot;,                  // 0x0e
++    &quot;it-crack2&quot;,                  // 0x0f
++    &quot;it-crack3&quot;,                  // 0x10
++    &quot;it_coin_s&quot;,                  // 0x11
++    &quot;it_coin_m&quot;,                  // 0x12
++    &quot;it_coin_l&quot;,                  // 0x13
++    &quot;it_key_a&quot;,                   // 0x14
++    &quot;it_key_b&quot;,                   // 0x15
++    &quot;it_key_c&quot;,                   // 0x16
++    &quot;it_floppy&quot;,                  // 0x17
++    &quot;it-flagwhite&quot;,               // 0x18
++    &quot;it-flagblack&quot;,               // 0x19
++    &quot;it-ring&quot;,                    // 0x1a
++    &quot;it-pipe-wn&quot;,                 // 0x1b
++    &quot;it-pipe-sw&quot;,                 // 0x1c
++    &quot;it-pipe-ne&quot;,                 // 0x1d
++    &quot;it-pipe-es&quot;,                 // 0x1e
++    &quot;it-pipe-v&quot;,                  // 0x1f
++    &quot;it-pipe-h&quot;,                  // 0x20
++    &quot;it-spade&quot;,                   // 0x21
++    &quot;it-surprise&quot;,                // 0x22
++    &quot;it-pin&quot;,                     // 0x23
++    &quot;it-seed&quot;,                    // 0x24
++    &quot;it-spring2&quot;,                 // 0x25
++    &quot;it-spring1&quot;,                 // 0x26
++    &quot;it-bag&quot;,                     // 0x27
++    &quot;it_magnet_off&quot;,              // 0x28
++    &quot;it_sensor_filter0&quot;,          // 0x29
++    &quot;it_sensor_filter1&quot;,          // 0x2a
++    &quot;it-shogun-s&quot;,                // 0x2b
++    &quot;it-shogun-l&quot;,                // 0x2c
++    &quot;it_vortex_open&quot;,             // 0x2d
++    &quot;it_vortex_closed&quot;,           // 0x2e
++    &quot;it_wormhole_on&quot;,             // 0x2f XXX
++    &quot;it-hill&quot;,                    // 0x30
++    &quot;it-tinyhill&quot;,                // 0x31
++    &quot;it-hollow&quot;,                  // 0x32
++    &quot;it-tinyhollow&quot;,              // 0x33
++    &quot;it_strip_ns&quot;,                // 0x34
++    &quot;it_strip_ew&quot;,                // 0x35
++    &quot;it-springboard&quot;,             // 0x36
++    IT_MISSING,                   // 0x37
++    &quot;it-bridge-oxyd&quot;,             // 0x38
++    UNUSED,                  // 0x39
++    UNUSED,                  // 0x3a
++    UNUSED,                  // 0x3b
++    &quot;it_cross&quot;,                   // 0x3c
++    &quot;it-spoon&quot;,                   // 0x3d
++    IT_MISSING,                   // 0x3e rubber band
++    &quot;it-changefloor&quot;,             // 0x3f
++    &quot;it_trigger&quot;,                 // 0x40
++    &quot;it_brush&quot;,                   // 0x41
++    &quot;it-banana&quot;,                  // 0x42
++    &quot;it-pencil&quot;,                  // 0x43
++    &quot;it-brake&quot;,                   // 0x44
++    &quot;it-squashed&quot;,                // 0x45
++    &quot;it_blocker&quot;,                 // 0x46
++    &quot;it_magicwand&quot;,               // 0x47
++    &quot;it_wrench&quot;,                  // 0x48
++    UNUSED,                  // 0x49
++    &quot;it-odometer&quot;,                // 0x4a
++    &quot;it-puller-n&quot;,                // 0x4b
++    &quot;it-puller-s&quot;,                // 0x4c
++    &quot;it-puller-w&quot;,                // 0x4d
++    &quot;it-puller-e&quot;,                // 0x4e
++    UNUSED,                       // 0x4f
++    UNUSED,                       // 0x50
++    IT_MISSING,                   // 0x51 puller left, active
++    UNUSED,                       // 0x52
++    IT_MISSING,                   // 0x53 oxyd on floor (?&quot;
++    UNUSED,                       // 0x54
++    UNUSED,                       // 0x55
++    UNUSED,                       // 0x56
++    UNUSED,                       // 0x57
++    IT_MISSING,                   // 0x58 oxyd on floor
++    IT_MISSING,                   // 0x59 oxyd on floor
++    UNUSED,                  // 0x5a
++    UNUSED,                  // 0x5b
++    UNUSED,                  // 0x5c
++    UNUSED,                  // 0x5d
++    UNUSED,                  // 0x5e
++    UNUSED,                  // 0x5f
++    UNUSED,                  // 0x60
++    UNUSED,                  // 0x61
++    UNUSED,                  // 0x62
++    UNUSED,                  // 0x63
++    UNUSED,                  // 0x64
++    UNUSED,                  // 0x65
++    UNUSED,                  // 0x66
++    UNUSED,                  // 0x67
++    UNUSED,                  // 0x68
++    UNUSED,                  // 0x69
++    &quot;it-blackbomb-burning&quot;,       // 0x6a
++    UNUSED,                  // 0x6b
++    UNUSED,                  // 0x6c
++    UNUSED,                  // 0x6d
++    UNUSED,                  // 0x6e
++    UNUSED,                  // 0x6f
++    UNUSED,                  // 0x70
++    UNUSED,                  // 0x71
++    UNUSED,                  // 0x72
++    UNUSED,                  // 0x73
++    UNUSED,                  // 0x74
++    UNUSED,                  // 0x75
++    &quot;it-easykillstone&quot;,           // 0x76
++    &quot;it-easykeepstone&quot;,           // 0x77
++    &quot;it-2pkillstone&quot;,             // 0x78
++    &quot;it-1pkillstone&quot;,             // 0x79
+     // codes &gt;= 0x7a are unused
+ };
+ 
+
+Modified: trunk/src/oxyd.cc
+===================================================================
+--- trunk/src/oxyd.cc	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/oxyd.cc	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -369,64 +369,51 @@
+     OxydLib::Language lang = Language_English;
+     std::string localelang = ecl::GetLanguageCode (ecl::SysMessageLocaleName());
+     if (localelang == &quot;de&quot;)
+-	lang = Language_German;
++        lang = Language_German;
+     else if (localelang == &quot;fr&quot;)
+-	lang = Language_French;
++        lang = Language_French;
+     
+     switch (type) {
+-    case 0x00: break;           // ignore
+-    case 0x02:                  // note 1
+-	{
+-	    it = MakeItem (it_document);
+-	    string text = convert_encoding(level.getNoteText(0, lang));
+-	    it-&gt;setAttr (&quot;text&quot;, text.c_str());
+-	}
+-        break;
+-    case 0x03:                  // note 2
+-    {
+-        it = MakeItem (it_document);
+-        string text = convert_encoding(level.getNoteText(1, lang));
+-        it-&gt;setAttr (&quot;text&quot;, text.c_str());
+-    }
+-    break;
+-    case 0x14:                  // key a
+-    {
+-        it = MakeItem(it_key);
+-        it-&gt;setAttr (&quot;code&quot;, 1);
+-    }
+-    break;
+-    case 0x15:                  // key b
+-    {
+-        it = MakeItem(it_key);
+-        it-&gt;setAttr (&quot;code&quot;, 2);
+-    }
+-    break;
+-    case 0x16:                  // key c
+-    {
+-        it = MakeItem(it_key);
+-        it-&gt;setAttr (&quot;code&quot;, 3);
+-    }
+-    break;
+-    default:
+-        {
+-            ItemID id = config.itemtable[type];
+-            if (id == it_INVALID) {
++        case 0x00: break;           // ignore
++        case 0x02:                  // note 1
++    	    it = MakeItem(&quot;it-document&quot;);
++    	    it-&gt;setAttr (&quot;text&quot;, convert_encoding(level.getNoteText(0, lang)).c_str());
++            break;
++        case 0x03:                  // note 2
++            it = MakeItem(&quot;it-document&quot;);
++            it-&gt;setAttr (&quot;text&quot;, convert_encoding(level.getNoteText(1, lang)).c_str());
++            break;
++        case 0x14:                  // key a
++            it = MakeItem(&quot;it_key&quot;);
++            it-&gt;setAttr (&quot;code&quot;, 1);
++            break;
++        case 0x15:                  // key b
++            it = MakeItem(&quot;it_key&quot;);
++            it-&gt;setAttr (&quot;code&quot;, 2);
++            break;
++        case 0x16:                  // key c
++            it = MakeItem(&quot;it_key&quot;);
++            it-&gt;setAttr (&quot;code&quot;, 3);
++            break;
++        default:
++            std::string key = config.itemtable[type];
++            if (key == IT_INVALID) {
+                 Log &lt;&lt; ecl::strf (&quot;Unknown item %X\n&quot;,type);
+-                it = MakeItem (it_dummy);
++                it = MakeItem(&quot;it-dummy&quot;);
+                 it-&gt;setAttr(&quot;code&quot;, type);
++            } else if (key == &quot;it_vortex_closed&quot;) {
++                it = MakeItem(key.c_str());
++                it-&gt;setAttr(&quot;autoclose&quot;, true);
++            } else if (key == &quot;it_sensor&quot;) {
++                it = MakeItem(key.c_str());
++                it-&gt;setAttr(&quot;invisible&quot;, true);
++            } else if (key == &quot;it_inversesensor&quot;) {
++                it = MakeItem(&quot;it_sensor&quot;);
++                it-&gt;setAttr(&quot;invisible&quot;, true);
++                it-&gt;setAttr(&quot;inverse&quot;, true);
+             } else {
+-                it = MakeItem (id);
+-                if (id == it_vortex_closed)
+-                    it-&gt;setAttr(&quot;autoclose&quot;, true);
+-                else if (id == it_sensor) {
+-                    it-&gt;setAttr(&quot;invisible&quot;, true);
+-                }
+-                else if (id == it_inversesensor) {
+-                    it-&gt;setAttr(&quot;invisible&quot;, true);
+-                    it-&gt;setAttr(&quot;inverse&quot;, true);
+-                }
++                it = MakeItem(key.c_str());                
+             }
+-        }
+     }
+     return it;
+ }
+@@ -514,23 +501,23 @@
+ 
+         switch (marble.getMarbleType()) {
+         case MarbleType_Black:
+-            ac = MakeActor (ac_blackball);
++            ac = MakeActor(&quot;ac-blackball&quot;);
+             ac-&gt;setAttr (&quot;player&quot;, Value(0.0));
+             break;
+         case MarbleType_White:
+-            ac = MakeActor (ac_whiteball);
++            ac = MakeActor (&quot;ac-whiteball&quot;);
+             ac-&gt;setAttr (&quot;player&quot;, Value(1.0));
+             break;
+         case MarbleType_Meditation:
+             if (have_black_marble &amp;&amp; !level.getHarmlessMeditationMarbles()) {
+                 // # example: Oxyd Extra #28
+-                ac = MakeActor (ac_killerball);
++                ac = MakeActor (&quot;ac-killerball&quot;);
+ //                ac-&gt;setAttr (&quot;player&quot;, Value(0.0));
+                 ac-&gt;setAttr (&quot;mouseforce&quot;, Value (1.0));
+                 ac-&gt;setAttr (&quot;controllers&quot;, Value (3.0));
+             }
+             else {
+-                ac = MakeActor (ac_meditation);
++                ac = MakeActor (&quot;ac-whiteball-small&quot;);
+                 nmeditationmarbles += 1;
+ 
+                 if (config.twoplayers &amp;&amp; (nmeditationmarbles % 2) == 0)
+@@ -547,7 +534,7 @@
+             }
+             break;
+         case MarbleType_Jack:
+-            ac = MakeActor (ac_top);
++            ac = MakeActor (&quot;ac-top&quot;);
+             if (!minfo.is_default(MI_FORCE)) {
+                 double force = minfo.get_value(MI_FORCE) / 4; // just a guess
+                 ac-&gt;setAttr(&quot;force&quot;, Value(force) );
+@@ -561,7 +548,7 @@
+             break;
+ 
+         case MarbleType_Rotor: {
+-            ac = MakeActor (ac_rotor);
++            ac = MakeActor (&quot;ac-rotor&quot;);
+ 
+             double force = minfo.get_value (MI_FORCE, 30) * 0.3;
+             double range = minfo.get_value (MI_RANGE, 100) / 32.0;
+@@ -578,7 +565,7 @@
+         }
+ 
+         case MarbleType_Horse: {
+-            ac = MakeActor (ac_horse);
++            ac = MakeActor (&quot;ac-horse&quot;);
+             int levelw = level.getWidth();
+             if (!minfo.is_default(MI_HORSETARGET1)) {
+                 int targetpos = minfo.get_value(MI_HORSETARGET1);
+@@ -607,7 +594,7 @@
+             break;
+         }
+         case MarbleType_Bug:
+-            ac = MakeActor (ac_bug);
++            ac = MakeActor (&quot;ac-bug&quot;);
+             break;
+         default:
+             enigma::Log &lt;&lt; &quot;Unhandled actor type &quot; &lt;&lt; int(marble.getMarbleType()) &lt;&lt; endl;
+
+Modified: trunk/src/oxyd_internal.hh
+===================================================================
+--- trunk/src/oxyd_internal.hh	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/oxyd_internal.hh	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -29,9 +29,9 @@
+ 
+ #include &lt;cassert&gt;
+ 
+-#define it_UNUSED it_INVALID
+-#define it_EXTERNAL it_INVALID
+-#define it_MISSING it_INVALID
++#define IT_INVALID &quot;it_invalid&quot;
++#define IT_EXTERNAL IT_INVALID
++#define IT_MISSING IT_INVALID
+ #define it_key_a it_key
+ #define it_key_b it_key
+ #define it_key_c it_key
+@@ -58,7 +58,7 @@
+         bool           twoplayers;
+         GameMode       gamemode;
+         const char   **floortable;
+-        ItemID        *itemtable;
++        const char   **itemtable;
+         const char   **stonetable;
+ 
+         int id_timer;
+@@ -68,7 +68,7 @@
+         LoaderConfig (bool twoplayers_,
+                       GameMode gamemode_,
+                       const char **floortable_,
+-                      ItemID *itemtable_,
++                      const char **itemtable_,
+                       const char **stonetable_,
+                       const char *oxyd_flavor_ = &quot;a&quot;
+                       )
+@@ -307,19 +307,19 @@
+ 
+ /* -------------------- Global Variables -------------------- */
+ 
+-    extern ItemID oxyd1_item_map[];
++    extern const char * oxyd1_item_map[];
+     extern const char *oxyd1_floor_map[];
+     extern const char *oxyd1_stone_map[];
+ 
+-    extern ItemID peroxyd_item_map[];
++    extern const char * peroxyd_item_map[];
+     extern const char *peroxyd_floor_map[];
+     extern const char *peroxyd_stone_map[];
+ 
+-    extern ItemID oxydmag_item_map[];
++    extern const char * oxydmag_item_map[];
+     extern const char *oxydmag_floor_map[];
+     extern const char *oxydmag_stone_map[];
+ 
+-    extern ItemID oxydextra_item_map[];
++    extern const char * oxydextra_item_map[];
+     extern const char *oxydextra_floor_map[];
+     extern const char *oxydextra_stone_map[];
+ 
+
+Modified: trunk/src/player.cc
+===================================================================
+--- trunk/src/player.cc	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/player.cc	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -181,7 +181,7 @@
+         Inventory *inv = GetInventory(i);
+         inv-&gt;assignOwner(i);
+         for (int j = 0 ; j &lt; extralives[i]; j++)
+-            inv-&gt;add_item (MakeItem (it_extralife));
++            inv-&gt;add_item(MakeItem(&quot;it_extralife&quot;));
+     }
+     
+     unassignedActors.clear();
+@@ -193,7 +193,7 @@
+     for (unsigned i=0; i&lt;players.size(); ++i) {
+         Inventory *inv = GetInventory (i);
+         if (inv-&gt;find (&quot;it-yinyang&quot;) == -1) 
+-            inv-&gt;add_item (MakeItem (it_yinyang));
++            inv-&gt;add_item(MakeItem(&quot;it-yinyang&quot;));
+     }
+ }
+ 
+@@ -216,7 +216,7 @@
+                 nextralifes += 1;
+         inv-&gt;clear();
+         for (int i=0; i&lt;nextralifes; ++i)
+-            inv-&gt;add_item (MakeItem (it_extralife));
++            inv-&gt;add_item(MakeItem (&quot;it_extralife&quot;));
+ 
+         players[iplayer].actors.clear();
+     }
+
+Modified: trunk/src/stones/ActorImpulseStone.cc
+===================================================================
+--- trunk/src/stones/ActorImpulseStone.cc	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/stones/ActorImpulseStone.cc	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -22,6 +22,7 @@
+ //#include &quot;main.hh&quot;
+ #include &quot;player.hh&quot;
+ #include &quot;server.hh&quot;
++#include &quot;items/GlassesItem.hh&quot;
+ 
+ namespace enigma {
+     ActorImpulseStone::ActorImpulseStone(bool isInvisible) : Stone () {
+@@ -110,7 +111,7 @@
+ 
+     void ActorImpulseStone::init_model() {
+         if (state == IDLE) {
+-            if ((objFlags &amp; OBJBIT_INVISIBLE) &amp;&amp; ((server::GlassesVisibility &amp; 4) == 0))
++            if ((objFlags &amp; OBJBIT_INVISIBLE) &amp;&amp; ((server::GlassesVisibility &amp; Glasses::ACTORIMPULSE) == 0))
+                 set_model(&quot;invisible&quot;);
+             else
+                 set_model(&quot;st-actorimpulse&quot;);
+
+Modified: trunk/src/stones/DeathStone.cc
+===================================================================
+--- trunk/src/stones/DeathStone.cc	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/stones/DeathStone.cc	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -19,6 +19,8 @@
+  */
+ 
+ #include &quot;stones/DeathStone.hh&quot;
++
++#include &quot;items/GlassesItem.hh&quot;
+ //#include &quot;main.hh&quot;
+ 
+ namespace enigma {
+@@ -72,7 +74,7 @@
+ 
+     void DeathStone::init_model() {
+         if (state == IDLE) {
+-            if ((objFlags &amp; OBJBIT_INVISIBLE) &amp;&amp; ((server::GlassesVisibility &amp; 1) == 0))
++            if ((objFlags &amp; OBJBIT_INVISIBLE) &amp;&amp; ((server::GlassesVisibility &amp; Glasses::DEATH) == 0))
+                 set_model(&quot;invisible&quot;);
+             else
+                 set_model(&quot;st-death&quot;);
+
+Modified: trunk/src/stones/LightPassengerStone.cc
+===================================================================
+--- trunk/src/stones/LightPassengerStone.cc	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/stones/LightPassengerStone.cc	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -24,6 +24,7 @@
+ #include &quot;main.hh&quot;
+ #include &quot;player.hh&quot;
+ #include &quot;server.hh&quot;
++#include &quot;items/GlassesItem.hh&quot;
+ 
+ #include &lt;algorithm&gt;
+ 
+@@ -109,7 +110,7 @@
+         activatePhoto();
+         if (updateCurrentLightDirs() != NODIRBIT)
+             GameTimer.set_alarm(this, calcInterval(), false);
+-        if (((server::GlassesVisibility &amp; 16) != 0) != ((objFlags &amp; OBJBIT_VISIBLE) != 0)) {
++        if (((server::GlassesVisibility &amp; Glasses::LIGHTPASSENGER) != 0) != ((objFlags &amp; OBJBIT_VISIBLE) != 0)) {
+             objFlags ^= OBJBIT_VISIBLE; // toggle visibility bit
+         }
+         if (state == ON || state == BLINK) {
+
+Modified: trunk/src/stones/WindowStone.cc
+===================================================================
+--- trunk/src/stones/WindowStone.cc	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/stones/WindowStone.cc	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -236,7 +236,7 @@
+                     if (it_neighbor == NULL)
+                         SetItem(w_pos_neighbor, YieldItem(w_pos));
+                     else
+-                        SetItem(w_pos, MakeItem(it_squashed));
++                        SetItem(w_pos, MakeItem(&quot;it-squashed&quot;));
+                 
+                 // move actors
+                 std::vector&lt;Actor*&gt; found_actors;
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/stones.cc	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -380,7 +380,7 @@
+     case IDLE:
+         ASSERT(0, XLevelRuntime, &quot;SpitterStone: animcb called with inconsistent state&quot;); 
+     case LOADING: {
+-        Actor     *ball = MakeActor (ac_cannonball);
++        Actor     *ball = MakeActor(&quot;ac-cannonball&quot;);
+         ActorInfo *ai   = ball-&gt;get_actorinfo();
+         V2         center  = get_pos().center();
+ 
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/stones_simple.cc	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -24,6 +24,7 @@
+ #include &quot;client.hh&quot;
+ #include &quot;main.hh&quot;
+ #include &quot;Inventory.hh&quot;
++#include &quot;items/GlassesItem.hh&quot;
+ 
+ #include &quot;stones_internal.hh&quot;
+ 
+@@ -133,7 +134,7 @@
+         virtual Value message(const Message &amp;m)
+         {
+             if (traits-&gt;hollow &amp;&amp; m.message == &quot;_glasses&quot;) {
+-                if (to_int(m.value) &amp; 2) {  // hollow
++                if (to_int(m.value) &amp; Glasses::HOLLOW) {  // hollow
+                     if (!sunglasses) {
+                         sunglasses = true;
+                         set_model( &quot;invisible&quot;);
+@@ -1306,7 +1307,7 @@
+         enigma::Inventory *inv = player::GetInventory(m_affected_actor);
+         if (inv &amp;&amp; inv-&gt;size() &gt; 0) {
+             if (bag == NULL) {
+-                bag = MakeItem(it_bag);
++                bag = MakeItem(&quot;it-bag&quot;);
+                 bag-&gt;setOwnerPos(get_pos());
+             }
+             int i = IntegerRand (0, int (inv-&gt;size()-1));
+@@ -1419,7 +1420,7 @@
+     public:
+         static void setup() {
+             for (int i=0; i&lt;8; ++i)
+-                RegisterStone (new BlackWhiteStone(i));
++                Register(new BlackWhiteStone(i));
+         }
+     };
+ 
+@@ -1549,7 +1550,7 @@
+     if(Item *it = GetItem(get_pos())) {
+         SendMessage(it, &quot;ignite&quot;);
+     } else
+-        SetItem(p, it_explosion1);
++        SetItem(p, MakeItem(&quot;it-explosion1&quot;));
+ }
+ 
+ Value BombStone::message(const Message &amp;m) 
+@@ -1640,7 +1641,7 @@
+         void explode() {
+             GridPos p = get_pos();
+             KillStone(p);
+-            SetItem(p, it_explosion1);
++            SetItem(p, MakeItem(&quot;it-explosion1&quot;));
+         }
+ 
+         void processLight(Direction d) {
+@@ -1880,13 +1881,13 @@
+ 
+     Register(new BrickMagic);
+ 
+-    RegisterStone (new ChameleonStone);
++    Register(new ChameleonStone);
+ 
+     Register(new DiscoLight);
+     Register(new DiscoMedium);
+     Register(new DiscoDark);
+     Register(new DummyStone);
+-    RegisterStone (new EasyModeStone);
++    Register(new EasyModeStone);
+     Register(new FakeOxydStone);
+     Register(new FartStone);
+     Register(new Grate1);
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/world.cc	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -1816,7 +1816,7 @@
+ 
+ namespace
+ {
+-    void explosion(GridPos source, GridPos dest, ItemID explosion_item)
++    void explosion(GridPos source, GridPos dest, const char * explosion_item)
+     {
+         if (Stone *stone = GetStone(dest))
+             SendMessage(stone, &quot;_explosion&quot;, source);
+@@ -1826,10 +1826,10 @@
+             if (has_flags(item, itf_indestructible))
+                 SendMessage(item, &quot;_explosion&quot;, source);
+             else
+-                SetItem(dest, explosion_item);
++                SetItem(dest, MakeItem(explosion_item));
+         }
+         else
+-            SetItem(dest, explosion_item);
++            SetItem(dest, MakeItem(explosion_item));
+         if (Floor *floor = GetFloor(dest))
+             SendMessage(floor, &quot;_explosion&quot;);
+     }
+@@ -1855,7 +1855,7 @@
+ 
+             case EXPLOSION_BLACKBOMB:
+                 if (direct_neighbor) {
+-                    explosion(center, dest, it_explosion1);
++                    explosion(center, dest, &quot;it-explosion1&quot;);
+                 } else {
+                     // Note: should not ignite in non-enigma-mode!
+                     if (stone) SendMessage(stone, &quot;ignite&quot;);
+@@ -1867,7 +1867,7 @@
+             case EXPLOSION_WHITEBOMB:
+                 // Note: at least in oxyd1 only direct neighbors
+                 // explode, and the others not even ignite
+-                explosion(center, dest, it_explosion3);            
++                explosion(center, dest, &quot;it-explosion3&quot;);            
+                 break;
+     
+             case EXPLOSION_BOMBSTONE:
+@@ -2022,12 +2022,7 @@
+     level-&gt;it_layer.set(p,it);
+ }
+ 
+-void SetItem (GridPos p, ItemID id) 
+-{
+-    SetItem (p, MakeItem (id));
+-}
+ 
+-
+ /* -------------------- Actor manipulation -------------------- */
+ 
+ void AddActor(double x, double y, Actor* a) 
+@@ -2323,9 +2318,6 @@
+ namespace
+ {
+     ObjectRepos *repos;
+-    vector&lt;Actor *&gt; actor_repos(ac_COUNT);
+-    vector&lt;Stone *&gt; stone_repos(st_COUNT);
+-    vector&lt;Item *&gt; item_repos(it_COUNT);
+ }
+ 
+ 
+@@ -2381,22 +2373,12 @@
+     Register(kind, o);
+ }
+ 
+-void RegisterStone (Stone *stone) 
+-{
+-    Register(static_cast&lt;Object*&gt;(stone));
+-    StoneID id = get_id(stone);
+-    ASSERT (id != st_INVALID, XLevelRuntime,
+-        &quot;RegisterStone: trying to register with invalid ID&quot;);
+-    stone_repos[id] = stone;
+-}
+-
+ void RegisterActor (Actor *actor) 
+ {
+     Register(static_cast&lt;Object*&gt;(actor));
+     ActorID id = get_id(actor);
+     ASSERT (id != ac_INVALID, XLevelRuntime,
+         &quot;RegisterActor: trying to register with invalid ID&quot;);
+-    actor_repos[id] = actor;
+ }
+ 
+ void Repos_Shutdown() {
+@@ -2440,25 +2422,7 @@
+     return dynamic_cast&lt;Actor*&gt;(MakeObject(kind));
+ }
+ 
+-Actor *MakeActor (ActorID id) 
+-{
+-    if (Actor *ac = actor_repos[id])
+-        return ac-&gt;clone();
+-    else
+-        ASSERT(0, XLevelRuntime, &quot;MakeActor: no actor for ID defined&quot;);
+-    return 0;
+-}
+ 
+-Stone *MakeStone (StoneID id) 
+-{
+-    if (Stone *st = stone_repos[id])
+-        return st-&gt;clone();
+-    else
+-        ASSERT(0, XLevelRuntime, &quot;MakeStone: no stone for ID defined&quot;);
+-    return 0;
+-}
+-
+-
+ void DisposeObject(Object *o) {
+     if (o != 0) {
+         UnnameObject(o);
+@@ -2493,17 +2457,8 @@
+     ItemID id = get_id(item);
+     ASSERT(id != it_INVALID, XLevelRuntime,
+         &quot;RegisterItem: trying to register with invalid ID&quot;);
+-    item_repos[id] = item;
+ }
+ 
+-Item *MakeItem (ItemID id) 
+-{
+-    if (Item *it = item_repos[id])
+-        return it-&gt;clone();
+-    else
+-        ASSERT(0, XLevelRuntime, &quot;MakeItem: no item for ID defined&quot;);
+-    return 0;
+-}
+ 
+ Item * MakeItem(const char *kind) {
+     return dynamic_cast&lt;Item*&gt;(MakeObject(kind));
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2008-07-29 21:28:04 UTC (rev 1247)
++++ trunk/src/world.hh	2008-07-29 22:04:16 UTC (rev 1248)
+@@ -279,7 +279,6 @@
+ /* -------------------- Items -------------------- */
+ 
+     void  SetItem (GridPos p, Item* it);
+-    void  SetItem (GridPos p, ItemID id);
+     Item *GetItem (GridPos p);
+     Item *YieldItem (GridPos p);
+     void  KillItem (GridPos p);
+@@ -311,9 +310,7 @@
+     Object *MakeObject (const char *kind);
+     Floor  *MakeFloor (const char *kind);
+     Stone  *MakeStone (const char *kind);
+-    Stone  *MakeStone (StoneID id);
+     Actor  *MakeActor (const char *kind);
+-    Actor  *MakeActor (ActorID id);
+ 
+     void DisposeObject(Object *o);
+ 
+@@ -333,7 +330,6 @@
+     void Register (const string &amp;kind, Object *obj);
+     void Register (const string &amp;kind, Floor *obj);
+     void Register (const string &amp;kind, Stone *obj);
+-    void RegisterStone (Stone *st);
+     void RegisterActor (Actor *ac);
+ 
+ 
+@@ -341,7 +337,6 @@
+     void Register (const string &amp;kind, Item *obj);
+     void RegisterItem (Item *it);
+     Item   *MakeItem (const char *kind);
+-    Item   *MakeItem (ItemID id);
+ 
+     /* Shutdown object repository */
+     void Repos_Shutdown();
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000681.html">[Enigma-game-svn] r1247 - trunk/src
+</A></li>
+	
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#682">[ date ]</a>
+              <a href="thread.html#682">[ thread ]</a>
+              <a href="subject.html#682">[ subject ]</a>
+              <a href="author.html#682">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

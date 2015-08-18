@@ -1,0 +1,262 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1565 - in trunk/src: floors stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1565%20-%20in%20trunk/src%3A%20floors%20stones&In-Reply-To=%3C200903011412.n21EC0TP027872%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000994.html">
+   <LINK REL="Next"  HREF="000996.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1565 - in trunk/src: floors stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1565%20-%20in%20trunk/src%3A%20floors%20stones&In-Reply-To=%3C200903011412.n21EC0TP027872%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1565 - in trunk/src: floors stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Mar  1 15:12:00 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000994.html">[Enigma-game-svn] r1564 - in trunk: data data/schemas src src/floors
+</A></li>
+        <LI>Next message: <A HREF="000996.html">[Enigma-game-svn] r1566 - in trunk/data/levels: enigma_cross	enigma_ii enigma_iv enigma_tutorial enigma_v enigma_vi enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#995">[ date ]</a>
+              <a href="thread.html#995">[ thread ]</a>
+              <a href="subject.html#995">[ subject ]</a>
+              <a href="author.html#995">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-03-01 15:11:59 +0100 (Sun, 01 Mar 2009)
+New Revision: 1565
+
+Modified:
+   trunk/src/floors/ThiefFloor.cc
+   trunk/src/floors/ThiefFloor.hh
+   trunk/src/stones/ThiefStone.cc
+   trunk/src/stones/ThiefStone.hh
+Log:
+Trunk 1.1: new API reengineering
+- thieves (floor and stones):
+  - get drunken on stealing a bottle - do no longer steal items
+Note:
+- images/animation of drunken thieves still missing - just a bottle is displayed
+
+
+Modified: trunk/src/floors/ThiefFloor.cc
+===================================================================
+--- trunk/src/floors/ThiefFloor.cc	2009-03-01 13:27:29 UTC (rev 1564)
++++ trunk/src/floors/ThiefFloor.cc	2009-03-01 14:11:59 UTC (rev 1565)
+@@ -42,7 +42,7 @@
+     }
+     
+     Value ThiefFloor::message(const Message &amp;m) {
+-        if (m.message == &quot;_capture&quot; &amp;&amp; state == IDLE &amp;&amp; isDisplayable()) {            
++        if (m.message == &quot;_capture&quot; &amp;&amp; (state == IDLE || state == DRUNKEN) &amp;&amp; isDisplayable()) {            
+             // add items on grid pos that can be picked up to our bag
+             Item * it =  GetItem(get_pos());
+             if (it != NULL &amp;&amp; !(it-&gt;get_traits().flags &amp; itf_static) &amp;&amp; bag != NULL) {
+@@ -53,7 +53,7 @@
+                 SetItem(get_pos(), bag);
+                 bag = NULL;
+             }
+-            state = CAPTURED;
++            state = (state == IDLE) ? CAPTURED : DRUNKENCAPTURED;
+             init_model();
+             return true;
+         }
+@@ -84,6 +84,12 @@
+             case CAPTURED:
+                 set_anim(basename + &quot;_captured&quot;);
+                 break;
++            case DRUNKEN:
++                set_model(&quot;it_bottle_idle&quot;);
++                break;
++            case DRUNKENCAPTURED:
++                set_anim(&quot;st_thief_captured&quot;);
++                break;
+         }
+     }
+     
+@@ -107,6 +113,7 @@
+                 init_model();
+                 break;
+             case CAPTURED:
++            case DRUNKENCAPTURED:
+                 KillStone(get_pos());
+                 break;
+             default:
+@@ -128,10 +135,13 @@
+                             bag-&gt;setOwnerPos(get_pos());
+                         }
+                         int i = IntegerRand(0, int (inv-&gt;size()-1));
+-                        dynamic_cast&lt;ItemHolder *&gt;(bag)-&gt;add_item(inv-&gt;yield_item(i));
++                        Item *it = inv-&gt;yield_item(i);
++                        dynamic_cast&lt;ItemHolder *&gt;(bag)-&gt;add_item(it);
+                         didSteal = true;
+                         Glasses::updateGlasses();
+                         player::RedrawInventory(inv);
++                        if (it-&gt;getKind() == &quot;it_bottle_idle&quot;)
++                            state = DRUNKEN;
+                     }
+                 }
+             }
+@@ -143,8 +153,11 @@
+                     bag = MakeItem(&quot;it_bag&quot;);
+                     bag-&gt;setOwnerPos(get_pos());                
+                 }
+-                dynamic_cast&lt;ItemHolder *&gt;(bag)-&gt;add_item(YieldItem(get_pos()));
++                Item *it = YieldItem(get_pos());
++                dynamic_cast&lt;ItemHolder *&gt;(bag)-&gt;add_item(it);
+                 didSteal = true;
++                if (it-&gt;getKind() == &quot;it_bottle_idle&quot;)
++                    state = DRUNKEN;
+             }
+         }
+         if (didSteal)
+
+Modified: trunk/src/floors/ThiefFloor.hh
+===================================================================
+--- trunk/src/floors/ThiefFloor.hh	2009-03-01 13:27:29 UTC (rev 1564)
++++ trunk/src/floors/ThiefFloor.hh	2009-03-01 14:11:59 UTC (rev 1565)
+@@ -33,10 +33,12 @@
+         
+     private:
+         enum iState {
+-            IDLE,         ///&lt; 
+-            EMERGING,     ///&lt; 
+-            RETREATING,   ///&lt; 
+-            CAPTURED      ///&lt; 
++            IDLE,            ///&lt; 
++            EMERGING,        ///&lt; 
++            RETREATING,      ///&lt; 
++            CAPTURED,         ///&lt; 
++            DRUNKEN,         ///&lt;
++            DRUNKENCAPTURED  ///&lt;
+         };
+         
+         enum ObjectPrivatFlagsBits {
+
+Modified: trunk/src/stones/ThiefStone.cc
+===================================================================
+--- trunk/src/stones/ThiefStone.cc	2009-03-01 13:27:29 UTC (rev 1564)
++++ trunk/src/stones/ThiefStone.cc	2009-03-01 14:11:59 UTC (rev 1565)
+@@ -44,7 +44,7 @@
+         if (m.message == &quot;signal&quot; &amp;&amp; server::GameCompatibility != GAMET_ENIGMA) {
+             performAction(!m.value.to_bool());  // inverse signal multiplier
+             return Value();
+-        } else if (m.message == &quot;_capture&quot; &amp;&amp; state == IDLE &amp;&amp; isDisplayable()) {            
++        } else if (m.message == &quot;_capture&quot; &amp;&amp; (state == IDLE || state == DRUNKEN) &amp;&amp; isDisplayable()) {            
+             // add items on grid pos that can be picked up to our bag
+             Item * it =  GetItem(get_pos());
+             if (it != NULL &amp;&amp; !(it-&gt;get_traits().flags &amp; itf_static) &amp;&amp; bag != NULL) {
+@@ -55,7 +55,7 @@
+                 SetItem(get_pos(), bag);
+                 bag = NULL;
+             }
+-            state = CAPTURED;
++            state = (state == IDLE) ? CAPTURED : DRUNKENCAPTURED;
+             init_model();
+             return true;
+         }
+@@ -80,6 +80,12 @@
+             case CAPTURED:
+                 set_anim(&quot;st_thief_captured&quot;);
+                 break;
++            case DRUNKEN:
++                set_model(&quot;it_bottle_idle&quot;);
++                break;
++            case DRUNKENCAPTURED:
++                set_anim(&quot;st_thief_captured&quot;);
++                break;
+         }
+     }
+     
+@@ -87,7 +93,8 @@
+         switch (state) {
+             case EMERGING:
+                 doSteal();
+-                state = RETREATING;
++                if (state != DRUNKEN)
++                    state = RETREATING;
+                 init_model();
+                 break;
+             case RETREATING:
+@@ -95,6 +102,7 @@
+                 init_model();
+                 break;
+             case CAPTURED:
++            case DRUNKENCAPTURED:
+                 KillStone(get_pos());
+                 break;
+             default:
+@@ -130,9 +138,12 @@
+                             bag-&gt;setOwnerPos(get_pos());
+                         }
+                         int i = IntegerRand(0, int (inv-&gt;size()-1));
+-                        dynamic_cast&lt;ItemHolder *&gt;(bag)-&gt;add_item(inv-&gt;yield_item(i));
++                        Item *it = inv-&gt;yield_item(i);
++                        dynamic_cast&lt;ItemHolder *&gt;(bag)-&gt;add_item(it);
+                         Glasses::updateGlasses();
+                         player::RedrawInventory(inv);
++                        if (it-&gt;getKind() == &quot;it_bottle_idle&quot;)
++                            state = DRUNKEN;
+                         sound_event(&quot;thief&quot;);
+                     }
+                 }
+
+Modified: trunk/src/stones/ThiefStone.hh
+===================================================================
+--- trunk/src/stones/ThiefStone.hh	2009-03-01 13:27:29 UTC (rev 1564)
++++ trunk/src/stones/ThiefStone.hh	2009-03-01 14:11:59 UTC (rev 1565)
+@@ -34,10 +34,12 @@
+         
+     private:
+         enum iState {
+-            IDLE,         ///&lt; 
+-            EMERGING,     ///&lt; 
+-            RETREATING,   ///&lt; 
+-            CAPTURED      ///&lt; 
++            IDLE,            ///&lt; 
++            EMERGING,        ///&lt; 
++            RETREATING,      ///&lt; 
++            CAPTURED,        ///&lt;
++            DRUNKEN,         ///&lt;
++            DRUNKENCAPTURED  ///&lt;
+         };
+         
+     public:
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000994.html">[Enigma-game-svn] r1564 - in trunk: data data/schemas src src/floors
+</A></li>
+	<LI>Next message: <A HREF="000996.html">[Enigma-game-svn] r1566 - in trunk/data/levels: enigma_cross	enigma_ii enigma_iv enigma_tutorial enigma_v enigma_vi enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#995">[ date ]</a>
+              <a href="thread.html#995">[ thread ]</a>
+              <a href="subject.html#995">[ subject ]</a>
+              <a href="author.html#995">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,155 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r2041 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2010-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2041%20-%20trunk/src&In-Reply-To=%3C201003042119.o24LJlm4006294%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001464.html">
+   <LINK REL="Next"  HREF="001466.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r2041 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2041%20-%20trunk/src&In-Reply-To=%3C201003042119.o24LJlm4006294%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r2041 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Mar  4 22:19:47 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001464.html">[Enigma-game-svn] r2040 - trunk/data
+</A></li>
+        <LI>Next message: <A HREF="001466.html">[Enigma-game-svn] r2042 - homepage/input
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1465">[ date ]</a>
+              <a href="thread.html#1465">[ thread ]</a>
+              <a href="subject.html#1465">[ subject ]</a>
+              <a href="author.html#1465">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2010-03-04 22:19:43 +0100 (Thu, 04 Mar 2010)
+New Revision: 2041
+
+Modified:
+   trunk/src/lua.cc
+Log:
+- fix group comparison, intersection, difference:
+  - comparison did fail when left side was subset of right side
+  - all three ops did fail when left side was a single object
+
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2010-03-02 23:27:44 UTC (rev 2040)
++++ trunk/src/lua.cc	2010-03-04 21:19:43 UTC (rev 2041)
+@@ -1685,18 +1685,29 @@
+     }
+     std::list&lt;Object *&gt; objects;
+     std::set&lt;Object *&gt; objSet;
++    int size1 = 0;
++    int size2 = 0;
++    int sizeresult = 0;
+     
+     if (is_group(L, 2)) {
+         lua_getmetatable(L, 2);
+         int numObjects = lua_objlen(L, -1);
+         for (int i = 1; i &lt;= numObjects; ++i) {
+             lua_rawgeti(L, -1, i);  // the object
+-            objSet.insert(to_object(L, -1));
++            Object * obj = to_object(L, -1);
++            if (obj != NULL) {
++                size2++;
++                objSet.insert(obj);
++            }
+             lua_pop(L, 1);          // the object        
+         }
+         lua_pop(L, 1);          // the metatable        
+     } else {
+-        objSet.insert(to_object(L, 2));
++        Object * obj = to_object(L, 2);
++        if (obj != NULL) {
++            size2++;
++            objSet.insert(obj);
++        }
+     }
+     
+     if (is_group(L, 1)) {
+@@ -1705,26 +1716,33 @@
+         for (int i = 1; i &lt;= numObjects; ++i) {
+             lua_rawgeti(L, -1, i);  // the object
+             Object * obj = to_object(L, -1);
+-            if ((isIntersect &amp;&amp; objSet.find(obj) != objSet.end()) ||
+-                    (!isIntersect &amp;&amp; objSet.find(obj) == objSet.end()))
+-                objects.push_back(obj);
++            if (obj != NULL) {
++                size1++;
++                if ((isIntersect &amp;&amp; objSet.find(obj) != objSet.end()) ||
++                        (!isIntersect &amp;&amp; objSet.find(obj) == objSet.end())) {
++                    objects.push_back(obj);
++                    sizeresult++;
++                }
++            }
+             lua_pop(L, 1);          // the object        
+         }
+         lua_pop(L, 1);          // the metatable        
+     } else {
+-        Object * obj = to_object(L, 2);
+-        if ((isIntersect &amp;&amp; objSet.find(obj) != objSet.end()) ||
+-                (!isIntersect &amp;&amp; objSet.find(obj) == objSet.end()))
+-            objects.push_back(obj);
++        Object * obj = to_object(L, 1);
++        if (obj != NULL) {
++            size1++;
++            if ((isIntersect &amp;&amp; objSet.find(obj) != objSet.end()) ||
++                    (!isIntersect &amp;&amp; objSet.find(obj) == objSet.end())) {
++                objects.push_back(obj);
++                sizeresult++;
++            }
++        }
+     }
+     if (!equal)
+         return pushNewGroup(L, objects);
+     else {
+         // check on equality
+-        // remove NULL objects first
+-        pushNewGroup(L, objects);
+-        objects = toObjectList(L, -1);
+-        return !objects.size();
++        return (size1 == size2) &amp;&amp; (sizeresult == 0);
+     }    
+ }
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001464.html">[Enigma-game-svn] r2040 - trunk/data
+</A></li>
+	<LI>Next message: <A HREF="001466.html">[Enigma-game-svn] r2042 - homepage/input
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1465">[ date ]</a>
+              <a href="thread.html#1465">[ thread ]</a>
+              <a href="subject.html#1465">[ subject ]</a>
+              <a href="author.html#1465">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

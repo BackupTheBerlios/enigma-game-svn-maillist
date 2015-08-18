@@ -1,0 +1,955 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1164 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1164%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200806052233.m55MXbis007266%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000597.html">
+   <LINK REL="Next"  HREF="000599.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1164 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1164%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200806052233.m55MXbis007266%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1164 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Fri Jun  6 00:33:37 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000597.html">[Enigma-game-svn] r1163 - homepage/input
+</A></li>
+        <LI>Next message: <A HREF="000599.html">[Enigma-game-svn] r1165 - in trunk/src: . stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#598">[ date ]</a>
+              <a href="thread.html#598">[ thread ]</a>
+              <a href="subject.html#598">[ subject ]</a>
+              <a href="author.html#598">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-06-06 00:33:30 +0200 (Fri, 06 Jun 2008)
+New Revision: 1164
+
+Added:
+   trunk/src/stones/ActorImpulseStone.cc
+   trunk/src/stones/ActorImpulseStone.hh
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/api2init.lua
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/Object.cc
+   trunk/src/WorldProxy.cc
+   trunk/src/items.cc
+   trunk/src/ox_extra.cc
+   trunk/src/ox_magnum.cc
+   trunk/src/ox_oxyd1.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/stones/ClusterStone.cc
+   trunk/src/stones/ClusterStone.hh
+   trunk/src/stones_simple.cc
+Log:
+Trunk 1.1: new API reengineering ActorImpulseStone 
+- renaming to st_actorimpulse, st_actorimpulse_invisible
+- new attribute &quot;invisible&quot;
+- attribute &quot;force&quot; renamed to standard attribute &quot;strength&quot;
+- global attribute &quot;BumperForce&quot; renamed to &quot;BumperStrength&quot;
+- invisible actorimpulse are visible with glasses with SPOT_ACTORIMPULSE
+- boulder stones are reflected on actorimpulse
+
+- it_glasses_broken as it_glasses in state SPOT_NOTHING = 0
+
+- Clusterstones: fix problems with reengineered neighbor stones - switch
+  completly to new methods, avoid usage of obsolete get_kind()
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-06-01 21:50:03 UTC (rev 1163)
++++ trunk/data/api1init.lua	2008-06-05 22:33:30 UTC (rev 1164)
+@@ -55,6 +55,7 @@
+     it_extralife = &quot;it-extralife&quot;,
+     it_floppy = &quot;it-floppy&quot;,
+     it_glasses = &quot;it-glasses&quot;,
++    it_glasses_broken = &quot;it-glasses-broken&quot;,
+     it_hammer = &quot;it-hammer&quot;,
+     it_magnet = &quot;it-magnet&quot;,
+     it_magnet_on = &quot;it-magnet-on&quot;,
+@@ -68,6 +69,8 @@
+     it_wormhole_on = &quot;it-wormhole&quot;,
+     it_wormhole_off = &quot;it-wormhole-off&quot;,
+     it_wrench = &quot;it-wrench&quot;,
++    st_actorimpulse = &quot;st-actorimpulse&quot;,
++    st_actorimpulse_invisible = &quot;st-actorimpulse_invisible&quot;,
+     st_blocker = &quot;st-blocker&quot;,
+     st_blocker_new = &quot;st-blocker-growing&quot;,
+     st_bluesand = &quot;st-blue-sand&quot;,
+@@ -313,6 +316,10 @@
+      if key == &quot;value&quot; then
+          _key = &quot;coin_value&quot;
+      end
++     if key == &quot;force&quot; and (_obj_name == &quot;st-actorimpulse&quot; or
++             _obj_name == &quot;st-actorimpulse_invisible&quot;)  then
++         _key = &quot;strength&quot;
++     end
+      if key == &quot;friction_factor&quot; then
+          _key = &quot;friction&quot;
+      end
+@@ -379,6 +386,10 @@
+      if key == &quot;value&quot; then
+          _key = &quot;coin_value&quot;
+      end
++     if key == &quot;force&quot; and (_obj_name == &quot;st-actorimpulse&quot; or
++             _obj_name == &quot;st-actorimpulse_invisible&quot;)  then
++         _key = &quot;strength&quot;
++     end
+      if key == &quot;friction_factor&quot; then
+          _key = &quot;friction&quot;
+      end
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2008-06-01 21:50:03 UTC (rev 1163)
++++ trunk/data/api2init.lua	2008-06-05 22:33:30 UTC (rev 1164)
+@@ -107,6 +107,7 @@
+ PERKIND       = 2
+ 
+ -- glasses
++SPOT_NOTHING        =   0
+ SPOT_DEATH          =   1
+ SPOT_HOLLOW         =   2
+ SPOT_ACTORIMPULSE   =   4
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-06-01 21:50:03 UTC (rev 1163)
++++ trunk/data/models-2d.lua	2008-06-05 22:33:30 UTC (rev 1164)
+@@ -401,7 +401,6 @@
+         &quot;it-dynamite&quot;,
+         &quot;it-flagblack&quot;,
+         &quot;it-flagwhite&quot;,
+-        &quot;it-glasses-broken&quot;,
+         &quot;it-hill&quot;,
+         &quot;it-hollow&quot;,
+         &quot;it-hstrip&quot;,
+@@ -436,6 +435,7 @@
+     DefImage(&quot;it_extralife&quot;, {filename=&quot;it-extralife&quot;})
+     DefImage(&quot;it_floppy&quot;, {filename=&quot;it-floppy&quot;})
+     DefImage(&quot;it_glasses&quot;, {filename=&quot;it-glasses&quot;})
++    DefImage(&quot;it_glasses_broken&quot;, {filename=&quot;it-glasses-broken&quot;})
+     DefImage(&quot;it_hammer&quot;, {filename=&quot;it-hammer&quot;})
+     DefImage(&quot;it_key&quot;, {filename=&quot;it-key&quot;})
+     DefImage(&quot;it_sword&quot;, {filename=&quot;it-sword&quot;})
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-06-01 21:50:03 UTC (rev 1163)
++++ trunk/data/schemas/objects.xml	2008-06-05 22:33:30 UTC (rev 1164)
+@@ -14,6 +14,11 @@
+     &lt;attr name=&quot;flavor&quot; type=&quot;string&quot; default=&quot;b&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;friction&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;gradient&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;hit_factor&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;hit_distortion_xx&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;hit_distortion_xy&quot; type=&quot;double&quot; default=&quot;0&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;hit_distortion_yx&quot; type=&quot;double&quot; default=&quot;0&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;hit_distortion_yy&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;instant&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;interval&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;interval_s&quot; type=&quot;double&quot; default=&quot;3&quot; rw=&quot;rw&quot;/&gt;
+@@ -115,6 +120,9 @@
+     &lt;object name=&quot;it_glasses&quot;&gt;
+       &lt;attr name=&quot;state&quot; max=&quot;31&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;it_glasses_broken&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;0&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;it_hammer&quot;/&gt;
+     &lt;object name=&quot;it_hammer_new&quot; init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;it_key&quot;&gt;
+@@ -189,6 +197,21 @@
+     &lt;object name=&quot;st&quot; abstract=&quot;true&quot;&gt;
+       &lt;attr name=&quot;movable&quot; rw=&quot;r&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_actorimpulse&quot;&gt;
++      &lt;attr name=&quot;invisible&quot;/&gt;
++      &lt;attr name=&quot;strength&quot; default=&quot;nil&quot;/&gt;
++      &lt;attr name=&quot;hit_factor&quot;/&gt;
++      &lt;attr name=&quot;hit_distortion_xx&quot;/&gt;
++      &lt;attr name=&quot;hit_distortion_xy&quot;/&gt;
++      &lt;attr name=&quot;hit_distortion_yx&quot;/&gt;
++      &lt;attr name=&quot;hit_distortion_yy&quot;/&gt;
++      &lt;msg name=&quot;_init&quot;/&gt;
++      &lt;msg name=&quot;_model_reanimated&quot;/&gt;
++      &lt;msg name=&quot;_trigger&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_actorimpulse_invisible&quot;&gt;
++      &lt;attr name=&quot;invisible&quot; value=&quot;true&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_blocker&quot;&gt;
+       &lt;attr name=&quot;autoclose&quot;/&gt;
+       &lt;msg name=&quot;close&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-06-01 21:50:03 UTC (rev 1163)
++++ trunk/src/Makefile.am	2008-06-05 22:33:30 UTC (rev 1164)
+@@ -197,6 +197,8 @@
+ 	lev/ScoreManager.hh	\
+ 	lev/VolatileIndex.cc	\
+ 	lev/VolatileIndex.hh	\
++	stones/ActorImpulseStone.cc	\
++	stones/ActorImpulseStone.hh	\
+ 	stones/BlockerStone.cc	\
+ 	stones/BlockerStone.hh	\
+ 	stones/BoulderStone.cc	\
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2008-06-01 21:50:03 UTC (rev 1163)
++++ trunk/src/Object.cc	2008-06-05 22:33:30 UTC (rev 1164)
+@@ -114,7 +114,7 @@
+     }
+     
+     const char * Object::get_kind() const {      // To be made pure virtual
+-        AttribMap::const_iterator i = attribs.find(&quot;kind&quot;);        
++        AttribMap::const_iterator i = attribs.find(&quot;kind&quot;);
+         ASSERT(i != attribs.end() &amp;&amp; i-&gt;second.getType() == Value::STRING, XLevelRuntime,
+                 &quot;Object: attribute kind not found&quot;);
+         return i-&gt;second.get_string();
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2008-06-01 21:50:03 UTC (rev 1163)
++++ trunk/src/WorldProxy.cc	2008-06-05 22:33:30 UTC (rev 1164)
+@@ -63,7 +63,7 @@
+             return Width();
+         } else if (key == &quot;Brittleness&quot;) {
+             return server::Brittleness;
+-        } else if (key == &quot;BumperForce&quot;) {
++        } else if (key == &quot;BumperStrength&quot;) {
+             return server::BumperForce;
+         } else if (key == &quot;ElectricForce&quot;) {
+             return server::ElectricForce;
+@@ -77,7 +77,7 @@
+             return server::HoleForce;
+         } else if (key == &quot;IceFriction&quot;) {
+             return server::IceFriction;
+-        } else if (key == &quot;MagnetForce&quot;) {
++        } else if (key == &quot;MagnetStrength&quot;) {
+             return server::MagnetForce;
+         } else if (key == &quot;MagnetRange&quot;) {
+             return server::MagnetRange;
+@@ -89,7 +89,7 @@
+             return server::SwampSinkSpeed;
+         } else if (key == &quot;WaterSinkSpeed&quot;) {
+             return server::WaterSinkSpeed;
+-        } else if (key == &quot;WormholeForce&quot;) {
++        } else if (key == &quot;WormholeStrength&quot;) {
+             return server::WormholeForce;
+         } else if (key == &quot;WormholeRange&quot;) {
+             return server::WormholeRange;
+@@ -111,7 +111,7 @@
+             STATUSBAR-&gt;show_move_counter (server::ShowMoves);
+         } else if (key == &quot;Brittleness&quot;) {
+             server::Brittleness = val;
+-        } else if (key == &quot;BumperForce&quot;) {
++        } else if (key == &quot;BumperStrength&quot;) {
+             server::BumperForce = val;
+         } else if (key == &quot;ElectricForce&quot;) {
+             server::ElectricForce = val;
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-06-01 21:50:03 UTC (rev 1163)
++++ trunk/src/items.cc	2008-06-05 22:33:30 UTC (rev 1164)
+@@ -192,7 +192,6 @@
+     DEF_ITEM(Key,       &quot;it_key&quot;, it_key);
+     DEF_ITEM(Odometer,  &quot;it-odometer&quot;, it_odometer);
+     DEF_ITEM(Wrench,    &quot;it_wrench&quot;, it_wrench);
+-    DEF_ITEM(BrokenGlasses, &quot;it-glasses-broken&quot;, it_glasses_broken);
+     DEF_ITEMF(Coffee,   &quot;it-coffee&quot;, it_coffee, itf_inflammable);
+ }
+ 
+@@ -3433,7 +3432,7 @@
+ /* -------------------- Glasses -------------------- */
+     class Glasses : public Item {
+         CLONEOBJ(Glasses);
+-        DECL_TRAITS;
++        DECL_TRAITS_ARRAY(2, traitsIdx());
+ 
+     public:
+         enum Spot {
+@@ -3447,18 +3446,25 @@
+         };
+         
+         static void updateGlasses();
++        static void setup();
++                
++        Glasses(int initState);
+         
+-        Glasses();
+-        
+         // StateObject interface
+         virtual int maxState() const;
+         virtual void toggleState();
++        virtual void setState(int extState);
+         
++        // GridObject interface
++        virtual void init_model();
++        
+         // Items interface
+         virtual void on_drop(Actor *a);
+         virtual void on_pickup(Actor *a);
+         virtual void on_stonehit(Stone *st);
+         
++    private:
++        int traitsIdx() const;
+     };
+     
+     void Glasses::updateGlasses() {
+@@ -3475,10 +3481,15 @@
+         }
+     }
+     
+-    Glasses::Glasses() {
+-        state = DEATH + HOLLOW + LIGHTPASSENGER;
++    void Glasses::setup() {
++        RegisterItem (new Glasses(0));
++        RegisterItem (new Glasses(DEATH + HOLLOW + LIGHTPASSENGER));
+     }
+     
++    Glasses::Glasses(int initState) {
++        state = initState;
++    }
++    
+     int Glasses::maxState() const {
+         return MAX;
+     }
+@@ -3487,6 +3498,24 @@
+         // ignore toggle
+     }
+     
++    void Glasses::setState(int extState) {
++        state = extState;
++        if (isDisplayable()) {
++            init_model();
++        } else {
++            // maybe part of players inventory
++            updateGlasses();
++            player::RedrawInventory();
++        }
++    }
++    
++    void Glasses::init_model() {
++        if (state &gt; 0)
++            set_model(&quot;it_glasses&quot;);
++        else
++            set_model(&quot;it_glasses_broken&quot;);
++    }
++    
+     void Glasses::on_drop(Actor *a) {
+         updateGlasses();
+     }
+@@ -3495,12 +3524,19 @@
+     }
+     void Glasses::on_stonehit(Stone *) {
+         sound_event (&quot;shatter&quot;);
+-        replace(it_glasses_broken);
++        setState(0);
+     }
+         
+-    DEF_TRAITS(Glasses, &quot;it_glasses&quot;, it_glasses);
++    int Glasses::traitsIdx() const {
++        return state != 0 ? 0 : 1;
++    }
+ 
++    ItemTraits Glasses::traits[2] = {
++        {&quot;it_glasses&quot;,  it_glasses,  itf_none},
++        {&quot;it_glasses_broken&quot;,  it_glasses_broken,  itf_none}
++    };
+ 
++
+ /* -------------------- Invisible abyss -------------------- */
+ namespace
+ {
+@@ -4069,8 +4105,7 @@
+     RegisterItem (new FlagBlack);
+     RegisterItem (new FlagWhite);
+     RegisterItem (new Floppy);
+-    RegisterItem (new Glasses);
+-    RegisterItem (new BrokenGlasses);
++    Glasses::setup();
+     RegisterItem (new Hammer(false));
+     Register (&quot;it_hammer_new&quot;, new Hammer(true));
+     RegisterItem (new Hill);
+@@ -4096,7 +4131,6 @@
+     RegisterItem (new SeedWood);
+     RegisterItem (new SeedNowood);
+     RegisterItem (new SeedVolcano);
+-//    RegisterItem (new Sensor);
+     Sensor::setup();
+     ShogunDot::setup();
+     SignalFilterItem::setup();
+
+Modified: trunk/src/ox_extra.cc
+===================================================================
+--- trunk/src/ox_extra.cc	2008-06-01 21:50:03 UTC (rev 1163)
++++ trunk/src/ox_extra.cc	2008-06-05 22:33:30 UTC (rev 1164)
+@@ -182,7 +182,7 @@
+     UNUSED,              // OxydExtra stone 0x39
+     UNUSED,              // OxydExtra stone 0x3a
+     UNUSED,              // OxydExtra stone 0x3b
+-    &quot;st-actorimpulse&quot;,   // OxydExtra stone 0x3c
++    &quot;st_actorimpulse&quot;,   // OxydExtra stone 0x3c
+     UNUSED,              // OxydExtra stone 0x3d
+     &quot;st-laser-1&quot;,        // OxydExtra stone 0x3e  The laser-names are fake names!
+     &quot;st-laser-2&quot;,        // OxydExtra stone 0x3f  Direction and state are generated by Enigma.
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2008-06-01 21:50:03 UTC (rev 1163)
++++ trunk/src/ox_magnum.cc	2008-06-05 22:33:30 UTC (rev 1164)
+@@ -188,8 +188,8 @@
+     UNUSED,                     // OxydMagnum stone 0x3f
+     UNUSED,                     // OxydMagnum stone 0x40
+     UNUSED,                     // OxydMagnum stone 0x41
+-    &quot;st-actorimpulse&quot;,          // OxydMagnum stone 0x42
+-    &quot;st-actorimpulse_invisible&quot;, // OxydMagnum stone 0x43
++    &quot;st_actorimpulse&quot;,          // OxydMagnum stone 0x42
++    &quot;st_actorimpulse_invisible&quot;, // OxydMagnum stone 0x43
+     &quot;st-laser-1&quot;,               // OxydMagnum stone 0x44  The laser-names are fake names!
+     &quot;st-laser-2&quot;,               // OxydMagnum stone 0x45  Direction and state are generated by Enigma.
+     &quot;st-laser-3&quot;,               // OxydMagnum stone 0x46
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2008-06-01 21:50:03 UTC (rev 1163)
++++ trunk/src/ox_oxyd1.cc	2008-06-05 22:33:30 UTC (rev 1164)
+@@ -218,8 +218,8 @@
+     &quot;&quot;,                         // Oxyd1 stone 0x3f magic stone
+     &quot;&quot;,                         // Oxyd1 stone 0x40 magic stone
+     &quot;&quot;,                         // Oxyd1 stone 0x41 magic stone
+-    &quot;st-actorimpulse&quot;,          // Oxyd1 stone 0x42
+-    &quot;st-actorimpulse_invisible&quot;, // Oxyd1 stone 0x43
++    &quot;st_actorimpulse&quot;,          // Oxyd1 stone 0x42
++    &quot;st_actorimpulse_invisible&quot;, // Oxyd1 stone 0x43
+     &quot;st-laser-1&quot;,               // Oxyd1 stone 0x44  The laser-names are fake names!
+     &quot;st-laser-2&quot;,               // Oxyd1 stone 0x45  Direction and state are generated by Enigma.
+     &quot;st-laser-3&quot;,               // Oxyd1 stone 0x46
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-06-01 21:50:03 UTC (rev 1163)
++++ trunk/src/ox_peroxyd.cc	2008-06-05 22:33:30 UTC (rev 1164)
+@@ -254,8 +254,8 @@
+     &quot;st-magic&quot;,                 // PerOxyd stone 0x39 ('st-magic')
+     &quot;st-magic&quot;,                 // PerOxyd stone 0x3a ('st-magic')
+     &quot;st-magic&quot;,                 // PerOxyd stone 0x3b ('st-magic')
+-    &quot;st-actorimpulse&quot;,          // PerOxyd stone 0x3c
+-    &quot;st-actorimpulse_invisible&quot;, // PerOxyd stone 0x3d
++    &quot;st_actorimpulse&quot;,          // PerOxyd stone 0x3c
++    &quot;st_actorimpulse_invisible&quot;, // PerOxyd stone 0x3d
+     &quot;st-laser-1&quot;,               // PerOxyd stone 0x3e  The laser-names are fake names!
+     &quot;st-laser-2&quot;,               // PerOxyd stone 0x3f  Direction and state are generated by Enigma.
+     &quot;st-laser-3&quot;,               // PerOxyd stone 0x40
+
+Added: trunk/src/stones/ActorImpulseStone.cc
+===================================================================
+--- trunk/src/stones/ActorImpulseStone.cc	2008-06-01 21:50:03 UTC (rev 1163)
++++ trunk/src/stones/ActorImpulseStone.cc	2008-06-05 22:33:30 UTC (rev 1164)
+@@ -0,0 +1,167 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/ActorImpulseStone.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;player.hh&quot;
++#include &quot;server.hh&quot;
++
++namespace enigma {
++    ActorImpulseStone::ActorImpulseStone(bool isInvisible) : Stone () {
++        if (isInvisible)
++            objFlags |= OBJBIT_INVISIBLE;
++            
++        state = IDLE;
++    }
++
++    std::string ActorImpulseStone::getClass() const {
++        return &quot;st_actorimpulse&quot;;
++    }
++        
++    void ActorImpulseStone::setAttr(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;invisible&quot;) {
++            if (val.to_bool() != ((objFlags &amp; OBJBIT_INVISIBLE) != 0)) {
++                // change of visibility
++                objFlags ^= OBJBIT_INVISIBLE;
++                if (isDisplayable())
++                    init_model();
++            }
++        } else
++            Stone::setAttr(key, val);
++    }
++    
++    Value ActorImpulseStone::getAttr(const std::string &amp;key) const {
++        if (key == &quot;invisible&quot;) {
++            return (objFlags &amp; OBJBIT_INVISIBLE) != 0;
++        } else
++            return Stone::getAttr(key);
++    }
++    
++    Value ActorImpulseStone::message(const Message &amp;m) {
++        if (m.message == &quot;_model_reanimated&quot;) {
++            state = IDLE;   // reset any running anim, be ready to bump again on new grid
++            init_model();   // visibility might have changed
++        } else if (m.message == &quot;_trigger&quot;) {
++            // a boulder that we will send back
++            Object *boulder = m.sender;
++            if (boulder != NULL &amp;&amp; m.value.to_bool()) {
++                boulder-&gt;setAttr(&quot;orientation&quot;, reverse(to_direction(boulder-&gt;getAttr(&quot;orientation&quot;))));
++                sound_event(&quot;bumper&quot;);
++                state = PULSING;
++                set_anim(&quot;st-actorimpulse-anim&quot;);
++            }
++        } else if (m.message == &quot;_glasses&quot;) {
++            init_model();
++            return Value();
++        } else if (server::GameCompatibility != GAMET_ENIGMA) {
++            // Oxyd* usage of ActorImpulseStone as a signal multiplier
++            ObjectList ol = getAttr(&quot;$!oxyd!destinations&quot;);
++            
++            if (m.message == &quot;_init&quot; &amp;&amp; ol.size() &gt; 0) {
++                setAttr(&quot;$signalidx&quot;, 0);
++                SendMessage(ol.front(), &quot;signal&quot;, 1);
++                return Value();
++            } else if (m.message == &quot;signal&quot;) {
++                int i = 0;
++                int signalidx = getAttr(&quot;$signalidx&quot;);
++                bool didBreak = false;
++                for (ObjectList::iterator oit = ol.begin(); oit != ol.end(); ++oit, i++) {
++                    if (i == signalidx) {
++                        SendMessage(*oit, &quot;signal&quot;, 0);
++                    } else if (i == signalidx + 1) {
++                        SendMessage(*oit, &quot;signal&quot;, 1);
++                        didBreak = true;
++                        break;
++                    }
++                }
++                if (!didBreak &amp;&amp; ol.size() &gt; 0) {
++                    SendMessage(ol.front(), &quot;signal&quot;, 1);
++                    signalidx = 0;                        
++                } else
++                    signalidx++;
++                
++                setAttr(&quot;$signalidx&quot;, signalidx);
++                return Value();
++            }
++        } // GameCompatibility != GAMET_ENIGMA
++        return Stone::message(m);
++    }
++            
++    void ActorImpulseStone::setState(int extState) {
++        // ignore all state settings
++    }
++
++    void ActorImpulseStone::init_model() {
++        if (state == IDLE) {
++            if ((objFlags &amp; OBJBIT_INVISIBLE) &amp;&amp; ((server::GlassesVisibility &amp; 4) == 0))
++                set_model(&quot;invisible&quot;);
++            else
++                set_model(&quot;st-actorimpulse&quot;);
++        }
++        // PULSING anim is always visible and should continue independent on init_model calls
++    }
++    
++    void ActorImpulseStone::animcb() {
++        if (state == PULSING) {
++            state = IDLE;
++            init_model();
++        }
++    }
++    
++    void ActorImpulseStone::actor_hit(const StoneContact &amp;sc) {
++        if ((objFlags &amp; OBJBIT_INVISIBLE) &amp;&amp; player::WieldedItemIs(sc.actor, &quot;it_brush&quot;)) {
++            objFlags &amp;= ~OBJBIT_INVISIBLE;
++        }
++        if (state == IDLE) {
++            // actor_hit is called before reflect, but the force added below
++            // is applied to actor after the reflection.
++
++            double forcefac = getDefaultedAttr(&quot;strength&quot;, server::BumperForce);
++
++            V2 vec = normalize(sc.actor-&gt;get_pos() - get_pos().center());
++            sc.actor-&gt;add_force(distortedVelocity(vec, forcefac));                
++
++            sound_event(&quot;bumper&quot;);
++            state = PULSING;
++            set_anim(&quot;st-actorimpulse-anim&quot;);
++        }
++    }
++
++    const char *ActorImpulseStone::collision_sound() {
++        // no general sound - just a sound if really bumping
++        return &quot;&quot;;
++    }
++
++    int ActorImpulseStone::traitsIdx() const {
++        return (objFlags &amp; OBJBIT_INVISIBLE) ? 1 : 0;
++    }
++
++    
++    StoneTraits ActorImpulseStone::traits[2] = {
++        {&quot;st_actorimpulse&quot;, st_INVALID, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++        {&quot;st_actorimpulse_invisible&quot;, st_INVALID, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++    };
++    
++    BOOT_REGISTER_START
++        BootRegister(new ActorImpulseStone(false), &quot;st_actorimpulse&quot;);
++        BootRegister(new ActorImpulseStone(true), &quot;st_actorimpulse_invisible&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/ActorImpulseStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/ActorImpulseStone.hh
+===================================================================
+--- trunk/src/stones/ActorImpulseStone.hh	2008-06-01 21:50:03 UTC (rev 1163)
++++ trunk/src/stones/ActorImpulseStone.hh	2008-06-05 22:33:30 UTC (rev 1164)
+@@ -0,0 +1,72 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef ACTORIMPULSESTONE_HH
++#define ACTORIMPULSESTONE_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class ActorImpulseStone : public Stone {
++        CLONEOBJ(ActorImpulseStone);
++        DECL_TRAITS_ARRAY(2, traitsIdx());
++    private:
++        enum iState {
++            IDLE,     ///&lt; 
++            PULSING   ///&lt; 
++        };
++        
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_INVISIBLE   =   1&lt;&lt;24,  ///&lt; Object is invisible 
++        };
++    public:
++        ActorImpulseStone(bool isInvisible);
++        
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++        virtual Value getAttr(const std::string &amp;key) const;
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        
++        // ModelCallback interface
++        virtual void animcb();
++        
++        // Stone interface
++        virtual void actor_hit(const StoneContact &amp;sc);
++        virtual const char *collision_sound();
++
++    private:
++        int traitsIdx() const;
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/ActorImpulseStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones/ClusterStone.cc
+===================================================================
+--- trunk/src/stones/ClusterStone.cc	2008-06-01 21:50:03 UTC (rev 1163)
++++ trunk/src/stones/ClusterStone.cc	2008-06-05 22:33:30 UTC (rev 1164)
+@@ -21,10 +21,15 @@
+ //#include &quot;main.hh&quot;
+ 
+ namespace enigma {
+-    ClusterStone::ClusterStone(std::string classname, std::string connections) : Stone(classname.c_str()) {
++    ClusterStone::ClusterStone(std::string classname, std::string connections) : Stone() {
+         setAttr(&quot;connections&quot;, connections);
++        setAttr(&quot;$class&quot;, classname);
+     }
+     
++    std::string ClusterStone::getClass() const {
++        return getAttr(&quot;$class&quot;).to_string();
++    }
++    
+     void ClusterStone::setAttr(const string&amp; key, const Value &amp;val) {
+         if (key == &quot;connections&quot; || key == &quot;faces&quot; || key == &quot;cluster&quot;) {
+             Stone::setAttr(key, val);
+@@ -53,6 +58,10 @@
+         autoLeaveCluster();
+         Stone::on_removal(p);
+     }
++    
++    std::string ClusterStone::getModelName() const {
++        return getClass();
++    }
+ 
+     bool ClusterStone::is_removable() const {
+         return getFaces() == ALL_DIRECTIONS;
+@@ -64,7 +73,7 @@
+         for (int i = WEST; i &lt;= NORTH; i++) {
+             Direction d = (Direction) i;
+             Stone *neighbour = GetStone(move(p, d));
+-            if (neighbour != NULL &amp;&amp; std::string(neighbour-&gt;get_kind()) == get_kind()) {
++            if (neighbour != NULL &amp;&amp; std::string(neighbour-&gt;getClass()) == getClass()) {
+                 Value neighbourCluster = neighbour-&gt;getAttr(&quot;cluster&quot;);
+                 if (myCluster) {
+                     if (myCluster == neighbourCluster) {
+@@ -92,7 +101,7 @@
+         for (int i = WEST; i &lt;= NORTH; i++) {
+             Direction d = (Direction) i;
+             Stone *neighbour = GetStone(move(p, d));
+-            if (neighbour != NULL &amp;&amp; std::string(neighbour-&gt;get_kind()) == get_kind() 
++            if (neighbour != NULL &amp;&amp; std::string(neighbour-&gt;getClass()) == getClass() 
+                     &amp;&amp; neighbour-&gt;getAttr(&quot;cluster&quot;)) {
+                 neighbour-&gt;setAttr(&quot;$connections&quot;, neighbour-&gt;getConnections() &amp; (ALL_DIRECTIONS ^ to_bits(reverse(d))));
+             }
+
+Modified: trunk/src/stones/ClusterStone.hh
+===================================================================
+--- trunk/src/stones/ClusterStone.hh	2008-06-01 21:50:03 UTC (rev 1163)
++++ trunk/src/stones/ClusterStone.hh	2008-06-05 22:33:30 UTC (rev 1164)
+@@ -34,12 +34,15 @@
+         ClusterStone(std::string classname, std::string connections);
+         
+         // Object interface
++        virtual std::string getClass() const;
+         virtual void setAttr(const string&amp; key, const Value &amp;val);
+         virtual Value message(const Message &amp;m);
++        
+         // GridObject interface
+         virtual void on_creation(GridPos p);
+         virtual void on_removal(GridPos p);
+-                
++        virtual std::string getModelName() const;
++        
+         // Stone interface
+         virtual bool is_removable() const;
+         
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-06-01 21:50:03 UTC (rev 1163)
++++ trunk/src/stones_simple.cc	2008-06-05 22:33:30 UTC (rev 1164)
+@@ -1432,114 +1432,6 @@
+     return Stone::message(m);
+ }
+ 
+-// -------------------------
+-//      ActorImpulseBase
+-// -------------------------
+-
+-namespace
+-{
+-    class ActorImpulseBase : public Stone {
+-    public:
+-        ActorImpulseBase(const char *kind) : Stone(kind), state(IDLE) {
+-//             setAttr(&quot;force&quot;, Value());
+-        }
+-
+-    protected:
+-        virtual void actor_hit (const StoneContact &amp;sc) {
+-            if (state == IDLE) {
+-                // actor_hit is called before reflect, but the force added below
+-                // is applied to actor after the reflection.
+-
+-                double forcefac = getDefaultedAttr(&quot;force&quot;, server::BumperForce);
+-
+-                V2 vec = normalize(sc.actor-&gt;get_pos() - get_pos().center());
+-                sc.actor-&gt;add_force (distortedVelocity(vec, forcefac));                
+-
+-                sound_event(&quot;bumper&quot;);
+-                set_anim(&quot;st-actorimpulse-anim&quot;);
+-                state = PULSING;
+-            }
+-        }
+-
+-    private:
+-        virtual const char *collision_sound() {
+-            return &quot;&quot;;
+-        }
+-
+-        void animcb() {
+-            if (state == PULSING) {
+-                state = IDLE;
+-                init_model();
+-            }
+-        }
+-
+-        // Variables
+-        enum State { IDLE, PULSING, BROKEN };
+-        State state;
+-    };
+-
+-
+-    class ActorImpulseStone : public ActorImpulseBase {
+-        CLONEOBJ(ActorImpulseStone);
+-
+-        int signalidx;
+-
+-        virtual Value message(const Message &amp;m) {
+-            if(server::GameCompatibility != GAMET_ENIGMA) {
+-                // Oxyd* usage of ActorImpulseStone as a signal multiplier
+-                ObjectList ol = getAttr(&quot;$!oxyd!destinations&quot;);
+-                
+-                if (m.message == &quot;_init&quot; &amp;&amp; ol.size() &gt; 0) {
+-                    signalidx = 0;
+-                    SendMessage(ol.front(), &quot;signal&quot;, 1);
+-                    return Value();
+-                } else if (m.message == &quot;signal&quot;) {
+-                    int i = 0;
+-                    bool didBreak = false;
+-                    for (ObjectList::iterator oit = ol.begin(); oit != ol.end(); ++oit, i++) {
+-                        if (i == signalidx) {
+-                            SendMessage(*oit, &quot;signal&quot;, 0);
+-                        } else if (i == signalidx + 1) {
+-                            SendMessage(*oit, &quot;signal&quot;, 1);
+-                            didBreak = true;
+-                            break;
+-                        }
+-                    }
+-                    if (!didBreak &amp;&amp; ol.size() &gt; 0) {
+-                        SendMessage(ol.front(), &quot;signal&quot;, 1);
+-                        signalidx = 0;                        
+-                    } else
+-                        signalidx++;
+-                    return Value();
+-                }
+-            } // GameCompatibility != GAMET_ENIGMA
+-            return ActorImpulseBase::message(m);
+-        }
+-
+-    public:
+-        ActorImpulseStone() : ActorImpulseBase(&quot;st-actorimpulse&quot;),
+-                              signalidx(0)
+-        {}
+-    };
+-
+-
+-    class ActorImpulseStoneInvisible : public ActorImpulseBase {
+-        CLONEOBJ(ActorImpulseStoneInvisible);
+-    public:
+-        ActorImpulseStoneInvisible() : ActorImpulseBase(&quot;st-actorimpulse_invisible&quot;) {}
+-
+-        void actor_hit(const StoneContact&amp; sc) {
+-            if (player::WieldedItemIs (sc.actor, &quot;it_brush&quot;)) {
+-                Stone *st = MakeStone(&quot;st-actorimpulse&quot;);
+-                SetStone(get_pos(), st);
+-                st-&gt;actor_hit(sc);
+-            }
+-            else
+-                ActorImpulseBase::actor_hit(sc);
+-        }
+-    };
+-}
+-
+ //----------------------------------------
+ // FakeOxydStone
+ //----------------------------------------
+@@ -2193,9 +2085,6 @@
+ 
+ void Init_simple()
+ {
+-    Register(new ActorImpulseStone);
+-    Register(new ActorImpulseStoneInvisible);
+-
+     BlackWhiteStone::setup();
+ 
+     Register(new BlockStone);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000597.html">[Enigma-game-svn] r1163 - homepage/input
+</A></li>
+	<LI>Next message: <A HREF="000599.html">[Enigma-game-svn] r1165 - in trunk/src: . stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#598">[ date ]</a>
+              <a href="thread.html#598">[ thread ]</a>
+              <a href="subject.html#598">[ subject ]</a>
+              <a href="author.html#598">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

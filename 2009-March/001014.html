@@ -1,0 +1,250 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1584 - in trunk: data src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1584%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200903102258.n2AMwFjD002682%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001013.html">
+   <LINK REL="Next"  HREF="001015.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1584 - in trunk: data src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1584%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200903102258.n2AMwFjD002682%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1584 - in trunk: data src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Mar 10 23:58:15 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001013.html">[Enigma-game-svn] r1583 - in trunk: data data/schemas src src/stones
+</A></li>
+        <LI>Next message: <A HREF="001015.html">[Enigma-game-svn] r1585 - in trunk: data data/levels/lib	doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1014">[ date ]</a>
+              <a href="thread.html#1014">[ thread ]</a>
+              <a href="subject.html#1014">[ subject ]</a>
+              <a href="author.html#1014">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-03-10 23:58:15 +0100 (Tue, 10 Mar 2009)
+New Revision: 1584
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/src/Value.cc
+   trunk/src/stones/OxydStone.cc
+Log:
+Trunk 1.1: new API reengineering
+- autotile resolver: introduce offsets and support %% usage on int attributes:
+  - for suffix range syntax add 4th argument of an int offset, default 1
+  - the generated %% substitutions will start with the offset value
+  - on int attribute usage the value must be declared as string &quot;%%&quot;
+- value: support of autoconvertion of strings &quot;%N&quot; to int N.
+Note:
+- some int attributes may still cause problems as they are lasy on int
+  conversion. Please report remaining problems
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2009-03-09 23:47:18 UTC (rev 1583)
++++ trunk/data/api2init.lua	2009-03-10 22:58:15 UTC (rev 1584)
+@@ -474,17 +474,21 @@
+ 
+ function res.autotile_implementation(context, evaluator, key, x, y)
+     for i, rule in ipairs (context[4]) do
+-        if #rule == 3 then   -- from, to substitution
++        if #rule &gt;= 3 then   -- from, to substitution
+             --
+             local first = string.byte(rule[1], #rule[1])
+             local last = string.byte(rule[2], #rule[2])
+             local candidate = string.byte(key, #key)
++            local offset = 1
++            if #rule == 4 then
++                offset = rule[4]
++            end
+             
+-            if #key == #rule[1] and string.sub(key, 1, -2) == string.sub(rule[1], 1, -2)
++            if #rule[1] == #key and string.sub(key, 1, -2) == string.sub(rule[1], 1, -2)
+                     and first &lt;= candidate and candidate &lt;= last then
+                 local tile = evaluator(context[3], key, x, y)
+                 if tile == nil then
+-                    res.autotile_newtile(key, ti[rule[3]], candidate - first + 1)
++                    res.autotile_newtile(key, ti[rule[3]], candidate - first + offset)
+                     return ti[key]
+                 else
+                     return tile
+@@ -505,22 +509,34 @@
+ end
+ 
+ function res.autotile(subresolver, ...)
+-    -- syntax: ... = &lt;{prefixkey, template} | {fistkey, lastkey, template}&gt;
++    -- syntax: ... = &lt;{prefixkey, template} | {fistkey, lastkey, template[, offset]}&gt;
+     -- context: [4] = table with unmodified rule tables
+     local args = {...}
+     for i, rule in ipairs(args) do
+         if type(rule) ~= &quot;table&quot; then
+             error(&quot;Resolver autotile rule &quot; .. i..&quot; is not a table&quot;, 2)
+         else
+-            if #rule &lt; 2 or #rule &gt; 3 then
++            if #rule &lt; 2 or #rule &gt; 4 then
+                 error(&quot;Resolver autotile rule &quot;..i..&quot; wrong number of arguments&quot;, 2)
+             end
+-            for j, str in ipairs(rule) do
+-                if type(str) ~= &quot;string&quot; then
+-                    error(&quot;Resolver autotile rule &quot;..i..&quot; has not a string in position &quot;..j, 2)
++            local template_pos = 2
++            local string_pos = {1,2}
++            if #rule &gt;= 3  then
++                template_pos = 3
++                string_pos = {1,2,3}
++            end
++            
++            for j, num in ipairs(string_pos) do
++                if type(rule[string_pos[num]]) ~= &quot;string&quot; then
++                    error(&quot;Resolver autotile rule &quot;..i..&quot; has no string at position &quot;..num, 2)
+                 end
+             end
+-            if #rule == 3 then
++            if #rule == 4 then
++                if type(rule[4]) ~= &quot;number&quot; then
++                    error(&quot;Resolver autotile rule &quot;..i..&quot; has no number at position 4&quot;, 2)
++                end
++            end
++            if #rule &gt;= 3 then
+                 local first = string.byte(rule[1], #rule[1])
+                 local last  = string.byte(rule[2], #rule[2])
+                 if #rule[2] ~= #rule[1] or string.sub(rule[2], 1, -2) ~= string.sub(rule[1], 1, -2)
+@@ -528,8 +544,8 @@
+                     error(&quot;Resolver autotile rule &quot;..i..&quot; bad range start-end strings&quot;, 2)
+                 end
+             end
+-            if ti[rule[#rule]] == nil then
+-                error(&quot;Resolver autotile missing template tile '&quot;..rule[#rule]..&quot;'&quot;, 2)
++            if ti[rule[template_pos]] == nil then
++                error(&quot;Resolver autotile missing template tile '&quot;..rule[template_pos]..&quot;'&quot;, 2)
+             end
+         end
+     end
+
+Modified: trunk/src/Value.cc
+===================================================================
+--- trunk/src/Value.cc	2009-03-09 23:47:18 UTC (rev 1583)
++++ trunk/src/Value.cc	2009-03-10 22:58:15 UTC (rev 1584)
+@@ -267,7 +267,10 @@
+             case BOOL: 
+                 return (val.dval[0] != 0) ? 1 : 0;
+             case STRING: 
+-                return atoi(val.str);  //TODO use strtol and eval remaining part of string
++                if (val.str[0] == '%')
++                    return std::strtol(&amp;(val.str[1]), NULL, 0);
++                else
++                    return std::strtol(val.str, NULL, 0);
+             default: return 0;
+         }
+     }
+
+Modified: trunk/src/stones/OxydStone.cc
+===================================================================
+--- trunk/src/stones/OxydStone.cc	2009-03-09 23:47:18 UTC (rev 1583)
++++ trunk/src/stones/OxydStone.cc	2009-03-10 22:58:15 UTC (rev 1584)
+@@ -360,7 +360,7 @@
+                 if ((to_bool(o1-&gt;getAttr(&quot;noshuffle&quot;)) || o1-&gt;state != CLOSED) &amp;&amp;
+                         (to_bool(o2-&gt;getAttr(&quot;noshuffle&quot;)) || o2-&gt;state != CLOSED) &amp;&amp;
+                         (int)(o1-&gt;getAttr(&quot;oxydcolor&quot;)) &gt;= 0 &amp;&amp;  (int)(o2-&gt;getAttr(&quot;oxydcolor&quot;)) &gt;= 0 &amp;&amp;
+-                        o1-&gt;getAttr(&quot;oxydcolor&quot;) != o2-&gt;getAttr(&quot;oxydcolor&quot;)) {
++                        (int)o1-&gt;getAttr(&quot;oxydcolor&quot;) != (int)o2-&gt;getAttr(&quot;oxydcolor&quot;)) {
+                     logBadFrameCount++;
+                     return 0;
+                 }
+@@ -883,8 +883,8 @@
+             } else if (objFlags &amp; OBJBIT_OPENPAIR) {
+                 state = OPEN_PAIR;
+                 std::string flavor(getAttr(&quot;flavor&quot;));
+-                string color(getDefaultedAttr(&quot;oxydcolor&quot;, 0));
+-                set_model(string(&quot;st_oxyd&quot;) + flavor + color + &quot;_open&quot;);
++                int color(getDefaultedAttr(&quot;oxydcolor&quot;, 0));
++                set_model(ecl::strf(&quot;st_oxyd%s%d_open&quot;, flavor.c_str(), color));
+                 objFlags &amp;= ~OBJBIT_OPENPAIR;
+             }
+             return Value();
+@@ -989,9 +989,9 @@
+     
+     void OxydStone::setClosedModel(bool isInitial) {
+         std::string flavor(getDefaultedAttr(&quot;flavor&quot;, &quot;a&quot;));
+-        Value c = getAttr(&quot;oxydcolor&quot;);
++        int c = getAttr(&quot;oxydcolor&quot;);
+         if (flavor == &quot;e&quot; &amp;&amp; !isInitial &amp;&amp; (int)c != FAKE)
+-            set_model(std::string(&quot;st_oxyd&quot;) + flavor + (std::string)c);
++            set_model(ecl::strf(&quot;st_oxyd%s%d&quot;, flavor.c_str(), c));
+         else
+             set_model(std::string(&quot;st_oxyd&quot;) + flavor);
+         
+@@ -1018,7 +1018,7 @@
+             }
+         }
+         
+-        Value mycolor = getAttr(&quot;oxydcolor&quot;);    
++        int mycolor = getAttr(&quot;oxydcolor&quot;);    
+         if ((int)mycolor &lt; AUTO) {
+             // pseudo open
+             if (isSingleOpened) {
+@@ -1040,10 +1040,10 @@
+                     // open both stones. Close one of them otherwise.
+                     // (This is the Oxyd behaviour; it doesn't work with
+                     // some Enigma levels.)
+-                    can_open = (mycolor == pairCandidate-&gt;getAttr(&quot;oxydcolor&quot;) &amp;&amp; pairCandidate-&gt;state==OPEN_SINGLE);
++                    can_open = (pairCandidate-&gt;getAttr(&quot;oxydcolor&quot;) == mycolor &amp;&amp; pairCandidate-&gt;state==OPEN_SINGLE);
+                 }
+                 else 
+-                    can_open = (mycolor == pairCandidate-&gt;getAttr(&quot;oxydcolor&quot;));
++                    can_open = (pairCandidate-&gt;getAttr(&quot;oxydcolor&quot;) == mycolor);
+     
+                 if (can_open) {
+                     pairCandidate-&gt;set_iState(OPEN_PAIR);
+@@ -1084,8 +1084,8 @@
+             return;
+         }
+         
+-        string flavor(getDefaultedAttr(&quot;flavor&quot;,&quot;a&quot;));
+-        string color(getDefaultedAttr(&quot;oxydcolor&quot;, 0));
++        std::string flavor(getDefaultedAttr(&quot;flavor&quot;,&quot;a&quot;));
++        std::string color = ecl::strf(&quot;%d&quot;, (int)getDefaultedAttr(&quot;oxydcolor&quot;, 0));
+     
+         string basemodelname = string(&quot;st_oxyd&quot;) + flavor;
+         string modelname = basemodelname + color;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001013.html">[Enigma-game-svn] r1583 - in trunk: data data/schemas src src/stones
+</A></li>
+	<LI>Next message: <A HREF="001015.html">[Enigma-game-svn] r1585 - in trunk: data data/levels/lib	doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1014">[ date ]</a>
+              <a href="thread.html#1014">[ thread ]</a>
+              <a href="subject.html#1014">[ subject ]</a>
+              <a href="author.html#1014">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

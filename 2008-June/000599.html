@@ -1,0 +1,204 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1165 - in trunk/src: . stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1165%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200806062217.m56MHRSl018137%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000598.html">
+   <LINK REL="Next"  HREF="000600.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1165 - in trunk/src: . stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1165%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200806062217.m56MHRSl018137%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1165 - in trunk/src: . stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Jun  7 00:17:27 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000598.html">[Enigma-game-svn] r1164 - in trunk: data data/schemas src src/stones
+</A></li>
+        <LI>Next message: <A HREF="000600.html">[Enigma-game-svn] r1166 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#599">[ date ]</a>
+              <a href="thread.html#599">[ thread ]</a>
+              <a href="subject.html#599">[ subject ]</a>
+              <a href="author.html#599">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-06-07 00:17:26 +0200 (Sat, 07 Jun 2008)
+New Revision: 1165
+
+Modified:
+   trunk/src/lua.cc
+   trunk/src/stones.hh
+   trunk/src/stones/ActorImpulseStone.cc
+Log:
+Trunk 1.1: new API reengineering
+- fix ActorImpulseStone: add internal stone enum for compatibility issues
+- add new Lua userdata &quot;DEFAULT&quot; that resolves to a nil value in C++
+  - this value can be used in Lua table instead of &quot;nil&quot;
+
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-06-05 22:33:30 UTC (rev 1164)
++++ trunk/src/lua.cc	2008-06-06 22:17:26 UTC (rev 1165)
+@@ -60,6 +60,7 @@
+ #define LUA_ID_GROUP    &quot;_GROUP&quot;
+ #define LUA_ID_TILES    &quot;_TILES&quot;
+ #define LUA_ID_TILE     &quot;_TILE&quot;
++#define LUA_ID_DEFAULT  &quot;_DEFAULT&quot;
+ /**
+  * The tile dictionary or function that should be used to resolve tile keys.
+  */
+@@ -190,6 +191,11 @@
+     return lua_isuserdata(L,idx) &amp;&amp; checkMetadata(L, idx, LUA_ID_WORLD);
+ }
+ 
++static bool is_default(lua_State *L, int idx) {
++    return lua_isuserdata(L,idx) &amp;&amp; checkMetadata(L, idx, LUA_ID_DEFAULT);
++}
++
++
+ static Object *to_object(lua_State *L, int idx) {
+     
+     if (lua_isnil(L,idx) &amp;&amp; server::EnigmaCompatibility &lt; 1.10)
+@@ -388,6 +394,8 @@
+                 return Value(toObjectList(L, idx));
+             else  if (is_position(L, idx))
+                 return Value(toPosition(L, idx));
++            else  if (is_default(L, idx))
++                return Value();
+         case LUA_TTABLE: {
+             TokenList tokens;
+             int i = 1;
+@@ -2555,6 +2563,21 @@
+     }
+ }
+ 
++MethodMap defaultMethodeMap;
++
++static int pushNewDefault(lua_State *L) {
++    // tiles is a singleton
++    
++    int *udata;
++    udata=(int *)lua_newuserdata(L,sizeof(int));   // user object
++    *udata = 1;  // dummy
++    
++    luaL_getmetatable(L, LUA_ID_DEFAULT);
++    lua_setmetatable(L, -2);
++    return 1;
++}
++
++
+ static CFunction globalfuncs[] = {
+     {FindDataFile,          &quot;FindDataFile&quot;},
+ //    {lua::PlaySoundGlobal,  &quot;PlaySoundGlobal&quot;},
+@@ -2745,7 +2768,15 @@
+     {0,0}
+ };
+ 
++static CFunction defaultOperations[] = {
++    {0,0}
++};
+ 
++static CFunction defaultMethods[] = {
++    {0,0}
++};
++
++
+ /* -------------------- lua:: functions -------------------- */
+ 
+ int FindDataFile (lua_State *L) 
+@@ -3041,6 +3072,7 @@
+     RegisterLuaType(L, LUA_ID_TILE, tileOperations, tileMethods, tileMethodeMap);
+     RegisterLuaType(L, LUA_ID_TILES, tilesOperations, tilesMethods, tilesMethodeMap);
+     RegisterLuaType(L, LUA_ID_GROUP, groupOperations, groupMethods, groupMethodeMap);
++    RegisterLuaType(L, LUA_ID_DEFAULT, defaultOperations, defaultMethods, defaultMethodeMap);
+     
+     pushNewNamedObj(L);
+     RegisterObject(L, &quot;no&quot;);
+@@ -3051,6 +3083,9 @@
+     pushNewTiles(L);
+     RegisterObject(L, &quot;ti&quot;);
+     
++    pushNewDefault(L);
++    RegisterObject(L, &quot;DEFAULT&quot;);
++    
+     return L;
+ }
+ 
+
+Modified: trunk/src/stones/ActorImpulseStone.cc
+===================================================================
+--- trunk/src/stones/ActorImpulseStone.cc	2008-06-05 22:33:30 UTC (rev 1164)
++++ trunk/src/stones/ActorImpulseStone.cc	2008-06-06 22:17:26 UTC (rev 1165)
+@@ -155,8 +155,8 @@
+ 
+     
+     StoneTraits ActorImpulseStone::traits[2] = {
+-        {&quot;st_actorimpulse&quot;, st_INVALID, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
+-        {&quot;st_actorimpulse_invisible&quot;, st_INVALID, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++        {&quot;st_actorimpulse&quot;, st_actorimpulse, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++        {&quot;st_actorimpulse_invisible&quot;, st_actorimpulse_invisible, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
+     };
+     
+     BOOT_REGISTER_START
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2008-06-05 22:33:30 UTC (rev 1164)
++++ trunk/src/stones.hh	2008-06-06 22:17:26 UTC (rev 1165)
+@@ -23,7 +23,6 @@
+ 
+ namespace enigma {
+     
+-//    using namespace enigma;
+     struct Impulse;
+     struct StoneContact;
+ 
+@@ -32,6 +31,8 @@
+         st_FIRST = 0,
+         st_none = 0,
+ 
++        st_actorimpulse,
++        st_actorimpulse_invisible,
+         st_borderstone,
+         st_black1,
+         st_black2,
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000598.html">[Enigma-game-svn] r1164 - in trunk: data data/schemas src src/stones
+</A></li>
+	<LI>Next message: <A HREF="000600.html">[Enigma-game-svn] r1166 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#599">[ date ]</a>
+              <a href="thread.html#599">[ thread ]</a>
+              <a href="subject.html#599">[ subject ]</a>
+              <a href="author.html#599">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

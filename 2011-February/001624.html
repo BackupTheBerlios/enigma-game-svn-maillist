@@ -1,0 +1,207 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r2200 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2011-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2200%20-%20trunk/src&In-Reply-To=%3C20110205190944.6987948135F%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   
+   <LINK REL="Next"  HREF="001625.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r2200 - trunk/src</H1>
+    <B>ral at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2200%20-%20trunk/src&In-Reply-To=%3C20110205190944.6987948135F%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r2200 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Feb  5 20:09:44 CET 2011</I>
+    <P><UL>
+        
+        <LI>Next message: <A HREF="001625.html">[Enigma-game-svn] r2201 - in trunk/data/levels: enigma_cross	enigma_ii enigma_iii enigma_iv enigma_v enigma_vii enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1624">[ date ]</a>
+              <a href="thread.html#1624">[ thread ]</a>
+              <a href="subject.html#1624">[ subject ]</a>
+              <a href="author.html#1624">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2011-02-05 20:09:44 +0100 (Sat, 05 Feb 2011)
+New Revision: 2200
+
+Modified:
+   trunk/src/lua.cc
+Log:
+fix composer problems with key %% 
+
+- problem introduced by feature r2196
+- improve fixes r2198, r2199
+- within tile declaration part:
+  - allow read access to tiles without existing key, if they
+    contain a %% wildcard
+  - reject read access to not existing tile keys
+- within tile evaluation part (resolvers):
+  - nil as return value for detection of invalid keys 
+    including %% containing keys
+
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2011-01-24 12:37:53 UTC (rev 2199)
++++ trunk/src/lua.cc	2011-02-05 19:09:44 UTC (rev 2200)
+@@ -87,6 +87,8 @@
+     lua_State *level_state = 0;  // level-local state
+     lua_State *global_state = 0; // global Lua state
+ 
++    static int tilesReadAccess(lua_State *L, bool direct);
++
+     lua::Error _lua_err_code (int i)
+     {
+         switch (i) {
+@@ -2394,8 +2396,8 @@
+     int y = lua_tointeger(L, -1);
+     
+     if (is_tiles(L, -4)) {
+-        lua_pushvalue(L, -3);       // duplicate key
+-        lua_gettable(L, -5);        // get tile entry in table, remove key duplicate
++        lua_pop(L, 2);                // remove x,y
++        tilesReadAccess(L, false);   // directly read tiles without error corrections
+         return 1;
+     } else if (lua_isfunction(L, -4)) {
+         lua_pushvalue(L, -4);       // duplicate function
+@@ -3009,59 +3011,66 @@
+ MethodMap tilesMethodeMap;
+ 
+ static int dispatchTilesWriteAccess(lua_State *L) {
++    // tiles, key, value
+ //    Log &lt;&lt; &quot;Tiles write key - &quot; &lt;&lt; lua_tostring(L, 2) &lt;&lt; &quot;\n&quot;;
+     if (server::EnigmaCompatibility &lt; 1.10) {
+         throwLuaError(L, &quot;Mismatch of new API 2 syntax with level compatibility &lt; 1.10&quot;);
+         return 0;
+     }
+-    if (!lua_isstring(L, 2)) {     // sideeffect: numbers are converted to string
++    if (!lua_isstring(L, -2)) {     // sideeffect: numbers are converted to string
+         throwLuaError(L, &quot;Tiles: key is not a string&quot;);
+         return 0;
+     }
+-    if (is_table(L, 3) || is_tile(L, 3)) {
++    if (is_table(L, -1) || is_tile(L, -1)) {
+         // convert table to a tile
+-        pushNewTile(L, 1, lua_tostring(L, 2));
+-        lua_remove(L, 3);   
++        pushNewTile(L, 1, lua_tostring(L, -2));
++        lua_remove(L, -2);
+     } else {
+         throwLuaError(L, &quot;Tiles: value is not a tile or table&quot;);
+         return 0;
+     }
+-    lua_getmetatable(L, 1);
+-    lua_rawgeti(L, -1, 1);   // content table
+-    lua_pushvalue(L, 2);      // copy key
++    lua_getmetatable(L, -3);
++    lua_rawgeti(L, -1, 1);    // content table
++    lua_pushvalue(L, -4);     // copy key
+     lua_rawget(L, -2);        // check for existing entry in table
+     if (!lua_isnil(L, -1)) {
+-        throwLuaError(L, ecl::strf(&quot;Tiles: redefinition of key '%s'&quot;, lua_tostring(L, 2)).c_str());
++        throwLuaError(L, ecl::strf(&quot;Tiles: redefinition of key '%s'&quot;, lua_tostring(L, -4)).c_str());
+         return 0;
+     }
+     lua_pop(L, 1);            // remove nil
+-    lua_pushvalue(L, 2);
+-    lua_pushvalue(L, 3);
++    lua_pushvalue(L, -4);     // key
++    lua_pushvalue(L, -4);     // tile as value
+     lua_rawset(L, -3);        // store tile value for key
++    lua_pop(L, 2);            // remove metatable and content table
+     return 0;
+ }
+ 
+-static int dispatchTilesReadAccess(lua_State *L) {
++static int tilesReadAccess(lua_State *L, bool direct) {
+ //    Log &lt;&lt; &quot;Tiles read key - &quot; &lt;&lt; lua_tostring(L, 2) &lt;&lt; &quot;\n&quot;;
+-    if (!lua_isstring(L, 2)) {     // sideeffect: numbers are converted to string
++    if (!lua_isstring(L, -1)) {     // sideeffect: numbers are converted to string
+         throwLuaError(L, &quot;Tiles: key is not a string&quot;);
+         return 0;
+     }
+-    std::string key = lua_tostring(L, 2);
+-    lua_getmetatable(L, 1);
++    std::string key = lua_tostring(L, -1);
++    lua_getmetatable(L, -2);
+     lua_rawgeti(L, -1, 1);    // content table
+-    lua_pushvalue(L, 2);      // copy key
++    lua_pushvalue(L, -3);     // copy key
+     lua_rawget(L, -2);        // check for existing entry in table
+-    if (lua_isnil(L, -1) &amp;&amp; (key.find(&quot;%%&quot;) != string::npos)) {  // autotile wildcard
+-        // insert a dummy tile declaration
+-        lua_pop(L, 3);            // cleanup stack
+-        lua_newtable(L);          // dummy declaration as value for key
+-        dispatchTilesWriteAccess(L); // insert dummy entry
+-        // get entry as return value
+-        lua_getmetatable(L, 1);
+-        lua_rawgeti(L, -1, 1);    // content table
+-        lua_pushvalue(L, 2);      // copy key
+-        lua_rawget(L, -2);        // get entry in table
++    if (direct &amp;&amp; lua_isnil(L, -1)) {
++        if ((key.find(&quot;%%&quot;) != string::npos)) {  // autotile wildcard
++            // insert a dummy tile declaration
++            lua_pop(L, 3);            // cleanup stack
++            lua_newtable(L);          // dummy declaration as value for key
++            dispatchTilesWriteAccess(L); // insert dummy entry
++            // get entry as return value
++            lua_getmetatable(L, -2);
++            lua_rawgeti(L, -1, 1);    // content table
++            lua_pushvalue(L, -4);     // copy key
++            lua_rawget(L, -2);        // get entry in table
++        } else {
++            throwLuaError(L, ecl::strf(&quot;Tiles: undefined key '%s'&quot;, key.c_str()).c_str());
++            return 0;
++        }
+     }
+     // nil is returned as valid value for not existing keys, what is evaluated
+     // by resolvers like autotile to trigger the generation of missing tile
+@@ -3069,6 +3078,10 @@
+     return 1;
+ }
+ 
++static int dispatchTilesReadAccess(lua_State *L) {
++    return tilesReadAccess(L, true);
++}
++
+ static int pushNewTiles(lua_State *L) {
+     // tiles is a singleton
+     
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	
+	<LI>Next message: <A HREF="001625.html">[Enigma-game-svn] r2201 - in trunk/data/levels: enigma_cross	enigma_ii enigma_iii enigma_iv enigma_v enigma_vii enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1624">[ date ]</a>
+              <a href="thread.html#1624">[ thread ]</a>
+              <a href="subject.html#1624">[ subject ]</a>
+              <a href="author.html#1624">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

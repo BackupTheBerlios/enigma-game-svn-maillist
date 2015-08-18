@@ -1,0 +1,2236 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r962 - in trunk: data src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r962%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200801031520.m03FKUnt004373%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000393.html">
+   <LINK REL="Next"  HREF="000395.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r962 - in trunk: data src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r962%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200801031520.m03FKUnt004373%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r962 - in trunk: data src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Jan  3 16:20:30 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000393.html">[Enigma-game-svn] r961 - in homepage: images/articles input	input/articles
+</A></li>
+        <LI>Next message: <A HREF="000395.html">[Enigma-game-svn] r963 - homepage/input/articles
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#394">[ date ]</a>
+              <a href="thread.html#394">[ thread ]</a>
+              <a href="subject.html#394">[ subject ]</a>
+              <a href="author.html#394">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-01-03 16:20:27 +0100 (Thu, 03 Jan 2008)
+New Revision: 962
+
+Added:
+   trunk/src/StateObject.cc
+   trunk/src/StateObject.hh
+   trunk/src/stones/FourSwitch.cc
+   trunk/src/stones/FourSwitch.hh
+   trunk/src/stones/Switch.cc
+   trunk/src/stones/Switch.hh
+Modified:
+   trunk/data/init.lua
+   trunk/src/GridObject.cc
+   trunk/src/GridObject.hh
+   trunk/src/Makefile.am
+   trunk/src/Object.cc
+   trunk/src/Object.hh
+   trunk/src/Value.cc
+   trunk/src/Value.hh
+   trunk/src/actors.cc
+   trunk/src/actors.hh
+   trunk/src/display.hh
+   trunk/src/floors.cc
+   trunk/src/items.cc
+   trunk/src/laser.cc
+   trunk/src/lua.cc
+   trunk/src/lua.hh
+   trunk/src/ox_extra.cc
+   trunk/src/ox_magnum.cc
+   trunk/src/ox_oxyd1.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/st_switches.cc
+   trunk/src/stones.cc
+   trunk/src/stones.hh
+   trunk/src/stones/OxydStone.cc
+   trunk/src/stones/WindowStone.cc
+   trunk/src/stones/WindowStone.hh
+   trunk/src/stones_complex.cc
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1: reengineering of onoff objects and switches
+- new subclass StateObject as basis for all gaming objects
+- Switch rewrite: added &quot;color&quot; attribute, &quot;inverse&quot; support
+- FourSwitch rewrite:
+  - state set/get attribute representing the direction
+  - action value of direction for global targets to steer boulder, oneway
+    (direction made compatible to signal values 1,0)
+  - action value bool for triggering on state dependent targets
+  - &quot;inverse&quot; support
+  - added &quot;counterclock&quot; attribute defaulting to false
+  - &quot;toggle&quot;, &quot;signal&quot; support
+- renaming support for new API - new obect names:
+  st_switch, st_switch_black, st_switch_white, st_fourswitch
+- invert support extended from bool to arbitrary values
+- message: overriden methods call their direct superclass
+- Value added operator &lt;=,&gt;=(int)
+Note:
+- Blocking of unsupported messages and attributes of StateObject is
+  still missing.
+
+Modified: trunk/data/init.lua
+===================================================================
+--- trunk/data/init.lua	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/data/init.lua	2008-01-03 15:20:27 UTC (rev 962)
+@@ -1,5 +1,6 @@
+ ------------------------------------------------------------------------
+ -- Copyright (C) 2002,2003,2004,2005 Daniel Heck
++-- Copyright (C) 2007,2008 Ronald Lamprecht
+ --
+ -- This program is free software; you can redistribute it and/or
+ -- modify it under the terms of the GNU General Public License
+@@ -34,17 +35,59 @@
+ -- Compatibility for old API --
+ -------------------------------
+ 
++enigma._MakeObject = enigma.MakeObject
++enigma._GetKind = enigma.GetKind
+ enigma._SetAttrib = enigma.SetAttrib
+ enigma._GetAttrib = enigma.GetAttrib
+ 
++RenamingObjectsOld2New = {
++}
++
++RenamingObjectsNew2Old = {
++    st_fourswitch = &quot;st-fourswitch&quot;,
++    st_switch = &quot;st-switch&quot;,
++    st_switch_black = &quot;st-switch_black&quot;,
++    st_switch_white = &quot;st-switch_white&quot;
++}
++
++for k,v in pairs(RenamingObjectsNew2Old) do
++    RenamingObjectsOld2New[v] = k
++end
++
++function enigma.MakeObject(name)
++    newname = RenamingObjectsOld2New[name]
++    if newname ~= nil then
++        return enigma._MakeObject(newname)
++    else
++        return enigma._MakeObject(name)
++    end
++end
++
++function enigma.GetKind(obj)
++    local _newname = enigma._GetKind(obj)
++    local _oldname = RenamingObjectsNew2Old[_newname]
++    if _oldname ~= nil then
++        return _oldname
++    else
++        return _newname
++    end
++end
++
+ function enigma.SetAttrib(obj, key, val)
+      local _val = val
+      local _key = key
+-     if enigma.GetKind(obj) == &quot;st-oxyd&quot; then
++     local _obj_name = enigma.GetKind(obj)
++     if _obj_name == &quot;st-oxyd&quot; then
+          if key == &quot;color&quot; then
+ 	     _val = 0 + val   -- convert to int
+ 	 end
+      end
++     if (_obj_name == &quot;st-switch&quot;) or (_obj_name == &quot;st-switch_black&quot;)
++             or (_obj_name == &quot;st-switch_black&quot;) then
++         if key == &quot;on&quot; then
++	     _key = &quot;state&quot;   -- new attr name
++	 end
++     end
+      if key == &quot;targetx&quot; then
+          local d = enigma._GetAttrib(obj, &quot;destination&quot;)
+          if (en.usertype(d) == &quot;position&quot;) then
+@@ -68,8 +111,18 @@
+ 
+ function enigma.GetAttrib(obj, key)
+      local _key = key
+-     local val = enigma._GetAttrib(obj, key)
+-     if enigma.GetKind(obj) == &quot;st-oxyd&quot; then
++     local _obj_name = enigma.GetKind(obj)
++
++     if (_obj_name == &quot;st-switch&quot;) or (_obj_name == &quot;st-switch_black&quot;)
++             or (_obj_name == &quot;st-switch_black&quot;) then
++         if key == &quot;on&quot; then
++	     _key = &quot;state&quot;
++	 end
++     end
++
++     local val = enigma._GetAttrib(obj, _key)
++     
++     if _obj_name == &quot;st-oxyd&quot; then
+          if key == &quot;color&quot; then
+ 	     val = &quot;&quot; .. val   -- convert to string
+ 	 end
+@@ -89,6 +142,11 @@
+      return val
+ end
+ 
++MessageRenaming = {
++    st_switch__onoff = &quot;toggle&quot;,
++    st_switch_black__onoff = &quot;toggle&quot;,
++    st_switch_white__onoff = &quot;toggle&quot;
++}
+ ----------------------
+ -- old API 1.0      --
+ ----------------------
+
+Modified: trunk/src/GridObject.cc
+===================================================================
+--- trunk/src/GridObject.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/GridObject.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -93,7 +93,7 @@
+     {
+         return sound::EmitSoundEvent (name, get_pos().center(), getVolume(name, this, vol));
+     }
+-    
++ 
+     void GridObject::warning(const char *format, ...) const 
+     {
+         va_list        arg_ptr;
+@@ -108,4 +108,9 @@
+         va_end(arg_ptr);
+     }
+     
++    void GridObject::setState(int extState) {
++        StateObject::setState(extState);
++        init_model();
++    }
++    
+ } // namespace enigma
+
+Modified: trunk/src/GridObject.hh
+===================================================================
+--- trunk/src/GridObject.hh	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/GridObject.hh	2008-01-03 15:20:27 UTC (rev 962)
+@@ -20,7 +20,7 @@
+ #ifndef GRIDOBJECT_HH
+ #define GRIDOBJECT_HH
+ 
+-#include &quot;Object.hh&quot;
++#include &quot;StateObject.hh&quot;
+ 
+ #include &quot;display.hh&quot;
+ #include &quot;ecl_alist.hh&quot;
+@@ -39,10 +39,10 @@
+      * placed on &quot;The Grid&quot;, i.e., for floor tiles, items, and
+      * stones. 
+      */
+-    class GridObject : public Object, public display::ModelCallback {
++    class GridObject : public StateObject, public display::ModelCallback {
+     public:
+         GridObject() : pos (GridPos(-1, -1)) {}
+-        GridObject(const char * kind) : Object(kind), pos (GridPos(-1, -1)) {}
++        GridObject(const char * kind) : StateObject(kind), pos (GridPos(-1, -1)) {}
+ 
+         void creation(GridPos p) {
+             pos = p;
+@@ -74,6 +74,8 @@
+          * players will return positions outside of the world. 
+          */
+         GridPos getOwnerPos();
++        
++        virtual bool isDisplayable() {return pos.x &gt;= 0;}
+ 
+         // GridObject interface
+         virtual void on_laserhit (Direction) {}
+@@ -105,6 +107,9 @@
+             kill_model (p);
+         }
+ 
++        // StateObject interface
++        virtual void setState(int extState);
++
+     private:
+         // ModelCallback interface.
+         void animcb() {}
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/Makefile.am	2008-01-03 15:20:27 UTC (rev 962)
+@@ -107,6 +107,8 @@
+ 	sound.cc 		\
+ 	sound.hh 		\
+ 	sound_internal.hh	\
++	StateObject.cc		\
++	StateObject.hh		\
+ 	StateManager.cc		\
+ 	StateManager.hh		\
+ 	stones.cc 		\
+@@ -188,8 +190,12 @@
+ 	lev/VolatileIndex.hh	\
+ 	stones/ConnectiveStone.cc	\
+ 	stones/ConnectiveStone.hh	\
++	stones/FourSwitch.cc	\
++	stones/FourSwitch.hh	\
+ 	stones/OxydStone.cc	\
+ 	stones/OxydStone.hh	\
++	stones/Switch.cc	\
++	stones/Switch.hh	\
+ 	stones/WindowStone.cc	\
+ 	stones/WindowStone.hh
+ 
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/Object.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -24,6 +24,7 @@
+ #include &quot;game.hh&quot;
+ #include &quot;main.hh&quot;
+ #include &quot;lua.hh&quot;
++#include &quot;server.hh&quot;
+ #include &quot;sound.hh&quot;
+ #include &quot;world.hh&quot;
+ 
+@@ -175,9 +176,8 @@
+     
+     void Object::performAction(const Value&amp; val) {
+         Value messageValue = val;
+-        if (messageValue.getType() == Value::BOOL)   // bool values may be inverted
+-            if (getDefaultedAttr(&quot;inverse&quot;, false).to_bool())
+-                messageValue = !messageValue.to_bool();  // invert value
++        if (getDefaultedAttr(&quot;inverse&quot;, false).to_bool())
++            messageValue = invertActionValue(val);
+ 
+         TokenList targets = getAttr(&quot;target&quot;);
+         TokenList actions = getAttr(&quot;action&quot;);
+@@ -204,14 +204,21 @@
+                     }
+                 }
+                 // else ignore this no longer valid target
+-    //            Log &lt;&lt; &quot;PerformAction target not valid\n&quot;;
++//                Log &lt;&lt; &quot;PerformAction target not valid\n&quot;;
+             } else {
+                 // send message to all objects
+                 if (action == &quot;&quot;) 
+                     action = &quot;toggle&quot;;
+                 for (ObjectList::iterator oit = ol.begin(); oit != ol.end(); ++oit) {
+                     if (*oit != NULL) {
+-                        SendMessage(*oit, Message(action, messageValue, this));                    
++                        std::string obj_action = action;
++                        if (server::EnigmaCompatibility &lt; 1.10) {
++                            // we may need to translate the new API message to old API
++                            obj_action = lua::NewMessageName(lua::LevelState(), *oit, action);
++//                            if (obj_action != action)
++//                                Log &lt;&lt; &quot;PerformAction renamed '&quot; &lt;&lt; action &lt;&lt; &quot;' to '&quot; &lt;&lt; obj_action &lt;&lt; &quot;' for receiver '&quot; &lt;&lt; (*oit)-&gt;get_kind() &lt;&lt; &quot;'\n&quot;;
++                        }
++                        SendMessage(*oit, Message(obj_action, messageValue, this));                    
+                     }
+                 }
+             }
+@@ -220,6 +227,12 @@
+         }
+     }
+     
++    Value Object::invertActionValue(const Value &amp;val) const {
++        if (val.getType() == Value::BOOL)   // bool values may be inverted
++            return !val.to_bool();  // invert value
++        return val;
++    }
++    
+     /* Send an impulse to position 'dest' into direction dir.  If 'dest'
+        contains a stone, on_impulse() is called for that stone */
+     void Object::send_impulse(const GridPos&amp; dest, Direction dir) 
+
+Modified: trunk/src/Object.hh
+===================================================================
+--- trunk/src/Object.hh	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/Object.hh	2008-01-03 15:20:27 UTC (rev 962)
+@@ -156,7 +156,10 @@
+          * doors or switching lasers on and off). It interprets the
+          * &quot;action&quot; and &quot;target&quot; attributes of `o'. 
+          */
+-        void performAction(const Value&amp; val);
++        void performAction(const Value &amp;val);
++        
++        virtual Value invertActionValue(const Value &amp;val) const;
++        
+     private:
+         friend void InitWorld();   // for bootFinished() access
+         
+
+Added: trunk/src/StateObject.cc
+===================================================================
+--- trunk/src/StateObject.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/StateObject.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -0,0 +1,91 @@
++/*
++ * Copyright (C) 2007,2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;StateObject.hh&quot;
++
++#include &quot;world.hh&quot;
++//#include &quot;main.hh&quot;
++
++namespace enigma {
++
++/* -------------------- StateObject implementation -------------------- */
++    StateObject::StateObject() : Object(), state (0) {
++    }
++    
++    StateObject::StateObject(const char * kind) : Object(kind), state (0) {
++    }
++    
++    Value StateObject::message(const Message &amp;m) {
++        if (m.message == &quot;toggle&quot;) {
++            toggleState();
++        } else if (m.message == &quot;signal&quot;) {
++            int v = m.value;    // action bools are converted to int
++            if (v &gt;= 0)
++                setState(v % 2);  // allow fourswitches to send dir as signal value
++            return Value();
++        } else if (m.message == &quot;on&quot; || m.message == &quot;open&quot;) {
++            setState(1);
++            return Value();
++        } else if (m.message == &quot;off&quot; || m.message == &quot;close&quot;) {
++            setState(0);
++            return Value();
++        }
++        return Object::message(m);
++    }
++    
++    Value StateObject::getAttr(const string &amp;key) const {
++        if (key == &quot;state&quot;)
++            return externalState();
++        return Object::getAttr(key);
++    }
++    
++    void StateObject::set_attrib(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;state&quot;) {
++            if (val &gt;= minState() &amp;&amp; val &lt;= maxState())
++                setState(val);
++            return;
++        }
++        Object::set_attrib(key, val);
++    }
++    
++    int StateObject::maxState() {
++        return 1;  // default 2 state
++    }
++    
++    int StateObject::minState() {
++        return 0;  // default 2 state
++    }
++    void StateObject::toggleState() {
++        // default round robin on external states
++        int extState = externalState();
++        if (extState + 1 &lt;= maxState())
++            setState(extState + 1);
++        else
++            setState(minState());
++    }
++    
++    int StateObject::externalState() const {
++        return state;       // default behaviour internal = external state
++    }
++    
++    void StateObject::setState(int extState) {
++        state = extState;   // default behaviour internal = external state
++    }
++    
++} // namespace enigma
+
+
+Property changes on: trunk/src/StateObject.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/StateObject.hh
+===================================================================
+--- trunk/src/StateObject.hh	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/StateObject.hh	2008-01-03 15:20:27 UTC (rev 962)
+@@ -0,0 +1,140 @@
++/*
++ * Copyright (C) 2007,2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef STATEOBJECT_HH
++#define STATEOBJECT_HH
++
++#include &quot;Object.hh&quot;
++
++
++namespace enigma {
++
++    /** 
++     * The base class for all gaming objects that have different states that
++     * can be toggled by means of messages, actions or attribute settings.
++     * This class is the successor of the former OnOffStone and OnOffItem.
++     * Being a superclass of all gaming objects it provides a common interface
++     * for the handling of states. The state is not limited to 2 states like
++     * the common on/off and open/close. Arbitrary number of external states 
++     * are supported. E.g. FourSwitches have 4 states that describe the current
++     * direction.&lt;p&gt;
++     * But the external state - the logical gaming state used in level lua code -
++     * is often just a small subset of states that an object has to distinguish.
++     * Additional display related states, timer related states and internal
++     * gaming logic states require sometimes a much more complex state machine.
++     * &lt;p&gt;
++     * The maximum set of states that we call the internal state of a final
++     * gaming object class should be stored in StateObjects state ivar. It is
++     * the responsibility of StateObject to guarantee the persistence and
++     * cloning of the internal state.&lt;p&gt;
++     * StateObject provides the common interface for state management with hooks
++     * for all needs like conversion of external to and from internal states,
++     * common messages like toggle, signal, on, off, open, close and checked
++     * setter and getter for the state as a pseudo attribute.&lt;p&gt;
++     * Furtheron its default implementation suits the needs a simple 2 state
++     * on/off or open/close object. More complex stated objects will need to
++     * override the hook methods to their needs.
++     */
++    class StateObject : public Object {
++    public:
++        StateObject();
++        StateObject(const char * kind);
++        
++        // Object Interface
++        
++        /**
++         * Handle the messages &quot;toggle&quot;, &quot;signal&quot;, &quot;on&quot;, &quot;off&quot;, &quot;open&quot;, &quot;close&quot;.
++         * Any subclass should forward these messages to its superclass without
++         * interfering these messages. Per default these messages will be blocked
++         * by SendMessage() if they are not explicitly declared for the final
++         * subclass in objects.xml.
++         */
++        virtual Value message(const Message &amp;m);
++        
++        /**
++         * Handle the attribute &quot;state&quot; by a pseudo implementation. Subclasses
++         * shall not interfere with this attribute but override the method
++         * &quot;externalState()&quot; on demand.
++         */
++        virtual Value getAttr(const string &amp;key) const;
++        
++        /**
++         * Handle the attribute &quot;state&quot; by a pseudo implementation. Subclasses
++         * shall not interfere with this attribute but override the method
++         * &quot;setState()&quot;. New state values are checked against min and max. 
++         */
++        virtual void set_attrib(const string&amp; key, const Value &amp;val);
++        
++    protected:
++        /**
++         * The storage location of the internal state. This ivar is logically
++         * owned by the final discrete object class which will define in most
++         * cases an enum called iState that lists all states. All intermediate
++         * classes between StateObject and the state owning subclass will just
++         * be aware of the external state that they access via the setter and
++         * getter methods. Just these two methods in their StateObject default
++         * implementation will directly access this ivar (besides the gaming
++         * logic indepent persistence and cloning methods). 
++         */
++        int state;
++        
++        /**
++         * The maximum number of the external state. It defaults to 1, and 
++         * should be overridden by the final subclass just on demand. 
++         */
++        virtual int maxState();
++        
++        /**
++         * The minimum number of the external state. It defaults to 0, and
++         * should be overridden by the final subclass just on demand.
++         */
++        virtual int minState();
++        
++        /**
++         * The method that is called on toggle messages to switch the object
++         * to the next external state. The default implementation is a round
++         * robin of the external state from minState() to maxState() and returning
++         * to minState() again. Override this method if the toggle operation
++         * changes the states in another sequence..
++         */
++        virtual void toggleState();
++        
++        /**
++         * Access method that translates the internal state stored in &quot;state&quot; to
++         * the external gaming logic state. The default implementation is a
++         * direct return of the state which suits a one to one mapping between
++         * internal and external states. If additional internal states or another
++         * mapping is used this method needs to be overwritten. All access to
++         * the external state by any other intermediate class has to use this
++         * method.
++         */
++        virtual int externalState() const;
++        
++        /**
++         * Setter method for external state that switches the object to the
++         * appropriate internal state. The default implementation is a direct
++         * storage of the external state as the internal state. Most final
++         * subclasses will have to override this method to cause some actions,
++         * to send messages and to switch the display model.
++         */
++        virtual void setState(int extState);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/StateObject.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/Value.cc
+===================================================================
+--- trunk/src/Value.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/Value.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -210,6 +210,14 @@
+         return (int) *this != i;
+     }
+     
++    bool Value::operator&lt;=(int i) const {
++        return (int) *this &lt;= i;
++    }
++    
++    bool Value::operator&gt;=(int i) const {
++        return (int) *this &gt;= i;
++    }
++    
+     Value::operator bool() const {
+         if (isDefault())
+             return false;
+
+Modified: trunk/src/Value.hh
+===================================================================
+--- trunk/src/Value.hh	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/Value.hh	2008-01-03 15:20:27 UTC (rev 962)
+@@ -138,6 +138,8 @@
+         bool operator==(int i) const;          ///&lt; Compare value with int without casting.
+                                                ///&lt; f.e &lt;code&gt;if (v == 2)&lt;/code&gt;
+         bool operator!=(int i) const;          ///&lt; Compare value with int without casting
++        bool operator&lt;=(int i) const;          ///&lt; Compare value with int without casting
++        bool operator&gt;=(int i) const;          ///&lt; Compare value with int without casting
+         
+         /**
+          * Test of a value for explicit existence besides a default.
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/actors.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -92,7 +92,7 @@
+ /* -------------------- Actor -------------------- */
+ 
+ Actor::Actor (const ActorTraits &amp;tr)
+-: Object(tr.name),
++: StateObject(tr.name),
+   m_actorinfo(),
+   m_sprite(),
+   startingpos(), 
+@@ -268,7 +268,7 @@
+         startingpos = get_pos();
+         return Value();
+     }
+-    return Object::message(m);
++    return StateObject::message(m);
+ }
+ 
+ bool Actor::sound_event (const char *name, double vol) {
+
+Modified: trunk/src/actors.hh
+===================================================================
+--- trunk/src/actors.hh	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/actors.hh	2008-01-03 15:20:27 UTC (rev 962)
+@@ -19,7 +19,7 @@
+ #ifndef ACTORS_HH_INCLUDED
+ #define ACTORS_HH_INCLUDED
+ 
+-#include &quot;Object.hh&quot;
++#include &quot;StateObject.hh&quot;
+ 
+ namespace enigma {
+ 
+@@ -104,7 +104,7 @@
+     };
+ 
+ 
+-    class Actor : public Object, public display::ModelCallback {
++    class Actor : public StateObject, public display::ModelCallback {
+         friend class World;
+         friend class ActorsInRangeIterator;
+     public:
+
+Modified: trunk/src/display.hh
+===================================================================
+--- trunk/src/display.hh	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/display.hh	2008-01-03 15:20:27 UTC (rev 962)
+@@ -38,6 +38,7 @@
+     public:
+         virtual ~ModelCallback() {}
+         virtual void animcb() = 0;
++        virtual bool isDisplayable() {return true;}
+     };
+ 
+     class Animation {
+
+Modified: trunk/src/floors.cc
+===================================================================
+--- trunk/src/floors.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/floors.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -75,7 +75,7 @@
+         return force_fire();
+     if (m.message == &quot;stopfire&quot;)
+         return stop_fire(true);
+-    return Object::message(m);
++    return GridObject::message(m);
+ }
+ 
+ ecl::V2 Floor::process_mouseforce (Actor *a, ecl::V2 force) {
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/items.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -209,7 +209,7 @@
+                 set_on(false);
+                 return Value();
+             }
+-            return Object::message(m);
++            return Item::message(m);
+         }
+ 
+         // OnOffItem interface
+@@ -284,7 +284,7 @@
+                     return Value();
+                 }
+             }
+-            return Object::message(m);
++            return Item::message(m);
+         }
+ 
+ 
+@@ -513,7 +513,7 @@
+                     return Value();
+                 }
+             }
+-            return Object::message(m);
++            return Item::message(m);
+         }
+ 
+     public:
+@@ -755,7 +755,7 @@
+         shovel();
+         return Value();
+     } 
+-    return Object::message(m);
++    return Item::message(m);
+ }
+ 
+ V2 HillHollow::vec_to_center (V2 v)
+@@ -1084,7 +1084,7 @@
+             } else if (m.message == &quot;expl&quot; || m.message == &quot;bombstone&quot;) {
+                 explode = true;
+             } else {
+-                return Object::message(m);
++                return Item::message(m);
+             }
+ 
+             if (explode)
+@@ -1152,7 +1152,7 @@
+                 change_state(BURNING);
+                 return Value(1.0);  // caught message -&gt; no fire!
+             }
+-            return Object::message(m);
++            return Item::message(m);
+         }
+         void animcb() { explode(); }
+         void on_laserhit(Direction) {
+@@ -1195,7 +1195,7 @@
+                 burn();
+                 return Value(1.0);  // caught message -&gt; no fire!
+             }
+-            return Object::message(m);
++            return Item::message(m);
+         }
+ 
+     private:
+@@ -1343,7 +1343,7 @@
+                 update_state();                
+                 return Value();
+             }
+-            return Object::message(m);
++            return Item::message(m);
+         }
+     };
+ 
+@@ -1410,7 +1410,7 @@
+                 start_growing();
+                 return Value();
+             }
+-            return Object::message(m);
++            return Item::message(m);
+         }
+ 
+         void start_growing() {
+@@ -1560,7 +1560,7 @@
+             return Value();
+         }
+     }
+-    return Object::message(m);
++    return Item::message(m);
+ }
+ 
+ 
+@@ -1948,7 +1948,7 @@
+             performAction(getAttr(&quot;$grabbed_actor&quot;));
+         return Value();
+     }
+-    return Object::message(m);
++    return Item::message(m);
+ }
+ 
+ void Vortex::init_model() {
+@@ -2219,7 +2219,7 @@
+                 replace (it_explosion1);
+                 return Value();
+             }
+-            return Object::message(m);
++            return Item::message(m);
+         }
+     public:
+         static void setup() {
+@@ -2410,7 +2410,7 @@
+                 replace(it_debris);
+                 return Value(1.0);
+             }
+-            return Object::message(m);
++            return Item::message(m);
+         }
+ 
+         bool do_crack() {
+@@ -2512,7 +2512,7 @@
+         if (m.message == &quot;trigger&quot; || m.message == &quot;ignite&quot; || m.message == &quot;expl&quot;)
+             return SendMessage(fl, &quot;ignite&quot;);
+     }
+-    return Object::message(m);
++    return Item::message(m);
+ }
+ 
+ void Burnable::animcb() {
+@@ -2768,7 +2768,7 @@
+         else if (m.message == &quot;close&quot;)
+             open = 0;
+         else
+-            return Object::message(m);
++            return Item::message(m);
+ 
+         if (open == 1)  { // shrink
+             if (state == COVERED)
+@@ -2880,7 +2880,7 @@
+                     SendMessage (floor, &quot;open&quot;);
+                 return Value();
+             }
+-            return Object::message(m);
++            return Item::message(m);
+         }
+     public:
+         OxydBridge() {}
+@@ -2930,7 +2930,7 @@
+             } else if (m.message == &quot;_hitactor&quot;) {
+                 return getAttr(&quot;$hitactor&quot;);
+             }
+-            return Object::message(m);
++            return Item::message(m);
+         }
+     };
+     DEF_TRAITSF(Sensor, &quot;it-sensor&quot;, it_sensor, itf_static | itf_invisible);
+@@ -2969,7 +2969,7 @@
+                     performAction(type != 0);
+                 return Value();
+             }
+-            return Object::message(m);
++            return Item::message(m);
+         }
+ 
+         // type of signal filter
+@@ -3041,7 +3041,7 @@
+         kill();
+         return Value();
+     }
+-    return Object::message(m);
++    return Item::message(m);
+ }
+ 
+ /* -------------------- EasyKeepStone -------------------- */
+@@ -3060,7 +3060,7 @@
+                 kill();
+                 return Value();
+             }
+-            return Object::message(m);
++            return Item::message(m);
+         }
+     public:
+         EasyKeepStone() {}
+@@ -3083,7 +3083,7 @@
+                 kill();
+                 return Value();
+             }
+-            return Object::message(m);
++            return Item::message(m);
+         }
+     public:
+         OnePKillStone () {}
+@@ -3102,7 +3102,7 @@
+                 kill();
+                 return Value();
+             }
+-            return Object::message(m);
++            return Item::message(m);
+         }
+     public:
+         TwoPKillStone () {}
+@@ -3229,7 +3229,7 @@
+                     return Value();
+                 }
+             }
+-            return Object::message(m);
++            return Item::message(m);
+         }
+ 
+     public:
+
+Modified: trunk/src/laser.cc
+===================================================================
+--- trunk/src/laser.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/laser.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -554,7 +554,7 @@
+         MaybeRecalcLight(get_pos());
+         return Value();
+     }
+-    return Object::message(m);
++    return Stone::message(m);
+ }
+ 
+ void MirrorStone::actor_hit(const StoneContact &amp;sc)
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/lua.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -2500,6 +2500,22 @@
+     return _lua_err_code(retval);
+ }
+ 
++std::string NewMessageName(lua_State *L, const Object *obj, const std::string &amp;message) {
++    std::string result;
++    lua_getglobal(L, &quot;MessageRenaming&quot;);
++    if (lua_istable(L, -1)) {
++        lua_pushstring(L, ecl::strf(&quot;%s__%s&quot;, obj-&gt;get_kind(), message.c_str()).c_str());
++        lua_gettable(L, -2);
++        if (!lua_isnil(L, -1))
++            result = lua_tostring(L, -1);
++        else
++            result = message;
++        lua_pop(L, 1);
++    }
++    lua_pop(L, 1);
++    return result;
++}
++
+ Error DoAbsoluteFile(lua_State *L, const string &amp;filename)
+ {
+     int oldtop = lua_gettop(L);
+
+Modified: trunk/src/lua.hh
+===================================================================
+--- trunk/src/lua.hh	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/lua.hh	2008-01-03 15:20:27 UTC (rev 962)
+@@ -96,6 +96,8 @@
+     /*! Call a Lua function with a (large) byte vector as the sole
+       argument.  Currently only used for loading XML levels. */
+     Error CallFunc (lua_State *L, const char *funcname, const ByteVec &amp;arg);
++    
++    std::string NewMessageName(lua_State *L, const Object *obj, const std::string &amp;message);
+ 
+     /**
+      * Run a Lua script using a given absolute path.
+
+Modified: trunk/src/ox_extra.cc
+===================================================================
+--- trunk/src/ox_extra.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/ox_extra.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -162,7 +162,7 @@
+     &quot;st-plain_hole&quot;,     // OxydExtra stone 0x25
+     &quot;st-plain_move&quot;,     // OxydExtra stone 0x26
+     &quot;st-wood&quot;,           // OxydExtra stone 0x27
+-    &quot;st-switch&quot;,         // OxydExtra stone 0x28
++    &quot;st_switch&quot;,         // OxydExtra stone 0x28
+     UNUSED,              // OxydExtra stone 0x29
+     UNUSED,              // OxydExtra stone 0x2a
+     UNUSED,              // OxydExtra stone 0x2b
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/ox_magnum.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -166,14 +166,14 @@
+     &quot;st-plain_hole&quot;,            // OxydMagnum stone 0x29
+     &quot;st-plain_move&quot;,            // OxydMagnum stone 0x2a
+     &quot;st-wood&quot;,                  // OxydMagnum stone 0x2b
+-    &quot;st-switch&quot;,                // OxydMagnum stone 0x2c
++    &quot;st_switch&quot;,                // OxydMagnum stone 0x2c
+     &quot;st-floppy&quot;,                // OxydMagnum stone 0x2d (in normal Oxyd Magnum Levels unused!)
+     UNUSED,                     // OxydMagnum stone 0x2e
+-    &quot;st-fourswitch&quot;,            // OxydMagnum stone 0x2f (Level 89 and 92)
++    &quot;st_fourswitch&quot;,            // OxydMagnum stone 0x2f (Level 89 and 92)
+     &quot;st-key&quot;,                   // OxydMagnum stone 0x30
+     &quot;st-floppy&quot;,                // OxydMagnum stone 0x31
+     &quot;st-knight&quot;,                // OxydMagnum stone 0x32
+-    &quot;st-fourswitch&quot;,            // OxydMagnum stone 0x33 (Level 51 and 100)
++    &quot;st_fourswitch&quot;,            // OxydMagnum stone 0x33 (Level 51 and 100)
+     &quot;st-death&quot;,                 // OxydMagnum stone 0x34
+     &quot;st-death_invisible&quot;,       // OxydMagnum stone 0x35
+     &quot;st-oneway_black-w&quot;,        // OxydMagnum stone 0x36
+@@ -268,7 +268,7 @@
+     UNUSED,                     // OxydMagnum stone 0x8f
+     &quot;st-redrock&quot;,               // OxydMagnum stone 0x90 (Level 89 only)
+     UNUSED,                     // OxydMagnum stone 0x91
+-    &quot;st-fourswitch&quot;,            // OxydMagnum stone 0x92 (Level 51 only)
++    &quot;st_fourswitch&quot;,            // OxydMagnum stone 0x92 (Level 51 only)
+     &quot;st-yinyang1&quot;,              // OxydMagnum stone 0x93
+     &quot;st-break_acwhite&quot;,         // OxydMagnum stone 0x94
+     &quot;st-break_acblack&quot;,         // OxydMagnum stone 0x95
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/ox_oxyd1.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -196,10 +196,10 @@
+     &quot;st-plain_hole&quot;,            // Oxyd1 stone 0x29
+     &quot;st-plain_move&quot;,            // Oxyd1 stone 0x2a
+     &quot;st-wood&quot;,                  // Oxyd1 stone 0x2b
+-    &quot;st-switch&quot;,                // Oxyd1 stone 0x2c
+-    &quot;st-switch_black&quot;,          // Oxyd1 stone 0x2d
+-    &quot;st-switch_white&quot;,          // Oxyd1 stone 0x2e
+-    &quot;st-fourswitch&quot;,            // Oxyd1 stone 0x2f
++    &quot;st_switch&quot;,                // Oxyd1 stone 0x2c
++    &quot;st_switch_black&quot;,          // Oxyd1 stone 0x2d
++    &quot;st_switch_white&quot;,          // Oxyd1 stone 0x2e
++    &quot;st_fourswitch&quot;,            // Oxyd1 stone 0x2f
+     &quot;st-key&quot;,                   // Oxyd1 stone 0x30
+     &quot;st-floppy&quot;,                // Oxyd1 stone 0x31
+     &quot;st-knight&quot;,                // Oxyd1 stone 0x32
+@@ -298,7 +298,7 @@
+     UNUSED,                     // Oxyd1 stone 0x8f
+     &quot;st-whiteballs&quot;,            // Oxyd1 stone 0x90
+     &quot;st-blackballs&quot;,            // Oxyd1 stone 0x91
+-    &quot;st-fourswitch&quot;,            // Oxyd1 stone 0x92
++    &quot;st_fourswitch&quot;,            // Oxyd1 stone 0x92
+     &quot;st-yinyang1&quot;,              // Oxyd1 stone 0x93
+     &quot;st-break_acwhite&quot;,         // Oxyd1 stone 0x94
+     &quot;st-break_acblack&quot;,         // Oxyd1 stone 0x95
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/ox_peroxyd.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -234,10 +234,10 @@
+     &quot;st-bluegray_hole&quot;,         // PerOxyd stone 0x25
+     &quot;st-plain_move&quot;,            // PerOxyd stone 0x26
+     &quot;st-wood&quot;,                  // PerOxyd stone 0x27
+-    &quot;st-switch&quot;,                // PerOxyd stone 0x28
+-    &quot;st-switch_black&quot;,          // PerOxyd stone 0x29
+-    &quot;st-switch_white&quot;,          // PerOxyd stone 0x2a
+-    &quot;st-fourswitch&quot;,            // PerOxyd stone 0x2b
++    &quot;st_switch&quot;,                // PerOxyd stone 0x28
++    &quot;st_switch_black&quot;,          // PerOxyd stone 0x29
++    &quot;st_switch_white&quot;,          // PerOxyd stone 0x2a
++    &quot;st_fourswitch&quot;,            // PerOxyd stone 0x2b
+     &quot;st-key&quot;,                   // PerOxyd stone 0x2c
+     &quot;st-floppy&quot;,                // PerOxyd stone 0x2d
+     &quot;&quot;,                         // PerOxyd stone 0x2e (?)
+
+Modified: trunk/src/st_switches.cc
+===================================================================
+--- trunk/src/st_switches.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/st_switches.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -30,137 +30,7 @@
+ 
+ namespace enigma {
+ 
+-/* -------------------- Switch -------------------- */
+ 
+-namespace
+-{
+-    class SwitchStone : public OnOffStone {
+-        CLONEOBJ(SwitchStone);
+-    public:
+-        SwitchStone() : OnOffStone(&quot;st-switch&quot;), state(IDLE) {}
+-    private:
+-        enum State { IDLE, TOGGLING } state;
+-
+-        void init_model() {
+-            set_model(is_on() ? &quot;st-switch-on&quot; : &quot;st-switch-off&quot;);
+-        }
+-
+-        void actor_hit(const StoneContact &amp;/*sc*/) {
+-            set_on (!is_on());
+-        }
+-
+-        virtual void set_on(bool newon) {
+-            if (state == IDLE &amp;&amp; newon != is_on()) {
+-//                set_attrib(&quot;on&quot;, enigma::Value(newon));
+-                sound_event (&quot;switchon&quot;);
+-                state = TOGGLING;
+-                if (newon)
+-                    set_anim(&quot;st-switch-turnon&quot;);
+-                else
+-                    set_anim(&quot;st-switch-turnoff&quot;);
+-                performAction(newon);
+-            }
+-        }
+-
+-        void animcb() {
+-            state = IDLE;
+-            set_attrib(&quot;on&quot;, enigma::Value(!is_on()));
+-            init_model();
+-//            set_on(!is_on());
+-        }
+-        const char *collision_sound() { return &quot;metal&quot;; }
+-    };
+-}
+-
+-/* -------------------- Switch_black -------------------- */
+-
+-namespace
+-{
+-    class Switch_black : public OnOffStone {
+-        CLONEOBJ(Switch_black);
+-    public:
+-        Switch_black() : OnOffStone(&quot;st-switch_black&quot;), 
+-                         state(IDLE) 
+-        {}
+-    private:
+-        enum State { IDLE, TOGGLING } state;
+-        void init_model() {
+-            set_model(is_on() ? &quot;st-switch_black-on&quot; : &quot;st-switch_black-off&quot;);
+-        }
+-
+-        void actor_hit(const StoneContact &amp;sc) {
+-            if (get_id (sc.actor) == ac_blackball)
+-                set_on (!is_on());
+-        }
+-
+-        virtual void set_on(bool newon) {
+-            if (state == IDLE &amp;&amp; newon != is_on()) {
+-//                set_attrib(&quot;on&quot;, enigma::Value(newon));
+-                sound_event (&quot;switchon&quot;);
+-                state = TOGGLING;
+-                if (newon)
+-                    set_anim(&quot;st-switch_black-turnon&quot;);
+-                else
+-                    set_anim(&quot;st-switch_black-turnoff&quot;);
+-                performAction(newon);
+-            }
+-        }
+-        void animcb() {
+-            state = IDLE;
+-            set_attrib(&quot;on&quot;, enigma::Value(!is_on()));
+-            init_model();
+-//            set_on(!is_on());
+-        }
+-
+-        const char *collision_sound() { return &quot;metal&quot;; }
+-    };
+-}
+-
+-/* -------------------- Switch_white -------------------- */
+-
+-namespace
+-{
+-    class Switch_white : public OnOffStone {
+-        CLONEOBJ(Switch_white);
+-    public:
+-        Switch_white() : OnOffStone(&quot;st-switch_white&quot;), 
+-                         state(IDLE) 
+-        {}
+-    private:
+-        enum State { IDLE, TOGGLING } state;
+-        void init_model() {
+-            set_model(is_on() ? &quot;st-switch_white-on&quot; : &quot;st-switch_white-off&quot;);
+-        }
+-
+-        void actor_hit(const StoneContact &amp;sc) {
+-            if (get_id (sc.actor) == ac_whiteball)
+-                set_on (!is_on());
+-        }
+-
+-        virtual void set_on(bool newon) {
+-            if (state == IDLE &amp;&amp; newon != is_on()) {
+-//                set_attrib(&quot;on&quot;, enigma::Value(newon));
+-                sound_event (&quot;switchon&quot;);
+-                state = TOGGLING;
+-                if (newon)
+-                    set_anim(&quot;st-switch_white-turnon&quot;);
+-                else
+-                    set_anim(&quot;st-switch_white-turnoff&quot;);
+-                performAction(newon);
+-            }
+-        }
+-        void animcb() {
+-            state = IDLE;
+-            set_attrib(&quot;on&quot;, enigma::Value(!is_on()));
+-            init_model();
+-        }
+-
+-        const char *collision_sound() { return &quot;metal&quot;; }
+-    };
+-}
+-
+-
+-
+ /* -------------------- Coin slot -------------------- */
+ 
+ namespace
+@@ -360,90 +230,6 @@
+ }
+ 
+ 
+-/* -------------------- FourSwitch -------------------- */
+-
+-// Attributes:
+-//
+-// :on              1 or 0
+-// :target,action   as usual
+-
+-namespace
+-{
+-    class FourSwitch : public OnOffStone {
+-        CLONEOBJ(FourSwitch);
+-        DECL_TRAITS;
+-    public:
+-        FourSwitch() : OnOffStone(&quot;st-fourswitch&quot;), 
+-                       m_direction(NORTH), 
+-                       m_inactive_so_far (true)
+-        {}
+-        
+-        Value getAttr(const string &amp;key) const {
+-            if (key == &quot;state&quot;)
+-                return direction2state(m_direction);
+-            return Object::getAttr(key);
+-        }
+-    private:
+-        static int direction2state(Direction dir) {
+-            return 3 - dir;
+-        };
+-        
+-        // Variables
+-        Direction m_direction;
+-        bool m_inactive_so_far;
+-
+-        // Private methods
+-        void turn() {
+-            bool isGlobalTarget = getAttr(&quot;target&quot;);
+-            
+-            if (!m_inactive_so_far &amp;&amp; !isGlobalTarget) {
+-                performAction(false);  // signal off for old direction state
+-            } else
+-                m_inactive_so_far = false;
+-
+-            m_direction = rotate_cw(m_direction);
+-            init_model();
+-            set_on(!is_on());
+-            sound_event(&quot;fourswitch&quot;);
+-
+-            if (isGlobalTarget) {
+-                performAction((server::EnigmaCompatibility &lt; 1.10) ? is_on() : 3 - m_direction);
+-            } else {
+-                performAction(true);  // signal on for new direction state
+-            }
+-        }
+-
+-        void init_model() {
+-            switch (m_direction) {
+-                case NORTH: set_model(&quot;st-fourswitch-n&quot;); break;
+-                case EAST:  set_model(&quot;st-fourswitch-e&quot;); break;
+-                case SOUTH: set_model(&quot;st-fourswitch-s&quot;); break;
+-                case WEST:  set_model(&quot;st-fourswitch-w&quot;); break;
+-                case NODIR: ASSERT(0, XLevelRuntime,
+-                    &quot;FourSwitch: no direction defined (found in init_model)&quot;);
+-            }
+-        }
+-
+-        void actor_hit(const StoneContact &amp;/*sc*/) {
+-            turn();
+-        }
+-
+-        virtual Value message(const Message &amp;m)
+-        {
+-            if (m.message == &quot;signal&quot; || m.message == &quot;trigger&quot;) {
+-                if (server::GameCompatibility == enigma::GAMET_ENIGMA || m.value == 1)
+-                    turn();
+-                return Value();
+-            }
+-            return Object::message(m);
+-        }
+-
+-        const char *collision_sound() { return &quot;metal&quot;; }
+-    };
+-    DEF_TRAITS(FourSwitch, &quot;st-fourswitch&quot;, st_fourswitch);
+-}
+-
+-
+ /* -------------------- Laser / Time switches -------------------- */
+ 
+ namespace
+@@ -691,16 +477,12 @@
+ {
+     Register (new CoinSlot);
+     Register (new FloppyStone);
+-    Register (new FourSwitch);
+     Register (new KeyStone);
+     Register (new KeyStone_a);
+     Register (new KeyStone_b);
+     Register (new KeyStone_c);
+     Register (new LaserSwitch);
+     Register (new LaserTimeSwitch);
+-    Register (new SwitchStone);
+-    Register (new Switch_black);
+-    Register (new Switch_white);
+     Register (new TimeSwitch);
+ }
+ 
+
+Added: trunk/src/stones/FourSwitch.cc
+===================================================================
+--- trunk/src/stones/FourSwitch.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/stones/FourSwitch.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -0,0 +1,113 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/FourSwitch.hh&quot;
++#include &quot;main.hh&quot;
++#include &quot;server.hh&quot;
++
++namespace enigma {
++    FourSwitch::FourSwitch() : Stone (), m_inactive_so_far (true) {
++        state = NORTH;
++    }
++    
++    Value FourSwitch::message(const Message &amp;m) {
++        if (m.message == &quot;signal&quot; || m.message == &quot;trigger&quot;) {
++            if ((((int)(m.value)) % 2 == 1) || (server::GameCompatibility == enigma::GAMET_ENIGMA
++                    &amp;&amp; (server::EnigmaCompatibility &lt; 1.10))) // Enigma 1.00 did turn on 0, too
++                turn();
++            return Value();
++        }
++        return Stone::message(m);
++    }
++    
++    Value FourSwitch::invertActionValue(const Value &amp;val) const {
++        if (val.getType() == Value::DOUBLE) {
++            return 3 - (int)val;     // invert direction for Enigma 1.00 like signal values
++        }
++        return Stone::invertActionValue(val);
++    }
++    
++    int FourSwitch::maxState() {
++        return 3;  // dir representing state
++    }
++    
++    void FourSwitch::toggleState() {
++        turn();
++    }
++    
++    void FourSwitch::setState(int newState) {
++        // just explicit set attribute &quot;state&quot; will set an arbitrary new state
++        turn((state - newState + 4) % 4, true);  // the count is clockwise
++    }
++    
++    void FourSwitch::init_model() {
++        set_model(std::string(&quot;st-fourswitch&quot;) + to_suffix((Direction)state));
++    }
++    
++    void FourSwitch::actor_hit(const StoneContact &amp;sc) {
++        turn();
++    }
++
++    const char *FourSwitch::collision_sound() {
++         return &quot;metal&quot;;
++    }
++    
++    void FourSwitch::turn(int num, bool fixedClockwise) {
++        if (num == 0)   // do not perform actions if not turning at all - may occur on set state
++            return;
++        
++        bool isGlobalTarget = getAttr(&quot;target&quot;);   // destinguish state dependent target_0,... 
++        
++        if (isDisplayable()) {
++            if (!m_inactive_so_far &amp;&amp; !isGlobalTarget) {
++                performAction(false);  // signal off for old direction state on first turn
++            } else
++                m_inactive_so_far = false;
++        }
++
++        bool clockwise = !(getDefaultedAttr(&quot;counterclock&quot;, false).to_bool());
++        for (int i = 0; i &lt; num; i++)
++            if (clockwise || fixedClockwise)
++                state = rotate_cw((Direction)state);
++            else
++                state = rotate_ccw((Direction)state);
++        
++        if (isDisplayable()) {
++            init_model();
++            sound_event(&quot;fourswitch&quot;);
++    
++            if (isGlobalTarget) {
++                // state independent callback function on old API with bool true for WEST, EAST
++                // and direction on new API - the direction value suits bolder, oneway orientate 
++                // messages and can be inverted to for old API like signal usage.
++                performAction((server::EnigmaCompatibility &lt; 1.10) ? (state % 2) == 0 : state);
++            } else {
++                performAction(true);  // signal on for new direction state
++            }
++        }
++    }
++    
++    DEF_TRAITS(FourSwitch, &quot;st_fourswitch&quot;, st_fourswitch);
++    
++    BOOT_REGISTER_START
++        BootRegister(new FourSwitch(), &quot;st_fourswitch&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/FourSwitch.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/FourSwitch.hh
+===================================================================
+--- trunk/src/stones/FourSwitch.hh	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/stones/FourSwitch.hh	2008-01-03 15:20:27 UTC (rev 962)
+@@ -0,0 +1,86 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef FOURSWITCH_HH
++#define FOURSWITCH_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * A switch that points to one of the four directions turning on every
++     * switching event. It is a StateObject with 4 states that directly
++     * represent the pointing direction. &quot;toggle&quot;, &quot;signal&quot;, and get/set of
++     * the state are fully supported. The FourSwitch starts per default in
++     * NORTH. The turning direction is clockwise per default and can be set
++     * by the bool attribute &quot;counterclock&quot;.&lt;p&gt;
++     * Due to history and as very useful feature this object has two modes
++     * of actions, a state dependent and a &quot;global&quot; state independent mode:
++     * &lt;p&gt;
++     * In the state dependent mode the state dependent target (target_0,...)
++     * of the old state will receive an action value of &quot;false&quot; prior to
++     * the turn. The new state will receive an action value of &quot;true&quot; after
++     * the turn. This suits any connect signal receiver.&lt;p&gt;
++     * But in the global mode just one action is send to the global &quot;target&quot;
++     * with the direction representing value of the new state. This value
++     * suits messages to objects like OneWayStone and BoulderStone. But it
++     * works with signal messages to any StateObject as well, switching them
++     * on and off in turn. To change the meaning of on and off you can set
++     * the &quot;inverse&quot; attribute to &quot;true&quot;.&lt;p&gt;
++     * The Fourswitch is turned just on signal values of &quot;1&quot;. Use &quot;toggle&quot;
++     * messages to switch indepent of values.&lt;p&gt;
++     * The state can be set anytime to any direction. Actions are performed
++     * accordingly.&lt;p&gt;
++     * Please note that due to compatibility just bool values are send to
++     * global targets in the old API.
++     */
++    class FourSwitch : public Stone {
++        CLONEOBJ(FourSwitch);
++        DECL_TRAITS;
++    public:
++        FourSwitch();
++        
++        // Object interface
++        virtual Value message(const Message &amp;m);
++
++        virtual Value invertActionValue(const Value &amp;val) const;
++        
++        // StateObject interface
++        virtual int maxState();
++        virtual void toggleState();
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++                
++        // Stone interface
++        virtual void actor_hit(const StoneContact &amp;sc);
++        virtual const char *collision_sound();
++        
++    private:
++        bool m_inactive_so_far;  // TODO store flag in Object mask
++        
++        void turn(int num = 1, bool fixedClockwise = false);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/FourSwitch.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones/OxydStone.cc
+===================================================================
+--- trunk/src/stones/OxydStone.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/stones/OxydStone.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -875,7 +875,7 @@
+             initColors();
+             return Value();
+         }
+-        return Object::message(m);
++        return PhotoStone::message(m);
+     }
+     
+     void OxydStone::set_attrib(const string&amp; key, const Value &amp;val) {
+@@ -893,7 +893,7 @@
+     
+     Value OxydStone::getAttr(const string &amp;key) const {
+         // TODO &quot;state&quot; 0=CLOSE || CLOSING; 1 = other iState values
+-        return Object::getAttr(key);
++        return PhotoStone::getAttr(key);
+     }
+     
+     void OxydStone::actor_hit(const StoneContact &amp;/*sc*/) {
+
+Added: trunk/src/stones/Switch.cc
+===================================================================
+--- trunk/src/stones/Switch.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/stones/Switch.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -0,0 +1,111 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/Switch.hh&quot;
++//#include &quot;main.hh&quot;
++
++namespace enigma {
++    Switch::Switch(Value v) : Stone () {
++        if (v.getType() != Value::NIL)
++            set_attrib(&quot;color&quot;, v);
++        state = OFF;
++    }
++
++    void Switch::set_attrib(const string&amp; key, const Value &amp;val) {
++        if (isDisplayable())
++            if (key == &quot;color&quot; &amp;&amp; state &lt;= ON) {   // recoloring of a switch
++                Stone::set_attrib(key, val);
++                init_model();
++                return;
++            }
++        Stone::set_attrib(key, val);
++    }
++    
++    int Switch::externalState() const {
++        return state % 2;   // 0 for OFF, TURNON, 1 for ON, TURNOFF
++    }
++    
++    void Switch::setState(int extState) {
++        if (isDisplayable()) {
++            if (state &lt;= ON &amp;&amp; extState != state) {
++                sound_event (&quot;switchon&quot;);
++                state += 2;  // OFF-&gt;TURNON, ON-&gt;TURNOFF
++                set_anim(ecl::strf(&quot;st-switch%s%s&quot;, colorName(), extState ? &quot;-turnon&quot; : &quot;-turnoff&quot;));
++            } else if (state == TURNON &amp;&amp; extState == OFF) {
++                state = TURNOFF;
++                get_model()-&gt;reverse();  // reverse anim
++            } else if (state == TURNOFF &amp;&amp; extState == ON) {
++                state = TURNON;
++                get_model()-&gt;reverse();  // reverse anim
++            }
++        } else  // object initialisation
++            state = extState;
++    }
++
++    void Switch::init_model() {
++        set_model(ecl::strf(&quot;st-switch%s%s&quot;, colorName(), state == ON ? &quot;-on&quot; : &quot;-off&quot;));
++    }
++    
++    void Switch::animcb() {
++        state = TURNOFF - state;
++        performAction(state == ON);   // action after state is reached
++        init_model();
++    }
++    
++    void Switch::actor_hit(const StoneContact &amp;sc) {
++        int ic = iColor();
++        if (ic == 0 || (ic == 1 &amp;&amp; get_id(sc.actor) == ac_blackball)
++                 || (ic == 2 &amp;&amp; get_id (sc.actor) == ac_whiteball))  // TODO why no small whiteballs?
++            setState(ON - state);  // switch on only if OFF, switch off only if ON, otherwise ignore
++    }
++
++    const char *Switch::collision_sound() {
++         return &quot;metal&quot;;
++    }
++    
++    int Switch::iColor() const {
++        Value v = getAttr(&quot;color&quot;);
++        return v ? (int)v + 1 : 0;
++    }
++    
++    const char* Switch::colorName() const {
++        switch (iColor()) {
++            case 1:
++                return &quot;_black&quot;;
++            case 2:
++                return &quot;_white&quot;;
++            default: ;
++         }
++        return &quot;&quot;;
++    }
++    
++    StoneTraits Switch::traits[3] = {
++        {&quot;st_switch&quot;, st_switch, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++        {&quot;st_switch_black&quot;, st_switch, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++        {&quot;st_switch_white&quot;, st_switch, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++    };
++    
++    BOOT_REGISTER_START
++        BootRegister(new Switch(Value()), &quot;st_switch&quot;);
++        BootRegister(new Switch(Value(0)), &quot;st_switch_black&quot;);
++        BootRegister(new Switch(Value(1)), &quot;st_switch_white&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/Switch.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/Switch.hh
+===================================================================
+--- trunk/src/stones/Switch.hh	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/stones/Switch.hh	2008-01-03 15:20:27 UTC (rev 962)
+@@ -0,0 +1,71 @@
++/*
++ * Copyright (C) 2007 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef SWITCH_HH
++#define SWITCH_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * A standard colored 2 state on/off switch that can be toggled only actors
++     * of a compatible color. It is a StateObject with 4 internal states as the
++     * state changes are animated. The external states are mapped. The messages
++     * &quot;toggle&quot;, &quot;signal&quot;, &quot;on&quot;, &quot;off&quot; and get/set of the state are fully supported.
++     * The switch starts per default in state OFF.&lt;p&gt;
++     * Switches can be recolored by setting the &quot;color&quot; attribute. They can
++     * send inverse action values by setting the &quot;inverse&quot; attribute.&lt;p&gt;
++     * Note that the state changes not directly on messages and attribute settings.
++     * The actions will be performed after the turning animation finished. This
++     * is a small derivation from the inconsistent 1.00 behaviour.
++     */
++    class Switch : public Stone {
++        CLONEOBJ(Switch);
++        DECL_TRAITS_ARRAY(3, iColor());
++    private:
++        enum iState { OFF, ON, TURNON, TURNOFF };  // sequence is essential!
++    public:
++        Switch(Value v);
++        
++        // Object interface
++        virtual void set_attrib(const string&amp; key, const Value &amp;val);
++        
++        virtual int externalState() const;
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        
++        // ModelCallback interface
++        virtual void animcb();
++        
++        // Stone interface
++        virtual void actor_hit(const StoneContact &amp;sc);
++        virtual const char *collision_sound();
++        
++    private:
++        int iColor() const;
++        const char* colorName() const;
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/Switch.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones/WindowStone.cc
+===================================================================
+--- trunk/src/stones/WindowStone.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/stones/WindowStone.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -85,11 +85,11 @@
+         }
+     }
+     
+-    Value WindowStone::message(const string &amp;msg, const Value &amp;val) {
+-        if (msg == &quot;inner_pull&quot; ) {
+-            return Value(tryInnerPull(to_direction(val)));
++    Value WindowStone::message(const Message &amp;m) {
++        if (m.message == &quot;inner_pull&quot; ) {
++            return Value(tryInnerPull(to_direction(m.value)));
+         }
+-        return Value();
++        return ConnectiveStone::message(m);
+     }
+     
+     bool WindowStone::tryInnerPull(Direction dir) {
+
+Modified: trunk/src/stones/WindowStone.hh
+===================================================================
+--- trunk/src/stones/WindowStone.hh	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/stones/WindowStone.hh	2008-01-03 15:20:27 UTC (rev 962)
+@@ -57,7 +57,7 @@
+         }
+         virtual bool is_sticky(const Actor *a) const;
+         StoneResponse collision_response(const StoneContact &amp;sc);
+-        virtual Value message(const string &amp;msg, const Value &amp;val);
++        virtual Value message(const Message &amp;m);
+     private:
+         DirectionBits breakingFaces;
+         bool tryInnerPull(Direction dir);
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/stones.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -367,7 +367,7 @@
+                 performAction(m.value);
+                 return Value();
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+     private:
+         double get_charge() {
+@@ -671,7 +671,7 @@
+                 ReplaceStone(get_pos(), MakeStone(&quot;st-plain_hole&quot;));
+                 return Value();
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+         void actor_hit (const StoneContact &amp;sc) {
+             if (player::WieldedItemIs (sc.actor, &quot;it-pencil&quot;)) {
+@@ -702,7 +702,7 @@
+                 ReplaceStone(get_pos(), MakeStone(&quot;st-plain&quot;));
+                 return Value();
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+ 
+         StoneResponse collision_response(const StoneContact &amp;) 
+@@ -751,7 +751,7 @@
+                 break_me();
+                 return Value();
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+         void actor_hit (const StoneContact &amp;sc) {
+             if (player::WieldedItemIs (sc.actor, &quot;it-hammer&quot;)) {
+@@ -792,7 +792,7 @@
+                 break_me();
+                 return Value();
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+         const char *collision_sound() {return &quot;metal&quot;;}
+     public:
+@@ -834,7 +834,7 @@
+                 break_me();
+                 return Value();
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+         void on_move() {
+             Stone::on_move();
+@@ -909,7 +909,7 @@
+                     }
+                 }
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+     public:
+         BlackBallsStone() : Stone (&quot;st-blackballs&quot;) {
+@@ -948,7 +948,7 @@
+                     }
+                 }
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+ 
+     public:
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/stones.hh	2008-01-03 15:20:27 UTC (rev 962)
+@@ -87,6 +87,7 @@
+         st_stoneimpulse_movable,
+         st_surprise,
+         st_swap,
++        st_switch,
+         st_thief,
+         st_turnstile,
+         st_turnstile_e,
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/stones_complex.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -435,7 +435,7 @@
+         init_model();
+         return Value();
+     }
+-    return Object::message(m);
++    return Stone::message(m);
+ }
+ 
+ void OneWayBase::actor_hit(const StoneContact &amp;sc) {
+@@ -606,7 +606,7 @@
+                 init_model();
+                 return Value();
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+     };
+     DEF_TRAITSM(BolderStone, &quot;st-bolder&quot;, st_bolder, MOVABLE_IRREGULAR);
+@@ -724,7 +724,7 @@
+                     change_state(GROWING);
+                 return Value();
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+ 
+         void actor_contact(Actor *a) {
+@@ -789,7 +789,7 @@
+                 }
+                 return Value();
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+ 
+         void spread( GridPos p) {
+@@ -1334,7 +1334,7 @@
+         }
+         return Value();
+     }
+-    return Object::message(m);
++    return ConnectiveStone::message(m);
+ }
+ 
+ void PuzzleStone::on_impulse(const Impulse&amp; impulse) 
+@@ -1591,7 +1591,7 @@
+     } else if (m.message == &quot;signal&quot;) {
+         newstate = m.value.to_bool() ? OPENING : CLOSING;
+     } else {
+-        return Object::message(m);
++        return Stone::message(m);
+     }
+     
+     if (newstate==OPENING &amp;&amp; (state==CLOSED || state==CLOSING))
+@@ -1789,7 +1789,7 @@
+                 notify_item();
+                 return Value();
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+ 
+         void add_hole(Holes h) {
+@@ -1956,7 +1956,7 @@
+                 change_state (PULSING);
+                 return Value();
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+ 
+         void animcb() {
+@@ -2340,7 +2340,7 @@
+             rotate(true, 0);
+         return Value();
+     }
+-    return Object::message(m);
++    return Stone::message(m);
+ }
+ 
+ 
+@@ -2946,7 +2946,7 @@
+             set_color(1 - (int)getAttr(&quot;color&quot;));
+             return Value();
+         }
+-        return Object::message(m);
++        return Stone::message(m);
+     }
+ 
+     Value ChessStone::message_move(Direction dir1, Direction dir2) {
+@@ -3141,7 +3141,7 @@
+                 set_on(state == INACTIVE);
+                 return Value();
+             }
+-            return Object::message(m);
++            return PhotoStone::message(m);
+         }
+ 
+         void alarm() {
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/stones_simple.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -147,7 +147,7 @@
+                 }
+                 return Value();
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+ 
+         const SimpleStoneTraits *traits; // owned by simple_stone_traits
+@@ -278,7 +278,7 @@
+                 KillStone (get_pos());
+                 return Value();
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+     public:
+         EasyModeStone() 
+@@ -554,6 +554,14 @@
+                 set_anim(get_break_anim());
+             }
+         }
++        
++        virtual Value message(const Message &amp;m) {
++            if (m.message ==&quot;ignite&quot; || m.message == &quot;expl&quot; || m.message == &quot;bombstone&quot;) {
++                break_me();
++                return Value();
++            }
++            return Stone::message(m);
++        }
+     private:
+         const char *collision_sound() { return &quot;stone&quot;; }
+ 
+@@ -567,13 +575,6 @@
+         void animcb() {
+             KillStone(get_pos());
+         }
+-        virtual Value message(const Message &amp;m) {
+-            if (m.message ==&quot;ignite&quot; || m.message == &quot;expl&quot; || m.message == &quot;bombstone&quot;) {
+-                break_me();
+-                return Value();
+-            }
+-            return Object::message(m);
+-        }
+ 
+         virtual string get_break_anim() const  {
+             return string(get_kind())+&quot;-anim&quot;;
+@@ -667,7 +668,7 @@
+                 break_me();
+                 return Value();
+             }
+-            return Object::message(m);
++            return BreakableStone::message(m);
+         }
+     };
+     DEF_TRAITSM(Break_bolder, &quot;st-break_bolder&quot;, st_break_bolder, MOVABLE_BREAKABLE);
+@@ -1017,7 +1018,7 @@
+                 maybe_fall_or_stopfire();
+                 return Value();
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+ 
+         // in oxyd1 only fall when moving
+@@ -1414,7 +1415,7 @@
+         change_state(BREAKING);
+         return Value();
+     }
+-    return Object::message(m);
++    return Stone::message(m);
+ }
+ 
+ 
+@@ -1523,7 +1524,7 @@
+         set_anim(string(get_kind()) + &quot;-captured&quot;);
+         return Value(1);
+     }
+-    return Object::message(m);
++    return Stone::message(m);
+ }
+ 
+ // -------------------------
+@@ -1607,7 +1608,7 @@
+                     return Value();
+                 }
+             } // GameCompatibility != GAMET_ENIGMA
+-            return Object::message(m);
++            return ActorImpulseBase::message(m);
+         }
+ 
+     public:
+@@ -1704,7 +1705,7 @@
+                 init_model();
+                 return Value();
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+ 
+         bool is_floating() const { return true; }
+@@ -1849,7 +1850,7 @@
+         change_state(BREAK);
+         return Value();
+     }
+-    return Object::message(m);
++    return Stone::message(m);
+ }
+ 
+ void BombStone::actor_hit(const StoneContact &amp;sc) 
+@@ -1965,7 +1966,7 @@
+                 }
+                 return Value();
+             }
+-            Object::message(m);
++            return DeathStone::message(m);
+         }
+     public:
+         DeathStoneInvisible() : visible(false) {}
+@@ -2031,7 +2032,7 @@
+                 explode();
+                 return Value();
+             }
+-            Object::message(m);
++            return Stone::message(m);
+         }
+ 
+         bool is_sticky(const Actor *) const 
+@@ -2083,7 +2084,7 @@
+                 darken();
+                 return Value();
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+     };
+     class DiscoLight : public DiscoStone {
+@@ -2224,7 +2225,7 @@
+                 break_me();
+                 return Value(1.0);
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+ 
+         void actor_hit(const StoneContact &amp;sc) {
+@@ -2255,7 +2256,7 @@
+                 break_me();
+                 return Value();
+             }
+-            return Object::message(m);
++            return Stone::message(m);
+         }
+ 
+         void actor_hit(const StoneContact &amp;sc) {
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-01-02 22:00:37 UTC (rev 961)
++++ trunk/src/world.cc	2008-01-03 15:20:27 UTC (rev 962)
+@@ -1851,7 +1851,7 @@
+     // fourswitch: 4 subsequent AddSignal calls for state specific signals
+     if (src-&gt;getObjectType() == Object::STONE
+             &amp;&amp; get_id(dynamic_cast&lt;Stone *&gt;(src)) == st_fourswitch) {
+-        for (int i = 0;; i++) {
++        for (int i = NORTH;; i--) {
+             if (!src-&gt;getAttr(ecl::strf(&quot;target_%d&quot;, i))) {
+                 target_key = ecl::strf(&quot;target_%d&quot;, i);
+                 action_key = ecl::strf(&quot;action_%d&quot;, i);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000393.html">[Enigma-game-svn] r961 - in homepage: images/articles input	input/articles
+</A></li>
+	<LI>Next message: <A HREF="000395.html">[Enigma-game-svn] r963 - homepage/input/articles
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#394">[ date ]</a>
+              <a href="thread.html#394">[ thread ]</a>
+              <a href="subject.html#394">[ subject ]</a>
+              <a href="author.html#394">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

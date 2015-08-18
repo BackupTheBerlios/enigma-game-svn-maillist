@@ -1,0 +1,359 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1694 - trunk/src/items
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1694%20-%20trunk/src/items&In-Reply-To=%3C200905301109.n4UB9naa027864%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001122.html">
+   <LINK REL="Next"  HREF="001124.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1694 - trunk/src/items</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1694%20-%20trunk/src/items&In-Reply-To=%3C200905301109.n4UB9naa027864%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1694 - trunk/src/items">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat May 30 13:09:49 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001122.html">[Enigma-game-svn] r1693 - in trunk/data: . gfx32 gfx40 gfx48
+</A></li>
+        <LI>Next message: <A HREF="001124.html">[Enigma-game-svn] r1695 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1123">[ date ]</a>
+              <a href="thread.html#1123">[ thread ]</a>
+              <a href="subject.html#1123">[ subject ]</a>
+              <a href="author.html#1123">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-05-30 13:09:35 +0200 (Sat, 30 May 2009)
+New Revision: 1694
+
+Modified:
+   trunk/src/items/ExtraLife.cc
+   trunk/src/items/ExtraLife.hh
+   trunk/src/items/Hammer.cc
+   trunk/src/items/Hammer.hh
+   trunk/src/items/Sword.cc
+   trunk/src/items/Sword.hh
+   trunk/src/items/Umbrella.cc
+   trunk/src/items/Umbrella.hh
+Log:
+Trunk 1.1: 
+- it_hammer, it_sword, it_umbrella, it_extralife:
+  fix laser light behaviour on frozen st_ice moves, do transform exactly
+  when new position has an additional light in comparison to privious pos.
+
+
+Modified: trunk/src/items/ExtraLife.cc
+===================================================================
+--- trunk/src/items/ExtraLife.cc	2009-05-29 23:29:42 UTC (rev 1693)
++++ trunk/src/items/ExtraLife.cc	2009-05-30 11:09:35 UTC (rev 1694)
+@@ -29,7 +29,7 @@
+ 
+     ExtraLife::ExtraLife(bool isNew) : Item() {
+         if (isNew) {
+-            objFlags |= ALL_DIRECTIONS;
++            objFlags |= OBJBIT_NEW;
+         }
+     }
+     
+@@ -41,20 +41,24 @@
+     }
+ 
+     void ExtraLife::on_creation(GridPos p) {
+-        if ((objFlags &amp; ALL_DIRECTIONS) == ALL_DIRECTIONS) {
++        if (objFlags &amp; OBJBIT_NEW) {
+             // a new transformed extralife
+             GameTimer.set_alarm(this, 0.2, false);
+         } else {
+-            updateCurrentLightDirs();
++            objFlags &amp;= ~OBJBIT_LIGHTNEWDIRS;
++            objFlags |= (objFlags &amp; OBJBIT_LIGHT) &gt;&gt; 25;
+             activatePhoto();
+         }
+         Item::on_creation(p);
+     }
+     
+     void ExtraLife::on_removal(GridPos p) {
++        // remember last enlightment for moves
++        objFlags &amp;= ~OBJBIT_LIGHT;
++        objFlags |= (objFlags &amp; OBJBIT_LIGHTNEWDIRS) &lt;&lt; 25;
+         GameTimer.remove_alarm(this);
+-        objFlags &amp;= ~ALL_DIRECTIONS;
+-        Item::on_removal(p);
++        objFlags &amp;= ~OBJBIT_NEW;
++       Item::on_removal(p);
+     }
+     
+     void ExtraLife::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
+@@ -69,8 +73,9 @@
+     }
+     
+     void ExtraLife::alarm() {
+-            DirectionBits db = updateCurrentLightDirs();
+-            activatePhoto();        
++        objFlags &amp;= ~OBJBIT_NEW;
++        DirectionBits db = updateCurrentLightDirs();
++        activatePhoto();        
+     }
+ 
+     DEF_ITEMTRAITS(ExtraLife, &quot;it_extralife&quot;, it_extralife);
+
+Modified: trunk/src/items/ExtraLife.hh
+===================================================================
+--- trunk/src/items/ExtraLife.hh	2009-05-29 23:29:42 UTC (rev 1693)
++++ trunk/src/items/ExtraLife.hh	2009-05-30 11:09:35 UTC (rev 1694)
+@@ -30,6 +30,12 @@
+         CLONEOBJ(ExtraLife);
+         DECL_ITEMTRAITS;
+         
++    private:        
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_NEW       =   1&lt;&lt;24,  ///&lt; Object is new and rejects transformations for a latency time 
++            OBJBIT_LIGHT     =  15&lt;&lt;25   ///&lt; Light status kept for frozen moves operations 
++        };
++        
+     public:
+         ExtraLife(bool isNew);
+ 
+
+Modified: trunk/src/items/Hammer.cc
+===================================================================
+--- trunk/src/items/Hammer.cc	2009-05-29 23:29:42 UTC (rev 1693)
++++ trunk/src/items/Hammer.cc	2009-05-30 11:09:35 UTC (rev 1694)
+@@ -27,24 +27,28 @@
+ 
+     Hammer::Hammer(bool isNew) : Item() {
+         if (isNew) {
+-            objFlags |= ALL_DIRECTIONS;
++            objFlags |= OBJBIT_NEW;
+         }
+     }
+     
+     void Hammer::on_creation(GridPos p) {
+-        if ((objFlags &amp; ALL_DIRECTIONS) == ALL_DIRECTIONS) {
++        if (objFlags &amp; OBJBIT_NEW) {
+             // a new transformed hammer
+             GameTimer.set_alarm(this, 0.2, false);
+         } else {
+-            updateCurrentLightDirs();
++            objFlags &amp;= ~OBJBIT_LIGHTNEWDIRS;
++            objFlags |= (objFlags &amp; OBJBIT_LIGHT) &gt;&gt; 25;
+             activatePhoto();
+         }
+         Item::on_creation(p);
+     }
+     
+     void Hammer::on_removal(GridPos p) {
++        // remember last enlightment for moves
++        objFlags &amp;= ~OBJBIT_LIGHT;
++        objFlags |= (objFlags &amp; OBJBIT_LIGHTNEWDIRS) &lt;&lt; 25;
+         GameTimer.remove_alarm(this);
+-        objFlags &amp;= ~ALL_DIRECTIONS;
++        objFlags &amp;= ~OBJBIT_NEW;
+         Item::on_removal(p);
+     }
+     
+@@ -56,8 +60,9 @@
+     }
+     
+     void Hammer::alarm() {
+-            DirectionBits db = updateCurrentLightDirs();
+-            activatePhoto();        
++        objFlags &amp;= ~OBJBIT_NEW;
++        DirectionBits db = updateCurrentLightDirs();
++        activatePhoto();        
+     }
+     
+     DEF_ITEMTRAITS(Hammer, &quot;it_hammer&quot;, it_hammer);
+
+Modified: trunk/src/items/Hammer.hh
+===================================================================
+--- trunk/src/items/Hammer.hh	2009-05-29 23:29:42 UTC (rev 1693)
++++ trunk/src/items/Hammer.hh	2009-05-30 11:09:35 UTC (rev 1694)
+@@ -30,6 +30,12 @@
+         CLONEOBJ(Hammer);
+         DECL_ITEMTRAITS;
+ 
++    private:        
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_NEW       =   1&lt;&lt;24,  ///&lt; Object is new and rejects transformations for a latency time 
++            OBJBIT_LIGHT     =  15&lt;&lt;25   ///&lt; Light status kept for frozen moves operations 
++        };
++        
+     public:
+         Hammer(bool isNew);
+ 
+
+Modified: trunk/src/items/Sword.cc
+===================================================================
+--- trunk/src/items/Sword.cc	2009-05-29 23:29:42 UTC (rev 1693)
++++ trunk/src/items/Sword.cc	2009-05-30 11:09:35 UTC (rev 1694)
+@@ -27,24 +27,28 @@
+ 
+     Sword::Sword(bool isNew) : Item() {
+         if (isNew) {
+-            objFlags |= ALL_DIRECTIONS;
++            objFlags |= OBJBIT_NEW;
+         }
+     }
+ 
+     void Sword::on_creation(GridPos p) {
+-        if ((objFlags &amp; ALL_DIRECTIONS) == ALL_DIRECTIONS) {
+-            // a new transformed hammer
++        if (objFlags &amp; OBJBIT_NEW) {
++            // a new transformed sword
+             GameTimer.set_alarm(this, 0.2, false);
+         } else {
+-            updateCurrentLightDirs();
++            objFlags &amp;= ~OBJBIT_LIGHTNEWDIRS;
++            objFlags |= (objFlags &amp; OBJBIT_LIGHT) &gt;&gt; 25;
+             activatePhoto();
+         }
+         Item::on_creation(p);
+     }
+     
+     void Sword::on_removal(GridPos p) {
++        // remember last enlightment for moves
++        objFlags &amp;= ~OBJBIT_LIGHT;
++        objFlags |= (objFlags &amp; OBJBIT_LIGHTNEWDIRS) &lt;&lt; 25;
+         GameTimer.remove_alarm(this);
+-        objFlags &amp;= ~ALL_DIRECTIONS;
++        objFlags &amp;= ~OBJBIT_NEW;
+         Item::on_removal(p);
+     }
+ 
+@@ -57,8 +61,9 @@
+     }
+     
+     void Sword::alarm() {
+-            updateCurrentLightDirs();
+-            activatePhoto();        
++        objFlags &amp;= ~OBJBIT_NEW;
++        updateCurrentLightDirs();
++        activatePhoto();        
+     }
+     
+     DEF_ITEMTRAITS(Sword, &quot;it_sword&quot;, it_sword);
+
+Modified: trunk/src/items/Sword.hh
+===================================================================
+--- trunk/src/items/Sword.hh	2009-05-29 23:29:42 UTC (rev 1693)
++++ trunk/src/items/Sword.hh	2009-05-30 11:09:35 UTC (rev 1694)
+@@ -30,6 +30,12 @@
+         CLONEOBJ(Sword);
+         DECL_ITEMTRAITS;
+ 
++    private:        
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_NEW       =   1&lt;&lt;24,  ///&lt; Object is new and rejects transformations for a latency time 
++            OBJBIT_LIGHT     =  15&lt;&lt;25   ///&lt; Light status kept for frozen moves operations 
++        };
++        
+     public:
+         Sword(bool isNew);
+ 
+
+Modified: trunk/src/items/Umbrella.cc
+===================================================================
+--- trunk/src/items/Umbrella.cc	2009-05-29 23:29:42 UTC (rev 1693)
++++ trunk/src/items/Umbrella.cc	2009-05-30 11:09:35 UTC (rev 1694)
+@@ -29,24 +29,28 @@
+ 
+     Umbrella::Umbrella(bool isNew) : Item() {
+         if (isNew) {
+-            objFlags |= ALL_DIRECTIONS;
++            objFlags |= OBJBIT_NEW;
+         }
+     }
+     
+     void Umbrella::on_creation(GridPos p) {
+-        if ((objFlags &amp; ALL_DIRECTIONS) == ALL_DIRECTIONS) {
++        if (objFlags &amp; OBJBIT_NEW) {
+             // a new transformed umbrella
+             GameTimer.set_alarm(this, 0.2, false);
+         } else {
+-            updateCurrentLightDirs();
++            objFlags &amp;= ~OBJBIT_LIGHTNEWDIRS;
++            objFlags |= (objFlags &amp; OBJBIT_LIGHT) &gt;&gt; 25;
+             activatePhoto();
+         }
+         Item::on_creation(p);
+     }
+     
+     void Umbrella::on_removal(GridPos p) {
++        // remember last enlightment for moves
++        objFlags &amp;= ~OBJBIT_LIGHT;
++        objFlags |= (objFlags &amp; OBJBIT_LIGHTNEWDIRS) &lt;&lt; 25;
+         GameTimer.remove_alarm(this);
+-        objFlags &amp;= ~ALL_DIRECTIONS;
++        objFlags &amp;= ~OBJBIT_NEW;
+         Item::on_removal(p);
+     }
+     
+@@ -63,8 +67,9 @@
+     }
+     
+     void Umbrella::alarm() {
+-            DirectionBits db = updateCurrentLightDirs();
+-            activatePhoto();        
++        objFlags &amp;= ~OBJBIT_NEW;
++        DirectionBits db = updateCurrentLightDirs();
++        activatePhoto();        
+     }
+ 
+     DEF_ITEMTRAITS (Umbrella, &quot;it_umbrella&quot;, it_umbrella);
+
+Modified: trunk/src/items/Umbrella.hh
+===================================================================
+--- trunk/src/items/Umbrella.hh	2009-05-29 23:29:42 UTC (rev 1693)
++++ trunk/src/items/Umbrella.hh	2009-05-30 11:09:35 UTC (rev 1694)
+@@ -30,6 +30,12 @@
+         CLONEOBJ(Umbrella);
+         DECL_ITEMTRAITS;
+ 
++    private:        
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_NEW       =   1&lt;&lt;24,  ///&lt; Object is new and rejects transformations for a latency time 
++            OBJBIT_LIGHT     =  15&lt;&lt;25   ///&lt; Light status kept for frozen moves operations 
++        };
++        
+     public:
+         Umbrella(bool isNew);
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001122.html">[Enigma-game-svn] r1693 - in trunk/data: . gfx32 gfx40 gfx48
+</A></li>
+	<LI>Next message: <A HREF="001124.html">[Enigma-game-svn] r1695 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1123">[ date ]</a>
+              <a href="thread.html#1123">[ thread ]</a>
+              <a href="subject.html#1123">[ subject ]</a>
+              <a href="author.html#1123">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

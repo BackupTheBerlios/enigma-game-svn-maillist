@@ -1,0 +1,629 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1353 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-October/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1353%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200810031520.m93FKARm025011%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000781.html">
+   <LINK REL="Next"  HREF="000783.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1353 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1353%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200810031520.m93FKARm025011%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1353 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Fri Oct  3 17:20:10 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000781.html">[Enigma-game-svn] r1352 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000783.html">[Enigma-game-svn] r1354 - trunk/doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#782">[ date ]</a>
+              <a href="thread.html#782">[ thread ]</a>
+              <a href="subject.html#782">[ subject ]</a>
+              <a href="author.html#782">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-10-03 17:20:09 +0200 (Fri, 03 Oct 2008)
+New Revision: 1353
+
+Added:
+   trunk/src/stones/DiscoStone.cc
+   trunk/src/stones/DiscoStone.hh
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/api2init.lua
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/ox_oxyd1.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/stones.hh
+   trunk/src/stones/PuzzleStone.cc
+   trunk/src/stones/StoneImpulse.cc
+   trunk/src/stones_simple.cc
+Log:
+Trunk 1.1: new API reengineering
+- disco stone:
+  - rename to st_disco, st_disco_light, st_disco_medium, st_disco_dark
+  - state attribute with values LIGHT, MEDIUM, DARK
+  - message &quot;lighten&quot;, &quot;darken&quot; change by one degree
+  - message &quot;signal&quot; turn on to LIGHT on value 1, off to DARK on 0
+  - no recursive disco messages on new API - use named groups
+  - backward compatible recursive disco messages on old API
+  - maintain object identity on switches
+- fix crashes on stoneimpulse on dynamite explosions
+- experiment: blue puzzle explosions equal yellow ones
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-10-01 22:32:09 UTC (rev 1352)
++++ trunk/data/api1init.lua	2008-10-03 15:20:09 UTC (rev 1353)
+@@ -146,6 +146,9 @@
+     st_coinslot = &quot;st-coinslot&quot;,
+     st_death = &quot;st-death&quot;,
+     st_death_invisible = &quot;st-death_invisible&quot;,
++    st_disco_light = &quot;st-disco-light&quot;,
++    st_disco_medium = &quot;st-disco-medium&quot;,
++    st_disco_dark = &quot;st-disco-dark&quot;,
+     st_door_a = &quot;st-door_a&quot;,
+     st_door_b = &quot;st-door_b&quot;,
+     st_door_c = &quot;st-door_c&quot;,
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2008-10-01 22:32:09 UTC (rev 1352)
++++ trunk/data/api2init.lua	2008-10-03 15:20:09 UTC (rev 1353)
+@@ -69,6 +69,9 @@
+ IDLE     = 0
+ ACTIVE   = 1
+ OXYDPAIR = 2
++LIGHT    = 0
++MEDIUM   = 1
++DARK     = 2
+ 
+ -- color
+ BLACK  = 0
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-10-01 22:32:09 UTC (rev 1352)
++++ trunk/data/models-2d.lua	2008-10-03 15:20:09 UTC (rev 1353)
+@@ -876,7 +876,7 @@
+ 
+ -- st-disco --
+ do
+-    DefTiles(&quot;st-disco&quot;, {&quot;st-disco-light&quot;,&quot;st-disco-medium&quot;,&quot;st-disco-dark&quot;})
++    DefTiles(&quot;st-disco&quot;, {&quot;st_disco0&quot;,&quot;st_disco1&quot;,&quot;st_disco2&quot;})
+ end
+ 
+ -- st-death --
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-10-01 22:32:09 UTC (rev 1352)
++++ trunk/data/schemas/objects.xml	2008-10-03 15:20:09 UTC (rev 1353)
+@@ -72,6 +72,7 @@
+   &lt;messages&gt;
+     &lt;msg name=&quot;close&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;closeall&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;darken&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;disconnect&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;expl&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;flip&quot; type=&quot;nil&quot;/&gt;
+@@ -83,6 +84,7 @@
+     &lt;msg name=&quot;ignite&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;inner_pull&quot; type=&quot;dir&quot;/&gt;
+     &lt;msg name=&quot;kill&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;lighten&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;move&quot; type=&quot;pos&quot;/&gt;
+     &lt;msg name=&quot;off&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;on&quot; type=&quot;nil&quot;/&gt;
+@@ -627,6 +629,20 @@
+     &lt;object name=&quot;st_death_invisible&quot;&gt;
+       &lt;attr name=&quot;invisible&quot; value=&quot;true&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_disco&quot;&gt;
++      &lt;msg name=&quot;lighten&quot;/&gt;
++      &lt;msg name=&quot;darken&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_death_light&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;0&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_death_medium&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;1&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_death_dark&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;2&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_door&quot;&gt;
+       &lt;attr name=&quot;faces&quot; default=&quot;nesw&quot;/&gt;
+       &lt;attr name=&quot;flavor&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-10-01 22:32:09 UTC (rev 1352)
++++ trunk/src/Makefile.am	2008-10-03 15:20:09 UTC (rev 1353)
+@@ -248,6 +248,8 @@
+ 	stones/CoinSlot.hh	\
+ 	stones/DeathStone.cc	\
+ 	stones/DeathStone.hh	\
++	stones/DiscoStone.cc	\
++	stones/DiscoStone.hh	\
+ 	stones/Door.cc		\
+ 	stones/Door.hh		\
+ 	stones/FartStone.cc	\
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2008-10-01 22:32:09 UTC (rev 1352)
++++ trunk/src/ox_oxyd1.cc	2008-10-03 15:20:09 UTC (rev 1353)
+@@ -250,8 +250,8 @@
+     &quot;st-laserbreak&quot;,            // Oxyd1 stone 0x63
+     &quot;st-fakeoxyda&quot;,             // Oxyd1 stone 0x64
+     UNUSED,                     // Oxyd1 stone 0x65
+-    &quot;st-disco-medium&quot;,          // Oxyd1 stone 0x66
+-    &quot;st-disco-light&quot;,           // Oxyd1 stone 0x67
++    &quot;st_disco_medium&quot;,          // Oxyd1 stone 0x66
++    &quot;st_disco_light&quot;,           // Oxyd1 stone 0x67
+     &quot;st-bombs&quot;,                 // Oxyd1 stone 0x68
+     &quot;st-flash&quot;,                 // Oxyd1 stone 0x69
+     &quot;st_coinslot_instant&quot;,      // Oxyd1 stone 0x6a
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-10-01 22:32:09 UTC (rev 1352)
++++ trunk/src/ox_peroxyd.cc	2008-10-03 15:20:09 UTC (rev 1353)
+@@ -284,8 +284,8 @@
+     &quot;st-laserbreak&quot;,            // PerOxyd stone 0x5d
+     &quot;st-coffee&quot;,                // PerOxyd stone 0x5e
+     &quot;st_shogun&quot;,                // PerOxyd stone 0x5f (oxyd with a hole, movable ... strange stone! st-shogun as workaround, only link level 74)
+-    &quot;st-disco-dark&quot;,            // PerOxyd stone 0x60
+-    &quot;st-disco-medium&quot;,          // PerOxyd stone 0x61
++    &quot;st_disco_dark&quot;,            // PerOxyd stone 0x60
++    &quot;st_disco_medium&quot;,          // PerOxyd stone 0x61
+     &quot;st-bombs&quot;,                 // PerOxyd stone 0x62
+     &quot;st-flash&quot;,                 // PerOxyd stone 0x63
+     &quot;st_coinslot_instant&quot;,      // PerOxyd stone 0x64
+
+Added: trunk/src/stones/DiscoStone.cc
+===================================================================
+--- trunk/src/stones/DiscoStone.cc	2008-10-01 22:32:09 UTC (rev 1352)
++++ trunk/src/stones/DiscoStone.cc	2008-10-03 15:20:09 UTC (rev 1353)
+@@ -0,0 +1,84 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/DiscoStone.hh&quot;
++#include &quot;main.hh&quot;
++
++namespace enigma {
++    DiscoStone::DiscoStone(int initState) : Stone () {
++        state = initState;
++    }
++
++    std::string DiscoStone::getClass() const {
++        return &quot;st_disco&quot;;
++    }
++        
++    Value DiscoStone::message(const Message &amp;m) {
++        bool handled = false;
++        bool oldBehaviour = server::EnigmaCompatibility &lt; 1.10;
++        int orgState = state;
++        if (m.message == &quot;lighten&quot;) {
++            setAttr(&quot;state&quot;, state - (oldBehaviour ? 2 : 1));
++            handled = true;
++        } else if (m.message == &quot;darken&quot;) {
++            setAttr(&quot;state&quot;, state + (oldBehaviour ? 2 : 1));
++            handled = true;
++        } else if (m.message == &quot;signal&quot;) {
++            setAttr(&quot;state&quot;, ecl::Clamp(state + ((m.value != 0) ? -2 : +2), (int)LIGHT, (int)DARK));
++            handled = true;
++        } else
++            return Stone::message(m);
++        
++        if (handled &amp;&amp; oldBehaviour &amp;&amp; orgState != state) {
++            // recursive distribution of light change
++            for (Direction d = NORTH; d != NODIR; d = previous(d)) {
++                Stone * st = GetStone(move(get_pos(), d));
++                if (st != NULL &amp;&amp; st-&gt;getClass() == &quot;st_disco&quot;)
++                    SendMessage(st, &quot;signal&quot;, (state &lt; orgState) ? 1 : 0, this);
++            }
++        }
++        return Value();
++    }
++
++    int DiscoStone::maxState() const {
++        return DARK;
++    }
++    
++    void DiscoStone::init_model() {
++        set_model(ecl::strf(&quot;st_disco%d&quot;, state));
++    }
++
++    bool DiscoStone::is_floating() const {
++        return true;
++    }
++    
++    StoneResponse DiscoStone::collision_response(const StoneContact &amp;sc) {
++        return STONE_PASS;
++    }
++    
++    DEF_TRAITS(DiscoStone, &quot;st_disco&quot;, st_disco);
++    
++    BOOT_REGISTER_START
++        BootRegister(new DiscoStone(0), &quot;st_disco&quot;);
++        BootRegister(new DiscoStone(0), &quot;st_disco_light&quot;);
++        BootRegister(new DiscoStone(1), &quot;st_disco_medium&quot;);
++        BootRegister(new DiscoStone(2), &quot;st_disco_dark&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/DiscoStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/DiscoStone.hh
+===================================================================
+--- trunk/src/stones/DiscoStone.hh	2008-10-01 22:32:09 UTC (rev 1352)
++++ trunk/src/stones/DiscoStone.hh	2008-10-03 15:20:09 UTC (rev 1353)
+@@ -0,0 +1,67 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef DISCOSTONE_HH
++#define DISCOSTONE_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class DiscoStone : public Stone {
++        CLONEOBJ(DiscoStone);
++        DECL_TRAITS;
++        
++    private:
++        enum iState {
++            LIGHT,   ///&lt; 
++            MEDIUM,  ///&lt; 
++            DARK     ///&lt; 
++        };
++
++    public:
++        DiscoStone(int initState);
++        
++        // Object interface
++        virtual std::string getClass() const;
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual int maxState() const;
++
++        // GridObject interface
++        virtual void init_model();
++        
++        // Stone interface
++        virtual bool is_floating() const;
++        virtual StoneResponse collision_response(const StoneContact &amp;sc);
++        
++    private:
++        std::string model_basename();
++        void set_iState(int newState);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/DiscoStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones/PuzzleStone.cc
+===================================================================
+--- trunk/src/stones/PuzzleStone.cc	2008-10-01 22:32:09 UTC (rev 1352)
++++ trunk/src/stones/PuzzleStone.cc	2008-10-03 15:20:09 UTC (rev 1353)
+@@ -451,37 +451,37 @@
+             if (huddle.size() == cluster.size()) {
+                 exploded = true;
+             }
+-            else {
+-                if (getAttr(&quot;color&quot;) == BLUE) {
+-                    // check if 'huddle' is made up of complete clusters :
+-
+-                    while (!huddle.empty()) {
+-                        // remove one complete cluster from 'huddle'
+-                        markList(cluster, true);
+-                        for (PuzzleList::iterator itr = huddle.begin(); itr != huddle.end(); ) {
+-                            if ((*itr)-&gt;objFlags &amp; OBJBIT_VISITED) {
+-                                (*itr)-&gt;objFlags &amp;= ~OBJBIT_VISITED;
+-                                PuzzleList::iterator ditr = itr;
+-                                ++itr;
+-                                huddle.erase(ditr);
+-                            } else
+-                               ++itr;
+-                        }
+-
+-                        if (huddle.empty()) { // none left -&gt; all were complete
+-                            exploded = true;
+-                            break;
+-                        }
+-
+-                        // look for next complete cluster :
+-                        cluster.clear();
+-                        PuzzleStone *pz = huddle.front();
+-                        if (!pz-&gt;findFragment(cluster)) {
+-                            break; // incomplete cluster found -&gt; don't explode
+-                        }
+-                    }
+-                }
+-            }
++//            else {
++//                if (getAttr(&quot;color&quot;) == BLUE) {
++//                    // check if 'huddle' is made up of complete clusters :
++//
++//                    while (!huddle.empty()) {
++//                        // remove one complete cluster from 'huddle'
++//                        markList(cluster, true);
++//                        for (PuzzleList::iterator itr = huddle.begin(); itr != huddle.end(); ) {
++//                            if ((*itr)-&gt;objFlags &amp; OBJBIT_VISITED) {
++//                                (*itr)-&gt;objFlags &amp;= ~OBJBIT_VISITED;
++//                                PuzzleList::iterator ditr = itr;
++//                                ++itr;
++//                                huddle.erase(ditr);
++//                            } else
++//                               ++itr;
++//                        }
++//
++//                        if (huddle.empty()) { // none left -&gt; all were complete
++//                            exploded = true;
++//                            break;
++//                        }
++//
++//                        // look for next complete cluster :
++//                        cluster.clear();
++//                        PuzzleStone *pz = huddle.front();
++//                        if (!pz-&gt;findFragment(cluster)) {
++//                            break; // incomplete cluster found -&gt; don't explode
++//                        }
++//                    }
++//                }
++//            }
+         }
+ 
+         if (exploded) {
+
+Modified: trunk/src/stones/StoneImpulse.cc
+===================================================================
+--- trunk/src/stones/StoneImpulse.cc	2008-10-01 22:32:09 UTC (rev 1352)
++++ trunk/src/stones/StoneImpulse.cc	2008-10-03 15:20:09 UTC (rev 1353)
+@@ -103,14 +103,17 @@
+                 init_model();     // replace potential bogus model
+             else if (!(objFlags &amp; OBJBIT_STEADY) &amp;&amp; (objFlags &amp; OBJBIT_LIGHTNEWDIRS) &amp;&amp; !(objFlags &amp; OBJBIT_LASERIDLE))
+                 setIState(EXPANDING);
++            return Value();
+         } else if (m.message == &quot;_init&quot;) {
+             // we may have the wrong model
+             updateCurrentLightDirs();
+             if (state == IDLE &amp;&amp; (objFlags &amp; OBJBIT_STEADY) &amp;&amp; (objFlags &amp; OBJBIT_LIGHTNEWDIRS))
+                setIState(EXPANDING);     // replace potential bogus model
++            return Value();
+         } else if (m.message == &quot;ignite&quot;) {
+             if (server::GameCompatibility != GAMET_ENIGMA || (objFlags &amp; OBJBIT_LIGHTNEWDIRS))
+                 KillStone(get_pos());
++            return Value();
+         } else
+             return Stone::message(m);
+     }
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2008-10-01 22:32:09 UTC (rev 1352)
++++ trunk/src/stones.hh	2008-10-03 15:20:09 UTC (rev 1353)
+@@ -53,6 +53,7 @@
+         st_coinslot,
+         st_death,
+         st_death_invisible,
++        st_disco,
+         st_door,
+         st_easymode,
+         st_explosion,
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-10-01 22:32:09 UTC (rev 1352)
++++ trunk/src/stones_simple.cc	2008-10-03 15:20:09 UTC (rev 1353)
+@@ -1334,102 +1334,6 @@
+     DEF_TRAITSM(MagicStone, &quot;st-magic&quot;, st_magic, MOVABLE_BREAKABLE);
+ }
+ 
+-/* -------------------- Disco stones -------------------- */
+-namespace
+-{
+-    class DiscoStone : public Stone {
+-        CLONEOBJ(DiscoStone);
+-    public:
+-        DiscoStone(const char *kind) : Stone(kind) {}
+-
+-        StoneResponse collision_response(const StoneContact &amp;) {
+-            return STONE_PASS;
+-        }
+-
+-        virtual void lighten() {}
+-        virtual void darken() {}
+-    protected:
+-        static void visit_lighten(GridPos p) {
+-            if (DiscoStone *st = dynamic_cast&lt;DiscoStone*&gt;(GetStone(p)))
+-                st-&gt;lighten();
+-        }
+-        static void visit_darken(GridPos p) {
+-            if (DiscoStone *st = dynamic_cast&lt;DiscoStone*&gt;(GetStone(p)))
+-                st-&gt;darken();
+-        }
+-
+-    private:
+-        bool is_floating() const { return true; }
+-
+-        virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;signal&quot;) {
+-                int ival = m.value;
+-                if (ival &gt; 0)
+-                    lighten();
+-                else
+-                    darken();
+-                return Value();
+-            } else if (m.message == &quot;lighten&quot;) {
+-                lighten();
+-                return Value();
+-            } else if (m.message == &quot;darken&quot;) {
+-                darken();
+-                return Value();
+-            }
+-            return Stone::message(m);
+-        }
+-    };
+-    class DiscoLight : public DiscoStone {
+-        CLONEOBJ(DiscoLight);
+-        virtual void darken() {
+-            GridPos p = get_pos();
+-            SetStone (p, MakeStone(&quot;st-disco-medium&quot;));
+-            visit_darken (move(p, NORTH));
+-            visit_darken (move(p, EAST));
+-            visit_darken (move(p, SOUTH));
+-            visit_darken (move(p, WEST));
+-        }
+-    public:
+-        DiscoLight() : DiscoStone(&quot;st-disco-light&quot;) {}
+-    };
+-    class DiscoMedium : public DiscoStone {
+-        CLONEOBJ(DiscoMedium);
+-    public:
+-        DiscoMedium() : DiscoStone(&quot;st-disco-medium&quot;) {}
+-        virtual void lighten() {
+-            GridPos p = get_pos();
+-            SetStone (p, MakeStone(&quot;st-disco-light&quot;));
+-            visit_lighten (move(p, NORTH));
+-            visit_lighten (move(p, EAST));
+-            visit_lighten (move(p, SOUTH));
+-            visit_lighten (move(p, WEST));
+-        }
+-        virtual void darken() {
+-            GridPos p = get_pos();
+-            SetStone (p, MakeStone(&quot;st-disco-dark&quot;));
+-            visit_darken (move(p, NORTH));
+-            visit_darken (move(p, EAST));
+-            visit_darken (move(p, SOUTH));
+-            visit_darken (move(p, WEST));
+-        }
+-    };
+-
+-    class DiscoDark : public DiscoStone {
+-        CLONEOBJ(DiscoDark);
+-        virtual void lighten() {
+-            GridPos p = get_pos();
+-            SetStone (p, MakeStone(&quot;st-disco-medium&quot;));
+-            visit_lighten (move(p, NORTH));
+-            visit_lighten (move(p, EAST));
+-            visit_lighten (move(p, SOUTH));
+-            visit_lighten (move(p, WEST));
+-        }
+-        virtual void darken() {}
+-    public:
+-        DiscoDark() : DiscoStone(&quot;st-disco-dark&quot;) {}
+-    };
+-}
+-
+ /* -------------------- Fire breakable stones -------------------- */
+ 
+ /* These stones mimic the behaviour of the plain-looking stones in
+@@ -1553,9 +1457,6 @@
+ 
+     Register(new ChameleonStone);
+ 
+-    Register(new DiscoLight);
+-    Register(new DiscoMedium);
+-    Register(new DiscoDark);
+     Register(new DummyStone);
+     Register(new EasyModeStone);
+     Register(new FakeOxydStone);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000781.html">[Enigma-game-svn] r1352 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000783.html">[Enigma-game-svn] r1354 - trunk/doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#782">[ date ]</a>
+              <a href="thread.html#782">[ thread ]</a>
+              <a href="subject.html#782">[ subject ]</a>
+              <a href="author.html#782">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

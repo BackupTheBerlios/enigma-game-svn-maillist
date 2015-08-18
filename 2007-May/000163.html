@@ -1,0 +1,283 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r726 - branches/eval/java/src/org/enigma_game/lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r726%20-%20branches/eval/java/src/org/enigma_game/lev&In-Reply-To=%3C200705082115.l48LFUGi004160%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000162.html">
+   <LINK REL="Next"  HREF="000164.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r726 - branches/eval/java/src/org/enigma_game/lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r726%20-%20branches/eval/java/src/org/enigma_game/lev&In-Reply-To=%3C200705082115.l48LFUGi004160%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r726 - branches/eval/java/src/org/enigma_game/lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue May  8 23:15:30 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000162.html">[Enigma-game-svn] r725 - branches/1.0/data/levels/enigma_oxyd
+</A></li>
+        <LI>Next message: <A HREF="000164.html">[Enigma-game-svn] r727 - in branches/1.0: . data data/soundsets	data/soundsets/enigma src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#163">[ date ]</a>
+              <a href="thread.html#163">[ thread ]</a>
+              <a href="subject.html#163">[ subject ]</a>
+              <a href="author.html#163">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-05-08 23:15:30 +0200 (Tue, 08 May 2007)
+New Revision: 726
+
+Modified:
+   branches/eval/java/src/org/enigma_game/lev/LevelScore.java
+   branches/eval/java/src/org/enigma_game/lev/RatingManager.java
+Log:
+Evaluation: preparation for 1.01
+- increase Professional criteria to 20% solved
+- fix: count WR only on levels of current distr. instead of levels 
+  listed in ratings.xml
+- inherit user ratings if less than 10 ratings for new version
+
+
+Modified: branches/eval/java/src/org/enigma_game/lev/LevelScore.java
+===================================================================
+--- branches/eval/java/src/org/enigma_game/lev/LevelScore.java	2007-05-07 13:56:55 UTC (rev 725)
++++ branches/eval/java/src/org/enigma_game/lev/LevelScore.java	2007-05-08 21:15:30 UTC (rev 726)
+@@ -24,6 +24,7 @@
+ 
+ public class LevelScore {
+     Element elem;
++    LevelScore parentScore = null;
+     static String currentRel = &quot;1.00&quot;;
+     boolean isDiffSolved = false;
+     boolean isEasySolved = false;
+@@ -119,6 +120,10 @@
+         oldBseh.addAll(Arrays.asList(bseh.split(&quot;\\x2B&quot;))); // &quot;+&quot;
+     }
+     
++    public void setParentScore(LevelScore parent) {
++        parentScore = parent;
++    }
++    
+     public void renameUser(String oldname, String newname) {
+         if (oldBsdh.remove(oldname)) {
+             oldBsdh.add(newname);
+@@ -215,6 +220,10 @@
+         return elem.getAttribute(&quot;id&quot;);
+     }
+     
++    public String getScoreVersion() {
++        return elem.getAttribute(&quot;sv&quot;);
++    }
++    
+     public boolean hasUserDiffSolved() {
+         return userDiffSolved;
+     }
+@@ -450,68 +459,83 @@
+         elem.setAttributeNS(null, &quot;solvpd&quot;, Integer.toString(solvpd));
+         
+         int avgur = -1;
+-        if (avgurNum &gt;  0)
+-            avgur = avgurSum * 10 / avgurNum;
++        if (avgurNum &gt;  0 || (parentScore != null &amp;&amp; parentScore.getRatingNum() &gt; 0)) { 
++            int parentAddNum = 0;
++            double parentAddSum = 0;
++            if (parentScore != null &amp;&amp; avgurNum &lt; 10) {
++                if (parentScore.getRatingNum() &gt; 10 - avgurNum) {
++                    parentAddNum = 10 - avgurNum;
++                    parentAddSum = parentAddNum * parentScore.getRatingAvg();
++                } else if (parentScore.getRatingNum() &gt; 0) {
++                    parentAddNum = parentScore.getRatingNum();
++                    parentAddSum = parentAddNum * parentScore.getRatingAvg();
++                }
++            }
++            parentAddSum = 10 * parentAddSum;
++            avgur = (avgurSum * 10 + (int)parentAddSum) / (avgurNum + parentAddNum);
++        }
+         elem.setAttributeNS(null, &quot;avgur&quot;, Integer.toString(avgur));
+         
+         // worldrecord holder statistics
+-        int numWRHolder = oldBsdh.size() + oldConfBsdh.size() + newConfBsdh.size();
+-        if (numWRHolder &gt; 1) {
+-            for(String name : newConfBsdh) {
+-                Integer n = wrSharers.get(name);
+-                wrSharers.put(name, (n == null ? 1 : n+1));
+-            }
+-            for(String name : oldConfBsdh) {
+-                Integer n = wrSharers.get(name);
+-                wrSharers.put(name, (n == null ? 1 : n+1));
+-            }
+-            for(String name : oldBsdh) {
+-                Integer n = wrSharers.get(name);
+-                wrSharers.put(name, (n == null ? 1 : n+1));
+-            }
+-        } else {
+-            for(String name : newConfBsdh) {
+-                Integer n = wrHolders.get(name);
+-                wrHolders.put(name, (n == null ? 1 : n+1));
+-            }
+-            for(String name : oldConfBsdh) {
+-                Integer n = wrHolders.get(name);
+-                wrHolders.put(name, (n == null ? 1 : n+1));
+-            }
+-            for(String name : oldBsdh) {
+-                Integer n = wrHolders.get(name);
+-                wrHolders.put(name, (n == null ? 1 : n+1));
+-            }
+-        }
+-        if (hasEasy) {
+-            numWRHolder = oldBseh.size() + oldConfBseh.size() + newConfBseh.size();
++        if (partOfCurDist) {
++            int numWRHolder = oldBsdh.size() + oldConfBsdh.size() + newConfBsdh.size();
+             if (numWRHolder &gt; 1) {
+-                for(String name : newConfBseh) {
++                for(String name : newConfBsdh) {
+                     Integer n = wrSharers.get(name);
+                     wrSharers.put(name, (n == null ? 1 : n+1));
+                 }
+-                for(String name : oldConfBseh) {
++                for(String name : oldConfBsdh) {
+                     Integer n = wrSharers.get(name);
+                     wrSharers.put(name, (n == null ? 1 : n+1));
+                 }
+-                for(String name : oldBseh) {
++                for(String name : oldBsdh) {
+                     Integer n = wrSharers.get(name);
+                     wrSharers.put(name, (n == null ? 1 : n+1));
+                 }
+             } else {
+-                for(String name : newConfBseh) {
++                for(String name : newConfBsdh) {
+                     Integer n = wrHolders.get(name);
+                     wrHolders.put(name, (n == null ? 1 : n+1));
+                 }
+-                for(String name : oldConfBseh) {
++                for(String name : oldConfBsdh) {
+                     Integer n = wrHolders.get(name);
+                     wrHolders.put(name, (n == null ? 1 : n+1));
+                 }
+-                for(String name : oldBseh) {
++                for(String name : oldBsdh) {
+                     Integer n = wrHolders.get(name);
+                     wrHolders.put(name, (n == null ? 1 : n+1));
+                 }
+             }
++            if (hasEasy) {
++                numWRHolder = oldBseh.size() + oldConfBseh.size() + newConfBseh.size();
++                if (numWRHolder &gt; 1) {
++                    for(String name : newConfBseh) {
++                        Integer n = wrSharers.get(name);
++                        wrSharers.put(name, (n == null ? 1 : n+1));
++                    }
++                    for(String name : oldConfBseh) {
++                        Integer n = wrSharers.get(name);
++                        wrSharers.put(name, (n == null ? 1 : n+1));
++                    }
++                    for(String name : oldBseh) {
++                        Integer n = wrSharers.get(name);
++                        wrSharers.put(name, (n == null ? 1 : n+1));
++                    }
++                } else {
++                    for(String name : newConfBseh) {
++                        Integer n = wrHolders.get(name);
++                        wrHolders.put(name, (n == null ? 1 : n+1));
++                    }
++                    for(String name : oldConfBseh) {
++                        Integer n = wrHolders.get(name);
++                        wrHolders.put(name, (n == null ? 1 : n+1));
++                    }
++                    for(String name : oldBseh) {
++                        Integer n = wrHolders.get(name);
++                        wrHolders.put(name, (n == null ? 1 : n+1));
++                    }
++                }
++            }
+         }
+     }
+     
+
+Modified: branches/eval/java/src/org/enigma_game/lev/RatingManager.java
+===================================================================
+--- branches/eval/java/src/org/enigma_game/lev/RatingManager.java	2007-05-07 13:56:55 UTC (rev 725)
++++ branches/eval/java/src/org/enigma_game/lev/RatingManager.java	2007-05-08 21:15:30 UTC (rev 726)
+@@ -100,6 +100,9 @@
+         lpmgr = new LevelpackManager(&quot;enigma_vi&quot;);
+         lpmgr.registerLevels(this);
+         levelPacks.add(lpmgr);
++        lpmgr = new LevelpackManager(&quot;enigma_vii&quot;);
++        lpmgr.registerLevels(this);
++        levelPacks.add(lpmgr);
+         lpmgr = new LevelpackManager(&quot;enigma_esprit&quot;);
+         lpmgr.registerLevels(this);
+         levelPacks.add(lpmgr);
+@@ -126,14 +129,22 @@
+         levelPacks.add(lpmgr);
+         
+         for(Map.Entry&lt;String, LevelScore&gt; entry : levelScores.entrySet()) {
+-            if (entry.getValue().isPartOfCurDist()) {
++            LevelScore lev = entry.getValue();
++            int sv = Integer.parseInt(lev.getScoreVersion());
++            if (sv &gt; 1) {
++                LevelScore parentScore = getLevelScore(lev.getId(), Integer.toString(sv - 1));
++                if (parentScore != null) {
++                    lev.setParentScore(parentScore);
++                }
++            }
++            if (lev.isPartOfCurDist()) {
+                 numDifficult++;
+-                if (entry.getValue().hasEasyMode()) {
++                if (lev.hasEasyMode()) {
+                     numEasy++;
+                 }
+             }
+             if (!levelPattern.equals(&quot;&quot;)) {
+-                entry.getValue().setFullEvaluation(levelPattern);
++                lev.setFullEvaluation(levelPattern);
+             }
+         }
+     }
+@@ -189,7 +200,7 @@
+         formatter.format(&quot;Solved diff %3d/%3d - easy %3d/%3d = %6.2f%%&quot;, userDiffCount,
+                 numDifficult, userEasyCount, numEasy, solvedPercent);
+         System.out.println(formatter.toString());
+-        if (solvedPercent &gt; 10.0) {
++        if (solvedPercent &gt; 20.0) {
+             isProfessional = true;
+             numProf++;
+         }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000162.html">[Enigma-game-svn] r725 - branches/1.0/data/levels/enigma_oxyd
+</A></li>
+	<LI>Next message: <A HREF="000164.html">[Enigma-game-svn] r727 - in branches/1.0: . data data/soundsets	data/soundsets/enigma src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#163">[ date ]</a>
+              <a href="thread.html#163">[ thread ]</a>
+              <a href="subject.html#163">[ subject ]</a>
+              <a href="author.html#163">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

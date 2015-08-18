@@ -1,0 +1,1229 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1287 - in trunk: data data/schemas src src/items	src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-August/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1287%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/items%0A%09src/stones&In-Reply-To=%3C200808241159.m7OBxijO015835%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000716.html">
+   <LINK REL="Next"  HREF="000718.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1287 - in trunk: data data/schemas src src/items	src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1287%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/items%0A%09src/stones&In-Reply-To=%3C200808241159.m7OBxijO015835%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1287 - in trunk: data data/schemas src src/items	src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Aug 24 13:59:44 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000716.html">[Enigma-game-svn] r1286 - in trunk: data data/levels/lib src	src/stones
+</A></li>
+        <LI>Next message: <A HREF="000718.html">[Enigma-game-svn] r1288 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#717">[ date ]</a>
+              <a href="thread.html#717">[ thread ]</a>
+              <a href="subject.html#717">[ subject ]</a>
+              <a href="author.html#717">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-08-24 13:59:42 +0200 (Sun, 24 Aug 2008)
+New Revision: 1287
+
+Added:
+   trunk/src/items/SeedItem.cc
+   trunk/src/items/SeedItem.hh
+   trunk/src/stones/VolcanoStone.cc
+   trunk/src/stones/VolcanoStone.hh
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/items.cc
+   trunk/src/items.hh
+   trunk/src/items/ShogunDot.hh
+   trunk/src/ox_magnum.cc
+   trunk/src/ox_oxyd1.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/stones.hh
+   trunk/src/stones/BoulderStone.hh
+   trunk/src/stones/ShogunStone.cc
+   trunk/src/stones_complex.cc
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+   trunk/src/world.hh
+Log:
+Trunk 1.1: new API reengineering
+- volcano:
+  - rename to st_volcano, st_volcano_active
+  - volcano now presses it_trigger
+  - new attribute &quot;secure&quot; for guaranteed spreading
+  - activity state attribute can be evaluated and set to active
+- seed:
+  - rename to it_seed, it_seed_volcano, it_seed_fake, it_seed_wood
+  - attribute secure for st_volcano
+  - complete identity transfer to resulting stone
+  - activity state attribute can be evaluated and set to active
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/data/api1init.lua	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -64,6 +64,9 @@
+     it_magnet_on = &quot;it-magnet-on&quot;,
+     it_magnet_off = &quot;it-magnet-off&quot;,
+     it_rubberband = &quot;it-rubberband&quot;,
++    it_seed = &quot;it-seed&quot;,
++    it_seed_fake = &quot;it-seed_nowood&quot;,
++    it_seed_volcano = &quot;it-seed_volcano&quot;,
+     it_shogun_s = &quot;it-shogun-s&quot;,
+     it_shogun_m = &quot;it-shogun-m&quot;,
+     it_shogun_l = &quot;it-shogun-l&quot;,
+@@ -219,6 +222,10 @@
+     st_turnstilearm_e = &quot;st-turnstile-e&quot;,
+     st_turnstilearm_s = &quot;st-turnstile-s&quot;,
+     st_turnstilearm_w = &quot;st-turnstile-w&quot;,
++    st_volcano = &quot;st-volcano&quot;,
++    st_volcano_new = &quot;st-volcano-growing&quot;,
++    st_volcano_active = &quot;st-volcano_active&quot;,
++    st_volcano_inactive = &quot;st-volcano_inactive&quot;,
+     st_window = &quot;st-window&quot;
+ }
+ 
+@@ -675,7 +682,7 @@
+     [&quot;st-plain_hole__trigger&quot;] = &quot;signal&quot;,
+     st_polarswitch__onoff = &quot;toggle&quot;,
+     st_switch__onoff = &quot;toggle&quot;,
+-    [&quot;st-volcano__trigger&quot;] = &quot;toggle&quot;,
++    st_volcano__trigger = &quot;toggle&quot;,
+     [&quot;st-white1__trigger&quot;] = &quot;signal&quot;,
+     [&quot;st-white2__trigger&quot;] = &quot;signal&quot;,
+     [&quot;st-white3__trigger&quot;] = &quot;signal&quot;,
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/data/schemas/objects.xml	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -61,6 +61,7 @@
+     &lt;msg name=&quot;closeall&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;disconnect&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;flip&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;grow&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;hit&quot; type=&quot;object&quot;/&gt;
+     &lt;msg name=&quot;ignite&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;inner_pull&quot; type=&quot;dir&quot;/&gt;
+@@ -168,6 +169,21 @@
+     &lt;object name=&quot;it_magnet_on&quot;&gt;
+       &lt;attr name=&quot;state&quot; value=&quot;1&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;it_seed&quot;&gt;
++      &lt;attr name=&quot;flavor&quot;/&gt;
++      &lt;attr name=&quot;secure&quot;/&gt;
++      &lt;msg name=&quot;grow&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_seed_wood&quot;&gt;
++      &lt;attr name=&quot;flavor&quot; value=&quot;wood&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_seed_fake&quot;&gt;
++      &lt;attr name=&quot;flavor&quot; value=&quot;fake&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_seed_volcano&quot;&gt;
++      &lt;attr name=&quot;flavor&quot; value=&quot;volcano&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;it_sensor&quot;&gt;
+       &lt;attr name=&quot;invisible&quot;/&gt;
+       &lt;msg name=&quot;_glasses&quot;/&gt;
+@@ -807,6 +823,10 @@
+     &lt;object name=&quot;st_turnstilearm_w&quot;&gt;
+       &lt;attr name=&quot;state&quot; value=&quot;0&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_volcano&quot;&gt;
++      &lt;attr name=&quot;secure&quot;/&gt;
++      &lt;msg name=&quot;_trigger&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_window&quot;&gt;
+       &lt;attr name=&quot;faces&quot; default=&quot;s&quot;/&gt;
+       &lt;attr name=&quot;scratches&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/src/Makefile.am	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -203,6 +203,8 @@
+ 	items/GlassesItem.hh	\
+ 	items/Magnet.cc		\
+ 	items/Magnet.hh		\
++	items/SeedItem.cc	\
++	items/SeedItem.hh	\
+ 	items/Sensor.cc		\
+ 	items/Sensor.hh		\
+ 	items/ShogunDot.cc	\
+@@ -281,6 +283,8 @@
+ 	stones/TimerStone.hh	\
+ 	stones/Turnstile.cc	\
+ 	stones/Turnstile.hh	\
++	stones/VolcanoStone.cc	\
++	stones/VolcanoStone.hh	\
+ 	stones/WindowStone.cc	\
+ 	stones/WindowStone.hh	\
+ 	stones/YieldingStone.cc	\
+
+Added: trunk/src/items/SeedItem.cc
+===================================================================
+--- trunk/src/items/SeedItem.cc	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/src/items/SeedItem.cc	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -0,0 +1,163 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;items/SeedItem.hh&quot;
++#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;server.hh&quot;
++#include &quot;stones.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++
++    SeedItem::SeedItem(int flavor) {
++        objFlags |= flavor &lt;&lt; 24;
++    }
++
++    std::string SeedItem::getClass() const {
++        return &quot;it_seed&quot;;
++    }
++    
++    void SeedItem::setAttr(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;flavor&quot;) {
++            std::string flavor = val.to_string();
++            int code;
++            if (flavor == &quot;wood&quot;) code = 0;
++            else if (flavor == &quot;fake&quot;) code = 1;
++            else if (flavor == &quot;volcano&quot;) code = 2;
++            else
++                ASSERT(false, XLevelRuntime, ecl::strf(&quot;Seed: illegal flavor value #s&quot;, flavor.c_str()).c_str());
++                
++            if (isDisplayable()) {
++                init_model();
++            }
++            return;
++        }
++        Item::setAttr(key, val);
++    }
++    
++    Value SeedItem::getAttr(const string &amp;key) const {
++        if (key == &quot;flavor&quot;) {
++            int flavor = (objFlags &amp; OBJBIT_FLAVOR) &gt;&gt; 24;
++            switch (flavor) {
++                case 0 : return &quot;wood&quot;; break;
++                case 1 : return &quot;fake&quot;; break;
++                case 2 : return &quot;volcano&quot;; break;
++            }
++        } else
++            return Item::getAttr(key);
++    }
++    
++    Value SeedItem::message(const Message &amp;m) {
++        if (m.message == &quot;grow&quot; || m.message == &quot;signal&quot;) {
++            if (isDisplayable())
++                startGrowing();
++            return Value();
++        }
++        return Item::message(m);
++    }
++    
++    void SeedItem::setState(int extState) {
++        state = extState;
++        if (state == ACTIVE &amp;&amp; isDisplayable())
++            startGrowing();
++        
++    }
++    
++    void SeedItem::init_model() {
++        if (state == IDLE)
++            set_model(&quot;it-seed&quot;);
++        else
++            set_anim(&quot;it-seed-growing&quot;);
++    }
++    
++    void SeedItem::processLight(Direction d) {
++        startGrowing();
++    }
++    
++    void SeedItem::animcb() {
++        GridPos p= get_pos();
++        int flavor = (objFlags &amp; OBJBIT_FLAVOR) &gt;&gt; 24;
++        if ((server::GameCompatibility == GAMET_OXYDMAGNUM || server::GameCompatibility == GAMET_OXYD1) &amp;&amp;
++            (flavor == 0 &amp;&amp; GetStone(p))) {
++            std::string model = GetStone(p)-&gt;get_kind();
++            if (model == &quot;st-grate1&quot;) {
++                SetFloor(p, MakeFloor(&quot;fl-stwood&quot;));
++                kill();
++                return;
++           }
++       }
++       Stone *st = MakeStone(flavor == 0 ? &quot;st-wood-growing&quot; : (flavor == 1 ? &quot;st-greenbrown-growing&quot; : &quot;st_volcano_growing&quot;));
++       transferIdentity(st);
++       if (Value v = getAttr(&quot;secure&quot;))
++           st-&gt;setAttr(&quot;secure&quot;, v);
++       SetStone(p, st);
++       kill();
++    }
++    
++    std::string SeedItem::get_inventory_model() {
++        return &quot;it-seed&quot;;
++    }
++    
++    bool SeedItem::isStatic() const {
++        return state == ACTIVE;  // active seed is static
++    }
++    
++    void SeedItem::on_drop(Actor *a) {
++        startGrowing();
++    }
++    
++    void SeedItem::on_stonehit(Stone *st) {
++        startGrowing();
++    }
++    
++    bool SeedItem::actor_hit(Actor *a) {
++        if (state == ACTIVE)
++            return false;   // do not pickup growing seed
++        return Item::actor_hit(a);
++    }
++
++    
++    void SeedItem::startGrowing() {
++        if (state == IDLE) {
++            state = ACTIVE;
++            sound_event(&quot;seedgrow&quot;);
++            set_anim(&quot;it-seed-growing&quot;);
++        }
++    }
++        
++    int SeedItem::traitsIdx() const {
++        return (objFlags &amp; OBJBIT_FLAVOR) &gt;&gt; 24;  // access should be fast for traits radius access
++    }
++    
++
++    ItemTraits SeedItem::traits[3] = {
++        {&quot;it_seed_wood&quot;, it_seed_wood, itf_static, 0.2},
++        {&quot;it_seed_fake&quot;, it_seed_fake, itf_static, 0.2},
++        {&quot;it_seed_volcano&quot;, it_seed_volcano, itf_static, 0.2}
++    };
++
++    BOOT_REGISTER_START
++        BootRegister(new SeedItem(0), &quot;it_seed&quot;);
++        BootRegister(new SeedItem(0), &quot;it_seed_wood&quot;);
++        BootRegister(new SeedItem(1), &quot;it_seed_fake&quot;);
++        BootRegister(new SeedItem(2), &quot;it_seed_volcano&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/items/SeedItem.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/SeedItem.hh
+===================================================================
+--- trunk/src/items/SeedItem.hh	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/src/items/SeedItem.hh	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -0,0 +1,75 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef SEEDITEM_HH
++#define SEEDITEM_HH
++
++#include &quot;items.hh&quot;
++
++#include &quot;enigma.hh&quot;
++
++namespace enigma {
++    /**
++     */
++    class SeedItem : public Item {
++        CLONEOBJ(SeedItem);
++        DECL_ITEMTRAITS_ARRAY(3, traitsIdx());
++
++    private:
++        enum iState {
++            IDLE,     ///&lt; inactive
++            ACTIVE    ///&lt; activated
++        };
++        
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_FLAVOR =   3&lt;&lt;24,   ///&lt; wood, greenbrown, volcano seed
++        };
++    public:
++        SeedItem(int flavor);
++
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++        virtual Value getAttr(const std::string &amp;key) const;
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        virtual void processLight(Direction d);
++        
++        // ModelCallback interface
++        virtual void animcb();
++        
++        // ItemObject interface
++        virtual std::string get_inventory_model();
++        virtual bool isStatic() const;
++        virtual void on_drop(Actor *a);
++        virtual void on_stonehit(Stone *st);
++        virtual bool actor_hit(Actor *a);
++
++    private:
++        void startGrowing();
++        int traitsIdx() const;
++    };
++    
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/items/SeedItem.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/items/ShogunDot.hh
+===================================================================
+--- trunk/src/items/ShogunDot.hh	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/src/items/ShogunDot.hh	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -48,12 +48,12 @@
+         virtual Value getAttr(const std::string &amp;key) const;
+         virtual Value message(const Message &amp;m);
+ 
++        // StateObject interface
++        virtual void setState(int extState);
++
+         // GridObject interface
+         virtual void on_creation(GridPos p);
+ 
+-        // StateObject interface
+-        virtual void setState(int extState);
+-
+     private:
+         int getHoles() const;
+         int requiredShogunHoles() const;
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/src/items.cc	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -145,7 +145,7 @@
+ bool Item::actor_hit(Actor *actor)
+ {
+     const ItemTraits &amp;tr = get_traits();
+-    if (tr.flags &amp; itf_static)
++    if (isStatic())
+         return false;
+     else {
+         double radius = 0.3;
+@@ -1271,12 +1271,6 @@
+             change_state(BURNING);
+         }
+         void on_drop(Actor *) { change_state(BURNING); }
+-        bool actor_hit(Actor *a) {
+-            if (state == BURNING)
+-                return false;   // don't pick up burning dynamite
+-
+-            return Item::actor_hit(a);
+-        }
+     };
+     DEF_ITEMTRAITSF(Dynamite, &quot;it-dynamite&quot;, it_dynamite,
+                 itf_indestructible | itf_fireproof);
+@@ -1425,107 +1419,6 @@
+ }
+ 
+ 
+-/* -------------------- Seed -------------------- */
+-namespace
+-{
+-    class Seed : public Item {
+-        bool activep;
+-
+-        bool actor_hit(Actor *a) {
+-            if (activep)
+-                return false;   // do not pickup growing seed
+-            return Item::actor_hit(a);
+-        }
+-        void on_drop (Actor *) {start_growing();}
+-        void on_stonehit (Stone *) {start_growing();}
+-        void processLight(Direction d) {start_growing();}
+-
+-        virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;grow&quot; || m.message == &quot;signal&quot;) {
+-                start_growing();
+-                return Value();
+-            }
+-            return Item::message(m);
+-        }
+-
+-        void start_growing() {
+-            if (!activep) {
+-                activep = true;
+-                sound_event (&quot;seedgrow&quot;);
+-                set_anim(&quot;it-seed-growing&quot;);
+-            }
+-        }
+-
+-        void animcb() {
+-            GridPos p= get_pos();
+-            if ((server::GameCompatibility == GAMET_OXYDMAGNUM || server::GameCompatibility == GAMET_OXYD1) &amp;&amp;
+-                (get_stone_name() == &quot;st-wood-growing&quot; &amp;&amp; GetStone(p))) {
+-                string model = GetStone(p)-&gt;get_kind();
+-                if (model == &quot;st-grate1&quot;) {
+-                    SetFloor(p, MakeFloor(&quot;fl-stwood&quot;));
+-                    kill();
+-                    return;
+-               }
+-           }
+-           Stone *st = MakeStone (get_stone_name());
+-           transferName(st);
+-           SetStone (p, st);
+-           kill();
+-        }
+-        
+-        virtual bool isStatic() const {
+-            return activep;  // active seed is static
+-        }
+-
+-        virtual const char* get_stone_name() = 0;
+-    public:
+-        Seed ()
+-        : activep(false)
+-        {}
+-    };
+-
+-    class SeedWood : public Seed {
+-        CLONEOBJ(SeedWood);
+-        DECL_ITEMTRAITS;
+-
+-        const char* get_stone_name() {
+-            return &quot;st-wood-growing&quot;;
+-        }
+-
+-    public:
+-        SeedWood()
+-        {}
+-    };
+-    DEF_ITEMTRAITSR(SeedWood, &quot;it-seed&quot;, it_seed, 0.2f);
+-
+-    class SeedNowood : public Seed {
+-        CLONEOBJ(SeedNowood);
+-        DECL_ITEMTRAITS;
+-
+-        const char* get_stone_name() {
+-            return &quot;st-greenbrown-growing&quot;;
+-        }
+-    public:
+-        SeedNowood()
+-        {}
+-    };
+-    DEF_ITEMTRAITSR(SeedNowood, &quot;it-seed_nowood&quot;, it_seed_nowood, 0.2f);
+-
+-    class SeedVolcano : public Seed {
+-        CLONEOBJ(SeedVolcano);
+-        DECL_ITEMTRAITS;
+-
+-        const char* get_stone_name() {
+-            return &quot;st-volcano-growing&quot;;
+-        }
+-    public:
+-        SeedVolcano()
+-        {}
+-    };
+-    DEF_ITEMTRAITSR(SeedVolcano, &quot;it-seed_volcano&quot;, it_seed_volcano, 0.2f);
+-}
+-
+-
+ /* -------------------- YinYang item -------------------- */
+ namespace
+ {
+@@ -1625,12 +1518,6 @@
+         bool active;
+         Direction m_direction;
+ 
+-        bool actor_hit(Actor *a) {
+-            if (active)
+-                return false;
+-            return Item::actor_hit(a);
+-        }
+-
+         void on_drop(Actor *) { activate(); }
+ 
+         void activate() {
+@@ -2841,9 +2728,6 @@
+     Puller::setup();
+     RegisterItem (new Ring);
+     RegisterItem (new RubberbandItem);
+-    RegisterItem (new SeedWood);
+-    RegisterItem (new SeedNowood);
+-    RegisterItem (new SeedVolcano);
+     RegisterItem (new Spade);
+     RegisterItem (new Spoon);
+     RegisterItem (new Spring1);
+
+Modified: trunk/src/items.hh
+===================================================================
+--- trunk/src/items.hh	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/src/items.hh	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -100,8 +100,8 @@
+         it_puller_w,
+         it_ring,
+         it_rubberband,
+-        it_seed,
+-        it_seed_nowood,
++        it_seed_wood,
++        it_seed_fake,
+         it_seed_volcano,
+         it_sensor,
+         it_shogun_s,
+@@ -236,7 +236,7 @@
+ 
+         /*! The model used for displaying this item in an
+           inventory. */
+-        virtual string get_inventory_model();
++        virtual std::string get_inventory_model();
+ 
+         /* Called when item is activated by the owner of `a'. */
+         virtual ItemAction activate(Actor* a, GridPos p);
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/src/ox_magnum.cc	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -327,7 +327,7 @@
+     &quot;it-spade&quot;,         // OxydMagnum item 0x22
+     UNUSED,        // OxydMagnum item 0x23
+     &quot;it-pin&quot;,           // OxydMagnum item 0x24
+-    &quot;it-seed&quot;,          // OxydMagnum item 0x25
++    &quot;it_seed&quot;,          // OxydMagnum item 0x25
+     &quot;it-spring2&quot;,       // OxydMagnum item 0x26
+     &quot;it-spring1&quot;,       // OxydMagnum item 0x27
+     &quot;it-bag&quot;,           // OxydMagnum item 0x28
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/src/ox_oxyd1.cc	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -343,7 +343,7 @@
+     &quot;it-spade&quot;,                   // 0x22
+     &quot;it-surprise&quot;,                // 0x23
+     &quot;it-pin&quot;,                     // 0x24
+-    &quot;it-seed&quot;,                    // 0x25
++    &quot;it_seed&quot;,                    // 0x25
+     &quot;it-spring2&quot;,                 // 0x26
+     &quot;it-spring1&quot;,                 // 0x27
+     &quot;it-bag&quot;,                     // 0x28
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/src/ox_peroxyd.cc	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -415,7 +415,7 @@
+     &quot;it-spade&quot;,                   // 0x21
+     &quot;it-surprise&quot;,                // 0x22
+     &quot;it-pin&quot;,                     // 0x23
+-    &quot;it-seed&quot;,                    // 0x24
++    &quot;it_seed&quot;,                    // 0x24
+     &quot;it-spring2&quot;,                 // 0x25
+     &quot;it-spring1&quot;,                 // 0x26
+     &quot;it-bag&quot;,                     // 0x27
+
+Modified: trunk/src/stones/BoulderStone.hh
+===================================================================
+--- trunk/src/stones/BoulderStone.hh	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/src/stones/BoulderStone.hh	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -21,7 +21,6 @@
+ #define BOULDERSTONE_HH
+ 
+ #include &quot;stones.hh&quot;
+-//#include &quot;laser.hh&quot;
+ 
+ #include &quot;stones_internal.hh&quot;
+ 
+
+Modified: trunk/src/stones/ShogunStone.cc
+===================================================================
+--- trunk/src/stones/ShogunStone.cc	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/src/stones/ShogunStone.cc	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -81,6 +81,7 @@
+         } else
+             return Stone::getAttr(key);
+     }
++    
+     Value ShogunStone::message(const Message &amp;m) {
+         if (m.message == &quot;kill&quot;) {
+             if (yieldShogun()) {
+
+Added: trunk/src/stones/VolcanoStone.cc
+===================================================================
+--- trunk/src/stones/VolcanoStone.cc	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/src/stones/VolcanoStone.cc	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -0,0 +1,197 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/VolcanoStone.hh&quot;
++#include &quot;player.hh&quot;
++#include &quot;world.hh&quot;
++//#include &quot;main.hh&quot;
++
++namespace enigma {
++    VolcanoStone::VolcanoStone(int initState) {
++        state = initState;
++    }
++    
++    std::string VolcanoStone::getClass() const {
++        return &quot;st_volcano&quot;;
++    }
++
++    void VolcanoStone::setAttr(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;secure&quot;) {
++            if (val.to_bool())
++                objFlags |= OBJBIT_SECURE;
++            else
++                objFlags &amp;= ~OBJBIT_SECURE;
++            return;
++        }
++        Stone::setAttr(key, val);
++    }
++    
++    Value VolcanoStone::getAttr(const string &amp;key) const {
++        if (key == &quot;secure&quot;) {
++            return (objFlags &amp; OBJBIT_SECURE) != 0;
++        } else
++            return Stone::getAttr(key);
++    }
++    
++    Value VolcanoStone::message(const Message &amp;m) {
++        if (m.message == &quot;_trigger&quot; || m.message == &quot;toggle&quot;) {
++            if (state == INACTIVE) {
++                state = ACTIVE;
++                init_model();
++            }
++            return Value();
++        }
++        return Stone::message(m);
++    }
++
++    int VolcanoStone::externalState() const {
++        return (state == INACTIVE || state == FINISHED || state == BREAKING) ? 0 : 1;
++    }
++    
++    void VolcanoStone::setState(int extState) {
++        if (state &lt;= ACTIVE) {
++            state = extState;
++            if (isDisplayable())
++                init_model();
++        }
++    }
++    
++    void VolcanoStone::init_model() {
++        switch( state) {
++            case FINISHED:
++            case INACTIVE: set_model(&quot;st-plain&quot;); break;
++            case ACTIVE:   set_anim(&quot;st-farting&quot;); break;
++            case BREAKING: set_anim(&quot;st-fartbreak-anim&quot;); break;
++            case NEW:      set_anim(&quot;it-seed-growing&quot;); break;
++            case GROWING:  set_anim(&quot;st-volcano-growing&quot;); break;
++        }
++    }
++
++    void VolcanoStone::animcb() {
++        switch (state) {
++            case NEW:
++                state = GROWING;
++                TouchStone(get_pos());   // inform triggers etc. of state change
++                init_model();
++                break;
++            case GROWING:
++                state = ACTIVE;
++                init_model();
++                break;
++            case BREAKING:
++                KillStone(get_pos());
++                break;
++            case ACTIVE:
++                // Spread
++                GridPos p = get_pos();
++                if (DoubleRand(0, 1) &gt; 0.7) spread(move(p, NORTH));
++                if (DoubleRand(0, 1) &gt; 0.7) spread(move(p, EAST));
++                if (DoubleRand(0, 1) &gt; 0.7) spread(move(p, SOUTH));
++                if (DoubleRand(0, 1) &gt; 0.7) spread(move(p, WEST));
++
++                // Be finished at random time
++                if ((((objFlags &amp; OBJBIT_SECURE) == 0) || neighborsVulcanized()) &amp;&amp; (DoubleRand(0, 1) &gt; 0.95))
++                    state = FINISHED;
++                init_model();
++                break;
++        }
++    }
++
++    bool VolcanoStone::is_floating() const {
++        return state == NEW;
++    }
++    
++    bool VolcanoStone::is_transparent(Direction d) const {
++        return false;
++    }
++    bool VolcanoStone::is_sticky(const Actor *a) const {
++        return state != NEW;
++    }
++    
++    StoneResponse VolcanoStone::collision_response(const StoneContact &amp;sc) {
++        return state != NEW ? STONE_REBOUND : STONE_PASS;
++    }
++    
++    void VolcanoStone::actor_hit(const StoneContact &amp;sc) {
++        Actor *a = sc.actor;
++
++        if( state == ACTIVE &amp;&amp; player::WieldedItemIs (a, &quot;it_hammer&quot;)) {
++            state = BREAKING;
++            init_model();
++        } else if (state == GROWING) {
++            SendMessage(a, &quot;shatter&quot;);
++        }
++    }
++    
++    void VolcanoStone::actor_touch(const StoneContact &amp;sc) {
++        if (state == GROWING)
++            SendMessage(sc.actor, &quot;shatter&quot;);        
++    }
++
++    void VolcanoStone::actor_inside(Actor *a) {
++        if (state != NEW)
++            SendMessage(a, &quot;shatter&quot;);
++    }
++    
++    void VolcanoStone::actor_contact(Actor *a) {
++        if (state == GROWING)
++            SendMessage(a, &quot;shatter&quot;);
++    }
++    
++    FreezeStatusBits VolcanoStone::get_freeze_bits() {
++        return FREEZEBIT_NO_STONE;
++    }
++    
++    void VolcanoStone::spread(GridPos p) {
++        if(GetStone(p) == NULL) {
++            Stone * st = MakeStone(&quot;st_volcano_new&quot;);
++            st-&gt;setAttr(&quot;secure&quot;, getAttr(&quot;secure&quot;));
++            SetStone(p, st);
++        }
++    }
++    
++    bool VolcanoStone::neighborsVulcanized() {
++        for (Direction d = WEST; d != NODIR; d = next(d)) {
++            if (GetStone(move(get_pos(), d)) == NULL)
++                if (!positionVulcanizable(move(get_pos(), d)))
++                    return false;
++        }
++        return true;
++    }
++    
++    bool VolcanoStone::positionVulcanizable(GridPos p) {
++        for (Direction d = WEST; d != NODIR; d = next(d)) {
++            VolcanoStone *v = dynamic_cast&lt;VolcanoStone *&gt;(GetStone(move(p, d)));
++            if (v != this &amp;&amp; v != NULL &amp;&amp; v-&gt;externalState() == 1)
++                return true;
++        }
++    }
++    
++    DEF_TRAITSM(VolcanoStone, &quot;st_volcano&quot;, st_volcano, MOVABLE_BREAKABLE);
++    
++    BOOT_REGISTER_START
++        BootRegister(new VolcanoStone(0), &quot;st_volcano&quot;);
++        BootRegister(new VolcanoStone(0), &quot;st_volcano_inactive&quot;);
++        BootRegister(new VolcanoStone(1), &quot;st_volcano_active&quot;);
++        BootRegister(new VolcanoStone(2), &quot;st_volcano_new&quot;);
++        BootRegister(new VolcanoStone(3), &quot;st_volcano_growing&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/VolcanoStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/VolcanoStone.hh
+===================================================================
+--- trunk/src/stones/VolcanoStone.hh	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/src/stones/VolcanoStone.hh	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -0,0 +1,88 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef VOLCANOSTONE_HH
++#define VOLCANOSTONE_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class VolcanoStone : public Stone {
++        CLONEOBJ(VolcanoStone);
++        DECL_TRAITS;
++    private:
++        enum iState {
++            INACTIVE,     ///&lt; 
++            ACTIVE,       ///&lt; 
++            NEW,          ///&lt;
++            GROWING,      ///&lt;
++            FINISHED,     ///&lt; 
++            BREAKING      ///&lt; 
++        };
++        
++    private:
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_SECURE =   1&lt;&lt;24,   ///&lt; secure spreading of volcano
++        };
++
++    public:
++        VolcanoStone(int initState);
++        
++        // Object interface
++        virtual std::string getClass() const;        
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++        virtual Value getAttr(const std::string &amp;key) const;
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual int externalState() const;
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        
++        // ModelCallback interface
++        virtual void animcb();
++        
++        // Stone interface
++        virtual bool is_floating() const;
++        virtual bool is_transparent(Direction d) const;
++        virtual bool is_sticky(const Actor *a) const;
++        virtual StoneResponse collision_response(const StoneContact &amp;sc);
++        virtual void actor_hit(const StoneContact &amp;sc);
++        virtual void actor_touch(const StoneContact &amp;sc);
++        virtual void actor_inside(Actor *a);
++        virtual void actor_contact(Actor *a);
++        virtual FreezeStatusBits get_freeze_bits();
++
++    private:
++        void spread(GridPos p);
++        bool neighborsVulcanized();
++        bool positionVulcanizable(GridPos p);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/VolcanoStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/src/stones.hh	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -208,9 +208,9 @@
+         /* ---------- Stone interface (events) ---------- */
+ 
+         virtual void actor_hit (const StoneContact &amp;sc);
+-        virtual void actor_touch (const StoneContact &amp;sc);
+-        virtual void actor_inside (Actor * /*a*/) {}
+-        virtual void actor_contact (Actor * /*a*/) {}
++        virtual void actor_touch(const StoneContact &amp;sc);
++        virtual void actor_inside(Actor *a) {}
++        virtual void actor_contact(Actor *a) {}
+ 
+         virtual bool freeze_check();
+         
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/src/stones_complex.cc	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -39,78 +39,7 @@
+ 
+ namespace enigma { 
+ 
+-/* -------------------- Volcano -------------------- */
+-namespace
+-{
+-    class VolcanoStone : public Stone {
+-        CLONEOBJ(VolcanoStone);
+-        DECL_TRAITS;
+-    public:
+-        enum State {INACTIVE, ACTIVE, FINISHED, BREAKING};
+-        VolcanoStone( State initstate=INACTIVE) : state( initstate) {}
+-    private:
+-        enum State state;
+ 
+-        void init_model() {
+-            switch( state) {
+-            case FINISHED:
+-            case INACTIVE: set_model( &quot;st-plain&quot;); break;
+-            case ACTIVE: set_anim( &quot;st-farting&quot;); break;
+-            case BREAKING: set_anim(&quot;st-stone_break-anim&quot;); break;
+-            }
+-        }
+-
+-        void animcb() {
+-            if (state == ACTIVE) {
+-                // Spread
+-                GridPos p = get_pos();
+-                if (DoubleRand(0, 1) &gt; 0.7) spread (move(p, NORTH));
+-                if (DoubleRand(0, 1) &gt; 0.7) spread (move(p, EAST));
+-                if (DoubleRand(0, 1) &gt; 0.7) spread (move(p, SOUTH));
+-                if (DoubleRand(0, 1) &gt; 0.7) spread (move(p, WEST));
+-
+-                // Be finished at random time
+-                if (DoubleRand(0, 1) &gt; 0.95)
+-                    state = FINISHED;
+-                init_model();
+-            } else if( state == BREAKING) {
+-                KillStone( get_pos());
+-            }
+-        }
+-
+-        virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;_trigger&quot; || m.message == &quot;toggle&quot;) {
+-                if (state == INACTIVE) {
+-                    state = ACTIVE;
+-                    init_model();
+-                }
+-                return Value();
+-            }
+-            return Stone::message(m);
+-        }
+-
+-        void spread( GridPos p) {
+-            Stone *st = GetStone(p);
+-            if( !st) {
+-                Item *it = MakeItem(&quot;it-seed_volcano&quot;);
+-                SetItem( p, it);
+-                SendMessage( it, &quot;grow&quot;);
+-            }
+-        }
+-
+-        void actor_hit(const StoneContact &amp;sc) {
+-            Actor *a = sc.actor;
+-
+-            if( state == ACTIVE &amp;&amp; player::WieldedItemIs (a, &quot;it_hammer&quot;)) {
+-                state = BREAKING;
+-                init_model();
+-            }
+-        }
+-    };
+-    DEF_TRAITSM(VolcanoStone, &quot;st-volcano&quot;, st_volcano, MOVABLE_BREAKABLE);    
+-}
+-
+-
+ ///* -------------------- Puzzle stones -------------------- */ 
+ 
+ /** \page st-puzzle Puzzle Stone
+@@ -1135,10 +1064,6 @@
+ 
+     Register(new MovableImpulseStone);
+ 
+-    Register( new VolcanoStone);
+-    Register(&quot;st-volcano_inactive&quot;, new VolcanoStone(VolcanoStone::INACTIVE));
+-    Register(&quot;st-volcano_active&quot;, new VolcanoStone(VolcanoStone::ACTIVE));
+-
+     // PerOxyd/Enigma compatible puzzle stones:
+     Register(new PuzzleStone(0, false));
+     Register(&quot;st-puzzle-hollow&quot;, new PuzzleStone(1, false));
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/src/stones_simple.cc	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -969,25 +969,6 @@
+     };
+     DEF_TRAITS(GreenbrownStone_Growing, &quot;st-greenbrown-growing&quot;, st_greenbrown_growing);
+ 
+-    class VolcanoStone_Growing : public Stone {
+-        CLONEOBJ(VolcanoStone_Growing);
+-        DECL_TRAITS;
+-    public:
+-        VolcanoStone_Growing()
+-        {}
+-    private:
+-        void init_model() { set_anim(&quot;st-volcano-growing&quot;); }
+-        void animcb() {
+-            Stone *st = MakeStone(&quot;st-volcano_active&quot;);
+-            ReplaceStone(get_pos(), st);
+-        }
+-        void actor_contact(Actor *a) {SendMessage(a, &quot;shatter&quot;);}
+-        void actor_inside(Actor *a) {SendMessage(a, &quot;shatter&quot;);}
+-        void actor_hit(const StoneContact &amp;sc) {SendMessage(sc.actor, &quot;shatter&quot;);}
+-
+-        FreezeStatusBits get_freeze_bits() { return FREEZEBIT_NO_STONE; }
+-    };
+-    DEF_TRAITS(VolcanoStone_Growing, &quot;st-volcano-growing&quot;, st_volcano_growing);
+ }
+ 
+ 
+@@ -1773,7 +1754,6 @@
+     Register(new WoodenStone(&quot;st-flhay&quot;, &quot;fl-hay&quot;));
+     Register(new WoodenStone_Growing);
+     Register(new GreenbrownStone_Growing);
+-    Register(new VolcanoStone_Growing);
+ 
+     Register(new YinYangStone1);
+     Register(new YinYangStone2);
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/src/world.cc	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -2037,6 +2037,10 @@
+     SetStone(newPos, YieldStone(oldPos));
+ }
+ 
++void TouchStone(GridPos pos) {
++    level-&gt;changed_stones.push_back(pos);
++}
++
+ void SetScrambleIntensity (int intensity) {
+     level-&gt;scrambleIntensity = intensity;
+ }
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2008-08-23 22:54:45 UTC (rev 1286)
++++ trunk/src/world.hh	2008-08-24 11:59:42 UTC (rev 1287)
+@@ -275,6 +275,7 @@
+     Stone *YieldStone(GridPos p);
+     void   KillStone(GridPos p);
+     void   MoveStone(GridPos oldPos, GridPos newPos);
++    void TouchStone(GridPos pos);
+ 
+ /* -------------------- Items -------------------- */
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000716.html">[Enigma-game-svn] r1286 - in trunk: data data/levels/lib src	src/stones
+</A></li>
+	<LI>Next message: <A HREF="000718.html">[Enigma-game-svn] r1288 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#717">[ date ]</a>
+              <a href="thread.html#717">[ thread ]</a>
+              <a href="subject.html#717">[ subject ]</a>
+              <a href="author.html#717">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

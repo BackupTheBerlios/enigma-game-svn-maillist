@@ -1,0 +1,2172 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1204 - in trunk: data/schemas src src/others	src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1204%20-%20in%20trunk%3A%20data/schemas%20src%20src/others%0A%09src/stones&In-Reply-To=%3C200807022228.m62MSOcO031901%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000637.html">
+   <LINK REL="Next"  HREF="000639.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1204 - in trunk: data/schemas src src/others	src/stones</H1>
+    <B>ral at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1204%20-%20in%20trunk%3A%20data/schemas%20src%20src/others%0A%09src/stones&In-Reply-To=%3C200807022228.m62MSOcO031901%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1204 - in trunk: data/schemas src src/others	src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Jul  3 00:28:24 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000637.html">[Enigma-game-svn] r1203 - trunk
+</A></li>
+        <LI>Next message: <A HREF="000639.html">[Enigma-game-svn] r1205 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#638">[ date ]</a>
+              <a href="thread.html#638">[ thread ]</a>
+              <a href="subject.html#638">[ subject ]</a>
+              <a href="author.html#638">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-07-03 00:27:58 +0200 (Thu, 03 Jul 2008)
+New Revision: 1204
+
+Added:
+   trunk/src/others/
+   trunk/src/others/Other.cc
+   trunk/src/others/Other.hh
+   trunk/src/others/Rubberband.cc
+   trunk/src/others/Rubberband.hh
+   trunk/src/others/WireControl.cc
+   trunk/src/others/WireControl.hh
+Modified:
+   trunk/data/schemas/objects.xml
+   trunk/data/schemas/objects.xsd
+   trunk/src/Makefile.am
+   trunk/src/Object.cc
+   trunk/src/Object.hh
+   trunk/src/d_engine.hh
+   trunk/src/display.cc
+   trunk/src/display.hh
+   trunk/src/items.cc
+   trunk/src/lua.cc
+   trunk/src/oxyd.cc
+   trunk/src/player.cc
+   trunk/src/stones.cc
+   trunk/src/stones.hh
+   trunk/src/stones/BoulderStone.cc
+   trunk/src/stones/BoulderStone.hh
+   trunk/src/stones/ChessStone.cc
+   trunk/src/stones/ChessStone.hh
+   trunk/src/stones/LightPassengerStone.cc
+   trunk/src/stones/LightPassengerStone.hh
+   trunk/src/stones/RotatorStone.cc
+   trunk/src/stones/RotatorStone.hh
+   trunk/src/stones_complex.cc
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+   trunk/src/world.hh
+   trunk/src/world_internal.hh
+Log:
+Trunk 1.1: new API reengineering
+- Other: new object type besides Floor, Item, Stone, Actor
+  - superclass for unpositioned objects and gadgets
+- Rubberband:
+  - elimintion of all old structurs and code
+  - made a full valued Enigma object of type Other
+  - named &quot;ot_rubberband&quot;
+  - full support of attributes, messages, naming,...
+  - own attributes: &quot;anchor1&quot;, &quot;anchor2&quot;, &quot;strength&quot;, &quot;length&quot;, &quot;threshold&quot;
+  - adjustments to all involved objects like, scissor, st_rubberband, 
+    it_rubberband
+- Wirecontrol: new object
+  - name &quot;ot_wirecontrol&quot;
+  - wires to stones given by attributes: &quot;anchor1&quot;, &quot;anchor2&quot;
+  - transfers stoneimpulses between its stones
+- wo:add() new method to add Other objects given by a tile or table declaration
+- all objects support new attributes:
+  - &quot;rubbers&quot; - read only, a group of all connected rubbers
+  - &quot;wires&quot;   - read only, a group of all connected wires
+  - &quot;fellows&quot; - read only, a group of all objects connected by rubbers or wires
+- fix YieldedGridStone: set correct owner positions for yielded stones
+  (avoid rubberband jumping temporarily to -1,-1)
+Note:
+- did temporarily brake support of turnstile stones and rubberbands
+- rubberband needs support of min and max values to avoid infinite moves
+- wirecontrol impulse behaviour has to be settled for various special stones
+
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/data/schemas/objects.xml	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -2,6 +2,8 @@
+ &lt;objects xmlns:xsi=&quot;<A HREF="http://www.w3.org/2001/XMLSchema-instance">http://www.w3.org/2001/XMLSchema-instance</A>&quot; xsi:noNamespaceSchemaLocation=&quot;objects.xsd&quot;&gt;
+   &lt;attributes&gt;
+     &lt;attr name=&quot;action&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;anchor1&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;anchor2&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;autoclose&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;cluster&quot; type=&quot;int&quot; default=&quot;nil&quot; min=&quot;0&quot; max=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;code&quot; type=&quot;int&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+@@ -11,6 +13,7 @@
+     &lt;attr name=&quot;counterclock&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;destination&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;faces&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;fellows&quot; type=&quot;group&quot; default=&quot;nil&quot; rw=&quot;r&quot;/&gt;
+     &lt;attr name=&quot;flavor&quot; type=&quot;string&quot; default=&quot;b&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;friction&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;gradient&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+@@ -26,7 +29,10 @@
+     &lt;attr name=&quot;interval_l&quot; type=&quot;double&quot; default=&quot;12&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;inverse&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;invisible&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;length&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;loop&quot; type=&quot;bool&quot; default=&quot;true&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;max&quot; type=&quot;double&quot; default=&quot;0&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;min&quot; type=&quot;double&quot; default=&quot;0&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;movable&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;name&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;nopaction&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+@@ -34,6 +40,7 @@
+     &lt;attr name=&quot;orientation&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;3&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;oxydcolor&quot; type=&quot;int&quot; default=&quot;-1&quot; min=&quot;-4&quot; max=&quot;7&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;range&quot; type=&quot;double&quot; default=&quot;1.0&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;rubbers&quot; type=&quot;group&quot; default=&quot;nil&quot; rw=&quot;r&quot;/&gt;
+     &lt;attr name=&quot;secure&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;scissor&quot; type=&quot;bool&quot; default=&quot;true&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;scratches&quot; type=&quot;string&quot; default=&quot;&quot; rw=&quot;rw&quot;/&gt;
+@@ -42,10 +49,13 @@
+     &lt;attr name=&quot;strength&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;target&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;transparent&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;threshold&quot; type=&quot;double&quot; default=&quot;0&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;wires&quot; type=&quot;group&quot; default=&quot;nil&quot; rw=&quot;r&quot;/&gt;
+   &lt;/attributes&gt;
+   &lt;messages&gt;
+     &lt;msg name=&quot;close&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;closeall&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;disconnect&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;flip&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;hit&quot; type=&quot;object&quot;/&gt;
+     &lt;msg name=&quot;inner_pull&quot; type=&quot;dir&quot;/&gt;
+@@ -86,6 +96,7 @@
+       &lt;attr name=&quot;state&quot;/&gt;
+       &lt;attr name=&quot;target&quot;/&gt;
+       &lt;action type=&quot;bool&quot;/&gt;
++      &lt;msg name=&quot;disconnect&quot;/&gt;
+       &lt;msg name=&quot;kill&quot;/&gt;
+       &lt;msg name=&quot;toggle&quot;/&gt;
+     &lt;/object&gt;
+@@ -207,8 +218,26 @@
+       &lt;attr name=&quot;faces&quot;/&gt;
+       &lt;msg name=&quot;_model_reanimated&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;ot&quot; abstract=&quot;true&quot;&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;ot_rubberband&quot;&gt;
++      &lt;attr name=&quot;anchor1&quot;/&gt;
++      &lt;attr name=&quot;anchor2&quot;/&gt;
++      &lt;attr name=&quot;strength&quot; default=&quot;10&quot;/&gt;
++      &lt;attr name=&quot;length&quot;/&gt;
++      &lt;attr name=&quot;threshold&quot;/&gt;
++      &lt;attr name=&quot;max&quot;/&gt;
++      &lt;attr name=&quot;min&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;ot_wirecontrol&quot;&gt;
++      &lt;attr name=&quot;anchor1&quot;/&gt;
++      &lt;attr name=&quot;anchor2&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st&quot; abstract=&quot;true&quot;&gt;
+       &lt;attr name=&quot;movable&quot; rw=&quot;r&quot;/&gt;
++      &lt;attr name=&quot;fellows&quot;/&gt;
++      &lt;attr name=&quot;rubbers&quot;/&gt;
++      &lt;attr name=&quot;wires&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;st_actorimpulse&quot;&gt;
+       &lt;attr name=&quot;invisible&quot;/&gt;
+
+Modified: trunk/data/schemas/objects.xsd
+===================================================================
+--- trunk/data/schemas/objects.xsd	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/data/schemas/objects.xsd	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -117,6 +117,7 @@
+       &lt;xs:enumeration value=&quot;string&quot;/&gt;
+       &lt;xs:enumeration value=&quot;enum&quot;/&gt;
+       &lt;xs:enumeration value=&quot;object&quot;/&gt;
++      &lt;xs:enumeration value=&quot;group&quot;/&gt;
+       &lt;xs:enumeration value=&quot;tokens&quot;/&gt;
+     &lt;/xs:restriction&gt;
+   &lt;/xs:simpleType&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/Makefile.am	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -197,6 +197,12 @@
+ 	lev/ScoreManager.hh	\
+ 	lev/VolatileIndex.cc	\
+ 	lev/VolatileIndex.hh	\
++	others/Other.cc		\
++	others/Other.hh		\
++	others/Rubberband.cc	\
++	others/Rubberband.hh	\
++	others/WireControl.cc	\
++	others/WireControl.hh	\
+ 	stones/ActorImpulseStone.cc	\
+ 	stones/ActorImpulseStone.hh	\
+ 	stones/BlockerStone.cc	\
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/Object.cc	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -152,6 +152,8 @@
+             finalizeNearestObjectReferences();
+         } else if (m.message == &quot;kill&quot;) {
+             switch (getObjectType()) {
++                case OTHER:
++                    KillOther(dynamic_cast&lt;Other *&gt;(this)); break;
+                 case FLOOR:
+                     KillFloor(dynamic_cast&lt;GridObject *&gt;(this)-&gt;get_pos()); break;
+                 case ITEM:
+@@ -159,6 +161,13 @@
+                 case STONE:
+                     KillStone(dynamic_cast&lt;GridObject *&gt;(this)-&gt;get_pos()); break;
+             }
++        } else if (m.message == &quot;disconnect&quot;) {
++            ObjectList olist = getAttr(&quot;rubbers&quot;);   // a private deletion resistant copy
++            for (ObjectList::iterator it = olist.begin(); it != olist.end(); ++it)
++                KillOther(dynamic_cast&lt;Other *&gt;(*it));
++            olist = getAttr(&quot;wires&quot;);   // a private deletion resistant copy
++            for (ObjectList::iterator it = olist.begin(); it != olist.end(); ++it)
++                KillOther(dynamic_cast&lt;Other *&gt;(*it));
+         }
+         return Value();
+     }
+@@ -401,7 +410,7 @@
+     }
+     
+     Object::ObjectType Object::getObjectType() const {
+-        return OTHER;
++        return OBJECT;
+     }
+     
+     double Object::squareDistance(const Object *other) const {
+
+Modified: trunk/src/Object.hh
+===================================================================
+--- trunk/src/Object.hh	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/Object.hh	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -79,6 +79,7 @@
+ 
+     public:
+         enum ObjectType { 
++            OBJECT,
+             OTHER,
+             STONE,
+             FLOOR,
+
+Modified: trunk/src/d_engine.hh
+===================================================================
+--- trunk/src/d_engine.hh	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/d_engine.hh	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -26,7 +26,7 @@
+ 
+ namespace display
+ {
+-
++
+ /* -------------------- DisplayEngine -------------------- */
+ 
+     class DisplayEngine {
+@@ -131,7 +131,7 @@
+         DisplayEngine *m_engine;
+     };
+ 
+-
++
+ /* -------------------- ModelLayer -------------------- */
+ 
+     /*! The base class for all layers that contains Models. */
+@@ -187,7 +187,7 @@
+         int m_redrawsize;
+     };
+ 
+-
++
+ /* -------------------- Sprites -------------------- */
+ 
+     class Sprite : public ecl::Nocopy {
+@@ -253,7 +253,7 @@
+         unsigned dispensiblesprites;    // Threshold above which just critical sprites are accepted
+     };
+ 
+-
++
+ /* -------------------- Shadows -------------------- */
+ 
+     struct StoneShadowCache;
+@@ -289,14 +289,17 @@
+         ecl::Array2&lt;bool&gt;   m_hasactor;
+     };
+ 
+-
++
+ /* -------------------- Lines -------------------- */
+ 
+     struct Line {
+-        V2 start,end;
++        V2 start, end;
+         V2 oldstart, oldend;
++        unsigned short r,g,b;
+ 
+-        Line(const V2 &amp;s, const V2 &amp;e) :start(s), end(e) {}
++        Line(const V2 &amp;s, const V2 &amp;e, unsigned short rc, unsigned short gc, unsigned short bc) :
++                start (s), end (e), r (rc), g (gc), b (bc) {
++        }
+         Line() {}
+     };
+ 
+@@ -313,7 +316,7 @@
+         {}
+         void draw_onepass (ecl::GC &amp;gc);
+ 
+-        RubberHandle add_line (const V2 &amp;p1, const V2 &amp;p2);
++        RubberHandle add_line (const V2 &amp;p1, const V2 &amp;p2, unsigned short rc, unsigned short gc, unsigned short bc);
+         void set_startpoint (unsigned id, const V2 &amp;p1);
+         void set_endpoint (unsigned id, const V2 &amp;p2);
+         void kill_line (unsigned id);
+@@ -328,7 +331,7 @@
+         LineMap   m_rubbers;
+     };
+ 
+-
++
+ /* -------------------- CommonDisplay -------------------- */
+ 
+     /*! Parts of the display engine that are common to the game and
+@@ -351,7 +354,7 @@
+         SpriteHandle add_effect (const V2&amp; pos, Model *m, bool isDispensible = false);
+         SpriteHandle add_sprite (const V2 &amp;pos, Model *m);
+ 
+-        RubberHandle add_line (V2 p1, V2 p2);
++        RubberHandle add_line (V2 p1, V2 p2, unsigned short rc, unsigned short gc, unsigned short bc);
+ 
+         void new_world (int w, int h);
+         void redraw();
+@@ -372,7 +375,7 @@
+         DisplayEngine *m_engine;
+     };
+ 
+-
++
+ /* -------------------- Scrolling -------------------- */
+ 
+ 
+@@ -437,7 +440,7 @@
+         ecl::V2 calc_offset (const ecl::V2 &amp;point);
+     };
+ 
+-
++
+ /* -------------------- GameDisplay -------------------- */
+ 
+     class GameDisplay : public CommonDisplay {
+
+Modified: trunk/src/display.cc
+===================================================================
+--- trunk/src/display.cc	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/display.cc	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -1070,7 +1070,7 @@
+ {
+     DisplayEngine *engine = get_engine();
+ 
+-    set_color (gc, 240, 140, 20, 255);
++//    set_color (gc, 240, 140, 20, 255);
+     set_flags (gc.flags, GS_ANTIALIAS);
+ 
+     for (LineMap::iterator i=m_rubbers.begin(); i!= m_rubbers.end(); ++i)
+@@ -1079,6 +1079,7 @@
+         engine-&gt;world_to_screen (i-&gt;second.start, &amp;x1, &amp;y1);
+         engine-&gt;world_to_screen (i-&gt;second.end, &amp;x2, &amp;y2);
+ 
++        set_color(gc, i-&gt;second.r, i-&gt;second.g, i-&gt;second.b, 255);
+         line (gc, x1, y1, x2, y2);
+     }
+ }
+@@ -1139,10 +1140,9 @@
+     }
+ }
+ 
+-RubberHandle
+-DL_Lines::add_line (const V2 &amp;p1, const V2 &amp;p2)
++RubberHandle DL_Lines::add_line (const V2 &amp;p1, const V2 &amp;p2, unsigned short rc, unsigned short gc, unsigned short bc)
+ {
+-    m_rubbers[m_id] = Line(p1, p2);
++    m_rubbers[m_id] = Line(p1, p2, rc, gc, bc);
+     mark_redraw_line (m_rubbers[m_id]);
+     return RubberHandle(this, m_id++);
+ }
+@@ -1876,9 +1876,9 @@
+ 
+ 
+ RubberHandle
+-CommonDisplay::add_line (V2 p1, V2 p2)
++CommonDisplay::add_line (V2 p1, V2 p2, unsigned short rc, unsigned short gc, unsigned short bc)
+ {
+-    return line_layer-&gt;add_line (p1, p2);
++    return line_layer-&gt;add_line (p1, p2, rc, gc, bc);
+ }
+ 
+ SpriteHandle
+@@ -2227,9 +2227,8 @@
+ }
+ 
+ RubberHandle
+-display::AddRubber (const V2 &amp;p1, const V2 &amp;p2)
+-{
+-    return gamedpy-&gt;add_line (p1, p2);
++display::AddRubber (const V2 &amp;p1, const V2 &amp;p2, unsigned short rc, unsigned short gc, unsigned short bc) {
++    return gamedpy-&gt;add_line(p1, p2, rc, gc, bc);
+ }
+ 
+ void display::SetTextSpeed(int newspeed) {
+
+Modified: trunk/src/display.hh
+===================================================================
+--- trunk/src/display.hh	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/display.hh	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -189,10 +189,10 @@
+         unsigned id;
+     };
+ 
+-    RubberHandle AddRubber (const ecl::V2 &amp;p1, const ecl::V2 &amp;p2);
++    RubberHandle AddRubber (const ecl::V2 &amp;p1, const ecl::V2 &amp;p2, unsigned short rc, unsigned short gc, unsigned short bc);
+ }
+ 
+-
++
+ /* -------------------- Status bar -------------------- */
+ namespace display
+ {
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/items.cc	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -2038,7 +2038,7 @@
+                 state |= 4;  // mark warping
+                 bool isScissor = to_bool(getAttr(&quot;scissor&quot;)) || server::GameCompatibility != GAMET_ENIGMA;
+                 if (isScissor)
+-                    KillRubberBands(actor);
++                    SendMessage(actor, &quot;disconnect&quot;);
+                 WarpActor(actor, targetpos[0], targetpos[1], false);
+                 state &amp;= ~4; // release warping
+             }
+@@ -2284,7 +2284,7 @@
+                 bool isScissor = to_bool(getDefaultedAttr(&quot;scissor&quot;, 
+                         (server::EnigmaCompatibility &gt;= 1.10) || server::GameCompatibility != GAMET_ENIGMA));
+                 if (isScissor)
+-                    KillRubberBands(actor);
++                    SendMessage(actor, &quot;disconnect&quot;);
+             }
+         }
+         state = OPEN;
+@@ -2304,7 +2304,7 @@
+             bool isScissor = to_bool(getDefaultedAttr(&quot;scissor&quot;, 
+                     (server::EnigmaCompatibility &gt;= 1.10) || server::GameCompatibility != GAMET_ENIGMA));
+             if (isScissor)
+-                KillRubberBands(actor);
++                SendMessage(actor, &quot;disconnect&quot;);
+         }
+         state = OPEN;
+         if (getAttr(&quot;autoclose&quot;).to_bool())
+@@ -4135,7 +4135,7 @@
+ 
+             if (id == ac_blackball || id == ac_whiteball) {
+                 // Kill ALL rubberbands connected with the actor:
+-                KillRubberBands (a);
++                SendMessage(a, &quot;disconnect&quot;);
+                 Actor *rotor = MakeActor (ac_rotor);
+                 rotor-&gt;setAttr(&quot;mouseforce&quot;, Value (1.0));
+                 rotor-&gt;setAttr(&quot;controllers&quot;, Value (iplayer+1));
+@@ -4165,7 +4165,7 @@
+     DEF_TRAITS(Drop, &quot;it-drop&quot;, it_drop);
+ }
+ 
+-/* -------------------- RubberbandItem -------------------- */
++/* -------------------- Rubberband Item-------------------- */
+ namespace
+ {
+     class RubberbandItem : public Item {
+@@ -4173,46 +4173,35 @@
+         DECL_TRAITS;
+ 
+         ItemAction activate(Actor *a, GridPos p) {
+-            // Default values for the rubberband:
+-            double strength = getDefaultedAttr(&quot;strength&quot;, 10.0);
+-            double length = getDefaultedAttr(&quot;length&quot;, 1.0);
+-            double minlength = getDefaultedAttr(&quot;minlength&quot;, 0.0);
+-
+-            RubberBandData rbd;
+-            rbd.strength = strength;
+-            rbd.length = length;
+-            rbd.minlength = minlength;
+-
+-            // Target to connect to, default: &quot;&quot;
+-            std::string target(getAttr(&quot;target&quot;));
+-            
+             // TODO: Multiple Targets!
+             // TODO: Target for black and target for white marble?
+             // TODO: MultiplayerGame: Defaulttarget is second actor!
+ 
++            // Get actor or stone with the name, given in &quot;connect_to&quot;:
++            Object *anchor2 = getAttr(&quot;target&quot;);
++            
++            // Target does NOT exist, Drop Item
++            if (anchor2 == NULL)
++                return ITEM_DROP;
++                
+             // The mode attribute &quot;scissor&quot; defines, if when using an it-rubberband,
+             // other rubberbands to the actor will be cut of or not, true means they will. false is default.
+             bool isScissor = to_bool(getAttr(&quot;scissor&quot;));
+ 
+-            // Get actor or stone with the name, given in &quot;connect_to&quot;:
+-            Actor *target_actor = dynamic_cast&lt;Actor*&gt;(GetNamedObject(target));
+-            Stone *target_stone = dynamic_cast&lt;Stone*&gt;(GetNamedObject(target));
+-
+-            // Target does NOT exist, Drop Item
+-            if((!target_actor)&amp;&amp;(!target_stone)) return ITEM_DROP;
+-
+             if (isScissor)
+-                KillRubberBands (a);
++                SendMessage(a, &quot;disconnect&quot;);
+ 
+             sound_event (&quot;rubberband&quot;);
+-            if (target_actor) {
+-                // It's not allowed to connect a rubberband to self.
+-                if (target_actor != a)
+-                    AddRubberBand (a,target_actor,rbd);
+-                else
+-                    return ITEM_DROP; }
+-            else
+-                AddRubberBand (a,target_stone,rbd);
++            
++            if (anchor2 != a) { // It's not allowed to connect a rubberband to self.
++                Object *obj = MakeObject(&quot;ot_rubberband&quot;);
++                obj-&gt;setAttr(&quot;anchor1&quot;, a);
++                obj-&gt;setAttr(&quot;anchor2&quot;, anchor2);
++                obj-&gt;setAttr(&quot;strength&quot;, getDefaultedAttr(&quot;strength&quot;, 10.0));
++                obj-&gt;setAttr(&quot;length&quot;, getDefaultedAttr(&quot;length&quot;, 1.0));
++                obj-&gt;setAttr(&quot;threshold&quot;, getDefaultedAttr(&quot;minlength&quot;, 0.0));
++                AddOther(dynamic_cast&lt;Other *&gt;(obj));
++            }
+ 
+             return ITEM_KILL;
+         }
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/lua.cc	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -757,21 +757,25 @@
+     Object *o2       = to_object(L, 2);
+     Actor  *a2       = dynamic_cast&lt;Actor*&gt;(o2);
+     Stone  *st       = dynamic_cast&lt;Stone*&gt;(o2);
+-    RubberBandData d;
+-    d.strength  = lua_tonumber (L, 3);
+-    d.length    = lua_tonumber (L, 4);
+-    d.minlength = lua_tonumber (L, 5);
+ 
+     if (!a1)
+         throwLuaError(L, &quot;AddRubberBand: First argument must be an actor\n&quot;);
++
++    Object *obj = MakeObject(&quot;ot_rubberband&quot;);
++    obj-&gt;setAttr(&quot;anchor1&quot;, a1);
++    if (a2)
++        obj-&gt;setAttr(&quot;anchor2&quot;, a2);
++    else if (st)
++        obj-&gt;setAttr(&quot;anchor2&quot;, st);
+     else {
+-        if (a2)
+-            AddRubberBand (a1, a2, d);
+-        else if (st)
+-            AddRubberBand (a1, st, d);
+-        else
+-            throwLuaError(L, &quot;AddRubberBand: Second argument must be actor or stone\n&quot;);
++        obj-&gt;dispose();
++        throwLuaError(L, &quot;AddRubberBand: Second argument must be actor or stone\n&quot;);
+     }
++    obj-&gt;setAttr(&quot;strength&quot;, lua_tonumber (L, 3));
++    obj-&gt;setAttr(&quot;length&quot;, lua_tonumber (L, 4));
++    obj-&gt;setAttr(&quot;threshold&quot;, lua_tonumber (L, 5));
++    AddOther(dynamic_cast&lt;Other *&gt;(obj));
++
+     return 0;
+ }
+ 
+@@ -1851,6 +1855,10 @@
+             } else
+                 DisposeObject(obj);
+             break;
++        case Object::OTHER :
++            if (x &lt; 0)
++                AddOther(dynamic_cast&lt;Other *&gt;(obj));
++            break;
+         default :
+             throwLuaError(L, &quot;World set of unknown object&quot;);
+     }
+@@ -2180,6 +2188,17 @@
+     return 1;
+ }
+ 
++static int addOther(lua_State *L) {
++    // world, table | tile
++    if (is_tile(L, 2)  || is_table(L, 2)) {
++        if (is_table(L, -1))
++            setObjectByTable(L, -1, -1);
++        else // is tile
++            setObjectByTile(L, -1, -1);
++    }
++    return 0;
++}
++
+ static int shuffleOxyd(lua_State *L) {
+     // world, {table}  -- table with 1=(group|obj|name), [2=(group|obj|name], 
+     //                               min=[number], max=[number], circular=true, linear=true
+@@ -2721,6 +2740,7 @@
+     {createWorld,                   &quot;create&quot;},
+     {registerWorldUserMethod,       &quot;_register&quot;},
+     {evaluateKey,                   &quot;_evaluate&quot;},
++    {addOther,                      &quot;add&quot;},
+     {getFloor,                      &quot;fl&quot;},
+     {getItem,                       &quot;it&quot;},
+     {getStone,                      &quot;st&quot;},
+
+Added: trunk/src/others/Other.cc
+===================================================================
+--- trunk/src/others/Other.cc	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/others/Other.cc	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -0,0 +1,39 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;others/Other.hh&quot;
++//#include &quot;main.hh&quot;
++
++namespace enigma {
++    Other::Other() {
++    }
++
++    Object::ObjectType Other::getObjectType() const {
++        return Object::OTHER;
++    }
++
++    void Other::postAddition() {
++    }
++    
++    void Other::preRemoval() {
++    }
++    
++    void Other::tick(double dt) {
++    }
++} // namespace enigma
+
+
+Property changes on: trunk/src/others/Other.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/others/Other.hh
+===================================================================
+--- trunk/src/others/Other.hh	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/others/Other.hh	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -0,0 +1,44 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef OTHER_HH_INCLUDED
++#define OTHER_HH_INCLUDED
++
++#include &quot;StateObject.hh&quot;
++
++/* -------------------- Other -------------------- */
++
++
++namespace enigma {
++    
++    class Other : public StateObject {
++        
++    public:
++        Other();
++        
++        // Object interface
++        virtual Object::ObjectType getObjectType() const;
++        
++        virtual void postAddition();
++        virtual void preRemoval();
++        virtual void tick(double dt);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/others/Other.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/others/Rubberband.cc
+===================================================================
+--- trunk/src/others/Rubberband.cc	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/others/Rubberband.cc	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -0,0 +1,182 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;others/Rubberband.hh&quot;
++#include &quot;errors.hh&quot;
++#include &quot;main.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    Rubberband::Rubberband() {
++    }
++    
++    std::string Rubberband::getClass() const {
++        return &quot;ot_rubberband&quot;;
++    }
++
++    void Rubberband::setAttr(const std::string &amp;key, const Value &amp;val) {
++        if (key == &quot;anchor1&quot;) {
++            Actor *old = anchor1;
++            anchor1 = dynamic_cast&lt;Actor *&gt;((Object *)val);
++            ASSERT(anchor1 != NULL, XLevelRuntime, &quot;Rubberband: 'anchor1' is no actor&quot;);
++            ASSERT(anchor1 != anchor2.ac, XLevelRuntime, &quot;Rubberband: 'anchor1' is identical to 'anchor2'&quot;);
++            switchAnchor(old, anchor1, (objFlags &amp; OBJBIT_STONE) ? (Object *)anchor2.st : (Object *)anchor2.ac);
++        } else if (key == &quot;anchor2&quot;) {
++            Object * old = (objFlags &amp; OBJBIT_STONE) ? (Object *)anchor2.st : (Object *)anchor2.ac;
++            Object * obj = val;
++            if (obj != NULL &amp;&amp; obj-&gt;getObjectType() == Object::ACTOR) {
++                anchor2.ac = dynamic_cast&lt;Actor *&gt;((Object *)val);
++                ASSERT(anchor1 != anchor2.ac, XLevelRuntime, &quot;Rubberband: 'anchor1' is identical to 'anchor2'&quot;);
++                objFlags &amp;= ~OBJBIT_STONE;
++                switchAnchor(old, anchor2.ac, anchor1);
++            } else if (obj != NULL &amp;&amp; obj-&gt;getObjectType() == Object::STONE) {
++                anchor2.st = dynamic_cast&lt;Stone *&gt;((Object *)val);
++                objFlags |= OBJBIT_STONE;
++                switchAnchor(old, anchor2.st, anchor1);
++            } else
++                ASSERT(false, XLevelRuntime, &quot;Rubberband: 'anchor2' is neither actor nor stone&quot;);
++        } else if (key == &quot;strength&quot;) {
++            strength = val;
++        } else if (key == &quot;length&quot;) {
++            outerThreshold = val;
++            ASSERT(outerThreshold &gt;= 0, XLevelRuntime, &quot;Rubberband: length is negative&quot;);
++        } else if (key == &quot;threshold&quot;) {
++            innerThreshold = val;
++            ASSERT(innerThreshold &gt;= 0, XLevelRuntime, &quot;Rubberband: inner threshold is negative&quot;);
++        } else if (key == &quot;max&quot;) {
++            maxLength = val;
++            ASSERT(minLength &gt;= 0, XLevelRuntime, &quot;Rubberband: max length is negative&quot;);
++        } else if (key == &quot;min&quot;) {
++            minLength = val;
++            ASSERT(maxLength &gt;= 0, XLevelRuntime, &quot;Rubberband: min length is negative&quot;);
++        }
++        Other::setAttr(key, val);
++    }
++    
++    Value Rubberband::getAttr(const std::string &amp;key) const {
++        if (key == &quot;anchor1&quot;) {
++            return anchor1;
++        } else if (key == &quot;anchor2&quot;) {
++            return (objFlags &amp; OBJBIT_STONE) ? (Object *)anchor2.st : (Object *)anchor2.ac;
++        } else if (key == &quot;strength&quot;) {
++            return strength;
++        } else if (key == &quot;length&quot;) {
++            return outerThreshold;
++        } else if (key == &quot;threshold&quot;) {
++            return innerThreshold;
++        } else if (key == &quot;max&quot;) {
++            return maxLength;
++        } else if (key == &quot;min&quot;) {
++            return minLength;
++        }
++        return Other::getAttr(key);
++    }
++    
++    void Rubberband::postAddition() {
++        model = display::AddRubber(anchor1-&gt;get_pos(), posAnchor2(), 240, 140, 20);  // orange
++    }
++    
++    void Rubberband::preRemoval() {
++        model.kill();
++        switchAnchor(anchor1, NULL, (objFlags &amp; OBJBIT_STONE) ? (Object *)anchor2.st : (Object *)anchor2.ac);
++        switchAnchor((objFlags &amp; OBJBIT_STONE) ? (Object *)anchor2.st : (Object *)anchor2.ac, NULL, anchor1);        
++    }
++    
++    void Rubberband::tick(double dt) {
++        model.update_first(anchor1-&gt;get_pos());
++        model.update_second(posAnchor2());
++    }
++    
++    void Rubberband::applyForces(double dt) {
++        ecl::V2 v = posAnchor2() - anchor1-&gt;get_pos();
++        double vv = ecl::length(v);
++        ecl::V2 force;
++        
++        if (vv == 0) {
++            force = V2(0, 0);
++        } else if (maxLength &gt; 0 &amp;&amp; vv &gt; maxLength) {
++            ActorInfo *ai = anchor1-&gt;get_actorinfo();
++            ecl::V2 vn = normalize(v);
++            double av = ai-&gt;vel * vn;
++            if (av &gt; -0.05) 
++                av = -0.05;
++                
++            force = - 1 * av * vn / dt * ai-&gt;mass;
++            force /= 6;
++        } else if (minLength &gt; 0 &amp;&amp; vv &lt; minLength) {
++            
++        } else if (vv &lt; innerThreshold) {
++            force = v * strength * (vv - innerThreshold)/vv;
++            force /= 6;
++        } else if (vv &gt; outerThreshold) {
++            force = v * strength * (vv - outerThreshold)/vv;
++            force /= 6;
++        }
++        
++        anchor1-&gt;add_force(force);
++        if (!(objFlags &amp; OBJBIT_STONE))
++            anchor2.ac-&gt;add_force(-force);
++    }
++    
++    ecl::V2 Rubberband::posAnchor2() {
++        return (objFlags &amp; OBJBIT_STONE) ? anchor2.st-&gt;getOwnerPos().center() : anchor2.ac-&gt;get_pos();
++    }
++    
++    void Rubberband::switchAnchor(Object *oldAnchor, Object *newAnchor, Object *otherAnchor) {
++        if (oldAnchor != NULL) {
++            ObjectList olist = oldAnchor-&gt;getAttr(&quot;rubbers&quot;);
++            olist.remove(this);
++            oldAnchor-&gt;setAttr(&quot;rubbers&quot;, olist);
++            if (otherAnchor != NULL) {
++                // remove both anchors from each others fellows list
++                olist = oldAnchor-&gt;getAttr(&quot;fellows&quot;);
++                ObjectList::iterator it = find(olist.begin(), olist.end(), otherAnchor);
++                if (it != olist.end()) {
++                    olist.erase(it);
++                }
++                oldAnchor-&gt;setAttr(&quot;fellows&quot;, olist);
++                olist = otherAnchor-&gt;getAttr(&quot;fellows&quot;);
++                it = find(olist.begin(), olist.end(), oldAnchor);
++                if (it != olist.end()) {
++                    olist.erase(it);
++                }
++                otherAnchor-&gt;setAttr(&quot;fellows&quot;, olist);
++            }            
++        }
++        if (newAnchor != NULL) {
++            ObjectList olist = newAnchor-&gt;getAttr(&quot;rubbers&quot;);
++            olist.push_back(this);
++            newAnchor-&gt;setAttr(&quot;rubbers&quot;, olist);
++            if (otherAnchor != NULL) {
++                // add both anchors to each others fellows list
++                olist = newAnchor-&gt;getAttr(&quot;fellows&quot;);
++                olist.push_back(otherAnchor);
++                newAnchor-&gt;setAttr(&quot;fellows&quot;, olist);
++                olist = otherAnchor-&gt;getAttr(&quot;fellows&quot;);
++                olist.push_back(newAnchor);
++                otherAnchor-&gt;setAttr(&quot;fellows&quot;, olist);
++            }
++        }
++    }
++
++    BOOT_REGISTER_START
++        BootRegister(new Rubberband(), &quot;ot_rubberband&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/others/Rubberband.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/others/Rubberband.hh
+===================================================================
+--- trunk/src/others/Rubberband.hh	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/others/Rubberband.hh	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -0,0 +1,73 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef RUBBERBAND_HH_INCLUDED
++#define RUBBERBAND_HH_INCLUDED
++
++#include &quot;others/Other.hh&quot;
++#include &quot;actors.hh&quot;
++#include &quot;display.hh&quot;
++#include &quot;stones.hh&quot;
++
++/* -------------------- Other -------------------- */
++
++
++namespace enigma {
++    
++    class Rubberband : public Other {
++        CLONEOBJ(Rubberband)
++
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_STONE      =  1&lt;&lt;24   ///&lt; anchor2 is a stone
++        };
++
++    public:
++        Rubberband();
++        
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const std::string &amp;key, const Value &amp;val);
++        virtual Value getAttr(const std::string &amp;key) const;
++        
++        // Other interface
++        virtual void postAddition();
++        virtual void preRemoval();
++        virtual void tick(double dt);
++        
++        void applyForces(double dt);
++        
++    private:
++        Actor * anchor1;
++        union {
++            Actor * ac;
++            Stone * st;
++        } anchor2;
++        double strength;
++        double outerThreshold;
++        double innerThreshold;
++        double minLength;
++        double maxLength;
++        display::RubberHandle model;
++        
++        ecl::V2 posAnchor2();
++        void switchAnchor(Object *oldAnchor, Object *newAnchor, Object *otherAnchor);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/others/Rubberband.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/others/WireControl.cc
+===================================================================
+--- trunk/src/others/WireControl.cc	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/others/WireControl.cc	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -0,0 +1,116 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;others/WireControl.hh&quot;
++#include &quot;errors.hh&quot;
++#include &quot;main.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    WireControl::WireControl() {
++    }
++    
++    std::string WireControl::getClass() const {
++        return &quot;ot_wirecontrol&quot;;
++    }
++
++    void WireControl::setAttr(const std::string &amp;key, const Value &amp;val) {
++        if (key == &quot;anchor1&quot;) {
++            Stone *old = anchor1;
++            anchor1 = dynamic_cast&lt;Stone *&gt;((Object *)val);
++            ASSERT(anchor1 != NULL, XLevelRuntime, &quot;WireControl: 'anchor1' is no stone&quot;);
++            ASSERT(anchor1 != anchor2, XLevelRuntime, &quot;WireControl: 'anchor1' is identical to 'anchor2'&quot;);
++            switchAnchor(old, anchor1, anchor2);
++        } else if (key == &quot;anchor2&quot;) {
++            Stone * old = anchor2;
++            anchor2 = dynamic_cast&lt;Stone *&gt;((Object *)val);
++            ASSERT(anchor2 != NULL, XLevelRuntime, &quot;WireControl: 'anchor2' is no stone&quot;);
++            ASSERT(anchor2 != anchor1, XLevelRuntime, &quot;WireControl: 'anchor1' is identical to 'anchor2'&quot;);
++            switchAnchor(old, anchor2, anchor1);
++        }
++        Other::setAttr(key, val);
++    }
++    
++    Value WireControl::getAttr(const std::string &amp;key) const {
++        if (key == &quot;anchor1&quot;) {
++            return anchor1;
++        } else if (key == &quot;anchor2&quot;) {
++            return anchor2;
++        }
++        return Other::getAttr(key);
++    }
++    
++    void WireControl::postAddition() {
++        model = display::AddRubber(anchor1-&gt;getOwnerPos().center(), anchor2-&gt;getOwnerPos().center(), 200, 50, 150);    // purple
++    }
++    
++    void WireControl::preRemoval() {
++        model.kill();
++        switchAnchor(anchor1, NULL, anchor2);
++        switchAnchor(anchor2, NULL, anchor1);        
++    }
++    
++    void WireControl::tick(double dt) {  // TODO maybe we should let the stones inform the wires on every move
++        model.update_first(anchor1-&gt;getOwnerPos().center());
++        model.update_second(anchor2-&gt;getOwnerPos().center());
++    }
++    
++    
++    void WireControl::switchAnchor(Object *oldAnchor, Object *newAnchor, Object *otherAnchor) {
++        if (oldAnchor != NULL) {
++            ObjectList olist = oldAnchor-&gt;getAttr(&quot;wires&quot;);
++            olist.remove(this);
++            oldAnchor-&gt;setAttr(&quot;wires&quot;, olist);
++            if (otherAnchor != NULL) {
++                // remove both anchors from each others fellows list
++                olist = oldAnchor-&gt;getAttr(&quot;fellows&quot;);
++                ObjectList::iterator it = find(olist.begin(), olist.end(), otherAnchor);
++                if (it != olist.end()) {
++                    olist.erase(it);
++                }
++                oldAnchor-&gt;setAttr(&quot;fellows&quot;, olist);
++                olist = otherAnchor-&gt;getAttr(&quot;fellows&quot;);
++                it = find(olist.begin(), olist.end(), oldAnchor);
++                if (it != olist.end()) {
++                    olist.erase(it);
++                }
++                otherAnchor-&gt;setAttr(&quot;fellows&quot;, olist);
++            }            
++        }
++        if (newAnchor != NULL) {
++            ObjectList olist = newAnchor-&gt;getAttr(&quot;wires&quot;);
++            olist.push_back(this);
++            newAnchor-&gt;setAttr(&quot;wires&quot;, olist);
++            if (otherAnchor != NULL) {
++                // add both anchors to each others fellows list
++                olist = newAnchor-&gt;getAttr(&quot;fellows&quot;);
++                olist.push_back(otherAnchor);
++                newAnchor-&gt;setAttr(&quot;fellows&quot;, olist);
++                olist = otherAnchor-&gt;getAttr(&quot;fellows&quot;);
++                olist.push_back(newAnchor);
++                otherAnchor-&gt;setAttr(&quot;fellows&quot;, olist);
++            }
++        }
++    }
++
++    BOOT_REGISTER_START
++        BootRegister(new WireControl(), &quot;ot_wirecontrol&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/others/WireControl.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/others/WireControl.hh
+===================================================================
+--- trunk/src/others/WireControl.hh	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/others/WireControl.hh	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -0,0 +1,57 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef WIRECONTROL_HH_INCLUDED
++#define WIRECONTROL_HH_INCLUDED
++
++#include &quot;others/Other.hh&quot;
++#include &quot;display.hh&quot;
++#include &quot;stones.hh&quot;
++
++/* -------------------- Other -------------------- */
++
++
++namespace enigma {
++    
++    class WireControl : public Other {
++        CLONEOBJ(WireControl)
++
++    public:
++        WireControl();
++        
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const std::string &amp;key, const Value &amp;val);
++        virtual Value getAttr(const std::string &amp;key) const;
++        
++        // Other interface
++        virtual void postAddition();
++        virtual void preRemoval();
++        virtual void tick(double dt);
++        
++    private:
++        Stone * anchor1;
++        Stone * anchor2;
++        display::RubberHandle model;
++        
++        void switchAnchor(Object *oldAnchor, Object *newAnchor, Object *otherAnchor);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/others/WireControl.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/oxyd.cc
+===================================================================
+--- trunk/src/oxyd.cc	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/oxyd.cc	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -631,19 +631,24 @@
+     for (int i=0; i&lt;num_rubberbands; ++i) {
+         const RubberBand &amp;rb = level.getRubberBand(game_mode, i);
+ 
+-        Actor *actor = get_actor (rb.getFirstEndMarble());
+-        RubberBandData rbd;
+-        rbd.length = rb.getNaturalLength() / 32.0;
+-        rbd.strength = rb.getForce() / 60.0;
++        Object *anchor2 = NULL;
+         if (rb.isSecondEndMarble()) {
+-            Actor *actor2 = get_actor (rb.getSecondEndMarble());
+-            AddRubberBand (actor, actor2, rbd);
++            anchor2 = get_actor (rb.getSecondEndMarble());
+         }
+         else {
+             GridPos p(rb.getSecondEndPieceX(), rb.getSecondEndPieceY());
+-            if (GetStone(p) != NULL) // Fix for MagnumGold Level #108
+-                AddRubberBand (actor, GetStone(p), rbd); 
++            anchor2 = GetStone(p);
++            if (anchor2 == NULL) // Fix for MagnumGold Level #108
++                continue;
+         }
++        
++        Object *obj = MakeObject(&quot;ot_rubberband&quot;);
++        obj-&gt;setAttr(&quot;anchor1&quot;, get_actor(rb.getFirstEndMarble()));
++        obj-&gt;setAttr(&quot;anchor2&quot;, anchor2);
++        obj-&gt;setAttr(&quot;strength&quot;, rb.getForce() / 60.0);
++        obj-&gt;setAttr(&quot;length&quot;, rb.getNaturalLength() / 32.0);
++        obj-&gt;setAttr(&quot;threshold&quot;, 0.0);
++        AddOther(dynamic_cast&lt;Other *&gt;(obj));
+     }
+ }
+ 
+
+Modified: trunk/src/player.cc
+===================================================================
+--- trunk/src/player.cc	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/player.cc	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -231,7 +231,7 @@
+         for (unsigned j=0; j&lt;players[i].actors.size(); ++j) {
+             Actor *a = players[i].actors[j];
+             SendMessage(a, &quot;disappear&quot;);
+-            KillRubberBands (a);
++            SendMessage(a, &quot;disconnect&quot;);
+         }
+     }
+ }
+@@ -586,7 +586,7 @@
+                 kind[0] = 'i';
+ 
+             if (Item *item = MakeItem(kind.c_str())) {
+-                KillRubberBands(stone);
++                SendMessage(stone, &quot;disconnect&quot;);
+                 DisposeObject (stone);
+                 inv-&gt;add_item(item);
+                 player::RedrawInventory(inv);
+
+Modified: trunk/src/stones/BoulderStone.cc
+===================================================================
+--- trunk/src/stones/BoulderStone.cc	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/stones/BoulderStone.cc	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -150,7 +150,7 @@
+         Stone::on_move();
+     }
+     
+-    void BoulderStone::on_impulse(const Impulse&amp; impulse) {
++    void BoulderStone::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) {
+         if (state == FALLING)
+             return;
+ 
+
+Modified: trunk/src/stones/BoulderStone.hh
+===================================================================
+--- trunk/src/stones/BoulderStone.hh	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/stones/BoulderStone.hh	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -68,7 +68,7 @@
+         virtual void actor_hit(const StoneContact &amp;sc);
+         virtual void on_floor_change();
+         virtual void on_move();
+-        virtual void on_impulse(const Impulse&amp; impulse);
++        virtual void on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false);
+ //        virtual const char *collision_sound();
+ 
+     private:
+
+Modified: trunk/src/stones/ChessStone.cc
+===================================================================
+--- trunk/src/stones/ChessStone.cc	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/stones/ChessStone.cc	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -141,7 +141,7 @@
+         }
+     }
+ 
+-    void ChessStone::on_impulse(const Impulse&amp; impulse) {
++    void ChessStone::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) {
+     }
+     
+     bool ChessStone::is_removable() const {    // Interface for st-swap and st-pull
+
+Modified: trunk/src/stones/ChessStone.hh
+===================================================================
+--- trunk/src/stones/ChessStone.hh	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/stones/ChessStone.hh	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -86,7 +86,7 @@
+         
+         // Stone interface
+         virtual void actor_hit(const StoneContact &amp;sc);
+-        virtual void on_impulse(const Impulse&amp; impulse);
++        virtual void on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false);
+         virtual bool is_removable() const;
+         virtual void on_floor_change();
+ 
+
+Modified: trunk/src/stones/LightPassengerStone.cc
+===================================================================
+--- trunk/src/stones/LightPassengerStone.cc	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/stones/LightPassengerStone.cc	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -167,7 +167,7 @@
+         }
+     }
+ 
+-    void LightPassengerStone::on_impulse(const Impulse&amp; impulse) {
++    void LightPassengerStone::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) {
+         Actor *a = dynamic_cast&lt;Actor*&gt;(impulse.sender);
+         if (a == NULL &amp;&amp; ((objFlags &amp; OBJBIT_LIGHTNEWDIRS) == NODIRBIT || state == OFF 
+                 || server::GameCompatibility != GAMET_ENIGMA))
+
+Modified: trunk/src/stones/LightPassengerStone.hh
+===================================================================
+--- trunk/src/stones/LightPassengerStone.hh	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/stones/LightPassengerStone.hh	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -68,7 +68,7 @@
+         
+         // Stone interface
+         virtual void actor_hit(const StoneContact &amp;sc);
+-        virtual void on_impulse(const Impulse&amp; impulse);
++        virtual void on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false);
+ 
+         // TimeHandler interface
+         virtual void alarm();
+
+Modified: trunk/src/stones/RotatorStone.cc
+===================================================================
+--- trunk/src/stones/RotatorStone.cc	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/stones/RotatorStone.cc	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -116,7 +116,7 @@
+             maybe_push_stone(sc);
+     }
+ 
+-    void RotatorStone::on_impulse(const Impulse&amp; impulse) {
++    void RotatorStone::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) {
+         if (objFlags &amp; OBJBIT_MOVABLE) {
+             move_stone(impulse.dir);
+         }
+
+Modified: trunk/src/stones/RotatorStone.hh
+===================================================================
+--- trunk/src/stones/RotatorStone.hh	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/stones/RotatorStone.hh	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -64,7 +64,7 @@
+         
+         // Stone interface
+         virtual void actor_hit(const StoneContact &amp;sc);
+-        virtual void on_impulse(const Impulse&amp; impulse);
++        virtual void on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false);
+         virtual void on_move();
+         virtual FreezeStatusBits get_freeze_bits();
+ 
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/stones.cc	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -149,9 +149,20 @@
+ void Stone::actor_touch(const StoneContact &amp;sc) {
+ }
+ 
+-void Stone::on_impulse(const Impulse&amp; impulse) {
+-    if (is_movable())
++void Stone::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) {
++    if (is_movable()) {
+         move_stone(impulse.dir);
++        if (!isWireImpulse) {
++            ObjectList olist = getAttr(&quot;fellows&quot;);
++            for (ObjectList::iterator it = olist.begin(); it != olist.end(); ++it) {
++                Stone *fellow = dynamic_cast&lt;Stone *&gt;(*it);
++                if (fellow != NULL) {
++                    Impulse wireImpulse(this, fellow-&gt;get_pos(), impulse.dir);
++                    fellow-&gt;on_impulse(wireImpulse, true);
++                }
++            }
++        }
++    }
+ }
+ 
+ const char * Stone::collision_sound() {
+@@ -455,6 +466,7 @@
+     GridPos pos = stone-&gt;get_pos();
+     model       = display::YieldModel(GridLoc(GRID_STONES, pos));
+     YieldStone(pos);
++    st-&gt;setOwnerPos(pos);   // the stone remains owned at the old position
+ }
+ 
+ YieldedGridStone::~YieldedGridStone() 
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/stones.hh	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -164,6 +164,7 @@
+     };
+         
+     class Stone : public GridObject {
++    
+     public:
+         Stone();
+         Stone(const char *kind);
+@@ -216,7 +217,7 @@
+         
+         virtual void   on_move();
+         virtual void   on_floor_change() {}
+-        virtual void   on_impulse(const Impulse&amp; impulse);
++        virtual void   on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false);
+ 
+     protected:
+         virtual Object::ObjectType getObjectType() const {return Object::STONE;}
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/stones_complex.cc	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -101,7 +101,7 @@
+             if (state == IDLE)
+                 maybe_push_stone(sc);
+         }
+-        void on_impulse(const Impulse&amp; impulse);
++        void on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false);
+         bool is_removable() const {
+             return state == IDLE;
+         }
+@@ -189,7 +189,7 @@
+     change_state(IDLE);
+ }
+ 
+-void PullStone::on_impulse(const Impulse&amp; impulse) 
++void PullStone::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) 
+ {
+     if (state != IDLE)
+         return;
+@@ -561,7 +561,7 @@
+         virtual Value message(const Message &amp;m);
+ 
+         void on_creation (GridPos p);
+-        void on_impulse (const Impulse&amp; impulse);
++        void on_impulse (const Impulse&amp; impulse, bool isWireImpulse=false);
+ 
+         bool is_floating() const;
+ 
+@@ -906,7 +906,7 @@
+     return ConnectiveStone::message(m);
+ }
+ 
+-void PuzzleStone::on_impulse(const Impulse&amp; impulse) 
++void PuzzleStone::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) 
+ {
+ //    if (!oxyd1_compatible() &amp;&amp; state == IDLE) {
+     if (state == IDLE) {
+@@ -1362,7 +1362,7 @@
+                 SendMessage(it, &quot;noshogun&quot;);
+         }
+ 
+-        void on_impulse(const Impulse&amp; impulse);
++        void on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false);
+ 
+         void init_model() {
+             set_model(ecl::strf(&quot;st-shogun%d&quot;, int(get_holes())));
+@@ -1408,7 +1408,7 @@
+     }
+ }
+ 
+-void ShogunStone::on_impulse(const Impulse&amp; impulse) {
++void ShogunStone::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) {
+     GridPos destpos     = move(get_pos(), impulse.dir);
+     Holes holes         = get_holes();
+     Holes smallest      = smallest_hole(holes);
+@@ -1487,7 +1487,7 @@
+ 
+         void change_state(State st);
+ 
+-        virtual void on_impulse(const Impulse&amp; impulse) {
++        virtual void on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false) {
+             incoming = impulse.dir;
+             change_state(PULSING);
+         }
+@@ -1698,7 +1698,7 @@
+             }
+         }
+ 
+-        void on_impulse(const Impulse&amp; impulse) {
++        void on_impulse(const Impulse&amp; impulse, bool isWireImpulse) {
+             State oldstate = state;
+ 
+             if (move_stone(impulse.dir)) {
+@@ -1753,7 +1753,7 @@
+         // Private methods
+         DirectionBits arms_present() const;
+         bool          no_stone (int xoff, int yoff) const;
+-        void set_arm (Direction dir, RBI_vector &amp;rubs);
++        void set_arm (Direction dir);
+         void remove_arms (DirectionBits arms);
+         void rotate_arms (DirectionBits arms, bool clockwise);
+         void handleActorsAndItems(bool clockwise, Object *impulse_sender);
+@@ -1798,7 +1798,7 @@
+         virtual Direction get_dir() const = 0;
+ 
+         void actor_hit(const StoneContact &amp;sc);
+-        void on_impulse(const Impulse&amp; impulse);
++        void on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false);
+ 
+         Turnstile_Pivot_Base *get_pivot() {
+             Stone *st = GetStone (move (get_pos(), reverse(get_dir())));
+@@ -1849,7 +1849,7 @@
+ 
+ /* -------------------- Turnstile_Arm -------------------- */
+ 
+-void Turnstile_Arm::on_impulse(const Impulse&amp; impulse) {
++void Turnstile_Arm::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) {
+     enum Action { ROTL, ROTR, stay };
+     static Action actions[4][4] = {
+         { stay, ROTL, stay, ROTR }, // west arm
+@@ -1944,33 +1944,33 @@
+ void Turnstile_Pivot_Base::rotate_arms (DirectionBits arms, bool clockwise) {
+     GridPos p = get_pos();
+ 
+-    RBI_vector Nrubs;
+-    RBI_vector Erubs;
+-    RBI_vector Srubs;
+-    RBI_vector Wrubs;
++//    RBI_vector Nrubs;
++//    RBI_vector Erubs;
++//    RBI_vector Srubs;
++//    RBI_vector Wrubs;
+ 
+-    if (arms &amp; NORTHBIT) GiveRubberBands(GetStone(move (p, NORTH)), Nrubs);
+-    if (arms &amp; EASTBIT) GiveRubberBands(GetStone(move (p, EAST)), Erubs);
+-    if (arms &amp; SOUTHBIT) GiveRubberBands(GetStone(move (p, SOUTH)), Srubs);
+-    if (arms &amp; WESTBIT) GiveRubberBands(GetStone(move (p, WEST)), Wrubs);
++//    if (arms &amp; NORTHBIT) GiveRubberBands(GetStone(move (p, NORTH)), Nrubs);
++//    if (arms &amp; EASTBIT) GiveRubberBands(GetStone(move (p, EAST)), Erubs);
++//    if (arms &amp; SOUTHBIT) GiveRubberBands(GetStone(move (p, SOUTH)), Srubs);
++//    if (arms &amp; WESTBIT) GiveRubberBands(GetStone(move (p, WEST)), Wrubs);
+ 
+     remove_arms(arms);
+ 
+     if (clockwise) {
+-	if (arms &amp; NORTHBIT) set_arm(EAST, Nrubs);
+-	if (arms &amp; EASTBIT)  set_arm(SOUTH, Erubs);
+-	if (arms &amp; SOUTHBIT) set_arm(WEST, Srubs);
+-	if (arms &amp; WESTBIT)  set_arm(NORTH, Wrubs);
++	if (arms &amp; NORTHBIT) set_arm(EAST);
++	if (arms &amp; EASTBIT)  set_arm(SOUTH);
++	if (arms &amp; SOUTHBIT) set_arm(WEST);
++	if (arms &amp; WESTBIT)  set_arm(NORTH);
+     }
+     else {
+-	if (arms &amp; NORTHBIT) set_arm(WEST, Nrubs);
+-	if (arms &amp; EASTBIT)  set_arm(NORTH, Erubs);
+-	if (arms &amp; SOUTHBIT) set_arm(EAST, Srubs);
+-	if (arms &amp; WESTBIT)  set_arm(SOUTH, Wrubs);
++	if (arms &amp; NORTHBIT) set_arm(WEST);
++	if (arms &amp; EASTBIT)  set_arm(NORTH);
++	if (arms &amp; SOUTHBIT) set_arm(EAST);
++	if (arms &amp; WESTBIT)  set_arm(SOUTH);
+     }
+ }
+ 
+-void Turnstile_Pivot_Base::set_arm (Direction dir, RBI_vector &amp;rubs) {
++void Turnstile_Pivot_Base::set_arm (Direction dir) {
+     const char *names[4] = { &quot;st-turnstile-w&quot;, &quot;st-turnstile-s&quot;,
+                              &quot;st-turnstile-e&quot;, &quot;st-turnstile-n&quot; };
+     Stone   *st   = MakeStone(names[dir]);
+@@ -1980,9 +1980,9 @@
+     if (Item *it = GetItem(newp))
+         it-&gt;on_stonehit(st);
+ 
+-    if (!rubs.empty())
+-	for (RBI_vector::iterator i = rubs.begin(); i != rubs.end(); ++i)
+-	    AddRubberBand (i-&gt;act, st, i-&gt;data);
++//    if (!rubs.empty())
++//	for (RBI_vector::iterator i = rubs.begin(); i != rubs.end(); ++i)
++//	    AddRubberBand (i-&gt;act, st, i-&gt;data);
+ }
+ 
+ bool Turnstile_Pivot_Base::rotate(bool clockwise, Object *impulse_sender) {
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/stones_simple.cc	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -393,7 +393,7 @@
+         void on_removal(GridPos p);
+ 
+         // Stone interface
+-        void on_impulse (const Impulse &amp;impulse);
++        void on_impulse (const Impulse &amp;impulse, bool isWireImpulse=false);
+         bool is_removable() const { return state == IDLE; }
+         void actor_hit (const StoneContact &amp;sc);
+ 
+@@ -460,7 +460,7 @@
+ //    sound_event (&quot;moveslow&quot;);
+ }
+ 
+-void SwapStone::on_impulse(const Impulse&amp; impulse) 
++void SwapStone::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) 
+ {
+     if (state == IDLE) {
+         GridPos oldp = get_pos();
+@@ -728,7 +728,7 @@
+ //             else
+ //                 maybe_push_stone (sc);
+         }
+-        void on_impulse(const Impulse&amp; impulse) {
++        void on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false) {
+             move_stone(impulse.dir);
+         }
+ 
+@@ -1148,7 +1148,7 @@
+         void actor_hit(const StoneContact &amp;sc) {
+             sound_event(&quot;scissors&quot;);
+             set_anim(&quot;st-scissors-snip&quot;);
+-            if (KillRubberBands (sc.actor))
++            if (SendMessage(sc.actor, &quot;disconnect&quot;).to_bool())
+                 performAction(false);
+         }
+         void animcb() {
+@@ -1187,31 +1187,37 @@
+         DECL_TRAITS;
+ 
+         void actor_hit(const StoneContact &amp;sc) {
+-            double strength = getDefaultedAttr(&quot;strength&quot;, 10.0);
+-            double length = getDefaultedAttr(&quot;length&quot;, 1.0);
+-            double minlength = getAttr(&quot;minlength&quot;);
+-
+-            RubberBandData rbd;
+-            rbd.strength = strength;
+-            rbd.length = length;
+-            rbd.minlength = minlength;
+-
+             // The mode attribute &quot;scissor&quot; defines, if when touching an st-rubberband,
+             // other rubberbands to the actor will be cut of or not, true means they will. true is default.
+             bool isScissor = to_bool(getDefaultedAttr(&quot;scissor&quot;, true));
+ 
+-            if (!HasRubberBand (sc.actor, this)) {
++//            if (!HasRubberBand (sc.actor, this)) {
++            bool alreadyConnected = false;
++            ObjectList rubbers = sc.actor-&gt;getAttr(&quot;rubbers&quot;);
++            for (ObjectList::iterator it =  rubbers.begin(); it != rubbers.end(); ++it) {
++                if (((Object *)(*it)-&gt;getAttr(&quot;anchor2&quot;)) == this) {
++                    alreadyConnected = true;
++                    break;
++                }
++            }
++            if (!alreadyConnected) {
+                 sound_event (&quot;rubberband&quot;);
+                 if (isScissor) {
+-                    KillRubberBand (sc.actor, (Stone*)0);
++                    SendMessage(sc.actor, &quot;disconnect&quot;);
+                 }
+-                AddRubberBand (sc.actor, this, rbd);
++                Object *obj = MakeObject(&quot;ot_rubberband&quot;);
++                obj-&gt;setAttr(&quot;anchor1&quot;, sc.actor);
++                obj-&gt;setAttr(&quot;anchor2&quot;, this);
++                obj-&gt;setAttr(&quot;strength&quot;, getDefaultedAttr(&quot;strength&quot;, 10.0));
++                obj-&gt;setAttr(&quot;length&quot;, getDefaultedAttr(&quot;length&quot;, 1.0));
++                obj-&gt;setAttr(&quot;threshold&quot;, getAttr(&quot;minlength&quot;));
++                AddOther(dynamic_cast&lt;Other *&gt;(obj));
+             }
+             // if (player::wielded_item_is (sc.actor, &quot;it-magicwand&quot;))
+             maybe_push_stone (sc);
+         }
+ 
+-        void on_impulse (const Impulse&amp; impulse) {
++        void on_impulse (const Impulse&amp; impulse, bool isWireImpulse=false) {
+             Actor *a = dynamic_cast&lt;Actor *&gt; (impulse.sender);
+             if (a &amp;&amp; player::WieldedItemIs (a, &quot;it-magicwand&quot;))
+                 move_stone(impulse.dir);
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/world.cc	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004,2005 Daniel Heck
+- * Copyright (C) 2007 Ronald Lamprecht
++ * Copyright (C) 2007,2008 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -92,85 +92,6 @@
+         message (theMessage), value (theValue), sender (theSender) {
+ }
+ 
+-/* -------------------- RubberBandData -------------------- */
+-
+-RubberBandData::RubberBandData () {
+-    strength = 1;
+-    length = 2;
+-    minlength = 0;
+-}
+-
+-RubberBandData::RubberBandData (const RubberBandData &amp;x) {
+-    strength  = x.strength;
+-    length    = x.length;
+-    minlength = x.minlength;
+-}
+-
+-/* -------------------- RubberBand -------------------- */
+-
+-RubberBand::RubberBand (Actor *a1, Actor *a2, const RubberBandData &amp;d)
+-: actor(a1), actor2(a2), stone(0), model(0), data (d)
+-{
+-    ASSERT(actor, XLevelRuntime, &quot;RubberBand: no actor defined&quot;);
+-    ASSERT(d.length &gt;= 0, XLevelRuntime, &quot;RubberBand: length negative&quot;);
+-	ASSERT(d.length &gt;= d.minlength, XLevelRuntime, &quot;RubberBand: minlength &gt; length&quot;);
+-    model = display::AddRubber(get_p1(),get_p2());
+-}
+-
+-RubberBand::RubberBand (Actor *a1, Stone *st, const RubberBandData &amp;d)
+-: actor(a1), actor2(0), stone(st), model(0), data (d)
+-{
+-    ASSERT(actor, XLevelRuntime, &quot;RubberBand: no actor defined&quot;);
+-    ASSERT(d.length &gt;= 0, XLevelRuntime, &quot;RubberBand: length negative&quot;);
+-    ASSERT(d.length &gt;= d.minlength, XLevelRuntime, &quot;RubberBand: minlength &gt; length&quot;);
+-    model = display::AddRubber(get_p1(), get_p2());
+-}
+-
+-RubberBand::~RubberBand() {
+-    model.kill();
+-}
+-
+-void RubberBand::apply_forces ()
+-{
+-    V2 v = get_p2()-get_p1();
+-    double vv = ecl::length(v);
+-    V2 force;
+-    
+-    if (vv == 0) {
+-        force = V2(0, 0);
+-    } else if (vv &lt; data.minlength) {
+-        force = v*data.strength*(vv-data.minlength)/vv;
+-        force /= 6;
+-    } else if (vv &gt; data.length) {
+-        force = v*data.strength*(vv-data.length)/vv;
+-        force /= 6;
+-    }
+-    
+-    actor-&gt;add_force(force);
+-    if (actor2)
+-        actor2-&gt;add_force(-force);
+-}
+-
+-V2 RubberBand::get_p1() const
+-{
+-    return V2(actor-&gt;get_pos()[0], actor-&gt;get_pos()[1]);
+-}
+-
+-V2 RubberBand::get_p2() const
+-{
+-    if (!stone)
+-        return V2(actor2-&gt;get_pos()[0], actor2-&gt;get_pos()[1]);
+-    else
+-        return stone-&gt;get_pos().center();
+-}
+-
+-void RubberBand::tick (double /* dtime */) 
+-{
+-    model.update_first (get_p1());
+-    model.update_second (get_p2());
+-}
+-
+-
+ /* -------------------- Field -------------------- */
+ 
+ Field::Field()
+@@ -311,7 +232,11 @@
+ {
+     fields = FieldArray(0,0);
+     for_each(actorlist.begin(), actorlist.end(), mem_fun(&amp;Actor::dispose));
+-    delete_sequence (m_rubberbands.begin(), m_rubberbands.end());
++    while (!others.empty()) {
++        Other *ot = others.back();
++        others.pop_back();
++        ot-&gt;dispose();
++    }
+ }
+ 
+ bool World::is_border(const GridPos &amp;p) {
+@@ -1346,8 +1271,9 @@
+             a-&gt;move();         // 'move' nevertheless, to pick up items etc
+             a-&gt;think(dtime); 
+         }
+-        for_each (m_rubberbands.begin(), m_rubberbands.end(), 
+-                  mem_fun(&amp;RubberBand::apply_forces));
++        for (RubberbandList::iterator rit = rubberbands.begin(); rit != rubberbands.end(); ++rit) {
++            (*rit)-&gt;applyForces(dt);
++        }    
+ 
+         rest_time -= dt;
+     }
+@@ -1682,104 +1608,6 @@
+ }
+ 
+ 
+-/* -------------------- Rubber bands -------------------- */
+-
+-void AddRubberBand (Actor *a, Stone *st, const RubberBandData &amp;d)
+-{
+-    level-&gt;m_rubberbands.push_back(new RubberBand (a, st, d));
+-}
+-
+-void AddRubberBand (Actor *a, Actor *a2, const RubberBandData &amp;d)
+-{
+-    RubberBandData rbd (d);
+-    rbd.length = ecl::Max (d.length, get_radius(a) + get_radius(a2));
+-    level-&gt;m_rubberbands.push_back(new RubberBand (a, a2, rbd));
+-}
+-
+-bool KillRubberBands (Actor *a)
+-{
+-    bool didKill = false;
+-    for (unsigned i=0; i&lt;level-&gt;m_rubberbands.size(); ) {
+-        RubberBand &amp;r = *level-&gt;m_rubberbands[i];
+-        if (r.get_actor() == a || r.get_actor2() == a) {
+-            delete &r;
+-            level-&gt;m_rubberbands.erase(level-&gt;m_rubberbands.begin()+i);
+-            didKill = true;
+-            continue;       // don't increment i
+-        }
+-        ++i;
+-    }
+-    return didKill;
+-}
+-
+-
+-void KillRubberBand (Actor *a, Stone *st)
+-{
+-    ASSERT(a, XLevelRuntime, &quot;KillRubberBand: no actor attached&quot;);
+-    for (unsigned i=0; i&lt;level-&gt;m_rubberbands.size(); ) {
+-        RubberBand &amp;r = *level-&gt;m_rubberbands[i];
+-        if (r.get_actor() == a &amp;&amp; r.get_stone() != 0)
+-            if (r.get_stone()==st || st==0) {
+-                delete &r;
+-                level-&gt;m_rubberbands.erase(level-&gt;m_rubberbands.begin()+i);
+-                continue;       // don't increment i
+-            }
+-        ++i;
+-    }
+-}
+-
+-void KillRubberBand (Actor *a, Actor *a2)
+-{
+-    ASSERT(a, XLevelRuntime, &quot;KillRubberBand: no actor attached&quot;);
+-    for (unsigned i=0; i&lt;level-&gt;m_rubberbands.size(); ) {
+-        RubberBand &amp;r = *level-&gt;m_rubberbands[i];
+-        if (r.get_actor() == a &amp;&amp; r.get_actor2() != 0)
+-            if (r.get_actor2()==a2 || a2==0) {
+-                delete &r;
+-                level-&gt;m_rubberbands.erase(level-&gt;m_rubberbands.begin()+i);
+-                continue;       // don't increment i
+-            }
+-        ++i;
+-    }
+-}
+-
+-void KillRubberBands (Stone *st)
+-{
+-   for (unsigned i=0; i&lt;level-&gt;m_rubberbands.size(); ) {
+-        RubberBand &amp;r = *level-&gt;m_rubberbands[i];
+-        if (r.get_stone() != 0 &amp;&amp; r.get_stone()==st) {
+-            delete &r;
+-            level-&gt;m_rubberbands.erase(level-&gt;m_rubberbands.begin()+i);
+-            continue;       // don't increment i
+-        }
+-        ++i;
+-    }
+-}
+-
+-void GiveRubberBands (Stone *st, vector&lt;Rubber_Band_Info&gt; &amp;rubs) {
+-   for (unsigned i=0; i&lt;level-&gt;m_rubberbands.size(); ) {
+-        RubberBand &amp;r = *level-&gt;m_rubberbands[i];
+-        if (r.get_stone() == st) {
+-            Rubber_Band_Info rbi;
+-            rbi.act = r.get_actor();
+-            rbi.data = r.get_data();
+-            rubs.push_back(rbi);
+-        }
+-        ++i;
+-    }
+-}
+-
+-bool HasRubberBand (Actor *a, Stone *st)
+-{
+-    for (unsigned i=0; i&lt;level-&gt;m_rubberbands.size(); ++i) {
+-        RubberBand &amp;r = *level-&gt;m_rubberbands[i];
+-        if (r.get_actor() == a &amp;&amp; r.get_stone() == st)
+-            return true;
+-    }
+-    return false;
+-}
+-
+-
+ /* -------------------- Signals, Messages, Actions -------------------- */
+ 
+ void AddSignal (const GridLoc &amp;srcloc, const GridLoc &amp;dstloc, const string &amp;msg) {
+@@ -2030,6 +1858,32 @@
+ }
+ 
+ 
++/* -------------------- Other manipulation -------------------- */
++
++void AddOther(Other *o) {
++    level-&gt;others.push_back(o);
++    Rubberband * rb = dynamic_cast&lt;Rubberband *&gt;(o);
++    if (rb != NULL)
++        level-&gt;rubberbands.push_back(rb);
++    o-&gt;postAddition();
++}
++
++void KillOther(Other *o) {
++    o-&gt;preRemoval();
++    OtherList::iterator i = find(level-&gt;others.begin(), level-&gt;others.end(), o);
++    if (i != level-&gt;others.end()) {
++        level-&gt;others.erase(i);
++        Rubberband * rb = dynamic_cast&lt;Rubberband *&gt;(o);
++        if (rb != NULL) {
++            RubberbandList::iterator j = find(level-&gt;rubberbands.begin(), level-&gt;rubberbands.end(), rb);
++            if (j != level-&gt;rubberbands.end()) {
++                level-&gt;rubberbands.erase(j);
++            }
++        }
++        o-&gt;dispose();
++    }
++}
++
+ /* -------------------- Floor manipulation -------------------- */
+ 
+ void KillFloor(GridPos p) 
+@@ -2311,9 +2165,10 @@
+         level-&gt;actorlist[i]-&gt;move_screen();
+     }
+ 
+-    // 
+-    for (unsigned i=0; i&lt;level-&gt;m_rubberbands.size();++i) 
+-        level-&gt;m_rubberbands[i]-&gt;tick (0.0);
++    //     
++    for (OtherList::iterator oit = level-&gt;others.begin(); oit != level-&gt;others.end(); ++oit) {
++        (*oit)-&gt;tick(0);
++    }    
+ }
+ 
+ void InitWorld()
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/world.hh	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -27,6 +27,8 @@
+ #include &quot;items.hh&quot;
+ #include &quot;stones.hh&quot;
+ #include &quot;util.hh&quot;
++#include &quot;others/Other.hh&quot;
++#include &quot;others/Rubberband.hh&quot;
+ 
+ namespace enigma {
+ 
+@@ -175,52 +177,11 @@
+     void SetConstantForce (V2 force);
+ 
+ 
+-/* -------------------- Rubbers Bands -------------------- */
++/* -------------------- Other Objects -------------------- */
+ 
+-    struct RubberBandData {
+-	double strength;
+-	double length;
+-        double minlength;
+-        RubberBandData ();
+-        RubberBandData (const RubberBandData &amp;);
+-    };
++    void AddOther(Other *o);
++    void KillOther(Other *o);
+ 
+-    struct Rubber_Band_Info {
+-	Actor *act;
+-        RubberBandData data;
+-    };
+-    typedef std::vector&lt;Rubber_Band_Info&gt; RBI_vector;
+-
+-
+-    /*! Add a rubber band that connects an actor with either a stone
+-      or another actor.  `strength' is the force constant, and
+-      `length' is the natural length of the elastic: if it is shorter
+-      than `length' it will exert no force on the actor(s). */
+-    void AddRubberBand (Actor *a, Stone *st, const RubberBandData &amp;d);
+-    void AddRubberBand (Actor *a, Actor *a2, const RubberBandData &amp;d);
+-
+-    /*! Remove all rubber bands connected to `a'. */
+-    bool KillRubberBands (Actor *a);
+-
+-    /*! Remove the rubber band between `a' and `st'.  If `st' is 0,
+-      all rubber bands connecting `a' to a stone will be cut. */
+-    void KillRubberBand (Actor *a, Stone *st);
+-
+-    /*! Remove the rubber band between `a' and `a2'.  If `a2' is 0,
+-      all rubber bands connecting `a' to other actors will be cut. */
+-    void KillRubberBand (Actor *a, Actor *a2);
+-
+-    /*! Remove all rubber bands attached to stone ST. */
+-    void KillRubberBands (Stone *st);
+-
+-    /*! Fills given vector with basic info about rubbers attached to
+-      given stone */
+-    void GiveRubberBands (Stone *st, RBI_vector &amp;rubbers);
+-
+-    /*! Returns true if there already is a rubber band connecting `a'
+-      and `st'. */
+-    bool HasRubberBand (Actor *a, Stone *st);
+-
+ /* -------------------- Meditation Control ---------------------- */
+ 
+     void ChangeMeditation(int diffMeditatists, int diffIndispensableHollows,
+
+Modified: trunk/src/world_internal.hh
+===================================================================
+--- trunk/src/world_internal.hh	2008-07-01 22:27:22 UTC (rev 1203)
++++ trunk/src/world_internal.hh	2008-07-02 22:27:58 UTC (rev 1204)
+@@ -17,6 +17,7 @@
+  *
+  */
+ 
++
+ #include &lt;memory&gt;
+ 
+ namespace enigma {
+@@ -28,39 +29,12 @@
+ 
+     typedef vector&lt;ForceField*&gt;  ForceList;
+ //    typedef vector&lt;StoneContact&gt; StoneContactList;
++    typedef list&lt;Other *&gt;         OtherList;
++    typedef list&lt;Rubberband *&gt;    RubberbandList;
+     typedef vector&lt;Actor*&gt;       ActorList;
+     typedef vector&lt;Signal&gt;       SignalList;
+ 
+ 
+-/* -------------------- RubberBand -------------------- */
+-    
+-    /*! Stores the physical information about a rubber band (to which
+-      object it is attached, its length and force, etc.) */
+-    class RubberBand {
+-    public:
+-        RubberBand (Actor *a1, Actor *a2, const RubberBandData &amp;d);
+-        RubberBand (Actor *a1, Stone *st, const RubberBandData &amp;d);
+-        ~RubberBand();
+-
+-        void apply_forces ();
+-        void tick (double dtime);
+-
+-        Actor *get_actor() const { return actor; }
+-        Actor *get_actor2() const { return actor2; }
+-        Stone *get_stone() const { return stone; }
+-
+-        const RubberBandData get_data () const { return data; }
+-    private:
+-        V2 get_p1() const;
+-        V2 get_p2() const;
+-
+-        // Variables.
+-        Actor *actor, *actor2;
+-        Stone *stone;
+-        display::RubberHandle model;
+-        RubberBandData data;
+-    };
+-
+ /* -------------------- MouseForce -------------------- */
+ 
+     /*! This class implements the &quot;force field&quot; that accelerates
+@@ -224,7 +198,7 @@
+         void raw_set (Field &amp;f, Stone *st) { f.stone = st;}
+         void dispose (Stone *st) {
+             if (st) {
+-                KillRubberBands(st);
++                SendMessage(st, &quot;disconnect&quot;);
+                 DisposeObject(st);
+             }
+         }
+@@ -332,7 +306,8 @@
+         ActorList            actorlist; // List of movable, dynamic objects
+         Actor               *leftmost_actor;   // sorted double linked list of actors
+         Actor               *rightmost_actor;  
+-        vector&lt;RubberBand *&gt; m_rubberbands;
++        OtherList            others;
++        RubberbandList       rubberbands;
+         MouseForce           m_mouseforce;
+         V2                   flatForce;
+         int                  scrambleIntensity;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000637.html">[Enigma-game-svn] r1203 - trunk
+</A></li>
+	<LI>Next message: <A HREF="000639.html">[Enigma-game-svn] r1205 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#638">[ date ]</a>
+              <a href="thread.html#638">[ thread ]</a>
+              <a href="subject.html#638">[ subject ]</a>
+              <a href="author.html#638">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

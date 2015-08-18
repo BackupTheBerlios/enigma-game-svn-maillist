@@ -1,0 +1,547 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1006 - in trunk: data src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1006%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200801252330.m0PNUsch015743%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000437.html">
+   <LINK REL="Next"  HREF="000439.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1006 - in trunk: data src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1006%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200801252330.m0PNUsch015743%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1006 - in trunk: data src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Jan 26 00:30:54 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000437.html">[Enigma-game-svn] r1005 - feature_branches/hp_lotm/input/lotm
+</A></li>
+        <LI>Next message: <A HREF="000439.html">[Enigma-game-svn] r1007 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#438">[ date ]</a>
+              <a href="thread.html#438">[ thread ]</a>
+              <a href="subject.html#438">[ subject ]</a>
+              <a href="author.html#438">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-01-26 00:30:53 +0100 (Sat, 26 Jan 2008)
+New Revision: 1006
+
+Modified:
+   trunk/data/init.lua
+   trunk/data/models-2d.lua
+   trunk/src/GridObject.cc
+   trunk/src/GridObject.hh
+   trunk/src/lua.cc
+   trunk/src/stones.cc
+   trunk/src/stones/ClusterStone.cc
+   trunk/src/stones/OxydStone.cc
+   trunk/src/stones/OxydStone.hh
+   trunk/src/stones/WindowStone.cc
+   trunk/src/stones/WindowStone.hh
+   trunk/src/world.cc
+Log:
+Trunk 1.1: Reengineering Connective Stones
+- fix r1002 attribute state set problems due to GridObject 
+- ClusterStone add autoclustering for changes on cluster, faces attributes
+- OxydStone add kinds &quot;st_oxyd_a&quot;...&quot;st_oxyd_d&quot; for flavored types
+- WindowStone reengineering:
+  - GridObject connection support instead of ConnectiveStone
+  - renaming to &quot;st_window_[nesw]&quot; with faces as dirs
+  - slightly lowered impuls that is necessary to break a window
+Note:
+- WindowStone features are not yet fixed
+
+
+Modified: trunk/data/init.lua
+===================================================================
+--- trunk/data/init.lua	2008-01-25 23:13:13 UTC (rev 1005)
++++ trunk/data/init.lua	2008-01-25 23:30:53 UTC (rev 1006)
+@@ -59,7 +59,8 @@
+     st_oxyd = &quot;st-oxyd&quot;,
+     st_switch_instant = &quot;st-switch&quot;,
+     st_switch_black_instant = &quot;st-switch_black&quot;,
+-    st_switch_white_instant = &quot;st-switch_white&quot;
++    st_switch_white_instant = &quot;st-switch_white&quot;,
++    st_window = &quot;st-window&quot;
+ }
+ 
+ for k,v in pairs(RenamingObjectsNew2Old) do
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-01-25 23:13:13 UTC (rev 1005)
++++ trunk/data/models-2d.lua	2008-01-25 23:30:53 UTC (rev 1006)
+@@ -1200,11 +1200,11 @@
+ 
+     for i = 2, 16 do
+         DefMultipleComposite(&quot;sh-window&quot;..i, shadowlist[i])
+-        DefShModel(&quot;st-window&quot;..i, &quot;fg-window&quot;..i, &quot;sh-window&quot;..i)
++        DefShModel(&quot;st_window&quot;..(16-i), &quot;fg-window&quot;..i, &quot;sh-window&quot;..i)
+     end
+ 
+     -- 4 sided window stone:
+-    DefAlias(&quot;st-window&quot;,&quot;st-window16&quot;)
++    DefAlias(&quot;st_window&quot;,&quot;st_window0&quot;)
+ 
+     -- Breaking animimation:
+     local breaking_window_names = {}
+@@ -1218,8 +1218,8 @@
+         end
+         local frames = BuildFrames(breaking_window_names[i], 130)
+         -- TODO: finish anim names used:
+-        DefAnim(&quot;st-window&quot;..i..&quot;-anim&quot;, frames)
+-        DefAnim(&quot;st-window-anim&quot;, frames)
++        DefAnim(&quot;st_window&quot;..i..&quot;_anim&quot;, frames)
++        DefAnim(&quot;st_window_anim&quot;, frames)
+     end
+ end
+ 
+
+Modified: trunk/src/GridObject.cc
+===================================================================
+--- trunk/src/GridObject.cc	2008-01-25 23:13:13 UTC (rev 1005)
++++ trunk/src/GridObject.cc	2008-01-25 23:30:53 UTC (rev 1006)
+@@ -81,6 +81,10 @@
+             return pos;
+     }
+     
++    bool GridObject::isDisplayable() {
++        return pos.x &gt;= 0;
++    }
++    
+     display::Model *GridObject::set_anim (const std::string &amp;mname) 
+     {
+         set_model (mname);
+@@ -125,7 +129,7 @@
+             if (isDisplayable())
+                 init_model();
+         } else
+-            Object::set_attrib(key, val);
++            StateObject::set_attrib(key, val);
+     }
+     
+     Value GridObject::getAttr(const string &amp;key) const {
+
+Modified: trunk/src/GridObject.hh
+===================================================================
+--- trunk/src/GridObject.hh	2008-01-25 23:13:13 UTC (rev 1005)
++++ trunk/src/GridObject.hh	2008-01-25 23:30:53 UTC (rev 1006)
+@@ -83,7 +83,15 @@
+          */
+         GridPos getOwnerPos();
+         
+-        virtual bool isDisplayable() {return pos.x &gt;= 0;}
++        /**
++         * Verify that the GridObject is part of the world's grid and display 
++         * models can be set and killed without restriction. Especially attribute
++         * changes and messages need to check carefully if just the objects ivars
++         * and attributes may be changed or if the display can and has to be 
++         * updated, too.
++         * @return   true if display access is possible, false otherwise
++         */
++        bool isDisplayable();
+ 
+         // GridObject interface
+         virtual void on_laserhit (Direction) {}
+@@ -115,9 +123,7 @@
+ 
+         virtual void on_removal(GridPos p) {
+             kill_model (p);
+-        }
+-        
+-        
++        }     
+ 
+     private:
+         // ModelCallback interface.
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-01-25 23:13:13 UTC (rev 1005)
++++ trunk/src/lua.cc	2008-01-25 23:30:53 UTC (rev 1006)
+@@ -1669,7 +1669,7 @@
+         }
+         return 1;
+     } else {
+-        throwLuaError(L, &quot;Named object access without giving a name&quot;);
++        throwLuaError(L, &quot;World read access without giving an attribute name&quot;);
+         return 0;
+     }
+ }
+
+Modified: trunk/src/stones/ClusterStone.cc
+===================================================================
+--- trunk/src/stones/ClusterStone.cc	2008-01-25 23:13:13 UTC (rev 1005)
++++ trunk/src/stones/ClusterStone.cc	2008-01-25 23:30:53 UTC (rev 1006)
+@@ -26,7 +26,7 @@
+     }
+     
+     void ClusterStone::set_attrib(const string&amp; key, const Value &amp;val) {
+-        if (key == &quot;connections&quot;) {
++        if (key == &quot;connections&quot; || key == &quot;faces&quot; || key == &quot;cluster&quot;) {
+             Stone::set_attrib(key, val);
+             if (isDisplayable()) {
+                 autoLeaveCluster();
+
+Modified: trunk/src/stones/OxydStone.cc
+===================================================================
+--- trunk/src/stones/OxydStone.cc	2008-01-25 23:13:13 UTC (rev 1005)
++++ trunk/src/stones/OxydStone.cc	2008-01-25 23:30:53 UTC (rev 1006)
+@@ -836,8 +836,8 @@
+     
+     // Instance Methods
+     
+-    OxydStone::OxydStone() : PhotoStone(&quot;st_oxyd&quot;) {
+-        set_attrib(&quot;flavor&quot;, &quot;b&quot;);
++    OxydStone::OxydStone(std::string flavor) : PhotoStone(&quot;st_oxyd&quot;) {
++        set_attrib(&quot;flavor&quot;, flavor);
+         set_attrib(&quot;oxydcolor&quot;, AUTO);
+     }
+     
+@@ -1106,7 +1106,11 @@
+     
+ 
+     BOOT_REGISTER_START
+-        BootRegister(new OxydStone);
++        BootRegister(new OxydStone(), &quot;st_oxyd&quot;);
++        BootRegister(new OxydStone(&quot;a&quot;), &quot;st_oxyd_a&quot;);
++        BootRegister(new OxydStone(&quot;b&quot;), &quot;st_oxyd_b&quot;);
++        BootRegister(new OxydStone(&quot;c&quot;), &quot;st_oxyd_c&quot;);
++        BootRegister(new OxydStone(&quot;d&quot;), &quot;st_oxyd_d&quot;);
+     BOOT_REGISTER_END
+ 
+ } // namespace enigma
+
+Modified: trunk/src/stones/OxydStone.hh
+===================================================================
+--- trunk/src/stones/OxydStone.hh	2008-01-25 23:13:13 UTC (rev 1005)
++++ trunk/src/stones/OxydStone.hh	2008-01-25 23:30:53 UTC (rev 1006)
+@@ -78,7 +78,7 @@
+         static void addShuffleRule(RuleType type, unsigned short limit, Value group1, Value group2 = Value());
+         static void shuffleColors(LogType logFlag = NOTHING);
+         
+-        OxydStone();
++        OxydStone(std::string flavor = &quot;b&quot;);
+         
+         // Object interface
+         virtual OxydStone * clone();
+
+Modified: trunk/src/stones/WindowStone.cc
+===================================================================
+--- trunk/src/stones/WindowStone.cc	2008-01-25 23:13:13 UTC (rev 1005)
++++ trunk/src/stones/WindowStone.cc	2008-01-25 23:30:53 UTC (rev 1006)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2007 Ronald Lamprecht
++ * Copyright (C) 2007, 2008 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -19,12 +19,31 @@
+  */
+ 
+ #include &quot;stones/WindowStone.hh&quot;
++//#include &quot;main.hh&quot;
+ #include &quot;server.hh&quot;
+ #include &quot;world.hh&quot;
+ 
+ namespace enigma {
+-    DEF_TRAITSM(WindowStone, &quot;st-window&quot;, st_window, MOVABLE_BREAKABLE);
+-
++    WindowStone::WindowStone(std::string faces) : Stone(), breakingFaces(NODIRBIT) {
++        set_attrib(&quot;faces&quot;, faces);
++    }
++    
++    Value WindowStone::message(const Message &amp;m) {
++        if (m.message == &quot;inner_pull&quot; ) {
++            return Value(tryInnerPull(to_direction(m.value)));
++        }
++        return Stone::message(m);
++    }
++    
++    void WindowStone::animcb() {
++        if (state == FINALBREAK)
++            KillStone(get_pos());
++        else {
++            state = IDLE;
++            init_model();
++        }
++    }
++    
+     void WindowStone::actor_hit(const StoneContact &amp;sc) {
+         Actor *a = sc.actor;
+         // TODO do we want to allow breaks while breaking?
+@@ -34,16 +53,15 @@
+                 SendMessage(a, &quot;shatter&quot;);
+             }
+ 
+-            else if (impulse &gt; 25) {
+-                breakingFaces = sc.faces;
+-                set_attrib(&quot;connections&quot;, (get_connections() &amp; ~breakingFaces) +1);
++            else if (impulse &gt; 20) {
++                DirectionBits remainigFaces = (DirectionBits)(getFaces() &amp; ~sc.faces);  // remove breaking face
++                Object::set_attrib(&quot;$connections&quot;, ALL_DIRECTIONS ^ remainigFaces);     // avoid init of model
+                 sound_event (&quot;shatter&quot;);
+-                state = BREAK;
+-                set_anim(&quot;st-window-anim&quot;);  // TODO anim with remaining unbroken faces
++                state = (remainigFaces == NODIRBIT) ? FINALBREAK : BREAK;
++                set_anim(&quot;st_window_anim&quot;);  // TODO anim with remaining unbroken faces
+             }
+             
+             else if (player::WieldedItemIs (sc.actor, &quot;it-wrench&quot;)) {
+-                DirectionBits faces = get_connections();
+                 if (sc.faces == WESTBIT &amp;&amp; sc.normal[0] &lt; 0){
+                     tryInnerPull(EAST);
+                 } else if (sc.faces == EASTBIT &amp;&amp; sc.normal[0] &gt; 0) {
+@@ -57,23 +75,13 @@
+         }
+     }
+     
+-    void WindowStone::animcb() {
+-        DirectionBits faces = get_connections();
+-        DirectionBits newFaces = DirectionBits(faces &amp; ~breakingFaces);
+-        if (newFaces == NODIRBIT)
+-            KillStone(get_pos());
+-        else {
+-            ReplaceStone(get_pos(), new WindowStone(newFaces+1));
+-        }
+-    }
+-    
+     bool WindowStone::is_sticky(const Actor *a) const  {
+         return false;
+     }
+     
+     StoneResponse WindowStone::collision_response(const StoneContact &amp;sc) {
+         const double face_width = 3.0/32.0; 
+-        DirectionBits faces = get_connections();
++        DirectionBits faces = getFaces();
+ 
+         if (((sc.contact_point[0] &lt;= get_pos().x + face_width) &amp;&amp; faces&amp;WESTBIT) ||
+                 ((sc.contact_point[0] &gt;= get_pos().x + 1 - face_width) &amp;&amp; faces&amp;EASTBIT) ||
+@@ -85,43 +93,41 @@
+         }
+     }
+     
+-    Value WindowStone::message(const Message &amp;m) {
+-        if (m.message == &quot;inner_pull&quot; ) {
+-            return Value(tryInnerPull(to_direction(m.value)));
+-        }
+-        return ConnectiveStone::message(m);
+-    }
+-    
+     bool WindowStone::tryInnerPull(Direction dir) {
+-        DirectionBits faces = get_connections();
++        DirectionBits faces = getFaces();
+         if (!has_dir(faces, dir) &amp;&amp; has_dir(faces, reverse(dir))){
+             Stone *stone = GetStone(move(get_pos(), dir));
+             if (!stone || ((stone-&gt;get_traits().id == st_window) &amp;&amp;  
+-                    !has_dir(dynamic_cast&lt;ConnectiveStone *&gt;(stone)-&gt;get_connections(), reverse(dir)))) {
+-                ReplaceStone(get_pos(), new WindowStone((faces&amp;(~to_bits(reverse(dir)))|to_bits(dir))+1));
++                    !has_dir(stone-&gt;getFaces(), reverse(dir)))) {
++                DirectionBits remainigFaces = (DirectionBits)((faces &amp; ~to_bits(reverse(dir)))
++                        |to_bits(dir));  // move face
++                Object::set_attrib(&quot;$connections&quot;, ALL_DIRECTIONS ^ remainigFaces);     // avoid init of model
++                init_model();
+                 return true;
+             }
+         }
+         return has_dir(faces, dir);
+     }
++    
++    DEF_TRAITSM(WindowStone, &quot;st_window&quot;, st_window, MOVABLE_BREAKABLE);
+ 
+     BOOT_REGISTER_START
+-        BootRegister(new WindowStone(3), &quot;st-window&quot;);    // compatibility window with south face only
+-        BootRegister(new WindowStone(2), &quot;st-window-w&quot;);
+-        BootRegister(new WindowStone(3), &quot;st-window-s&quot;);
+-        BootRegister(new WindowStone(4), &quot;st-window-sw&quot;);
+-        BootRegister(new WindowStone(5), &quot;st-window-e&quot;);
+-        BootRegister(new WindowStone(6), &quot;st-window-ew&quot;);
+-        BootRegister(new WindowStone(7), &quot;st-window-es&quot;);
+-        BootRegister(new WindowStone(8), &quot;st-window-esw&quot;);
+-        BootRegister(new WindowStone(9), &quot;st-window-n&quot;);
+-        BootRegister(new WindowStone(10), &quot;st-window-nw&quot;);
+-        BootRegister(new WindowStone(11), &quot;st-window-ns&quot;);
+-        BootRegister(new WindowStone(12), &quot;st-window-nsw&quot;);
+-        BootRegister(new WindowStone(13), &quot;st-window-ne&quot;);
+-        BootRegister(new WindowStone(14), &quot;st-window-new&quot;);
+-        BootRegister(new WindowStone(15), &quot;st-window-nes&quot;);
+-        BootRegister(new WindowStone(16), &quot;st-window-nesw&quot;);
++        BootRegister(new WindowStone(&quot;s&quot;), &quot;st_window&quot;);    // compatibility window with south face only
++        BootRegister(new WindowStone(&quot;w&quot;), &quot;st_window_w&quot;);
++        BootRegister(new WindowStone(&quot;s&quot;), &quot;st_window_s&quot;);
++        BootRegister(new WindowStone(&quot;sw&quot;), &quot;st_window_sw&quot;);
++        BootRegister(new WindowStone(&quot;e&quot;), &quot;st_window_e&quot;);
++        BootRegister(new WindowStone(&quot;ew&quot;), &quot;st_window_ew&quot;);
++        BootRegister(new WindowStone(&quot;es&quot;), &quot;st_window_es&quot;);
++        BootRegister(new WindowStone(&quot;esw&quot;), &quot;st_window_esw&quot;);
++        BootRegister(new WindowStone(&quot;n&quot;), &quot;st_window_n&quot;);
++        BootRegister(new WindowStone(&quot;nw&quot;), &quot;st_window_nw&quot;);
++        BootRegister(new WindowStone(&quot;ns&quot;), &quot;st_window_ns&quot;);
++        BootRegister(new WindowStone(&quot;nsw&quot;), &quot;st_window_nsw&quot;);
++        BootRegister(new WindowStone(&quot;ne&quot;), &quot;st_window_ne&quot;);
++        BootRegister(new WindowStone(&quot;new&quot;), &quot;st_window_new&quot;);
++        BootRegister(new WindowStone(&quot;nes&quot;), &quot;st_window_nes&quot;);
++        BootRegister(new WindowStone(&quot;nesw&quot;), &quot;st_window_nesw&quot;);
+     BOOT_REGISTER_END
+ 
+ } // namespace enigma
+
+Modified: trunk/src/stones/WindowStone.hh
+===================================================================
+--- trunk/src/stones/WindowStone.hh	2008-01-25 23:13:13 UTC (rev 1005)
++++ trunk/src/stones/WindowStone.hh	2008-01-25 23:30:53 UTC (rev 1006)
+@@ -30,34 +30,39 @@
+ 
+ /* -------------------- Window -------------------- */
+ 
+-/** \page st-window Breakable Stone
++/** \page st_window Breakable Stone
+ 
+ Hit this window heavily with your marble to blast it into smithereens.
+ 
+-\image html st-window.png
++\image html st_window.png
+ */
+ 
+ namespace enigma {
+     
+-    class WindowStone : public ConnectiveStone {
++    class WindowStone : public Stone {
+         CLONEOBJ(WindowStone);
+         DECL_TRAITS;
++    private:
++        enum iState { IDLE, BREAK, FINALBREAK };
++        
++    public:
++        WindowStone(std::string faces);
++        
++        // Object interface
++        virtual Value message(const Message &amp;m);
++
++        // ModelCallback interface
++        void animcb();
++
++        // Stone interface
++        void actor_hit(const StoneContact &amp;sc);
++        StoneResponse collision_response(const StoneContact &amp;sc);
+         const char *collision_sound() {return &quot;glass&quot;;}
+-
+         bool is_transparent (Direction) const { return true; }
+         bool is_floating() const { return state != IDLE; }
+-        enum State { IDLE, BREAK } state;
++        virtual bool is_sticky(const Actor *a) const;
+ 
+-        void actor_hit(const StoneContact &amp;sc);
+-        void animcb();
+ 
+-    public:
+-        WindowStone(int connections) : ConnectiveStone(connections),
+-                state(IDLE), breakingFaces(NODIRBIT) {
+-        }
+-        virtual bool is_sticky(const Actor *a) const;
+-        StoneResponse collision_response(const StoneContact &amp;sc);
+-        virtual Value message(const Message &amp;m);
+     private:
+         DirectionBits breakingFaces;
+         bool tryInnerPull(Direction dir);
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-01-25 23:13:13 UTC (rev 1005)
++++ trunk/src/stones.cc	2008-01-25 23:30:53 UTC (rev 1006)
+@@ -99,7 +99,7 @@
+ - \ref st-bolder
+ - \ref st-puzzle
+ - \ref st-stone_break
+-- \ref st-window
++- \ref st_window
+ - \ref st-break_acwhite
+ - \ref st-break_acblack
+ - \ref st-oneway
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-01-25 23:13:13 UTC (rev 1005)
++++ trunk/src/world.cc	2008-01-25 23:30:53 UTC (rev 1006)
+@@ -27,7 +27,6 @@
+ #include &quot;client.hh&quot;
+ #include &quot;main.hh&quot;
+ #include &quot;stones_internal.hh&quot;
+-#include &quot;stones/ConnectiveStone.hh&quot;
+ #include &quot;WorldProxy.hh&quot;
+ 
+ #include &lt;iostream&gt;
+@@ -631,7 +630,7 @@
+     bool isWindow = stone-&gt;get_traits().id == st_window;
+     DirectionBits wsides;
+     if (isWindow) {
+-        wsides = dynamic_cast&lt;ConnectiveStone *&gt;(stone)-&gt;get_connections();
++        wsides = stone-&gt;getFaces();
+     }
+     
+     const ActorInfo &amp;ai = *a-&gt;get_actorinfo();
+@@ -679,9 +678,9 @@
+             else if ( ycorner &amp;&amp; xoff_neighbour) face = SOUTHBIT;
+             
+             // the faces that the neighbour window owns
+-            ConnectiveStone * neighbour = dynamic_cast&lt;ConnectiveStone *&gt;
+-                    (GetStone(GridPos(x+xoff_neighbour, y+yoff_neighbour)));
+-            DirectionBits face_neighbour = (neighbour) ? neighbour-&gt;get_connections() : NODIRBIT;
++            Stone * neighbour = GetStone(GridPos(x+xoff_neighbour, y+yoff_neighbour));
++            DirectionBits face_neighbour = (neighbour != NULL &amp;&amp; neighbour-&gt;get_traits().id == st_window) 
++                    ? neighbour-&gt;getFaces() : NODIRBIT;
+             
+             
+             if ((winFacesActorStone&amp;face) &amp;&amp; !(face_neighbour&amp;face)) {
+@@ -945,8 +944,9 @@
+     
+     // info about a Window stone on the Gridpos of the actor that may cause
+     // contacts within the grid
+-    ConnectiveStone * actorWinStone = dynamic_cast&lt;ConnectiveStone *&gt;(GetStone(g));
+-    DirectionBits winFacesActorStone = (actorWinStone) ? actorWinStone-&gt;get_connections() : NODIRBIT;
++    Stone * actorWinStone = GetStone(g);
++    DirectionBits winFacesActorStone = (actorWinStone != NULL &amp;&amp; actorWinStone-&gt;get_traits().id == st_window)
++            ? actorWinStone-&gt;getFaces() : NODIRBIT;
+     
+     // distinguish 9 squares within gridpos that may cause contacts
+     // low cost reduction of cases that need to be examined in detail:
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000437.html">[Enigma-game-svn] r1005 - feature_branches/hp_lotm/input/lotm
+</A></li>
+	<LI>Next message: <A HREF="000439.html">[Enigma-game-svn] r1007 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#438">[ date ]</a>
+              <a href="thread.html#438">[ thread ]</a>
+              <a href="subject.html#438">[ subject ]</a>
+              <a href="author.html#438">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,1016 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1210 - in trunk: data data/schemas po src	src/others src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1210%20-%20in%20trunk%3A%20data%20data/schemas%20po%20src%0A%09src/others%20src/stones&In-Reply-To=%3C200807042240.m64Me1bB027975%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000643.html">
+   <LINK REL="Next"  HREF="000645.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1210 - in trunk: data data/schemas po src	src/others src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1210%20-%20in%20trunk%3A%20data%20data/schemas%20po%20src%0A%09src/others%20src/stones&In-Reply-To=%3C200807042240.m64Me1bB027975%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1210 - in trunk: data data/schemas po src	src/others src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Jul  5 00:40:01 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000643.html">[Enigma-game-svn] r1209 - homepage/input
+</A></li>
+        <LI>Next message: <A HREF="000645.html">[Enigma-game-svn] r1211 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#644">[ date ]</a>
+              <a href="thread.html#644">[ thread ]</a>
+              <a href="subject.html#644">[ subject ]</a>
+              <a href="author.html#644">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-07-05 00:39:36 +0200 (Sat, 05 Jul 2008)
+New Revision: 1210
+
+Added:
+   trunk/src/others/Wire.cc
+   trunk/src/others/Wire.hh
+   trunk/src/stones/KnightStone.cc
+   trunk/src/stones/KnightStone.hh
+Removed:
+   trunk/src/others/WireControl.cc
+   trunk/src/others/WireControl.hh
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/po/POTFILES.in
+   trunk/src/Makefile.am
+   trunk/src/items.cc
+   trunk/src/ox_magnum.cc
+   trunk/src/ox_oxyd1.cc
+   trunk/src/stones/BoulderStone.cc
+   trunk/src/stones/LightPassengerStone.cc
+   trunk/src/stones_simple.cc
+Log:
+Trunk 1.1: new API reengineering
+- rename ot_wirecontrol to ot_wire
+- enable lightpassenger to propagate wire impulses
+- enable bouder to propagate wire impulses
+- reengineering rubberband item:
+  - rename: it-rubberband to it_rubberband
+  - rename attribute &quot;target&quot; to &quot;anchor2&quot;
+  - rename attribute &quot;minlength&quot; to &quot;threshold&quot;
+  - add attributes &quot;min&quot; and &quot;max&quot;
+- reengineering knight stone
+  - rename st-knight to st_knight
+  - read only state of 0 to 4
+  - I18N knight message
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-07-04 20:23:28 UTC (rev 1209)
++++ trunk/data/api1init.lua	2008-07-04 22:39:36 UTC (rev 1210)
+@@ -62,6 +62,7 @@
+     it_magnet = &quot;it-magnet&quot;,
+     it_magnet_on = &quot;it-magnet-on&quot;,
+     it_magnet_off = &quot;it-magnet-off&quot;,
++    it_rubberband = &quot;it-rubberband&quot;,
+     it_sword = &quot;it-sword&quot;,
+     it_trap = &quot;it-abyss&quot;,
+     it_trigger = &quot;it-trigger&quot;,
+@@ -121,6 +122,7 @@
+     st_death_invisible = &quot;st-death_invisible&quot;,
+     st_floppy = &quot;st-floppy&quot;,
+     st_fourswitch = &quot;st-fourswitch&quot;,
++    st_knight = &quot;st-knight&quot;,
+     st_laser_w = &quot;st-laser-w&quot;,
+     st_laser_s = &quot;st-laser-s&quot;,
+     st_laser_e = &quot;st-laser-e&quot;,
+@@ -377,9 +379,12 @@
+      if key == &quot;gradient_factor&quot; then
+          _key = &quot;gradient&quot;
+      end
+-     if key == &quot;minlength&quot; and (_obj_name == &quot;st-rubberband&quot;)  then
++     if key == &quot;minlength&quot;  then
+          _key = &quot;threshold&quot;
+      end
++     if key == &quot;target&quot; and (_obj_name == &quot;it-rubberband&quot;) then
++         _key = &quot;anchor2&quot;
++     end
+      if key == &quot;targetx&quot; then
+          local d = enigma._GetAttrib(obj, &quot;destination&quot;)
+          if (en.usertype(d) == &quot;position&quot;) then
+@@ -459,9 +464,12 @@
+      if key == &quot;gradient_factor&quot; then
+          _key = &quot;gradient&quot;
+      end
+-     if key == &quot;minlength&quot; and (_obj_name == &quot;st-rubberband&quot;)  then
++     if key == &quot;minlength&quot;  then
+          _key = &quot;threshold&quot;
+      end
++     if key == &quot;target&quot; and (_obj_name == &quot;it-rubberband&quot;) then
++         _key = &quot;anchor2&quot;
++     end
+      if key == &quot;blackball&quot; or key == &quot;whiteball&quot; then
+          _key = &quot;color&quot;
+      end
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-07-04 20:23:28 UTC (rev 1209)
++++ trunk/data/models-2d.lua	2008-07-04 22:39:36 UTC (rev 1210)
+@@ -408,7 +408,6 @@
+         &quot;it-pencil&quot;,
+         &quot;it-pin&quot;,
+         &quot;it-ring&quot;,
+-        &quot;it-rubberband&quot;,
+         &quot;it-spade&quot;,
+         &quot;it-spoon&quot;,
+         &quot;it-squashed&quot;,
+@@ -437,6 +436,7 @@
+     DefImage(&quot;it_hammer&quot;, {filename=&quot;it-hammer&quot;})
+     DefImage(&quot;it_key&quot;, {filename=&quot;it-key&quot;})
+     DefImage(&quot;it_landmine&quot;, {filename=&quot;it-landmine&quot;})
++    DefImage(&quot;it_rubberband&quot;, {filename=&quot;it-rubberband&quot;})
+     DefImage(&quot;it_sword&quot;, {filename=&quot;it-sword&quot;})
+     DefImage(&quot;it_umbrella&quot;, {filename=&quot;it-umbrella&quot;})
+     DefImage(&quot;it_wrench&quot;, {filename=&quot;it-wrench&quot;})
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-07-04 20:23:28 UTC (rev 1209)
++++ trunk/data/schemas/objects.xml	2008-07-04 22:39:36 UTC (rev 1210)
+@@ -165,6 +165,15 @@
+       &lt;msg name=&quot;_glasses&quot;/&gt;
+       &lt;msg name=&quot;_hit&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;it_rubberband&quot;&gt;
++      &lt;attr name=&quot;anchor2&quot;/&gt;
++      &lt;attr name=&quot;strength&quot; default=&quot;10&quot;/&gt;
++      &lt;attr name=&quot;length&quot;/&gt;
++      &lt;attr name=&quot;threshold&quot;/&gt;
++      &lt;attr name=&quot;max&quot;/&gt;
++      &lt;attr name=&quot;min&quot;/&gt;
++      &lt;attr name=&quot;scissor&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;it_sword&quot;/&gt;
+     &lt;object name=&quot;it_sword_new&quot; init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;it_trigger&quot;&gt;
+@@ -229,7 +238,7 @@
+       &lt;attr name=&quot;max&quot;/&gt;
+       &lt;attr name=&quot;min&quot;/&gt;
+     &lt;/object&gt;
+-    &lt;object name=&quot;ot_wirecontrol&quot;&gt;
++    &lt;object name=&quot;ot_wire&quot;&gt;
+       &lt;attr name=&quot;anchor1&quot;/&gt;
+       &lt;attr name=&quot;anchor2&quot;/&gt;
+     &lt;/object&gt;
+@@ -423,6 +432,9 @@
+       &lt;msg name=&quot;off&quot;/&gt;
+       &lt;msg name=&quot;signal&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_knight&quot;&gt;
++      &lt;attr name=&quot;state&quot; max=&quot;4&quot; rw=&quot;r&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_laser&quot;&gt;
+       &lt;attr name=&quot;counterclock&quot;/&gt;
+       &lt;attr name=&quot;orientation&quot;/&gt;
+
+Modified: trunk/po/POTFILES.in
+===================================================================
+--- trunk/po/POTFILES.in	2008-07-04 20:23:28 UTC (rev 1209)
++++ trunk/po/POTFILES.in	2008-07-04 22:39:36 UTC (rev 1210)
+@@ -20,4 +20,5 @@
+ src/d_models.cc
+ src/PreferenceManager.cc
+ src/StateManager.cc
++src/stones/KnightStone.cc
+ po/level_i18n.cc
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-07-04 20:23:28 UTC (rev 1209)
++++ trunk/src/Makefile.am	2008-07-04 22:39:36 UTC (rev 1210)
+@@ -201,8 +201,8 @@
+ 	others/Other.hh		\
+ 	others/Rubberband.cc	\
+ 	others/Rubberband.hh	\
+-	others/WireControl.cc	\
+-	others/WireControl.hh	\
++	others/Wire.cc		\
++	others/Wire.hh		\
+ 	stones/ActorImpulseStone.cc	\
+ 	stones/ActorImpulseStone.hh	\
+ 	stones/BlockerStone.cc	\
+@@ -225,6 +225,8 @@
+ 	stones/FourSwitch.hh	\
+ 	stones/KeySwitch.cc	\
+ 	stones/KeySwitch.hh	\
++	stones/KnightStone.cc	\
++	stones/KnightStone.hh	\
+ 	stones/LaserStone.cc	\
+ 	stones/LaserStone.hh	\
+ 	stones/LaserSwitch.cc	\
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-07-04 20:23:28 UTC (rev 1209)
++++ trunk/src/items.cc	2008-07-04 22:39:36 UTC (rev 1210)
+@@ -4166,52 +4166,66 @@
+ }
+ 
+ /* -------------------- Rubberband Item-------------------- */
+-namespace
+-{
+     class RubberbandItem : public Item {
+         CLONEOBJ(RubberbandItem);
+         DECL_TRAITS;
+ 
+-        ItemAction activate(Actor *a, GridPos p) {
+-            // TODO: Multiple Targets!
+-            // TODO: Target for black and target for white marble?
+-            // TODO: MultiplayerGame: Defaulttarget is second actor!
++    public:
++        RubberbandItem();
+ 
+-            // Get actor or stone with the name, given in &quot;connect_to&quot;:
+-            Object *anchor2 = getAttr(&quot;target&quot;);
+-            
+-            // Target does NOT exist, Drop Item
+-            if (anchor2 == NULL)
+-                return ITEM_DROP;
+-                
+-            // The mode attribute &quot;scissor&quot; defines, if when using an it-rubberband,
+-            // other rubberbands to the actor will be cut of or not, true means they will. false is default.
+-            bool isScissor = to_bool(getAttr(&quot;scissor&quot;));
++        // Object interface
++        virtual std::string getClass() const;
+ 
+-            if (isScissor)
+-                SendMessage(a, &quot;disconnect&quot;);
++        // Item interface
++        virtual ItemAction activate(Actor* a, GridPos p);
++};
++    
++    RubberbandItem::RubberbandItem() {
++    }
++    
++    std::string RubberbandItem::getClass() const {
++        return &quot;it_rubberband&quot;;
++    }
++    
++    ItemAction RubberbandItem::activate(Actor *a, GridPos p) {
++        // TODO: Multiple Targets!
++        // TODO: Target for black and target for white marble?
++        // TODO: MultiplayerGame: Defaulttarget is second actor!
+ 
+-            sound_event (&quot;rubberband&quot;);
++        // Get actor or stone with the name, given in &quot;connect_to&quot;:
++        Object *anchor2 = getAttr(&quot;anchor2&quot;);
++        
++        // Target does NOT exist, Drop Item
++        if (anchor2 == NULL)
++            return ITEM_DROP;
+             
+-            if (anchor2 != a) { // It's not allowed to connect a rubberband to self.
+-                Object *obj = MakeObject(&quot;ot_rubberband&quot;);
+-                obj-&gt;setAttr(&quot;anchor1&quot;, a);
+-                obj-&gt;setAttr(&quot;anchor2&quot;, anchor2);
+-                obj-&gt;setAttr(&quot;strength&quot;, getDefaultedAttr(&quot;strength&quot;, 10.0));
+-                obj-&gt;setAttr(&quot;length&quot;, getDefaultedAttr(&quot;length&quot;, 1.0));
+-                obj-&gt;setAttr(&quot;threshold&quot;, getDefaultedAttr(&quot;minlength&quot;, 0.0));
+-                AddOther(dynamic_cast&lt;Other *&gt;(obj));
+-            }
++        // The mode attribute &quot;scissor&quot; defines, if when using an it-rubberband,
++        // other rubberbands to the actor will be cut of or not, true means they will. false is default.
++        bool isScissor = to_bool(getAttr(&quot;scissor&quot;));
+ 
+-            return ITEM_KILL;
++        if (isScissor)
++            SendMessage(a, &quot;disconnect&quot;);
++
++        sound_event (&quot;rubberband&quot;);
++        
++        if (anchor2 != a) { // It's not allowed to connect a rubberband to self.
++            Object *obj = MakeObject(&quot;ot_rubberband&quot;);
++            obj-&gt;setAttr(&quot;anchor1&quot;, a);
++            obj-&gt;setAttr(&quot;anchor2&quot;, anchor2);
++            obj-&gt;setAttr(&quot;strength&quot;, getAttr(&quot;strength&quot;));
++            obj-&gt;setAttr(&quot;length&quot;, getAttr(&quot;length&quot;));
++            obj-&gt;setAttr(&quot;threshold&quot;, getAttr(&quot;threshold&quot;));
++            obj-&gt;setAttr(&quot;max&quot;, getAttr(&quot;max&quot;));
++            obj-&gt;setAttr(&quot;min&quot;, getAttr(&quot;min&quot;));
++            AddOther(dynamic_cast&lt;Other *&gt;(obj));
+         }
+ 
+-    public:
+-        RubberbandItem() {}
+-    };
+-    DEF_TRAITS(RubberbandItem, &quot;it-rubberband&quot;, it_rubberband);
+-}
++        return ITEM_KILL;
++    }
++    
++    DEF_TRAITS(RubberbandItem, &quot;it_rubberband&quot;, it_rubberband);
+ 
++
+ /* -------------------- Functions -------------------- */
+ 
+ void InitItems()
+@@ -4272,6 +4286,7 @@
+     Pipe::setup();
+     Puller::setup();
+     RegisterItem (new Ring);
++    RegisterItem (new RubberbandItem);
+     RegisterItem (new SeedWood);
+     RegisterItem (new SeedNowood);
+     RegisterItem (new SeedVolcano);
+@@ -4304,7 +4319,6 @@
+     RegisterItem (new WormHole(true));
+     Register (&quot;it_wormhole&quot;, new WormHole(true));
+     RegisterItem (new YinYang);
+-    RegisterItem (new RubberbandItem);
+ }
+ 
+ } // namespace enigma
+
+Copied: trunk/src/others/Wire.cc (from rev 1204, trunk/src/others/WireControl.cc)
+===================================================================
+--- trunk/src/others/WireControl.cc	2008-07-02 22:27:58 UTC (rev 1204)
++++ trunk/src/others/Wire.cc	2008-07-04 22:39:36 UTC (rev 1210)
+@@ -0,0 +1,116 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;others/Wire.hh&quot;
++#include &quot;errors.hh&quot;
++#include &quot;main.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    Wire::Wire() {
++    }
++    
++    std::string Wire::getClass() const {
++        return &quot;ot_wire&quot;;
++    }
++
++    void Wire::setAttr(const std::string &amp;key, const Value &amp;val) {
++        if (key == &quot;anchor1&quot;) {
++            Stone *old = anchor1;
++            anchor1 = dynamic_cast&lt;Stone *&gt;((Object *)val);
++            ASSERT(anchor1 != NULL, XLevelRuntime, &quot;Wire: 'anchor1' is no stone&quot;);
++            ASSERT(anchor1 != anchor2, XLevelRuntime, &quot;Wire: 'anchor1' is identical to 'anchor2'&quot;);
++            switchAnchor(old, anchor1, anchor2);
++        } else if (key == &quot;anchor2&quot;) {
++            Stone * old = anchor2;
++            anchor2 = dynamic_cast&lt;Stone *&gt;((Object *)val);
++            ASSERT(anchor2 != NULL, XLevelRuntime, &quot;Wire: 'anchor2' is no stone&quot;);
++            ASSERT(anchor2 != anchor1, XLevelRuntime, &quot;Wire: 'anchor1' is identical to 'anchor2'&quot;);
++            switchAnchor(old, anchor2, anchor1);
++        }
++        Other::setAttr(key, val);
++    }
++    
++    Value Wire::getAttr(const std::string &amp;key) const {
++        if (key == &quot;anchor1&quot;) {
++            return anchor1;
++        } else if (key == &quot;anchor2&quot;) {
++            return anchor2;
++        }
++        return Other::getAttr(key);
++    }
++    
++    void Wire::postAddition() {
++        model = display::AddRubber(anchor1-&gt;getOwnerPos().center(), anchor2-&gt;getOwnerPos().center(), 200, 50, 150);    // purple
++    }
++    
++    void Wire::preRemoval() {
++        model.kill();
++        switchAnchor(anchor1, NULL, anchor2);
++        switchAnchor(anchor2, NULL, anchor1);        
++    }
++    
++    void Wire::tick(double dt) {  // TODO maybe we should let the stones inform the wires on every move
++        model.update_first(anchor1-&gt;getOwnerPos().center());
++        model.update_second(anchor2-&gt;getOwnerPos().center());
++    }
++    
++    
++    void Wire::switchAnchor(Object *oldAnchor, Object *newAnchor, Object *otherAnchor) {
++        if (oldAnchor != NULL) {
++            ObjectList olist = oldAnchor-&gt;getAttr(&quot;wires&quot;);
++            olist.remove(this);
++            oldAnchor-&gt;setAttr(&quot;wires&quot;, olist);
++            if (otherAnchor != NULL) {
++                // remove both anchors from each others fellows list
++                olist = oldAnchor-&gt;getAttr(&quot;fellows&quot;);
++                ObjectList::iterator it = find(olist.begin(), olist.end(), otherAnchor);
++                if (it != olist.end()) {
++                    olist.erase(it);
++                }
++                oldAnchor-&gt;setAttr(&quot;fellows&quot;, olist);
++                olist = otherAnchor-&gt;getAttr(&quot;fellows&quot;);
++                it = find(olist.begin(), olist.end(), oldAnchor);
++                if (it != olist.end()) {
++                    olist.erase(it);
++                }
++                otherAnchor-&gt;setAttr(&quot;fellows&quot;, olist);
++            }            
++        }
++        if (newAnchor != NULL) {
++            ObjectList olist = newAnchor-&gt;getAttr(&quot;wires&quot;);
++            olist.push_back(this);
++            newAnchor-&gt;setAttr(&quot;wires&quot;, olist);
++            if (otherAnchor != NULL) {
++                // add both anchors to each others fellows list
++                olist = newAnchor-&gt;getAttr(&quot;fellows&quot;);
++                olist.push_back(otherAnchor);
++                newAnchor-&gt;setAttr(&quot;fellows&quot;, olist);
++                olist = otherAnchor-&gt;getAttr(&quot;fellows&quot;);
++                olist.push_back(newAnchor);
++                otherAnchor-&gt;setAttr(&quot;fellows&quot;, olist);
++            }
++        }
++    }
++
++    BOOT_REGISTER_START
++        BootRegister(new Wire(), &quot;ot_wire&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+Copied: trunk/src/others/Wire.hh (from rev 1204, trunk/src/others/WireControl.hh)
+===================================================================
+--- trunk/src/others/WireControl.hh	2008-07-02 22:27:58 UTC (rev 1204)
++++ trunk/src/others/Wire.hh	2008-07-04 22:39:36 UTC (rev 1210)
+@@ -0,0 +1,57 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef WIRE_HH_INCLUDED
++#define WIRE_HH_INCLUDED
++
++#include &quot;others/Other.hh&quot;
++#include &quot;display.hh&quot;
++#include &quot;stones.hh&quot;
++
++/* -------------------- Other -------------------- */
++
++
++namespace enigma {
++    
++    class Wire : public Other {
++        CLONEOBJ(Wire)
++
++    public:
++        Wire();
++        
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const std::string &amp;key, const Value &amp;val);
++        virtual Value getAttr(const std::string &amp;key) const;
++        
++        // Other interface
++        virtual void postAddition();
++        virtual void preRemoval();
++        virtual void tick(double dt);
++        
++    private:
++        Stone * anchor1;
++        Stone * anchor2;
++        display::RubberHandle model;
++        
++        void switchAnchor(Object *oldAnchor, Object *newAnchor, Object *otherAnchor);
++    };
++
++} // namespace enigma
++
++#endif
+
+Deleted: trunk/src/others/WireControl.cc
+===================================================================
+--- trunk/src/others/WireControl.cc	2008-07-04 20:23:28 UTC (rev 1209)
++++ trunk/src/others/WireControl.cc	2008-07-04 22:39:36 UTC (rev 1210)
+@@ -1,116 +0,0 @@
+-/*
+- * Copyright (C) 2008 Ronald Lamprecht
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License
+- * as published by the Free Software Foundation; either version 2
+- * of the License, or (at your option) any later version.
+- *  
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along
+- * with this program; if not, write to the Free Software Foundation, Inc.,
+- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+- *
+- */
+-
+-#include &quot;others/WireControl.hh&quot;
+-#include &quot;errors.hh&quot;
+-#include &quot;main.hh&quot;
+-#include &quot;world.hh&quot;
+-
+-namespace enigma {
+-    WireControl::WireControl() {
+-    }
+-    
+-    std::string WireControl::getClass() const {
+-        return &quot;ot_wirecontrol&quot;;
+-    }
+-
+-    void WireControl::setAttr(const std::string &amp;key, const Value &amp;val) {
+-        if (key == &quot;anchor1&quot;) {
+-            Stone *old = anchor1;
+-            anchor1 = dynamic_cast&lt;Stone *&gt;((Object *)val);
+-            ASSERT(anchor1 != NULL, XLevelRuntime, &quot;WireControl: 'anchor1' is no stone&quot;);
+-            ASSERT(anchor1 != anchor2, XLevelRuntime, &quot;WireControl: 'anchor1' is identical to 'anchor2'&quot;);
+-            switchAnchor(old, anchor1, anchor2);
+-        } else if (key == &quot;anchor2&quot;) {
+-            Stone * old = anchor2;
+-            anchor2 = dynamic_cast&lt;Stone *&gt;((Object *)val);
+-            ASSERT(anchor2 != NULL, XLevelRuntime, &quot;WireControl: 'anchor2' is no stone&quot;);
+-            ASSERT(anchor2 != anchor1, XLevelRuntime, &quot;WireControl: 'anchor1' is identical to 'anchor2'&quot;);
+-            switchAnchor(old, anchor2, anchor1);
+-        }
+-        Other::setAttr(key, val);
+-    }
+-    
+-    Value WireControl::getAttr(const std::string &amp;key) const {
+-        if (key == &quot;anchor1&quot;) {
+-            return anchor1;
+-        } else if (key == &quot;anchor2&quot;) {
+-            return anchor2;
+-        }
+-        return Other::getAttr(key);
+-    }
+-    
+-    void WireControl::postAddition() {
+-        model = display::AddRubber(anchor1-&gt;getOwnerPos().center(), anchor2-&gt;getOwnerPos().center(), 200, 50, 150);    // purple
+-    }
+-    
+-    void WireControl::preRemoval() {
+-        model.kill();
+-        switchAnchor(anchor1, NULL, anchor2);
+-        switchAnchor(anchor2, NULL, anchor1);        
+-    }
+-    
+-    void WireControl::tick(double dt) {  // TODO maybe we should let the stones inform the wires on every move
+-        model.update_first(anchor1-&gt;getOwnerPos().center());
+-        model.update_second(anchor2-&gt;getOwnerPos().center());
+-    }
+-    
+-    
+-    void WireControl::switchAnchor(Object *oldAnchor, Object *newAnchor, Object *otherAnchor) {
+-        if (oldAnchor != NULL) {
+-            ObjectList olist = oldAnchor-&gt;getAttr(&quot;wires&quot;);
+-            olist.remove(this);
+-            oldAnchor-&gt;setAttr(&quot;wires&quot;, olist);
+-            if (otherAnchor != NULL) {
+-                // remove both anchors from each others fellows list
+-                olist = oldAnchor-&gt;getAttr(&quot;fellows&quot;);
+-                ObjectList::iterator it = find(olist.begin(), olist.end(), otherAnchor);
+-                if (it != olist.end()) {
+-                    olist.erase(it);
+-                }
+-                oldAnchor-&gt;setAttr(&quot;fellows&quot;, olist);
+-                olist = otherAnchor-&gt;getAttr(&quot;fellows&quot;);
+-                it = find(olist.begin(), olist.end(), oldAnchor);
+-                if (it != olist.end()) {
+-                    olist.erase(it);
+-                }
+-                otherAnchor-&gt;setAttr(&quot;fellows&quot;, olist);
+-            }            
+-        }
+-        if (newAnchor != NULL) {
+-            ObjectList olist = newAnchor-&gt;getAttr(&quot;wires&quot;);
+-            olist.push_back(this);
+-            newAnchor-&gt;setAttr(&quot;wires&quot;, olist);
+-            if (otherAnchor != NULL) {
+-                // add both anchors to each others fellows list
+-                olist = newAnchor-&gt;getAttr(&quot;fellows&quot;);
+-                olist.push_back(otherAnchor);
+-                newAnchor-&gt;setAttr(&quot;fellows&quot;, olist);
+-                olist = otherAnchor-&gt;getAttr(&quot;fellows&quot;);
+-                olist.push_back(newAnchor);
+-                otherAnchor-&gt;setAttr(&quot;fellows&quot;, olist);
+-            }
+-        }
+-    }
+-
+-    BOOT_REGISTER_START
+-        BootRegister(new WireControl(), &quot;ot_wirecontrol&quot;);
+-    BOOT_REGISTER_END
+-
+-} // namespace enigma
+
+Deleted: trunk/src/others/WireControl.hh
+===================================================================
+--- trunk/src/others/WireControl.hh	2008-07-04 20:23:28 UTC (rev 1209)
++++ trunk/src/others/WireControl.hh	2008-07-04 22:39:36 UTC (rev 1210)
+@@ -1,57 +0,0 @@
+-/*
+- * Copyright (C) 2008 Ronald Lamprecht
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License
+- * as published by the Free Software Foundation; either version 2
+- * of the License, or (at your option) any later version.
+- *  
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License along
+- * with this program; if not, write to the Free Software Foundation, Inc.,
+- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+- *
+- */
+-#ifndef WIRECONTROL_HH_INCLUDED
+-#define WIRECONTROL_HH_INCLUDED
+-
+-#include &quot;others/Other.hh&quot;
+-#include &quot;display.hh&quot;
+-#include &quot;stones.hh&quot;
+-
+-/* -------------------- Other -------------------- */
+-
+-
+-namespace enigma {
+-    
+-    class WireControl : public Other {
+-        CLONEOBJ(WireControl)
+-
+-    public:
+-        WireControl();
+-        
+-        // Object interface
+-        virtual std::string getClass() const;
+-        virtual void setAttr(const std::string &amp;key, const Value &amp;val);
+-        virtual Value getAttr(const std::string &amp;key) const;
+-        
+-        // Other interface
+-        virtual void postAddition();
+-        virtual void preRemoval();
+-        virtual void tick(double dt);
+-        
+-    private:
+-        Stone * anchor1;
+-        Stone * anchor2;
+-        display::RubberHandle model;
+-        
+-        void switchAnchor(Object *oldAnchor, Object *newAnchor, Object *otherAnchor);
+-    };
+-
+-} // namespace enigma
+-
+-#endif
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2008-07-04 20:23:28 UTC (rev 1209)
++++ trunk/src/ox_magnum.cc	2008-07-04 22:39:36 UTC (rev 1210)
+@@ -172,7 +172,7 @@
+     &quot;st_fourswitch&quot;,            // OxydMagnum stone 0x2f (Level 89 and 92)
+     &quot;st_key&quot;,                   // OxydMagnum stone 0x30
+     &quot;st_floppy&quot;,                // OxydMagnum stone 0x31
+-    &quot;st-knight&quot;,                // OxydMagnum stone 0x32
++    &quot;st_knight&quot;,                // OxydMagnum stone 0x32
+     &quot;st_fourswitch&quot;,            // OxydMagnum stone 0x33 (Level 51 and 100)
+     &quot;st_death&quot;,                 // OxydMagnum stone 0x34
+     &quot;st_death_invisible&quot;,       // OxydMagnum stone 0x35
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2008-07-04 20:23:28 UTC (rev 1209)
++++ trunk/src/ox_oxyd1.cc	2008-07-04 22:39:36 UTC (rev 1210)
+@@ -202,7 +202,7 @@
+     &quot;st_fourswitch&quot;,            // Oxyd1 stone 0x2f
+     &quot;st_key&quot;,                   // Oxyd1 stone 0x30
+     &quot;st_floppy&quot;,                // Oxyd1 stone 0x31
+-    &quot;st-knight&quot;,                // Oxyd1 stone 0x32
++    &quot;st_knight&quot;,                // Oxyd1 stone 0x32
+     0,                          // Oxyd1 stone 0x33 oscillator (properties set in oxyd.cc)
+     &quot;st_death&quot;,                 // Oxyd1 stone 0x34
+     &quot;st_death_invisible&quot;,       // Oxyd1 stone 0x35
+
+Modified: trunk/src/stones/BoulderStone.cc
+===================================================================
+--- trunk/src/stones/BoulderStone.cc	2008-07-04 20:23:28 UTC (rev 1209)
++++ trunk/src/stones/BoulderStone.cc	2008-07-04 22:39:36 UTC (rev 1210)
+@@ -158,6 +158,7 @@
+             setDir(impulse.dir);  // activate
+         }
+         move_stone(impulse.dir);  // due to rotator and impulsestone
++        propagateImpulse(impulse);
+     }
+ 
+     Direction BoulderStone::getDir() const {
+
+Added: trunk/src/stones/KnightStone.cc
+===================================================================
+--- trunk/src/stones/KnightStone.cc	2008-07-04 20:23:28 UTC (rev 1209)
++++ trunk/src/stones/KnightStone.cc	2008-07-04 22:39:36 UTC (rev 1210)
+@@ -0,0 +1,77 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/KnightStone.hh&quot;
++
++#include &quot;client.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;nls.hh&quot;
++#include &quot;player.hh&quot;
++
++namespace enigma {
++
++    KnightStone::KnightStone() : Stone() {
++    }
++    
++    std::string KnightStone::getClass() const {
++        return &quot;st_knight&quot;;
++    }
++
++    int KnightStone::maxState() const {
++        return 4;  // dir representing state
++    }
++
++    void KnightStone::setState(int extState) {
++        // no write access
++    }
++     
++    void KnightStone::init_model()  {
++        set_model(ecl::strf(&quot;st-knight%d&quot;, state + 1));
++    }
++    
++    StoneResponse KnightStone::collision_response(const StoneContact &amp;) {
++        return (state == maxState()) ? STONE_PASS : STONE_REBOUND;
++    }
++    
++    void KnightStone::actor_hit(const StoneContact &amp;sc) {
++        if (state != maxState()) {
++            if (player::WieldedItemIs(sc.actor, &quot;it_sword&quot;)) {
++                state += 1;
++                if (state == maxState()) {
++                    client::Msg_ShowText(N_(&quot;All right, we'll call it a draw&quot;), false, 4.0);
++                }
++                init_model();
++            } else {
++                SendMessage(sc.actor, &quot;shatter&quot;);
++            }
++        }
++    }
++    
++    bool KnightStone::is_floating() const {
++         return state == maxState();
++    }
++
++    DEF_TRAITSM(KnightStone, &quot;st_knight&quot;, st_knight, MOVABLE_PERSISTENT);
++    
++    BOOT_REGISTER_START
++        BootRegister(new KnightStone(), &quot;st_knight&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/KnightStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/KnightStone.hh
+===================================================================
+--- trunk/src/stones/KnightStone.hh	2008-07-04 20:23:28 UTC (rev 1209)
++++ trunk/src/stones/KnightStone.hh	2008-07-04 22:39:36 UTC (rev 1210)
+@@ -0,0 +1,59 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef KNIGHTSTONE_HH
++#define KNIGHTSTONE_HH
++
++#include &quot;stones.hh&quot;
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     * 
++     */
++    class KnightStone : public Stone {
++         CLONEOBJ(KnightStone);
++         DECL_TRAITS;
++    private:
++        enum iState {
++        };
++
++    public:
++        KnightStone();
++
++        // Object interface
++        virtual std::string getClass() const;
++        
++        // StateObject interface
++        virtual int maxState() const;
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        
++        // Stone interface
++        virtual StoneResponse collision_response(const StoneContact &amp;sc);
++        virtual void actor_hit(const StoneContact &amp;sc);
++        virtual bool is_floating() const;
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/KnightStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones/LightPassengerStone.cc
+===================================================================
+--- trunk/src/stones/LightPassengerStone.cc	2008-07-04 20:23:28 UTC (rev 1209)
++++ trunk/src/stones/LightPassengerStone.cc	2008-07-04 22:39:36 UTC (rev 1210)
+@@ -170,8 +170,10 @@
+     void LightPassengerStone::on_impulse(const Impulse&amp; impulse) {
+         Actor *a = dynamic_cast&lt;Actor*&gt;(impulse.sender);
+         if (a == NULL &amp;&amp; ((objFlags &amp; OBJBIT_LIGHTNEWDIRS) == NODIRBIT || state == OFF 
+-                || server::GameCompatibility != GAMET_ENIGMA))
++                || server::GameCompatibility != GAMET_ENIGMA)) {
+             move_stone(impulse.dir);
++            propagateImpulse(impulse);
++        }
+     }
+     
+     void LightPassengerStone::alarm() {
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-07-04 20:23:28 UTC (rev 1209)
++++ trunk/src/stones_simple.cc	2008-07-04 22:39:36 UTC (rev 1210)
+@@ -1758,45 +1758,6 @@
+     };
+ }
+ 
+-
+-/* -------------------- Knight stone -------------------- */
+-namespace
+-{
+-    class Knight : public Stone {
+-        CLONEOBJ(Knight);
+-        DECL_TRAITS;
+-
+-        int subtype;
+-        enum {MIN_SUBTYPE=1, MAX_SUBTYPE=5};
+-
+-        StoneResponse collision_response(const StoneContact &amp;) {
+-            return (subtype == MAX_SUBTYPE) ? STONE_PASS : STONE_REBOUND;
+-        }
+-        void actor_hit(const StoneContact &amp;sc)
+-        {
+-            if (subtype != MAX_SUBTYPE) {
+-                if (player::WieldedItemIs (sc.actor, &quot;it_sword&quot;)) {
+-                    subtype += 1;
+-                    if (subtype == MAX_SUBTYPE) {
+-                        client::Msg_ShowText (&quot;All right, we'll call it a draw&quot;, false, 4.0);
+-		    }
+-                    init_model();
+-                } else {
+-                    SendMessage(sc.actor, &quot;shatter&quot;);
+-                }
+-            }
+-        }
+-        void init_model() {
+-            set_model(ecl::strf(&quot;st-knight%d&quot;, subtype));
+-        }
+-        bool is_floating() const { return subtype == MAX_SUBTYPE; }
+-    public:
+-        Knight() : subtype (MIN_SUBTYPE) {}
+-    };
+-    DEF_TRAITSM(Knight, &quot;st-knight&quot;, st_knight, MOVABLE_BREAKABLE);
+-}
+-
+-
+ /* -------------------- Fire breakable stones -------------------- */
+ 
+ /* These stones mimic the behaviour of the plain-looking stones in
+@@ -1932,7 +1893,6 @@
+     Register(new Grate2);
+     Register(new Grate3);
+     Register(new InvisibleMagic);
+-    Register(new Knight);
+     Register(new LaserBreakable);
+     Register(new MagicStone);
+     Register(new Stone_break(&quot;st-stone_break&quot;));
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000643.html">[Enigma-game-svn] r1209 - homepage/input
+</A></li>
+	<LI>Next message: <A HREF="000645.html">[Enigma-game-svn] r1211 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#644">[ date ]</a>
+              <a href="thread.html#644">[ thread ]</a>
+              <a href="subject.html#644">[ subject ]</a>
+              <a href="author.html#644">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

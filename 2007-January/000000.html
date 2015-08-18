@@ -1,0 +1,213 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r560 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r560%20-%20trunk/src&In-Reply-To=%3C200701012036.l01Kauo0014146%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   
+   <LINK REL="Next"  HREF="000001.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r560 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r560%20-%20trunk/src&In-Reply-To=%3C200701012036.l01Kauo0014146%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r560 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon Jan  1 21:36:56 CET 2007</I>
+    <P><UL>
+        
+        <LI>Next message: <A HREF="000001.html">[Enigma-game-svn] r561 - in branches/1.0: data/levels/enigma_iii src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#0">[ date ]</a>
+              <a href="thread.html#0">[ thread ]</a>
+              <a href="subject.html#0">[ subject ]</a>
+              <a href="author.html#0">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-01-01 21:36:55 +0100 (Mon, 01 Jan 2007)
+New Revision: 560
+
+Modified:
+   trunk/src/display.cc
+   trunk/src/display.hh
+   trunk/src/main.cc
+   trunk/src/stones.hh
+   trunk/src/world.cc
+   trunk/src/world.hh
+   trunk/src/world_internal.hh
+Log:
+developer support:
+- new commandline option &quot;--showfps&quot;
+- fix crashes on level border transitions with switched off collision handling
+
+
+Modified: trunk/src/display.cc
+===================================================================
+--- trunk/src/display.cc	2006-12-31 21:44:41 UTC (rev 559)
++++ trunk/src/display.cc	2007-01-01 20:36:55 UTC (rev 560)
+@@ -2023,7 +2023,9 @@
+ 
+ /* -------------------- Global functions -------------------- */
+ 
+-void display::Init() {
++void display::Init(bool show_fps) {
++    if (show_fps)        // keep ShowFPS on false for screen resolution changes
++        ShowFPS = true;  
+     InitModels();
+ 
+     const video::VMInfo *vminfo = video::GetInfo();
+
+Modified: trunk/src/display.hh
+===================================================================
+--- trunk/src/display.hh	2006-12-31 21:44:41 UTC (rev 559)
++++ trunk/src/display.hh	2007-01-01 20:36:55 UTC (rev 560)
+@@ -230,7 +230,7 @@
+     void ToggleFlag(DisplayFlags flag);
+ 
+ 
+-    void Init();
++    void Init(bool show_fps = false);
+     void Shutdown();
+ 
+     void            NewWorld (int w, int h);
+
+Modified: trunk/src/main.cc
+===================================================================
+--- trunk/src/main.cc	2006-12-31 21:44:41 UTC (rev 559)
++++ trunk/src/main.cc	2007-01-01 20:36:55 UTC (rev 560)
+@@ -136,7 +136,7 @@
+ 
+         // Variables.
+         bool nosound, nomusic, show_help, show_version, do_log, do_assert, force_window;
+-        bool dumpinfo, makepreview;
++        bool dumpinfo, makepreview, show_fps;
+         string gamename;
+         string datapath;
+         string preffilename;
+@@ -162,7 +162,7 @@
+ AP::AP() : ArgParser (app.args.begin(), app.args.end())
+ {
+     nosound  = nomusic = show_help = show_version = do_log = do_assert = force_window = false;
+-    dumpinfo = makepreview = false;
++    dumpinfo = makepreview = show_fps = false;
+     gamename = &quot;&quot;;
+     datapath = &quot;&quot;;
+     preffilename = PREFFILENAME;
+@@ -177,6 +177,7 @@
+     def (&amp;do_assert,            &quot;assert&quot;);
+     def (&amp;dumpinfo,             &quot;dumpinfo&quot;);
+     def (&amp;makepreview,          &quot;makepreview&quot;);
++    def (&amp;show_fps,             &quot;showfps&quot;);
+     def (&amp;force_window,         &quot;window&quot;, 'w');
+     def (OPT_GAME,              &quot;game&quot;, true);
+     def (OPT_DATA,              &quot;data&quot;, 'd', true);
+@@ -333,7 +334,7 @@
+     }
+ 
+     // ----- Load models
+-    display::Init();
++    display::Init(ap.show_fps);
+ 
+     // initialize application state
+     state = StateManager::instance();
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2006-12-31 21:44:41 UTC (rev 559)
++++ trunk/src/stones.hh	2007-01-01 20:36:55 UTC (rev 560)
+@@ -30,6 +30,7 @@
+         st_FIRST = 0,
+         st_none = 0,
+ 
++        st_borderstone,
+         st_black1,
+         st_black2,
+         st_black3,
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2006-12-31 21:44:41 UTC (rev 559)
++++ trunk/src/world.cc	2007-01-01 20:36:55 UTC (rev 560)
+@@ -789,6 +789,7 @@
+         c.ignore   = false;
+         c.actor    = a;
+         c.stonepos = p;
++        c.stoneid  = stone-&gt;get_traits().id;
+         c.response = stone-&gt;collision_response(c);
+         c.sound    = stone-&gt;collision_sound();
+     }
+@@ -876,7 +877,7 @@
+     ActorInfo &amp;ai          = *a-&gt;get_actorinfo();
+     double     restitution = 1.0; //0.85;
+ 
+-    if (server::NoCollisions)
++    if (server::NoCollisions &amp;&amp; (sc.stoneid != st_borderstone))
+         return;
+ 
+     Contact contact (sc.contact_point, sc.normal);
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2006-12-31 21:44:41 UTC (rev 559)
++++ trunk/src/world.hh	2007-01-01 20:36:55 UTC (rev 560)
+@@ -81,6 +81,7 @@
+         // Variables.
+         Actor           *actor;
+         GridPos         stonepos;
++        StoneID         stoneid;
+         StoneResponse   response;
+ 
+         V2      contact_point;  // Where do the shapes meet? (world coordinates)
+
+Modified: trunk/src/world_internal.hh
+===================================================================
+--- trunk/src/world_internal.hh	2006-12-31 21:44:41 UTC (rev 559)
++++ trunk/src/world_internal.hh	2007-01-01 20:36:55 UTC (rev 560)
+@@ -223,6 +223,12 @@
+             BorderStone() : Stone(&quot;borderstone&quot;) {}
+             Stone *clone() { return this; }
+             void dispose() {}
++            virtual const StoneTraits &amp;get_traits() const {
++                static StoneTraits border_traits = {
++                        &quot;INVALID&quot;, st_borderstone, stf_none, material_stone, 1.0
++                };
++                return border_traits;
++            }
+         };
+ 
+         BorderStone borderstone;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	
+	<LI>Next message: <A HREF="000001.html">[Enigma-game-svn] r561 - in branches/1.0: data/levels/enigma_iii src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#0">[ date ]</a>
+              <a href="thread.html#0">[ thread ]</a>
+              <a href="subject.html#0">[ subject ]</a>
+              <a href="author.html#0">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

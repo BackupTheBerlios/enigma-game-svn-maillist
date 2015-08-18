@@ -1,0 +1,259 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1986 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2010-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1986%20-%20trunk/src&In-Reply-To=%3C201001110011.o0B0BikB003308%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001411.html">
+   <LINK REL="Next"  HREF="001413.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1986 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1986%20-%20trunk/src&In-Reply-To=%3C201001110011.o0B0BikB003308%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1986 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon Jan 11 01:11:44 CET 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001411.html">[Enigma-game-svn] r1985 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="001413.html">[Enigma-game-svn] r1987 - in homepage: . input
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1412">[ date ]</a>
+              <a href="thread.html#1412">[ thread ]</a>
+              <a href="subject.html#1412">[ subject ]</a>
+              <a href="author.html#1412">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2010-01-11 01:11:43 +0100 (Mon, 11 Jan 2010)
+New Revision: 1986
+
+Modified:
+   trunk/src/display.cc
+   trunk/src/display_internal.hh
+   trunk/src/video.cc
+Log:
+Trunk 1.1:
+- status bar with player indicator:
+  - squeeze inventory items all resolutions
+  - add animated player icon
+Note:
+- this commit is incomplete, just for testing purposes
+
+Modified: trunk/src/display.cc
+===================================================================
+--- trunk/src/display.cc	2010-01-10 18:56:36 UTC (rev 1985)
++++ trunk/src/display.cc	2010-01-11 00:11:43 UTC (rev 1986)
+@@ -160,6 +160,10 @@
+     clip(gc, intersect(a, r));
+ 
+     blit(gc, a.x, a.y, enigma::GetImage(player == enigma::YIN ? &quot;inventory&quot; : &quot;inventory&quot;, &quot;.png&quot;));
++    
++    // draw player indicator
++    blit(gc, a.x + 150, a.y + 22, enigma::GetImage(&quot;st_yinyang&quot;, &quot;.png&quot;), 
++            Rect (0, playerImage * vminfo-&gt;tile_size, vminfo-&gt;tile_size, vminfo-&gt;tile_size));
+ 
+ 
+ //     set_color (gc, 255, 0, 0);
+@@ -241,10 +245,9 @@
+ 
+     if (m_text_active) {
+         m_textview.draw (gc, r);
+-    }
+-    else {
++    } else {
+         client::Msg_FinishedText();
+-        int itemsize = static_cast&lt;int&gt;(vminfo-&gt;tile_size * 1.25);
++        int itemsize = static_cast&lt;int&gt;(vminfo-&gt;tile_size * 1.125);
+         int x = m_itemarea.x;
+         for (unsigned i=0; i&lt;m_models.size(); ++i) {
+             Model *m = m_models[i];
+@@ -279,7 +282,15 @@
+     m_changedp = true;
+ }
+ 
+-void StatusBarImpl::tick (double dtime) {
++void StatusBarImpl::tick(double dtime) {
++    // Animation of player indicator
++    playerImageDuration += dtime;
++    if ((player * 3 != playerImage) &amp;&amp; (playerImageDuration &gt; 0.2)) {
++        playerImage = (++playerImage) % 6;
++        playerImageDuration = 0;
++        m_changedp = true;
++    }
++
+     // Update text display
+     if (m_text_active) {
+         m_textview.tick (dtime);
+@@ -297,6 +308,8 @@
+     m_leveltime   = 0;
+     m_text_active = false;
+     m_changedp    = true;
++    player = enigma::YIN;
++    playerImageDuration = 0;
+ }
+ 
+ /* -------------------- TextDisplay implementation -------------------- */
+
+Modified: trunk/src/display_internal.hh
+===================================================================
+--- trunk/src/display_internal.hh	2010-01-10 18:56:36 UTC (rev 1985)
++++ trunk/src/display_internal.hh	2010-01-11 00:11:43 UTC (rev 1986)
+@@ -80,7 +80,7 @@
+     private:
+         ScreenArea     m_itemarea;
+         std::vector&lt;Model*&gt; m_models;
+-        enigma::Player         player;
++        enigma::Player player;
+         bool           m_changedp;
+         TextDisplay    m_textview;
+ 
+@@ -91,6 +91,8 @@
+         bool   m_interruptible; // Current text message may be interrupted
+         bool m_text_active;
+         bool cMode;  // collision mode flag
++        int  playerImage;
++        double playerImageDuration;
+         std::string basicModes;  // set by world on start of level
+     };
+ 
+
+Modified: trunk/src/video.cc
+===================================================================
+--- trunk/src/video.cc	2010-01-10 18:56:36 UTC (rev 1985)
++++ trunk/src/video.cc	2010-01-11 00:11:43 UTC (rev 1986)
+@@ -343,7 +343,7 @@
+             Rect (10, 425, 117, 43),         // time area
+             Rect (100, 419, 28, 43),         // modes area
+             Rect (100, 425, 30, 43),         // moves area
+-            Rect (152, 433, 490, 52),        // inventory area
++            Rect (200, 433, 490, 52),        // inventory area
+             Rect (150, 434, 475, 35),        // text area
+             true, true,                      // available window, fullscreen
+             &quot;-0-&quot;,&quot;-0-&quot;                      // fallback modes window, fullscreen
+@@ -361,7 +361,7 @@
+             Rect (15, 420, 110, 40),         // time area
+             Rect (100, 420, 31, 40),         // modes area
+             Rect (100, 420, 30, 40),         // moves area
+-            Rect (152, 433, 490, 52),        // inventory area
++            Rect (200, 433, 490, 52),        // inventory area
+             Rect (150, 434, 475, 35),        // text area
+             false, false,                    // 640x512 is deprecated!
+             &quot;-0-&quot;,&quot;-0-&quot;                      // fallback modes window, fullscreen
+@@ -379,7 +379,7 @@
+             Rect (15, 540, 140, 40),         // time area
+             Rect (125, 529, 31, 40),         // modes area
+             Rect (125, 540, 30, 40),         // moves area
+-            Rect (192, 539, 610, 46),        // inventory area
++            Rect (252, 539, 610, 46),        // inventory area
+             Rect (185, 545, 600, 39),        // text area
+             true, true,                      // available window, fullscreen
+             &quot;-2-0-&quot;,&quot;-2-0-&quot;                  // fallback modes window, fullscreen
+@@ -397,7 +397,7 @@
+             Rect (50, 640, 170, 60),         // time area
+             Rect (185, 634, 34, 60),         // modes area
+             Rect (185, 640, 30, 60),         // moves area
+-            Rect (260, 650, 710, 46),        // inventory area
++            Rect (332, 650, 710, 46),        // inventory area
+             Rect (260, 655, 710, 40),        // text area
+             true, true,                      // available window, fullscreen
+             &quot;-3-2-0-&quot;,&quot;-3-2-0-&quot;              // fallback modes window, fullscreen
+@@ -415,7 +415,7 @@
+             Rect (18, 640, 170, 60),         // time area
+             Rect (153, 634, 34, 60),         // modes area
+             Rect (153, 640, 30, 60),         // moves area
+-            Rect (228, 650, 710, 46),        // inventory area
++            Rect (300, 650, 710, 46),        // inventory area
+             Rect (228, 655, 710, 40),        // text area
+             true, true,                      // available window, fullscreen
+             &quot;-4-2-0-&quot;,&quot;-4-2-0-&quot;              // fallback modes window, fullscreen
+@@ -433,7 +433,7 @@
+             Rect (178, 640, 170, 60),        // time area
+             Rect (313, 640, 30, 60),         // modes area
+             Rect (313, 640, 30, 60),         // moves area
+-            Rect (388, 650, 710, 46),        // inventory area
++            Rect (460, 650, 710, 46),        // inventory area
+             Rect (388, 655, 710, 40),        // text area
+             false, true,                     // available window, fullscreen
+             &quot;-0-&quot;,&quot;-5-0-&quot;                    // fallback modes window, fullscreen
+@@ -451,7 +451,7 @@
+             Rect (24, 853, 227, 80),         // time area //TODO
+             Rect (204, 853, 40, 80),         // modes area //TODO
+             Rect (204, 853, 40, 80),         // moves area //TODO
+-            Rect (304, 867, 947, 61),        // inventory area //TODO
++            Rect (400, 867, 947, 61),        // inventory area //TODO
+             Rect (304, 873, 947, 53),        // text area //TODO
+             true, true,                      // available window, fullscreen
+             &quot;-6-4-2-0-&quot;,&quot;-6-4-2-0-&quot;          // fallback modes window, fullscreen
+@@ -469,7 +469,7 @@
+             Rect (104, 853, 227, 80),        // time area //TODO
+             Rect (284, 853, 40, 80),         // modes area //TODO
+             Rect (284, 853, 40, 80),         // moves area //TODO
+-            Rect (384, 867, 947, 61),        // inventory area //TODO
++            Rect (480, 867, 947, 61),        // inventory area //TODO
+             Rect (384, 873, 947, 53),        // text area //TODO
+             false, true,                     // available window, fullscreen
+             &quot;-0-&quot;,&quot;-7-0-&quot;                    // fallback modes window, fullscreen
+@@ -487,7 +487,7 @@
+             Rect (18, 640, 170, 60),         // time area //TODO
+             Rect (153, 640, 30, 60),         // modes area //TODO
+             Rect (153, 640, 30, 60),         // moves area //TODO
+-            Rect (228, 650, 710, 46),        // inventory area //TODO
++            Rect (324, 650, 710, 46),        // inventory area //TODO
+             Rect (228, 655, 710, 40),        // text area //TODO
+             false, true,                     // available window, fullscreen
+             &quot;-0-&quot;,&quot;-8-0-&quot;                    // fallback modes window, fullscreen
+@@ -505,7 +505,7 @@
+             Rect (224, 853, 227, 80),        // time area //TODO
+             Rect (404, 853, 40, 80),         // modes area //TODO
+             Rect (404, 853, 40, 80),         // moves area //TODO
+-            Rect (504, 867, 947, 61),        // inventory area //TODO
++            Rect (600, 867, 947, 61),        // inventory area //TODO
+             Rect (504, 873, 947, 53),        // text area //TODO
+             false, true,                     // available window, fullscreen
+             &quot;-0-&quot;,&quot;-9-0-&quot;                    // fallback modes window, fullscreen
+@@ -523,7 +523,7 @@
+             Rect (5, 212, 65, 21),           // time area
+             Rect (50, 210, 14, 21),          // modes area
+             Rect (50, 220, 15, 21),          // moves area
+-            Rect (76, 216, 245, 26),         // inventory area
++            Rect (100, 216, 245, 26),         // inventory area
+             Rect (75, 217, 237, 17),         // text area
+             true, true,                      // available window, fullscreen
+             &quot;-10-0-&quot;,&quot;-10-0-&quot;                // fallback modes window, fullscreen
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001411.html">[Enigma-game-svn] r1985 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="001413.html">[Enigma-game-svn] r1987 - in homepage: . input
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1412">[ date ]</a>
+              <a href="thread.html#1412">[ thread ]</a>
+              <a href="subject.html#1412">[ subject ]</a>
+              <a href="author.html#1412">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,605 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1111 - trunk/src/gui
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1111%20-%20trunk/src/gui&In-Reply-To=%3C200804252338.m3PNcrQH001872%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000543.html">
+   <LINK REL="Next"  HREF="000545.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1111 - trunk/src/gui</H1>
+    <B>andreasl at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1111%20-%20trunk/src/gui&In-Reply-To=%3C200804252338.m3PNcrQH001872%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1111 - trunk/src/gui">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Sat Apr 26 01:38:53 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000543.html">[Enigma-game-svn] r1110 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="000545.html">[Enigma-game-svn] r1112 - in trunk: doc/reference etc src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#544">[ date ]</a>
+              <a href="thread.html#544">[ thread ]</a>
+              <a href="subject.html#544">[ subject ]</a>
+              <a href="author.html#544">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2008-04-26 01:38:53 +0200 (Sat, 26 Apr 2008)
+New Revision: 1111
+
+Modified:
+   trunk/src/gui/Menu.hh
+   trunk/src/gui/OptionsMenu.cc
+   trunk/src/gui/OptionsMenu.hh
+Log:
+Restructuring options menu part 2:
+ - Options menu now uses multiple pages
+   (main, video, audio, config), which can
+   easily be extended and reorganized.
+Todo:
+ - Textspeed-button
+ - Maybe Undo-button
+
+
+Modified: trunk/src/gui/Menu.hh
+===================================================================
+--- trunk/src/gui/Menu.hh	2008-04-25 00:57:57 UTC (rev 1110)
++++ trunk/src/gui/Menu.hh	2008-04-25 23:38:53 UTC (rev 1111)
+@@ -52,7 +52,8 @@
+ 
+     protected:
+         void reset_active_widget() { active_widget = NULL; }
+-
++        void reset_key_focus_widget() { key_focus_widget = NULL; }
++        
+         // Menu interface.
+         virtual void draw_background(ecl::GC &amp;/*gc*/) {}
+ 
+
+Modified: trunk/src/gui/OptionsMenu.cc
+===================================================================
+--- trunk/src/gui/OptionsMenu.cc	2008-04-25 00:57:57 UTC (rev 1110)
++++ trunk/src/gui/OptionsMenu.cc	2008-04-25 23:38:53 UTC (rev 1111)
+@@ -239,8 +239,8 @@
+ 
+     /* -------------------- FullscreenButton -------------------- */
+     
+-    FullscreenButton::FullscreenButton()
+-        : BoolOptionButton(&quot;FullScreen&quot;, N_(&quot;Yes&quot;), N_(&quot;No&quot;))
++    FullscreenButton::FullscreenButton(ActionListener *al)
++    : BoolOptionButton(&quot;FullScreen&quot;, N_(&quot;Yes&quot;), N_(&quot;No&quot;), al)        
+     {
+     }
+     
+@@ -318,115 +318,283 @@
+     /* -------------------- Options Menu -------------------- */
+     
+     OptionsMenu::OptionsMenu(ecl::Surface *background_)
+-    : back(new StaticTextButton(N_(&quot;Back&quot;), this)),
+-      m_restartinfo (new Label(&quot;&quot;)),
+-      background(background_),
+-      previous_caption(video::GetCaption())
++    : back(NULL),  //(new StaticTextButton(N_(&quot;Back&quot;), this)),
++      background(background_), previous_caption(video::GetCaption()),
++      pagesVList(NULL), commandHList(NULL), optionsVList(NULL),
++      language(NULL), but_main_options(NULL), but_video_options(NULL),
++      but_audio_options(NULL), but_config_options(NULL), fullscreen(NULL),
++      videomode(NULL), userNameTF(NULL), userPathTF(NULL),
++      userImagePathTF(NULL), menuMusicTF(NULL)
+     {
++        center();
++        close_page();
++        open_page(OPTIONS_MAIN);
++    }
++
++    OptionsMenu::~OptionsMenu() {
++        video::SetCaption(previous_caption.c_str());
++    }
++
++    void OptionsMenu::open_page(OptionsPage new_page) {
+         const video::VMInfo *vminfo = video::GetInfo();
+         const int vshrink = vminfo-&gt;width &lt; 640 ? 1 : 0;
+-        const int spacing     = vshrink ? 2 : 5;
+-        const int big_spacing = vshrink ? 30 : 60;
+-        const int label_width = vshrink ? 90 : 180;
+-        const int but_width   = vshrink ? 50 : 100;
+-        const int but_height  = vshrink ? 15 : 30;
+         int hmargin = vshrink ? 5 : (vminfo-&gt;width &lt; 660 ? 10 : (vminfo-&gt;width &lt; 900 ? 20 : 80));
+-        int midspacing = vminfo-&gt;width - 2*hmargin - 2*but_width - 2*label_width;
+-    
+-        BuildVList leftlabels (this, Rect(-label_width, 0, label_width, but_height), spacing);
+-        BuildVList left (this, Rect(0, 0, but_width, but_height), spacing);
+-        BuildVList rightlabels (this, Rect(but_width+midspacing, 0, label_width, but_height), spacing);
+-        BuildVList right(this, Rect(but_width+midspacing+label_width, 0, but_width, but_height), spacing);
+-        leftlabels.add (new Label(N_(&quot;Language: &quot;), HALIGN_RIGHT));
+-        leftlabels.add (new Label(N_(&quot;Fullscreen: &quot;), HALIGN_RIGHT));
+-        leftlabels.add (new Label(N_(&quot;Video mode: &quot;), HALIGN_RIGHT));
+-        leftlabels.add (new Label(N_(&quot;Gamma correction: &quot;), HALIGN_RIGHT));
+-        leftlabels.add (new Label(N_(&quot;Mouse speed: &quot;), HALIGN_RIGHT));
+-    
+-        language = new LanguageButton(this);
+-        left.add (language);
+-        fullscreen = new FullscreenButton();
+-        fullscreen-&gt;set_listener(this);
+-        left.add (fullscreen);
+-        videomode = new VideoModeButton();
+-        left.add (videomode);
+-        left.add (new GammaButton);
+-        left.add (new MouseSpeedButton);
+-    
+-        rightlabels.add (new Label(N_(&quot;Sound volume: &quot;), HALIGN_RIGHT));
+-        rightlabels.add (new Label(N_(&quot;Sound set: &quot;), HALIGN_RIGHT));
+-        rightlabels.add (new Label(N_(&quot;Music volume: &quot;), HALIGN_RIGHT));
+-        rightlabels.add (new Label(N_(&quot;Stereo: &quot;), HALIGN_RIGHT));
+-        rightlabels.add (new Label(N_(&quot;Ratings update: &quot;), HALIGN_RIGHT));
+-    
+-        right.add (new SoundVolumeButton);
+-        right.add (new SoundSetButton);
+-        right.add (new MusicVolumeButton);
+-//        right.add (new InGameMusicButton);&#220;ber
+-        right.add (new StereoButton);
+-        right.add (new RatingsUpdateButton);
++        video::VideoModes vm = vminfo-&gt;videomode;
++        video::VideoTileType vtt = vminfo-&gt;tt;
++        int vh = vminfo-&gt;area.x;
++        int vv = (vminfo-&gt;height - vminfo-&gt;area.h)/2;
++        static struct SpacingConfig {
++            int rows;
++            int button_height, optionb_width, commandb_width, pageb_width;
++            int vmargin, vrow_row;
++            int hmargin, hpage_option, hoption_option;
++        } param[] = {
++            {  // VTS_16 (320x240)
++                9,
++                17, 100, 70, 50,
++                7, 5,
++                10, 10, 10
++            },
++            {  // VTS_32 (640x480)
++                9,
++                30, 200, 140, 100,
++                15, 13,
++                20, 20, 20
++            },
++            {  // VTS_40 (800x600)
++                10,
++                35, 200, 140, 100,
++                20, 15,
++                15, 46, 15
++            },
++            {  // VTS_48 (960x720)  VM_1024x768
++                11,
++                35, 200, 140, 100,
++                30, 18,
++                70, 76, 20
++            },
++            {  // VTS_64 (1280x960)
++                11,
++                35, 200, 140, 100,
++                25, 20,
++                60, 58, 20
++            }
++        };
+         
+-        Rect l = left.pos();
+-        Rect r = right.pos();
++        // These are exactly the same preferences as in LevelPackMenu.cc
++        // Left side: Availabe submenus (&quot;pages&quot;)
++        pagesVList = new VList; 
++        pagesVList-&gt;set_spacing(param[vtt].vrow_row);
++        pagesVList-&gt;set_alignment(HALIGN_CENTER, VALIGN_TOP);
++        pagesVList-&gt;set_default_size(param[vtt].pageb_width, param[vtt].button_height);
++        but_main_options = new StaticTextButton(N_(&quot;Main&quot;), this);
++        but_main_options-&gt;setHighlight(new_page == OPTIONS_MAIN);
++        but_video_options = new StaticTextButton(N_(&quot;Video&quot;), this);
++        but_video_options-&gt;setHighlight(new_page == OPTIONS_VIDEO);
++        but_audio_options = new StaticTextButton(N_(&quot;Audio&quot;), this);
++        but_audio_options-&gt;setHighlight(new_page == OPTIONS_AUDIO);
++        but_config_options = new StaticTextButton(N_(&quot;Config&quot;), this);
++        but_config_options-&gt;setHighlight(new_page == OPTIONS_CONFIG);
++        pagesVList-&gt;add_back(but_main_options);
++        pagesVList-&gt;add_back(but_video_options);
++        pagesVList-&gt;add_back(but_audio_options);
++        pagesVList-&gt;add_back(but_config_options);
++        this-&gt;add(pagesVList, Rect(param[vtt].hmargin + vh,
++                                   param[vtt].vmargin + vv, 
++                                   param[vtt].pageb_width,
++                                   param[vtt].rows * param[vtt].button_height + 
++                                       (param[vtt].rows - 1) * param[vtt].vrow_row));
+ 
+-        BuildVList bottomlabels (this, Rect(-label_width, Max(l.y, r.y), label_width, but_height), spacing);
+-        BuildVList bottom (this, Rect(0, Max(l.y, r.y), vminfo-&gt;width - 2*hmargin - label_width, but_height), spacing);
+-        bottomlabels.add (new Label(N_(&quot;User name: &quot;), HALIGN_RIGHT));
+-        bottomlabels.add (new Label(N_(&quot;User path: &quot;), HALIGN_RIGHT));
+-        bottomlabels.add (new Label(N_(&quot;User image path: &quot;), HALIGN_RIGHT));
+-        bottomlabels.add (new Label(N_(&quot;Menu music: &quot;), HALIGN_RIGHT));
+-        userNameTF = new TextField(app.state-&gt;getString(&quot;UserName&quot;));
+-        userNameTF-&gt;setMaxChars(20);
+-        userNameTF-&gt;setInvalidChars(&quot;+&quot;);
+-        bottom.add (userNameTF);
+-        userPathTF = new TextField(XMLtoUtf8(LocalToXML(app.userPath.c_str()).x_str()).c_str());
+-        bottom.add (userPathTF);
+-        userImagePathTF = new TextField(XMLtoUtf8(LocalToXML(app.userImagePath.c_str()).x_str()).c_str());
+-        bottom.add (userImagePathTF);
+-        bottom.add (new MenuMusicButton);
++        // At the bottom: Currently only &quot;Back&quot;
++        commandHList = new HList;
++        commandHList-&gt;set_spacing(param[vtt].hoption_option);
++        commandHList-&gt;set_alignment(HALIGN_LEFT, VALIGN_TOP);
++        commandHList-&gt;set_default_size(param[vtt].commandb_width, param[vtt].button_height);
++        commandHList-&gt;add_back(back = new StaticTextButton(N_(&quot;Ok&quot;), this));
++        this-&gt;add(commandHList, Rect(vminfo-&gt;width + vh - param[vtt].hmargin
++                                         - 1*param[vtt].commandb_width  // number of buttons
++                                         - 0*param[vtt].hoption_option, // number - 1
++                                     param[vtt].vmargin + param[vtt].rows*
++                                         (param[vtt].vrow_row + param[vtt].button_height)
++                                         + param[vtt].vrow_row + vv,
++                                     vminfo-&gt;width-2*param[vtt].hmargin,
++                                     param[vtt].button_height));
+ 
+-//            add (m_restartinfo, Rect (l.x, l.y + 15, 400, 20));
+-//            m_restartinfo-&gt;set_alignment (HALIGN_LEFT);
+-//            update_info();
+-    
+-        Rect b = bottom.pos();
+-        l.x = (l.x+r.x)/2;
+-        l.y = b.y+big_spacing;
+-    
+-        add(back, l);
++        optionsVList = new VList;
++        optionsVList-&gt;set_spacing(param[vtt].vrow_row);
++        optionsVList-&gt;set_alignment(HALIGN_LEFT, VALIGN_TOP);
++        optionsVList-&gt;set_default_size(2*param[vtt].optionb_width
++                                           + param[vtt].hoption_option,
++                                       param[vtt].button_height);
++
++        /*! All options on our pages consist of a label and a button,
++          a very long (text-)button, or just a label, suited to the
++          long buttons. optionsVList is a list of such rows.
++          Each row itself is an HList, and has to be initialised
++          with positioning data. To make things easier, we use
++          Macros for initialisation. */
++
++        HList *lb;  // a list of labels and/or buttons
++
++#define OPTIONS_NEW_L(label) lb = new HList;\
++        lb-&gt;set_spacing(param[vtt].hoption_option); \
++        lb-&gt;set_alignment(HALIGN_LEFT, VALIGN_TOP); \
++        lb-&gt;set_default_size(param[vtt].optionb_width, \
++                             param[vtt].rows*param[vtt].button_height + \
++                                 (param[vtt].rows - 1) * param[vtt].vrow_row); \
++        lb-&gt;add_back(new Label(N_(label), HALIGN_LEFT, VALIGN_BOTTOM)); \
++        optionsVList-&gt;add_back(lb); \
++// end define
++#define OPTIONS_NEW_LB(label,button) lb = new HList;\
++        lb-&gt;set_spacing(param[vtt].hoption_option); \
++        lb-&gt;set_alignment(HALIGN_CENTER, VALIGN_TOP); \
++        lb-&gt;set_default_size(param[vtt].optionb_width, \
++                             param[vtt].rows*param[vtt].button_height + \
++                                 (param[vtt].rows - 1) * param[vtt].vrow_row); \
++        lb-&gt;add_back(new Label(N_(label), HALIGN_RIGHT, VALIGN_CENTER)); \
++        lb-&gt;add_back(button); \
++        optionsVList-&gt;add_back(lb); \
++// end define
++#define OPTIONS_NEW_T(textbutton) lb = new HList;\
++        lb-&gt;set_spacing(param[vtt].hoption_option); \
++        lb-&gt;set_alignment(HALIGN_LEFT, VALIGN_TOP); \
++        lb-&gt;set_default_size(2*param[vtt].optionb_width + param[vtt].hoption_option, \
++                             param[vtt].rows*param[vtt].button_height + \
++                                 (param[vtt].rows - 1) * param[vtt].vrow_row); \
++        lb-&gt;add_back(textbutton); \
++        optionsVList-&gt;add_back(lb); \
++// end define
++
++        switch (new_page) {
++            case OPTIONS_MAIN:
++                OPTIONS_NEW_LB(&quot;Language: &quot;, language = new LanguageButton(this))
++                OPTIONS_NEW_LB(&quot;Fullscreen: &quot;, fullscreen = new FullscreenButton(this))
++                OPTIONS_NEW_LB(&quot;Video mode: &quot;, videomode = new VideoModeButton())
++                OPTIONS_NEW_LB(&quot;Mouse speed: &quot;, new MouseSpeedButton())
++                OPTIONS_NEW_LB(&quot;Sound volume: &quot;, new SoundVolumeButton())
++                OPTIONS_NEW_LB(&quot;Music volume: &quot;, new MusicVolumeButton())
++                OPTIONS_NEW_LB(&quot;Ratings update: &quot;, new RatingsUpdateButton())
++                userNameTF = new TextField(app.state-&gt;getString(&quot;UserName&quot;));
++                userNameTF-&gt;setMaxChars(20);
++                userNameTF-&gt;setInvalidChars(&quot;+&quot;);
++                OPTIONS_NEW_L(&quot;User name: &quot;)
++                OPTIONS_NEW_T(userNameTF)
++                break;
++            case OPTIONS_VIDEO:
++                OPTIONS_NEW_LB(&quot;Fullscreen: &quot;, fullscreen = new FullscreenButton())
++                fullscreen-&gt;set_listener(this);
++                OPTIONS_NEW_LB(&quot;Video mode: &quot;, videomode = new VideoModeButton())
++                OPTIONS_NEW_LB(&quot;Gamma correction: &quot;, new GammaButton())
++                break;
++            case OPTIONS_AUDIO:
++                OPTIONS_NEW_LB(&quot;Sound set: &quot;, new SoundSetButton())
++                OPTIONS_NEW_LB(&quot;Menu music: &quot;, new MenuMusicButton)
++                OPTIONS_NEW_LB(&quot;Sound volume: &quot;, new SoundVolumeButton())
++                OPTIONS_NEW_LB(&quot;Music volume: &quot;, new MusicVolumeButton())
++                OPTIONS_NEW_LB(&quot;Stereo: &quot;, new StereoButton())
++                //...(&quot;Music ingame: &quot;, new InGameMusicButton)
++                break;
++            case OPTIONS_CONFIG:
++                OPTIONS_NEW_LB(&quot;Language: &quot;, language = new LanguageButton(this))
++                OPTIONS_NEW_LB(&quot;Mouse speed: &quot;, new MouseSpeedButton())
++                OPTIONS_NEW_LB(&quot;Ratings update: &quot;, new RatingsUpdateButton())
++                userNameTF = new TextField(app.state-&gt;getString(&quot;UserName&quot;));
++                userNameTF-&gt;setMaxChars(20);
++                userNameTF-&gt;setInvalidChars(&quot;+&quot;);
++                OPTIONS_NEW_L(&quot;User name: &quot;)
++                OPTIONS_NEW_T(userNameTF)
++                //...(&quot;Text speed: &quot;, new TextSpeedButton())
++                userPathTF = new TextField(XMLtoUtf8(LocalToXML(app.userPath.c_str()).x_str()).c_str());
++                OPTIONS_NEW_L(&quot;User path: &quot;)
++                OPTIONS_NEW_T(userPathTF)
++                userImagePathTF = new TextField(XMLtoUtf8(LocalToXML(app.userImagePath.c_str()).x_str()).c_str());
++                OPTIONS_NEW_L(&quot;User image path: &quot;)
++                OPTIONS_NEW_T(userImagePathTF)
++                break;
++        }
++#undef OPTIONS_NEW_L
++#undef OPTIONS_NEW_LB
++#undef OPTIONS_NEW_T
++
++        // Now add all options to the page.
++        this-&gt;add(optionsVList,
++           Rect(param[vtt].hmargin + vh + param[vtt].pageb_width
++                    + param[vtt].hpage_option,
++                param[vtt].vmargin + vv,
++                2*param[vtt].optionb_width + param[vtt].hoption_option,
++                param[vtt].rows * param[vtt].button_height + 
++                    (param[vtt].rows - 1) * param[vtt].vrow_row));
++        invalidate_all();
+     }
+     
+-    OptionsMenu::~OptionsMenu() {
+-        video::SetCaption(previous_caption.c_str());
++    void OptionsMenu::close_page() {
++        // Reset active and key_focus widgets, they will be deleted soon,
++        // and we don't want any ticks for them anymore.
++        reset_active_widget();
++        reset_key_focus_widget();
++        // Evaluate and save text field entries (if existing).
++        if(userNameTF) {
++            if (app.state-&gt;getString(&quot;UserName&quot;) != userNameTF-&gt;getText())
++                // ensure that enigma.score is saved with new Username or to new location
++                lev::ScoreManager::instance()-&gt;markModified();
++            // strip off leading and trailing whitespace from user name
++            std::string userName = userNameTF-&gt;getText();
++            std::string::size_type firstChar = userName.find_first_not_of(&quot; &quot;);
++            std::string::size_type lastChar = userName.find_last_not_of(&quot; &quot;);
++            if (firstChar != std::string::npos)
++                app.state-&gt;setProperty(&quot;UserName&quot;, userName.substr(firstChar, lastChar - firstChar + 1));
++            else
++                app.state-&gt;setProperty(&quot;UserName&quot;, std::string(&quot;&quot;));
++        }
++        if(userPathTF) {
++            std::string tfUserPathLocal = XMLtoLocal(Utf8ToXML(userPathTF-&gt;getText().c_str()).x_str()).c_str();
++            if (app.userPath != tfUserPathLocal)
++                // ensure that enigma.score is saved with new Username or to new location
++                lev::ScoreManager::instance()-&gt;markModified();
++            app.setUserPath(tfUserPathLocal.c_str());
++        }
++        if(userImagePathTF) {
++            std::string tfUserImageLocal = XMLtoLocal(Utf8ToXML(userImagePathTF-&gt;getText().c_str()).x_str()).c_str();
++            if (app.userImagePath != tfUserImageLocal)
++                // ensure that enigma.score is saved with new Username or to new location
++                lev::ScoreManager::instance()-&gt;markModified();
++            app.setUserImagePath(tfUserImageLocal.c_str());
++        }
++        // Delete widgets.
++        if (pagesVList != NULL) {
++            pagesVList-&gt;clear();
++            remove_child(pagesVList);
++            delete pagesVList;
++            pagesVList = NULL;
++        }
++        but_main_options = NULL;
++        but_video_options = NULL;
++        but_audio_options = NULL;
++        but_config_options = NULL;
++        if (commandHList != NULL) {
++            commandHList-&gt;clear();
++            remove_child(commandHList);
++            delete commandHList;
++            commandHList = NULL;
++        }
++        back = NULL;
++        if (optionsVList != NULL) {
++            optionsVList-&gt;clear();
++            remove_child(optionsVList);
++            delete optionsVList;
++            optionsVList = NULL;
++        }
++        language = NULL;
++        fullscreen = NULL;
++        videomode = NULL;
++        menuMusicTF = NULL;
++        userNameTF = NULL;
++        userPathTF = NULL;
++        userImagePathTF = NULL;
+     }
+-    
+-//    void OptionsMenu::update_info() 
+-//    {
+-//        if (options::MustRestart)
+-//            m_restartinfo-&gt;set_text (
+-//                N_(&quot;Please restart Enigma to activate your changes!&quot;));
+-//        else
+-//            m_restartinfo-&gt;set_text (&quot;&quot;);
+-//    }
+-    
++
+     void OptionsMenu::quit() {
+-        std::string tfUserPathLocal = XMLtoLocal(Utf8ToXML(userPathTF-&gt;getText().c_str()).x_str()).c_str();
+-        std::string tfUserImageLocal = XMLtoLocal(Utf8ToXML(userImagePathTF-&gt;getText().c_str()).x_str()).c_str();
+-        if ((app.state-&gt;getString(&quot;UserName&quot;) != userNameTF-&gt;getText())
+-                || (app.userPath != tfUserPathLocal ) || (app.userImagePath != tfUserImageLocal)) {
+-            // ensure that enigma.score is saved with new Username or to new location
+-            lev::ScoreManager::instance()-&gt;markModified();
+-        }
+-        // strip off leading and trailing whitespace from user name
+-        std::string userName = userNameTF-&gt;getText();
+-        std::string::size_type firstChar = userName.find_first_not_of(&quot; &quot;);
+-        std::string::size_type lastChar = userName.find_last_not_of(&quot; &quot;);
+-        if (firstChar != std::string::npos)
+-            app.state-&gt;setProperty(&quot;UserName&quot;, userName.substr(firstChar, lastChar - firstChar + 1));
+-        else
+-            app.state-&gt;setProperty(&quot;UserName&quot;, std::string(&quot;&quot;));
+-        app.setUserPath(tfUserPathLocal.c_str());
+-        app.setUserImagePath(tfUserImageLocal.c_str());
++        close_page();
+         Menu::quit();
+     }
+ 
+@@ -459,14 +627,21 @@
+             // update the video mode button to the modes available
+             videomode-&gt;reinit();
+             invalidate_all();
++        } else if (w == but_main_options) {
++            close_page();
++            open_page(OPTIONS_MAIN);
++        } else if (w == but_video_options) {
++            close_page();
++            open_page(OPTIONS_VIDEO);
++        } else if (w == but_audio_options) {
++            close_page();
++            open_page(OPTIONS_AUDIO);
++        } else if (w == but_config_options) {
++            close_page();
++            open_page(OPTIONS_CONFIG);
+         }
+     }
+     
+-    void OptionsMenu::tick (double)
+-    {
+-//        update_info();
+-    }
+-    
+     void OptionsMenu::draw_background(ecl::GC &amp;gc)
+     {
+         const video::VMInfo *vminfo = video::GetInfo();
+@@ -481,7 +656,6 @@
+         if (background == 0)
+             background = enigma::GetImage(&quot;menu_bg&quot;, &quot;.jpg&quot;);
+         OptionsMenu m(background);
+-        m.center();
+         m.manage();
+     }
+ 
+
+Modified: trunk/src/gui/OptionsMenu.hh
+===================================================================
+--- trunk/src/gui/OptionsMenu.hh	2008-04-25 00:57:57 UTC (rev 1110)
++++ trunk/src/gui/OptionsMenu.hh	2008-04-25 23:38:53 UTC (rev 1111)
+@@ -32,34 +32,45 @@
+         OptionsMenu(ecl::Surface *background_);
+         ~OptionsMenu();
+         virtual void quit();
++
+     private:
+-        void update_info();
+-
+         // ActionListener interface.
+         bool on_event (const SDL_Event &amp;e);
+         void on_action(gui::Widget *w);
+-
++        
+         // Menu interface.
+         void draw_background(ecl::GC &amp;gc);
+-        void tick(double dtime);
++        void tick(double dtime) {}
+ 
++        // Page structure.
++        enum OptionsPage { OPTIONS_MAIN, OPTIONS_VIDEO, OPTIONS_AUDIO, OPTIONS_CONFIG };
++        void open_page(OptionsPage new_page);
++        void close_page();
++
+         // Variables.
++        VList *pagesVList;
++        HList *commandHList;
++        VList *optionsVList;
+         gui::Widget *back, *language;
++        gui::StaticTextButton *but_main_options;
++        gui::StaticTextButton *but_video_options;
++        gui::StaticTextButton *but_audio_options;
++        gui::StaticTextButton *but_config_options;
+         gui::BoolOptionButton *fullscreen;
+         gui::VideoModeButton *videomode;
+         gui::TextField *userNameTF;
+         gui::TextField *userPathTF;
+         gui::TextField *userImagePathTF;
+         gui::TextField *menuMusicTF;
+-        gui::Label  *m_restartinfo;
+         ecl::Surface *background;
+         std::string  previous_caption;
+     };
+ 
+ /* -------------------- Options Buttons -------------------- */
+ 
+-    struct FullscreenButton : public BoolOptionButton {
+-        FullscreenButton();
++    class FullscreenButton : public BoolOptionButton {
++    public:
++        FullscreenButton(ActionListener *al = 0);
+     };
+ 
+ 
+@@ -105,8 +116,7 @@
+         ActionListener *myListener;
+     public:
+         // second user action listener: first one is misused by ValueButton 
+-        LanguageButton (ActionListener *al = 0);
+-        
++        LanguageButton (ActionListener *al = 0);        
+     };
+ 
+     class GammaButton : public ValueButton {
+@@ -114,8 +124,7 @@
+         void set_value(int value);
+         std::string get_text(int value) const;
+     public:
+-        GammaButton ();
+-        
++        GammaButton ();        
+     };
+     
+ /* -------------------- Functions -------------------- */
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000543.html">[Enigma-game-svn] r1110 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="000545.html">[Enigma-game-svn] r1112 - in trunk: doc/reference etc src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#544">[ date ]</a>
+              <a href="thread.html#544">[ thread ]</a>
+              <a href="subject.html#544">[ subject ]</a>
+              <a href="author.html#544">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

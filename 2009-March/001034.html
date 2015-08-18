@@ -1,0 +1,789 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1604 - in trunk: data data/levels/lib	doc/reference
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1604%20-%20in%20trunk%3A%20data%20data/levels/lib%0A%09doc/reference&In-Reply-To=%3C200903311539.n2VFdsHX009364%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001033.html">
+   <LINK REL="Next"  HREF="001035.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1604 - in trunk: data data/levels/lib	doc/reference</H1>
+    <B>andreasl at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1604%20-%20in%20trunk%3A%20data%20data/levels/lib%0A%09doc/reference&In-Reply-To=%3C200903311539.n2VFdsHX009364%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1604 - in trunk: data data/levels/lib	doc/reference">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Tue Mar 31 17:39:54 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001033.html">[Enigma-game-svn] r1603 - in homepage/input: . news
+</A></li>
+        <LI>Next message: <A HREF="001035.html">[Enigma-game-svn] r1605 - trunk/data/levels/lib
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1034">[ date ]</a>
+              <a href="thread.html#1034">[ thread ]</a>
+              <a href="subject.html#1034">[ subject ]</a>
+              <a href="author.html#1034">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2009-03-31 17:39:49 +0200 (Tue, 31 Mar 2009)
+New Revision: 1604
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/data/levels/lib/libmap.xml
+   trunk/data/levels/lib/libmaze_2.xml
+   trunk/data/levels/lib/libpento_1.xml
+   trunk/data/levels/lib/libsoko.xml
+   trunk/doc/reference/enigma-ref.texi
+Log:
+Trunk:
+ - Replaced large numbers in libraries by library-own constants (starting with &quot;MAX_&quot;).
+ - Use numerical instead of string keys for positions in lib.soko.area.
+ - assert_type: New type descriptor &quot;valid object&quot; (with refman entry), and
+   use &quot;valid object&quot; instead of &quot;object&quot; in some appropriate functions.
+ - Extending use of assertions to api2init functions (i.e. arguments are now checked).
+ - Adding some forgotten assertions from r1602.
+ - Reintegrate lib.map._paste into lib.map.paste (missed in r1602).
+ - Typos and quotation marks in refman.
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2009-03-30 23:59:14 UTC (rev 1603)
++++ trunk/data/api2init.lua	2009-03-31 15:39:49 UTC (rev 1604)
+@@ -213,28 +213,32 @@
+ ---------------------
+ 
+ wo:_register(&quot;drawMap&quot;, 
+-    function (world, resolver, anchor, ignorearg, maparg, readarg)
+-        -- TODO check validity of arguments
++    function (world, resolver, anchor, arg3, arg4, arg5)
+         -- world, resolver, (position|object|table), string, (table|map), [int]
+         -- world, resolver, (position|object|table), map, [int]
+-        -- Analyse arguments 3 to 6
++        assert_type(world, &quot;wo:drawMap self (world)&quot;, 2, &quot;world&quot;)
++        assert_type(resolver, &quot;wo:drawMap first argument (resolver)&quot;, 2, &quot;tiles&quot;, &quot;function&quot;, &quot;table&quot;)
++        assert_type(anchor, &quot;wo:drawMap second argument (anchor)&quot;, 2, &quot;position&quot;, &quot;valid object&quot;, &quot;table&quot;)
++        assert_type(arg3, &quot;wo:drawMap third argument (ignorekey or map)&quot;, 2, &quot;string&quot;, &quot;map&quot;)
+         local origin = po(anchor)   -- either convert or make a working position copy
+-        local ignore = ignorearg
+-        local map = maparg
+-        local readdir = readarg or MAP_IDENT
+-        if (type(ignore) == &quot;table&quot;) and (type(ignore.defaultkey) == &quot;string&quot;) then
+-            map = ignorearg
++        -- Analyse arguments 4 to 6
++        local ignore, map, readdir
++        if (etype(arg3) == &quot;map&quot;) then
++            assert_type(arg4, &quot;wo:drawMap fourth argument (read direction)&quot;, 2, &quot;nil&quot;, &quot;integer&quot;)
++            map = arg3
+             ignore = map.defaultkey
+-            readdir = maparg or MAP_IDENT
+-        elseif (type(map) == &quot;table&quot;) and (type(map.defaultkey) == &quot;string&quot;)
+-               and (string.len(map.defaultkey) ~= string.len(ignore)) then
+-            error(&quot;drawmap: Ignore key and default key differ in length.&quot;, 2)
++            readdir = arg4 or MAP_IDENT
++        else
++            assert_type(arg4, &quot;wo:drawMap fourth argument (map)&quot;, 2, &quot;table&quot;, &quot;map&quot;)
++            assert_type(arg5, &quot;wo:drawMap fifth argument (read direction)&quot;, 2, &quot;nil&quot;, &quot;integer&quot;)
++            ignore = arg3
++            map = arg4
++            readdir = arg5 or MAP_IDENT
++            assert_bool((etype(map) ~= &quot;map&quot;) or (string.len(map.defaultkey) == string.len(ignore)),
++                &quot;wo:drawMap: Ignore key and default key differ in length.&quot;, 2)
+         end
+         local len = string.len(ignore)
+-        if    (type(readdir) ~= &quot;number&quot;) or (readdir % 1 ~= 0)
+-           or (readdir &lt; MAP_IDENT) or (readdir &gt; MAP_COUNT) then
+-            error(&quot;drawmap: Unknown read direction.&quot;, 2)
+-        end
++        assert_bool((readdir &gt;= MAP_IDENT) and (readdir &lt;= MAP_COUNT), &quot;wo:drawMap: Unknown read direction.&quot;, 2)
+         -- Prepare read direction rotation
+         local w, h = 0, 0
+         local function rot(x, y)
+@@ -251,34 +255,32 @@
+                      [MAP_MIRROR_BACKSLASH]  = {h + 1 - y, w + 1 - x} })[readdir]
+         end
+         if readdir ~= MAP_IDENT then
+-          -- Calculate height and width for rotation if neccessary
+-          h = #map
+-          for y = 1, h do
+-            w = math.max(w, string.len(map[y])/len)
+-          end
++            -- Calculate height and width for rotation if neccessary
++            h = #map
++            for y = 1, h do
++                w = math.max(w, string.len(map[y])/len)
++            end
+         end
+         -- Draw map
+         for y=1, #map do
+             local linelen = string.len(map[y])
+-            if math.fmod(linelen, len) ~= 0 then
+-                error(&quot;drawmap map line &quot;.. y .. &quot; with odd length&quot;, 2)
+-            end
++            assert_bool(math.fmod(linelen, len) == 0, &quot;wo:drawMap: Map line &quot;.. y .. &quot; with odd length.&quot;, 2)
+             for x = 1, linelen/len do
+                 local key = string.sub(map[y], len*(x-1)+1, len*x)
+                 if key ~= ignore then
+                     local p = {origin.x - 1, origin.y - 1}
+                     if readdir == MAP_IDENT then
+-                      p = {p[1] + x, p[2] + y}
++                        p = {p[1] + x, p[2] + y}
+                     else
+-                      p = {p[1] + (rot(x,y))[1], p[2] + (rot(x,y))[2]}
++                        p = {p[1] + (rot(x,y))[1], p[2] + (rot(x,y))[2]}
+                     end
+                     tile = world:_evaluate(resolver, key, p[1], p[2])
+                     if tile then
+                         world[p] = tile
+                     else
+-                        error(&quot;drawmap: undefined tile '&quot; .. key .. &quot;' at &quot;
++                        error(&quot;wo:drawMap: undefined tile '&quot; .. key .. &quot;' at &quot;
+                               .. p[1] .. &quot;, &quot; .. p[2] .. &quot;(in submap at &quot;
+-                              .. x .. &quot;, &quot;.. y .. &quot;)&quot;)
++                              .. x .. &quot;, &quot;.. y .. &quot;).&quot;)
+                     end
+                 end
+             end
+@@ -288,7 +290,7 @@
+         while type(context) == &quot;table&quot; do
+             local finalizer = context[2]
+             if type(finalizer) == &quot;function&quot; then
+-               finalizer(context) 
++                 finalizer(context) 
+             end
+             context = context[3]
+         end
+@@ -296,14 +298,24 @@
+ )
+ 
+ wo:_register(&quot;drawBorder&quot;, 
+-    function (world, origin, arg2, arg3, arg4)
+-        local dest = arg2
+-        local tile = arg3
+-        if type(arg2) == &quot;number&quot; and type(arg3) == &quot;number&quot; then
++    function (world, arg1, arg2, arg3, arg4)
++        -- world, (position|object|table), width, height, (tile|table)
++        -- world, (position|object|table), (position|object|table), (tile|table)
++        assert_type(world, &quot;wo:drawBorder self (world)&quot;, 2, &quot;world&quot;)
++        assert_type(arg1, &quot;wo:drawBorder first argument (upperleft edge)&quot;, 2, &quot;position&quot;, &quot;valid object&quot;, &quot;table&quot;)
++        assert_type(arg2, &quot;wo:drawBorder second argument (width or lowerright edge)&quot;, 2, &quot;position&quot;, &quot;valid object&quot;, &quot;table&quot;, &quot;positive integer&quot;)
++        local origin = po(arg1)
++        local dest, tile
++        if etype(arg2) == &quot;number&quot; then
++            assert_type(arg3, &quot;wo:drawBorder third argument (height)&quot;, 2, &quot;positive integer&quot;)
++            assert_type(arg4, &quot;wo:drawBorder fourth argument (tile)&quot;, 2, &quot;tile&quot;, &quot;table&quot;)
+             dest = po(origin.x + arg2 - 1, origin.y + arg3 - 1)
+-            tile = arg4
++            tile = arg4            
++        else
++            assert_type(arg3, &quot;wo:drawBorder third argument (tile)&quot;, 2, &quot;tile&quot;, &quot;table&quot;)
++            dest = po(arg2)
++            tile = arg3
+         end
+-        -- TODO check validity of arguments
+         for x = origin.x, dest.x do
+             wo[{x, origin.y}] = tile
+             if origin.y ~= dest.y then
+@@ -320,14 +332,24 @@
+ )
+ 
+ wo:_register(&quot;drawRect&quot;, 
+-    function (world, origin, arg2, arg3, arg4)
+-        local dest = arg2
+-        local tile = arg3
+-        if type(arg2) == &quot;number&quot; and type(arg3) == &quot;number&quot; then
++    function (world, arg1, arg2, arg3, arg4)
++        -- world, (position|object|table), width, height, (tile|table)
++        -- world, (position|object|table), (position|object|table), (tile|table)
++        assert_type(world, &quot;wo:drawRect self (world)&quot;, 2, &quot;world&quot;)
++        assert_type(arg1, &quot;wo:drawRect first argument (upperleft edge)&quot;, 2, &quot;position&quot;, &quot;valid object&quot;, &quot;table&quot;)
++        assert_type(arg2, &quot;wo:drawRect second argument (width or lowerright edge)&quot;, 2, &quot;position&quot;, &quot;valid object&quot;, &quot;table&quot;, &quot;positive integer&quot;)
++        local origin = po(arg1)
++        local dest, tile
++        if etype(arg2) == &quot;number&quot; then
++            assert_type(arg3, &quot;wo:drawRect third argument (height)&quot;, 2, &quot;positive integer&quot;)
++            assert_type(arg4, &quot;wo:drawRect fourth argument (tile)&quot;, 2, &quot;tile&quot;, &quot;table&quot;)
+             dest = po(origin.x + arg2 - 1, origin.y + arg3 - 1)
+-            tile = arg4
++            tile = arg4            
++        else
++            assert_type(arg3, &quot;wo:drawRect third argument (tile)&quot;, 2, &quot;tile&quot;, &quot;table&quot;)
++            dest = po(arg2)
++            tile = arg3
+         end
+-        -- TODO check validity of arguments
+         for x = origin.x, dest.x do
+             for y = origin.y, dest.y do
+                 wo[{x, y}] = tile
+@@ -416,47 +438,38 @@
+ function res.random(subresolver, hits, replacements)
+     -- syntax: hits = key | {key, [key]*, [{key, superkey}]*}
+     --         replacements = {key, [key]*, [{key, frequency}]*}
++    assert_type(subresolver, &quot;res.random first argument (subresolver)&quot;, 2, &quot;tiles&quot;, &quot;function&quot;, &quot;table&quot;)
++    assert_type(hits, &quot;res.random second argument (hits)&quot;, 2, &quot;non-empty string&quot;, &quot;table&quot;)
++    assert_type(hits, &quot;res.random third argument (replacements)&quot;, 2, &quot;string&quot;, &quot;table&quot;)
+     local hit_table = {}
+     if type(hits) == &quot;string&quot; then
+         hit_table[1] = {hits, nil}
+-    elseif type(hits) == &quot;table&quot; then
++    else  -- table
+         for i, v in ipairs(hits) do
++            assert_type(v, &quot;res.random seond argument (hits), entry &quot; .. i, 2, &quot;non-empty string&quot;, &quot;table&quot;)
+             if type(v) == &quot;string&quot; then
+                 hit_table[i] = {v, nil}
+             elseif type(v) == &quot;table&quot; then
+-                if     (type(v[1]) ~= &quot;string&quot;) or (type(v[2]) ~= &quot;string&quot;) then
+-                    error(&quot;res.random: Unsupported type or syntax error in second argument.&quot;, 2)
+-                end
++                assert_type(v[1], &quot;res.random second argument (hits), key in entry &quot; .. i, 2, &quot;non-empty string&quot;)
++                assert_type(v[2], &quot;res.random second argument (hits), superkey in entry &quot; .. i, 2, &quot;nil&quot;, &quot;string&quot;)
+                 hit_table[i] = v
+-            else
+-                error(&quot;res.random: Unsupported type or syntax error in second argument.&quot;, 2)
+             end
+         end
+-    else
+-        error(&quot;res.random: Unsupported type or syntax error in second argument.&quot;, 2)
+-    end
+-    
++    end    
+     local repl_table = {}
+     if type(replacements) == &quot;string&quot; then
+         repl_table[1] = {replacements, 1}
+-    elseif type(replacements) == &quot;table&quot; then
++    else  -- table
+         for i, v in ipairs(replacements) do
++            assert_type(v, &quot;res.random third argument (replacements), entry &quot; .. i, 2, &quot;string&quot;, &quot;table&quot;)
+             if type(v) == &quot;string&quot; then
+                 repl_table[i] = {v, 1}
+-            elseif type(v) == &quot;table&quot; then
+-                if (type(v[1]) ~= &quot;string&quot;) and (type(v[2]) ~= &quot;number&quot;) then
+-                    error(&quot;res.random: Unsupported type or syntax error in third argument.&quot;, 2)
+-                end
+-                if v[2] &lt; 0 then
+-                    error(&quot;res.random: Frequency must be a positive number or zero.&quot;, 2)
+-                end
++            else  -- table of key and frequency
++                assert_type(v[1], &quot;res.random third argument (replacements), key in entry &quot; .. i, 2, &quot;string&quot;)
++                assert_type(v[2], &quot;res.random third argument (replacements), frequency in entry &quot; .. i, 2, &quot;non-negative&quot;)
+                 repl_table[i] = v
+-            else
+-                error(&quot;res.random: Unsupported type or syntax error in third argument.&quot;, 2)
+             end
+         end
+-    else
+-        error(&quot;res.random: Unsupported type or syntax error in third argument.&quot;, 2)
+     end
+     local repl_sum = 0
+     for i, v in ipairs(repl_table) do
+@@ -545,45 +558,33 @@
+ end
+ 
+ function res.autotile(subresolver, ...)
+-    -- syntax: ... = &lt;{prefixkey, template} | {fistkey, lastkey, template[, offset]}&gt;
++    -- syntax: ... = &lt;{prefixkey, template} | {firstkey, lastkey, template[, offset]}&gt;
+     -- context: [4] = table with unmodified rule tables
++    assert_type(subresolver, &quot;res.autotile first argument (subresolver)&quot;, 2, &quot;tiles&quot;, &quot;function&quot;, &quot;table&quot;)
+     local args = {...}
+     for i, rule in ipairs(args) do
+-        if type(rule) ~= &quot;table&quot; then
+-            error(&quot;Resolver autotile rule &quot; .. i..&quot; is not a table&quot;, 2)
+-        else
+-            if #rule &lt; 2 or #rule &gt; 4 then
+-                error(&quot;Resolver autotile rule &quot;..i..&quot; wrong number of arguments&quot;, 2)
+-            end
+-            local template_pos = 2
+-            local string_pos = {1,2}
+-            if #rule &gt;= 3  then
+-                template_pos = 3
+-                string_pos = {1,2,3}
+-            end
+-            
+-            for j, num in ipairs(string_pos) do
+-                if type(rule[string_pos[num]]) ~= &quot;string&quot; then
+-                    error(&quot;Resolver autotile rule &quot;..i..&quot; has no string at position &quot;..num, 2)
+-                end
+-            end
+-            if #rule == 4 then
+-                if type(rule[4]) ~= &quot;number&quot; then
+-                    error(&quot;Resolver autotile rule &quot;..i..&quot; has no number at position 4&quot;, 2)
+-                end
+-            end
+-            if #rule &gt;= 3 then
+-                local first = string.byte(rule[1], #rule[1])
+-                local last  = string.byte(rule[2], #rule[2])
+-                if #rule[2] ~= #rule[1] or string.sub(rule[2], 1, -2) ~= string.sub(rule[1], 1, -2)
+-                        or first &gt; last then
+-                    error(&quot;Resolver autotile rule &quot;..i..&quot; bad range start-end strings&quot;, 2)
+-                end
+-            end
+-            if ti[rule[template_pos]] == nil then
+-                error(&quot;Resolver autotile missing template tile '&quot;..rule[template_pos]..&quot;'&quot;, 2)
+-            end
++        assert_type(rule, &quot;res.autotile argument &quot; .. (i+1) .. &quot; (rule &quot; .. i .. &quot;)&quot;, 2, &quot;table&quot;)
++        assert_bool((#rule == 2) or (#rule == 3), &quot;res.autotile rule &quot;..i..&quot; has wrong number of arguments (must be 2, 3, or 4).&quot;, 2)
++        local template_pos = 2
++        local string_pos = {1,2}
++        if #rule &gt;= 3  then
++            template_pos = 3
++            string_pos = {1,2,3}
+         end
++        
++        for j, num in ipairs(string_pos) do
++            assert_type(rule[string_pos[num]], &quot;res.autotile rule &quot; .. i .. &quot;, position &quot; .. num, 2, &quot;string&quot;)
++        end
++        if #rule == 4 then
++            assert_type(rule[4], &quot;res.autotile rule &quot; .. i .. &quot;, position 4 (offset)&quot;, 2, &quot;integer&quot;)
++        end
++        if #rule &gt;= 3 then
++            local first = string.byte(rule[1], #rule[1])
++            local last  = string.byte(rule[2], #rule[2])
++            assert_bool(#rule[1] == #rule[2] and string.sub(rule[2], 1, -2) == string.sub(rule[1], 1, -2) and first &lt;= last, 
++                &quot;res.autotile: Rule &quot; .. i .. &quot; has bad range start-end strings.&quot;, 2)
++        end
++        assert_bool(ti[rule[template_pos]], &quot;res.autotile: Missing template tile '&quot; .. rule[template_pos] .. &quot;'&quot;, 2)
+     end
+     local context = {res.autotile_implementation, nil, subresolver, args}
+     return context
+@@ -625,14 +626,12 @@
+ end
+ 
+ function res.composer(subresolver, ...)
++    assert_type(subresolver, &quot;res.composer first argument (subresolver)&quot;, 2, &quot;tiles&quot;, &quot;function&quot;, &quot;table&quot;)
+     local args = {...}
+     local sequence = nil
+-    if #args &gt;  1 then
+-        error(&quot;Resolver composer did not expect more than one argument&quot; ,2)
+-    elseif #args == 1 then
+-        if type(args[1]) ~= &quot;string&quot; then
+-            error(&quot;Resolver composer did expect string as first argument&quot; ,2)
+-        end
++    assert_bool(#args &lt;= 1, &quot;res.composer: Too many arguments (must be 1 or 2).&quot; ,2)
++    if #args == 1 then
++        assert_type(args[1], &quot;res.composer second argument (sequence)&quot;, 2, &quot;non-empty string&quot;)
+         sequence = args[1]
+     end
+     local context = {res.composer_implementation, nil, subresolver, sequence}
+@@ -672,6 +671,7 @@
+             or ((condition == &quot;positive integer&quot;) and (type(object) == &quot;number&quot;) and (math.ceil(object) == object) and (object &gt; 0))
+             or ((condition == &quot;non-empty string&quot;) and (type(object) == &quot;string&quot;) and (object ~= &quot;&quot;))
+             or ((condition == &quot;any table&quot;) and (type(object) == &quot;table&quot;))
++            or ((condition == &quot;valid object&quot;) and (etype(object) == &quot;object&quot;) and (-object))
+     end
+     if not fulfilled then
+         for k = 1, #conditions do
+
+Modified: trunk/data/levels/lib/libmap.xml
+===================================================================
+--- trunk/data/levels/lib/libmap.xml	2009-03-30 23:59:14 UTC (rev 1603)
++++ trunk/data/levels/lib/libmap.xml	2009-03-31 15:39:49 UTC (rev 1604)
+@@ -161,8 +161,8 @@
+   -- syntax: map, pos1, pos2
+   --         map, pos1, width, height
+   assert_type(map, &quot;lib.map.sub first argument&quot;, 2, &quot;map&quot;)
+-  assert_type(origin, &quot;lib.map.sub second argument&quot;, 2, &quot;position&quot;, &quot;object&quot;, &quot;string&quot;, &quot;table&quot;)
+-  assert_type(arg2, &quot;lib.map.sub third argument&quot;, 2, &quot;position&quot;, &quot;object&quot;, &quot;string&quot;, &quot;table&quot;, &quot;number&quot;)
++  assert_type(origin, &quot;lib.map.sub second argument&quot;, 2, &quot;position&quot;, &quot;valid object&quot;, &quot;string&quot;, &quot;table&quot;)
++  assert_type(arg2, &quot;lib.map.sub third argument&quot;, 2, &quot;position&quot;, &quot;valid object&quot;, &quot;string&quot;, &quot;table&quot;, &quot;number&quot;)
+   local pos1, pos2 = origin, arg2
+   if etype(pos1) ~= &quot;position&quot; then
+     pos1 = po(pos1)
+@@ -192,40 +192,34 @@
+ end
+ 
+ -- TODO: Speed up.
+-function lib.map._paste(map1, map2, pos)
+-  local kl = rawget(map2, &quot;__keylength&quot;)
+-  local dk = rawget(map2, &quot;__defaultkey&quot;)
+-  for y = 1, map2.height do
+-    local line = rawget(map2, y)
+-    for x = 1, map2.width do
+-      tile = string.sub(line, kl * (x - 1) + 1, x * kl)
+-      if tile ~= dk then
+-        map1[{pos.x + x - 1, pos.y + y - 1}] = tile
+-      end
+-    end
+-  end
+-end
+-
+ function lib.map.paste(map1, map2, posarg)
+   assert_type(map1, &quot;lib.map.paste first argument&quot;, 2, &quot;map&quot;)
+   assert_type(map2, &quot;lib.map.paste second argument&quot;, 2, &quot;map&quot;)
+-  assert_type(posarg, &quot;lib.map.paste third argument&quot;, 2, &quot;position&quot;, &quot;object&quot;, &quot;string&quot;, &quot;group&quot;, &quot;polist&quot;, &quot;table&quot;)  
+-  if map1.keylength ~= map2.keylength then
+-      error(&quot;lib.map.paste: Can't work on maps with different keylengths.&quot;, 2)
+-  end
++  assert_type(posarg, &quot;lib.map.paste third argument&quot;, 2, &quot;position&quot;, &quot;valid object&quot;, &quot;string&quot;, &quot;group&quot;, &quot;polist&quot;, &quot;table&quot;)  
++  assert_bool(map1.keylength == map2.keylength, &quot;lib.map.paste: Can't work on maps with different keylengths.&quot;, 2)
+   local postype = etype(posarg)
+   if postype == &quot;position&quot; then
+-    lib.map._paste(map1, map2, posarg)
++    local kl = rawget(map2, &quot;__keylength&quot;)
++    local dk = rawget(map2, &quot;__defaultkey&quot;)
++    for y = 1, map2.height do
++      local line = rawget(map2, y)
++      for x = 1, map2.width do
++        tile = string.sub(line, kl * (x - 1) + 1, x * kl)
++        if tile ~= dk then
++          map1[{posarg.x + x - 1, posarg.y + y - 1}] = tile
++        end
++      end
++    end
+   elseif postype == &quot;group&quot; then
+     for obj in posarg do
+-      lib.map._paste(map1, map2, po(obj))
++      lib.map.paste(map1, map2, po(obj))
+     end
+   elseif postype == &quot;polist&quot; then
+     for j = 1, #posarg do
+-      lib.map._paste(map1, map2, posarg[j])
++      lib.map.paste(map1, map2, posarg[j])
+     end
+   else
+-    lib.map._paste(map1, map2, po(posarg))
++    lib.map.paste(map1, map2, po(posarg))
+   end
+ end
+ 
+@@ -465,7 +459,7 @@
+ 
+ function lib.map.extend(map, posarg)
+   assert_type(map, &quot;lib.map.extend first argument&quot;, 2, &quot;map&quot;)
+-  assert_type(posarg, &quot;lib.map.extend second argument&quot;, 2, &quot;position&quot;, &quot;object&quot;, &quot;string&quot;, &quot;table&quot;)
++  assert_type(posarg, &quot;lib.map.extend second argument&quot;, 2, &quot;position&quot;, &quot;valid object&quot;, &quot;string&quot;, &quot;table&quot;)
+   local pos = posarg
+   if etype(pos) ~= &quot;position&quot; then
+     pos = po(pos)
+
+Modified: trunk/data/levels/lib/libmaze_2.xml
+===================================================================
+--- trunk/data/levels/lib/libmaze_2.xml	2009-03-30 23:59:14 UTC (rev 1603)
++++ trunk/data/levels/lib/libmaze_2.xml	2009-03-31 15:39:49 UTC (rev 1604)
+@@ -18,6 +18,9 @@
+     &lt;el:luamain&gt;&lt;![CDATA[
+ 
+ lib.maze = {}
++lib.maze.MAX_WIDTH_IN_ENCODE = 2000  -- If you have to change this, change it before any other call to lib.maze.
++lib.maze.MAX_WIDTH = 100000          -- If you have to change this, change it before any other call to lib.maze.
++lib.maze.MAX_HEIGHT = 100000         -- If you have to change this, change it before any other call to lib.maze.
+ 
+ function res.maze(subresolver, ...)
+     -- syntax: ... = &lt;sourcebasename&gt;, &lt;targetbasename&gt;
+@@ -27,20 +30,20 @@
+     
+     -- default settings
+     context.encode = function (maze, i, j)
+-            return 2000*j + i + 100
++            return lib.maze.MAX_WIDTH_IN_ENCODE*j + i + 100
+         end
+     context.decode = function (maze, c)
+-            local i = (c - 100) % 2000
+-            return i, (c - 100 - i) / 2000
++            local i = (c - 100) % lib.maze.MAX_WIDTH_IN_ENCODE
++            return i, (c - 100 - i) / lib.maze.MAX_WIDTH_IN_ENCODE
+         end
+     context.dirs = {[WEST] = EAST, [SOUTH] = NORTH, [EAST] = WEST, [NORTH] = SOUTH}
+     context.adjacent = function (maze, c, dir)
+             if c == 99 then return c end   -- invalid code
+             local adj
+             if dir == WEST then adj = c - 1
+-            elseif dir == SOUTH then adj = c + 2000
++            elseif dir == SOUTH then adj = c + lib.maze.MAX_WIDTH_IN_ENCODE
+             elseif dir == EAST then adj = c + 1
+-            elseif dir == NORTH then adj = c - 2000
++            elseif dir == NORTH then adj = c - lib.maze.MAX_WIDTH_IN_ENCODE
+             else error(&quot;Maze - illegal direction &quot;..dir)
+             end
+             if adj &lt; 100 then
+@@ -151,17 +154,18 @@
+         }
+         
+     -- argument evaluation
+-    assert_bool(#args == 1, &quot;Libmaze wrong number of arguments - expected subresolver and a table of configuration data.&quot;, 2)
+-    assert_type(args[1], &quot;libmaze configuration data&quot;, 2, &quot;table&quot;)
++    assert_type(subresolver, &quot;res.maze first argument (subresolver)&quot;, 2, &quot;tiles&quot;, &quot;function&quot;, &quot;table&quot;)
++    assert_bool(#args == 1, &quot;res.maze: wrong number of arguments - expected subresolver and a table of configuration data.&quot;, 2)
++    assert_type(args[1], &quot;res.maze second argument (libmaze configuration data)&quot;, 2, &quot;table&quot;)
+     context.area = args[1].area
+-    assert_type(context.area, &quot;libmaze area configuration table&quot;, 2, &quot;table&quot;)
++    assert_type(context.area, &quot;res.maze area configuration table&quot;, 2, &quot;table&quot;)
+     if type(context.area[2]) == &quot;number&quot; then
+-        assert_type(context.area[3], &quot;libmaze area configuration table second entry&quot;, 2, &quot;number&quot;)
++        assert_type(context.area[3], &quot;res.maze area configuration table second entry&quot;, 2, &quot;number&quot;)
+         context.rectangular = true
+         -- if type (context.area[1]) ~= &quot;string&quot;
+     else
+         for k, v in pairs(context.area) do
+-            assert_type(v, &quot;libmaze area configuration table entry&quot;, 2, &quot;string&quot;)
++            assert_type(v, &quot;res.maze area configuration table entry&quot;, 2, &quot;string&quot;)
+         end
+         context.area_keymatches = {}
+         context.area_keyprefixes = {}
+@@ -169,7 +173,7 @@
+         context.area_positioncodes = {}
+     end
+     
+-    assert_type(args[1].render, &quot;libmaze renderer configuration&quot;, 2, &quot;nil&quot;, &quot;table&quot;)
++    assert_type(args[1].render, &quot;res.maze renderer configuration&quot;, 2, &quot;nil&quot;, &quot;table&quot;)
+     if args[1].render then
+         context.renderer_args = args[1].render
+         if type(args[1].render[1]) == &quot;function&quot; then
+@@ -178,10 +182,10 @@
+         end
+     end
+     
+-    assert_type(args[1].kernel, &quot;libmaze kernel configuration&quot;, 2, &quot;nil&quot;, &quot;table&quot;)
+-    assert_type(args[1].spacing, &quot;libmaze spacing configuration&quot;, 2, &quot;nil&quot;, &quot;table&quot;)
+-    assert_type(args[1].offset_x, &quot;libmaze offset_x configuration&quot;, 2, &quot;nil&quot;, &quot;table&quot;)
+-    assert_type(args[1].offset_y, &quot;libmaze offset_y configuration&quot;, 2, &quot;nil&quot;, &quot;table&quot;)
++    assert_type(args[1].kernel, &quot;res.maze kernel configuration&quot;, 2, &quot;nil&quot;, &quot;table&quot;)
++    assert_type(args[1].spacing, &quot;res.maze spacing configuration&quot;, 2, &quot;nil&quot;, &quot;table&quot;)
++    assert_type(args[1].offset_x, &quot;res.maze offset_x configuration&quot;, 2, &quot;nil&quot;, &quot;table&quot;)
++    assert_type(args[1].offset_y, &quot;res.maze offset_y configuration&quot;, 2, &quot;nil&quot;, &quot;table&quot;)
+     context.kernel = args[1].kernel or context.kernel
+     context.spacing = args[1].spacing or context.spacing
+     context.offset_x = args[1].offset_x or context.offset_x
+@@ -253,8 +257,8 @@
+             end
+         end
+         
+-        local minx = 100000
+-        local miny = 100000
++        local minx = lib.maze.MAX_WIDTH
++        local miny = lib.maze.MAX_HEIGHT
+         -- offsets not yet supported!
+         for k,v in pairs(maze.area_positioncodes) do
+             local x,y = maze:decode(v)
+
+Modified: trunk/data/levels/lib/libpento_1.xml
+===================================================================
+--- trunk/data/levels/lib/libpento_1.xml	2009-03-30 23:59:14 UTC (rev 1603)
++++ trunk/data/levels/lib/libpento_1.xml	2009-03-31 15:39:49 UTC (rev 1604)
+@@ -16,8 +16,11 @@
+       &lt;el:score el:easy=&quot;-&quot; el:difficult=&quot;-&quot;/&gt;
+     &lt;/el:info&gt;
+     &lt;el:luamain&gt;&lt;![CDATA[
+-    
+-    
++
++lib.pento = {}
++lib.pento.MAX_WIDTH  = 100000  -- If you have to change this, change it before any call to res.pento.
++lib.pento.MAX_HEIGHT = 100000  -- If you have to change this, change it before any call to res.pento.
++
+ ti[&quot;pentopuzzle&quot;] = {&quot;st_puzzle&quot;, &quot;shape%%#&quot;, cluster=&quot;%%&quot;, intensity=0}
+ 
+ function res.pento_finalization(context)
+@@ -25,8 +28,8 @@
+     context.src_anchor = po(0,0)
+     do
+         assert_bool(#context.src_area == 25, &quot;Pentomino source area not a 5x5 square.&quot;, 2)
+-        local x = 100000
+-        local y = 100000
++        local x = lib.pento.MAX_WIDTH
++        local y = lib.pento.MAX_HEIGHT
+         for s in context.src_area do
+             if s.x &lt; x then x = s.x end
+             if s.y &lt; y then y = s.y end
+@@ -104,8 +107,9 @@
+     -- syntax: ... = &lt;sourcebasename&gt;, &lt;targetbasename&gt;
+     -- context: 
+     local args = {...}
+-    assert_type(args[1], &quot;res.pento first argument (source basename)&quot;, 2, &quot;string&quot;)
+-    assert_type(args[2], &quot;res.pento second argument (target basename)&quot;, 2, &quot;string&quot;)
++    assert_type(subresolver, &quot;res.pento first argument (subresolver)&quot;, 2, &quot;tiles&quot;, &quot;function&quot;, &quot;table&quot;)
++    assert_type(args[1], &quot;res.pento second argument (source basename)&quot;, 2, &quot;string&quot;)
++    assert_type(args[2], &quot;res.pento third argument (target basename)&quot;, 2, &quot;string&quot;)
+     local autotile = res.autotile(subresolver, {&quot;O&quot;,&quot;Z&quot;, &quot;pentopuzzle&quot;})
+     local context = {res.pento_implementation, res.pento_finalization, autotile}
+     context.source = args[1]
+
+Modified: trunk/data/levels/lib/libsoko.xml
+===================================================================
+--- trunk/data/levels/lib/libsoko.xml	2009-03-30 23:59:14 UTC (rev 1603)
++++ trunk/data/levels/lib/libsoko.xml	2009-03-31 15:39:49 UTC (rev 1604)
+@@ -38,6 +38,7 @@
+ -- RESOLVE_ORIENTED = 5
+ GOAL_HOOK_DEFAULT = 0
+ GOAL_HOOK_RALF = 1
++lib.soko.MAX_HEIGHT = 10000  -- If you have to change this, change it before any other call to lib.soko.
+ 
+ lib.soko.resolver_info = {}
+ lib.soko.area = {}
+@@ -53,7 +54,7 @@
+ -- positions of the current level (see it as &quot;attributes for positions&quot;).
+ function lib.soko.area_get(self, index)
+     if usertype(index) == &quot;position&quot; then
+-        local signature = index.x .. &quot;/&quot; .. index.y
++        local signature = index.x * lib.soko.MAX_HEIGHT + index.y
+         if not rawget(self, signature) then
+             rawset(self, signature, {})
+         end
+@@ -66,7 +67,7 @@
+ end
+ 
+ function lib.soko.area_set(self, newindex, value)
+-    error(&quot;lib.soko: Internal error: area_set used inappropriately.&quot;, 2)
++    error(&quot;lib.soko: Internal error: lib.soko.area used inappropriately.&quot;, 1)
+ end
+ 
+ lib.soko.area_metatable = {
+
+Modified: trunk/doc/reference/enigma-ref.texi
+===================================================================
+--- trunk/doc/reference/enigma-ref.texi	2009-03-30 23:59:14 UTC (rev 1603)
++++ trunk/doc/reference/enigma-ref.texi	2009-03-31 15:39:49 UTC (rev 1604)
+@@ -13862,7 +13862,7 @@
+ 
+ @table @asis
+ @item @b{Syntax:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at b</A>{assert_bool}(@i{var}, @i{vardescription}, @i{level}, @i{type1}, @i{type2}, ...)
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at b</A>{assert_type}(@i{var}, @i{vardescription}, @i{level}, @i{type1}, @i{type2}, ...)
+ 
+ @table @asis
+ @item @i{var}
+@@ -13891,35 +13891,38 @@
+ @end example
+ 
+ @item @b{Details:}
+-Possible types are all Lua types (like @samp{nil}, @samp{number}, @samp{boolean},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{string}, @samp{table}, @samp{function}) except @samp{userdata}, all
+-Enigma-own user types (@samp{object}, @samp{position}, @samp{tile},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{tiles}, @samp{group}, @samp{world}, @samp{polist}, @samp{unknown}), and
+-types defined inside metatables (@samp{map} from @ref{libmap}), see
++Possible types are all Lua types (like @code{&quot;nil&quot;}, @code{&quot;number&quot;},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{&quot;boolean&quot;}, @code{&quot;string&quot;}, @code{&quot;table&quot;}, @code{&quot;function&quot;}) except
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{&quot;userdata&quot;}, all Enigma-own user types (@code{&quot;object&quot;},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{&quot;position&quot;}, @code{&quot;tile&quot;}, @code{&quot;tiles&quot;}, @code{&quot;group&quot;},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{&quot;world&quot;}, @code{&quot;polist&quot;}, @code{&quot;unknown&quot;}), and
++types defined inside metatables (@code{&quot;map&quot;} from @ref{libmap}), see
+ @ref{etype}. In addition, the following type descriptors are recognized:
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @samp{integer}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @code{&quot;integer&quot;}
+ Any integer number (..., -2, -1, 0, 1, 2, ...)
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @samp{positive}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @code{&quot;positive&quot;}
+ Any number which is positive and not zero.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @samp{non-negative}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @code{&quot;non-negative&quot;}
+ Any number which is not negative, i.e. which is positive or zero.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @samp{natural}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @code{&quot;natural&quot;}
+ Any non-negative integer number (0, 1, 2, ...).
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @samp{positive integer}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @code{&quot;positive integer&quot;}
+ Any positive integer number (1, 2, 3, ...).
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @samp{non-empty string}
+-Any string other than the empty string @samp{&quot;&quot;}.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @samp{any table}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @code{&quot;non-empty string&quot;}
++Any string other than the empty string @code{&quot;&quot;}.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @code{&quot;any table&quot;}
+ If @samp{var} is a table, the @samp{_type}-attribute of its metatable will
+ be used as its @ref{etype}. In particular, it won't be accepted as a
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{table} anymore, if this @samp{_type}-attribute exists. For example,
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{&quot;table&quot;} anymore, if this @samp{_type}-attribute exists. For example,
+ @example
+ assert_type(mytable, &quot;large table&quot;, 1, &quot;table&quot;)
+ @end example
+-will throw an assertion when @samp{mytable} is a @samp{map}, although,
+-technically, a @samp{map} always is a @samp{table}. You can use @samp{any
+-table} as type to allow for any table, regardless of its metatable.
++will throw an assertion when @samp{mytable} is a @code{&quot;map&quot;}, although,
++technically, a @code{&quot;map&quot;} always is a @code{&quot;table&quot;}. You can use
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{&quot;any table&quot;} as type to allow for any table, regardless of its metatable.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @code{&quot;valid object&quot;}
++Any valid object.
+ @end table
+ 
+ Similar to @ref{cond}, all side effects within the evaluation of
+@@ -13940,11 +13943,11 @@
+ paint_lawn(&quot;myotherstone&quot;)
+ @end example
+ If @samp{mystone} doesn't exist, @code{no[&quot;mystone&quot;]} will still be of etype
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{object}, an invalid object. Hence @code{assert_type} will not trigger,
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{&quot;object&quot;}, an invalid object. Hence @code{assert_type} will not trigger,
+ but @code{assert_bool} will.
+ 
+ If @samp{mystone} exists, the second @samp{paint_lawn} will throw an error via
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{assert_type}, as @code{pos} now is a @code{string}. The error message
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{assert_type}, as @code{pos} now is a @code{&quot;string&quot;}. The error message
+ will be:
+ @example
+ Wrong type for paint_lawn first argument, is string, must be one of position,
+@@ -14027,24 +14030,24 @@
+ @end example
+ 
+ @item @b{Details:}
+-Lua types are @samp{nil}, @samp{number}, @samp{boolean}, @samp{string},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{table}, @samp{function}, @samp{userdata}, and @samp{thread}. You can use
+-Lua's @samp{type}-function to query the type of any variable. However, Enigma
+-defines more types through various means, and these types can be queried via
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{etype}. @samp{etype} will return its argument's Lua type as usual, with
+-the following two exceptions:
++Lua types are @code{&quot;nil&quot;}, @code{&quot;number&quot;}, @code{&quot;boolean&quot;}, @code{&quot;string&quot;},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{&quot;table&quot;}, @code{&quot;function&quot;}, @code{&quot;userdata&quot;}, and @code{&quot;thread&quot;}. You
++can use Lua's @samp{type}-function to query the type of any variable. However,
++Enigma defines more types through various means, and these types can be queried
++via @samp{etype}. @samp{etype} will return its argument's Lua type as usual,
++with the following two exceptions:
+ @table @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @i{userdata}
+-Instead of @samp{userdata}, Enigma's special types will be returned. These
+-special types are @samp{object}, @samp{position}, @samp{tile},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{tiles}, @samp{group}, @samp{world}, and @samp{polist}. If an unknown
+-userdata is encountered, @samp{unknown} will be returned.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{&quot;userdata&quot;}
++Instead of @code{&quot;userdata&quot;}, Enigma's special types will be returned. These
++special types are @code{&quot;object&quot;}, @code{&quot;position&quot;}, @code{&quot;tile&quot;},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{&quot;tiles&quot;}, @code{&quot;group&quot;}, @code{&quot;world&quot;}, and @code{&quot;polist&quot;}. If an unknown
++userdata is encountered, @code{&quot;unknown&quot;} will be returned.
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at item</A> @i{table}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{&quot;table&quot;}
+ If @code{var} is a table, it's metatable will be queried. If there is an entry
+ @samp{_type}, this entry will be used as @code{etype}. Most important examples
+-of this kind are @ref{libmap}-maps, so @samp{etype} will return @samp{map}. You
+-may access the @samp{etype}-system through @samp{_type} whenever you use
++of this kind are @ref{libmap}-maps, so @samp{etype} will return @code{&quot;map&quot;}.
++You may access the @code{etype}-system through @samp{_type} whenever you use
+ metatables on your own.
+ @end table
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001033.html">[Enigma-game-svn] r1603 - in homepage/input: . news
+</A></li>
+	<LI>Next message: <A HREF="001035.html">[Enigma-game-svn] r1605 - trunk/data/levels/lib
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1034">[ date ]</a>
+              <a href="thread.html#1034">[ thread ]</a>
+              <a href="subject.html#1034">[ subject ]</a>
+              <a href="author.html#1034">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

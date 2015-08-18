@@ -1,0 +1,795 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1024 - in trunk: lib-src/enigma-core src	src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1024%20-%20in%20trunk%3A%20lib-src/enigma-core%20src%0A%09src/stones&In-Reply-To=%3C200802060002.m1602wD7029569%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000455.html">
+   <LINK REL="Next"  HREF="000457.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1024 - in trunk: lib-src/enigma-core src	src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1024%20-%20in%20trunk%3A%20lib-src/enigma-core%20src%0A%09src/stones&In-Reply-To=%3C200802060002.m1602wD7029569%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1024 - in trunk: lib-src/enigma-core src	src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Feb  6 01:02:58 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000455.html">[Enigma-game-svn] r1023 - in trunk: data/schemas src
+</A></li>
+        <LI>Next message: <A HREF="000457.html">[Enigma-game-svn] r1025 - in feature_branches/hp_lotm: images/lotm	input/lotm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#456">[ date ]</a>
+              <a href="thread.html#456">[ thread ]</a>
+              <a href="subject.html#456">[ subject ]</a>
+              <a href="author.html#456">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-02-06 01:02:56 +0100 (Wed, 06 Feb 2008)
+New Revision: 1024
+
+Modified:
+   trunk/lib-src/enigma-core/ecl_alist.hh
+   trunk/src/AttributeDescriptor.cc
+   trunk/src/AttributeDescriptor.hh
+   trunk/src/KindDescriptor.cc
+   trunk/src/KindDescriptor.hh
+   trunk/src/Object.cc
+   trunk/src/Object.hh
+   trunk/src/ObjectValidator.cc
+   trunk/src/ObjectValidator.hh
+   trunk/src/lua.cc
+   trunk/src/main.cc
+   trunk/src/stones/Switch.cc
+   trunk/src/stones/Switch.hh
+Log:
+Trunk 1.1: Object Validation part II
+- validate level rw-access permission on attributes
+- supply declaration based default values for not set attributes
+- set of attribute value to &quot;nil&quot;:
+  - reset to default value if default other than nil
+  - if default nil the attribute will be deleted as the access return nil
+- new object type schema instead of inconsistent old kind:
+  - a new kind can be any specifier from &quot;st&quot;, &quot;st_brick&quot; to &quot;st_brick_n&quot; 
+  - class = common attr., mesg., similar behaviour, image - e.g. &quot;st_brick&quot;
+  - subkind = most specific kind with one or more attr. fixed to values
+- obj:kind() return most specific kind - dynamically evaluated on base
+  of attribute values via given XML declaration
+- obj:is(&quot;akind&quot;) checks if a objects fits to kind based on XML declaration
+Note:
+- just a few test objects are yet XML declared
+
+
+Modified: trunk/lib-src/enigma-core/ecl_alist.hh
+===================================================================
+--- trunk/lib-src/enigma-core/ecl_alist.hh	2008-02-03 19:04:18 UTC (rev 1023)
++++ trunk/lib-src/enigma-core/ecl_alist.hh	2008-02-06 00:02:56 UTC (rev 1024)
+@@ -58,12 +58,18 @@
+             return i;
+         }
+ 
+-	VAL &amp;operator[] (const key_type &amp;key) { 
++        VAL &amp;operator[] (const key_type &amp;key) { 
+             iterator i=find(key);
+             if (i==this-&gt;end())
+                 i=insert(this-&gt;end(), make_pair(key, VAL()));
+             return i-&gt;second;
+         }
++        
++        void remove_key(const key_type &amp;key) {
++            iterator i = find(key);
++            if (i != this-&gt;end())
++                erase(i);
++        }
+     };
+ }
+ #endif
+
+Modified: trunk/src/AttributeDescriptor.cc
+===================================================================
+--- trunk/src/AttributeDescriptor.cc	2008-02-03 19:04:18 UTC (rev 1023)
++++ trunk/src/AttributeDescriptor.cc	2008-02-06 00:02:56 UTC (rev 1024)
+@@ -19,6 +19,7 @@
+ 
+ #include &quot;AttributeDescriptor.hh&quot;
+ 
++#include &quot;errors.hh&quot;
+ #include &quot;ObjectValidator.hh&quot;
+ 
+ namespace enigma {
+@@ -26,7 +27,7 @@
+     AttributeDescriptor::AttributeDescriptor(std::string attributeName, validationType valType, 
+             Value aValue, bool allowRead, bool allowWrite, Value minVal, Value maxVal)
+             : name (attributeName), type (valType), defaultValue (aValue), 
+-            readable (allowRead), writable(allowWrite), min (minVal), max (maxVal) {
++            readable (allowRead), writable(allowWrite), min (minVal), max (maxVal), isKindValue (false) {
+     }
+     
+     std::string AttributeDescriptor::getName() {
+@@ -45,32 +46,58 @@
+         return writable;
+     }
+     
++    Value AttributeDescriptor::getDefaultValue() {
++        return defaultValue;
++    }
++    
+     Value AttributeDescriptor::getValue() {
+         return value;
+     }
+     
+     void AttributeDescriptor::setReadable(bool allowRead) {
++        ASSERT(!isKindValue, XFrontend, 
++                ecl::strf(&quot;Object description initialization error - attribute '%s' made readable for a subkind&quot;,
++                name.c_str()).c_str());
+         readable = allowRead;
+     }
+     
+     void AttributeDescriptor::setWritable(bool allowWrite) {
++        ASSERT(!isKindValue, XFrontend, 
++                ecl::strf(&quot;Object description initialization error - attribute '%s' made writable for a subkind&quot;,
++                name.c_str()).c_str());
+         writable = allowWrite;
+     }
+     
+     void AttributeDescriptor::setDefaultValue(const Value &amp;newDefault) {
++        ASSERT(!isKindValue, XFrontend, 
++                ecl::strf(&quot;Object description initialization error - attribute '%s' new default for a subkind&quot;,
++                name.c_str()).c_str());
+         defaultValue = newDefault;
+     }
+ 
+     void AttributeDescriptor::setMinValue(const Value &amp;newMin) {
++        ASSERT(!isKindValue, XFrontend, 
++                ecl::strf(&quot;Object description initialization error - attribute '%s' new min for a subkind&quot;,
++                name.c_str()).c_str());
+         min = newMin;
+     }
+     
+     void AttributeDescriptor::setMaxValue(const Value &amp;newMax) {
++        ASSERT(!isKindValue, XFrontend, 
++                ecl::strf(&quot;Object description initialization error - attribute '%s' new max for a subkind&quot;,
++                name.c_str()).c_str());
+         max = newMax;
+     }
+     
+     void AttributeDescriptor::setValue(const Value &amp;newValue) {
++        ASSERT(isKindValue, XFrontend, 
++                ecl::strf(&quot;Object description initialization error - attribute '%s' value for a class or abstract kind&quot;,
++                name.c_str()).c_str());
+         value = newValue;
+     }
+     
++    void AttributeDescriptor::limitToKindValue() {
++        isKindValue = true;
++    }
++    
+ } // namespace enigma
+
+Modified: trunk/src/AttributeDescriptor.hh
+===================================================================
+--- trunk/src/AttributeDescriptor.hh	2008-02-03 19:04:18 UTC (rev 1023)
++++ trunk/src/AttributeDescriptor.hh	2008-02-06 00:02:56 UTC (rev 1024)
+@@ -44,6 +44,7 @@
+         validationType getType();
+         bool isReadable();
+         bool isWritable();
++        Value getDefaultValue();
+         Value getValue();
+         void setReadable(bool allowRead);
+         void setWritable(bool allowWrite);
+@@ -51,6 +52,7 @@
+         void setMinValue(const Value &amp;newMin);
+         void setMaxValue(const Value &amp;newMax);
+         void setValue(const Value &amp;newValue);
++        void limitToKindValue();
+ 
+     private:
+         std::string name;
+@@ -61,6 +63,7 @@
+         Value  min;
+         Value  max;
+         Value value;
++        bool isKindValue;
+     };
+ } // namespace enigma
+ #endif
+
+Modified: trunk/src/KindDescriptor.cc
+===================================================================
+--- trunk/src/KindDescriptor.cc	2008-02-03 19:04:18 UTC (rev 1023)
++++ trunk/src/KindDescriptor.cc	2008-02-06 00:02:56 UTC (rev 1024)
+@@ -53,9 +53,15 @@
+         // inherit attributes from super
+         if (super != NULL)
+             attributes = super-&gt;attributes;
++            
++        if (super != NULL)
++            super-&gt;registerSubKind(this);
+     }
+     
+     void KindDescriptor::addMessage(std::string msg) {
++        ASSERT(isAbstract || isClass, XFrontend, 
++                ecl::strf(&quot;Object description initialization error - message '%s' addition to subkind '%s'&quot;,
++                msg.c_str(), kind.c_str()).c_str());
+         if (messages[msg] == NULL)
+             messages[msg] = ObjectValidator::instance()-&gt;getMessage(msg);
+     }
+@@ -66,16 +72,27 @@
+     }
+     
+     void KindDescriptor::addAttribute(std::string name) {
++        ASSERT(isAbstract || isClass, XFrontend, 
++                ecl::strf(&quot;Object description initialization error - attribute '%s' addition to subkind '%s'&quot;,
++                name.c_str(), kind.c_str()).c_str());
+         if (attributes[name] == NULL)
+-            attributes[name] = ObjectValidator::instance()-&gt;getDefaultAttribute(name);
++            attributes[name] = ObjectValidator::instance()-&gt;getDefaultAttributeDesc(name);
+     }
+     
+     AttributeDescriptor * KindDescriptor::addModifiedAttribute(std::string name) {
+         // make a clone and return it for modification
+         AttributeDescriptor *inheritedAttribute = attributes[name];
+-        if (inheritedAttribute == NULL)
+-            inheritedAttribute = ObjectValidator::instance()-&gt;getDefaultAttribute(name);
++        if (inheritedAttribute == NULL) {
++            ASSERT(isAbstract || isClass, XFrontend, 
++                    ecl::strf(&quot;Object description initialization error - attribute '%s' addition to subkind '%s'&quot;,
++                    name.c_str(), kind.c_str()).c_str());
++            inheritedAttribute = ObjectValidator::instance()-&gt;getDefaultAttributeDesc(name);
++        }
+         AttributeDescriptor *cloneAttribute = ObjectValidator::instance()-&gt;cloneAttribute(inheritedAttribute);
++        if (!isAbstract &amp;&amp; !isClass) {
++            cloneAttribute-&gt;limitToKindValue();
++            valuedAttributes[name] = cloneAttribute;
++        }
+         attributes[name] = cloneAttribute;
+         return cloneAttribute;
+     }
+@@ -85,9 +102,55 @@
+         if (it == attributes.end())
+             return false;
+         else
++            // TODO validate value - DEFAULT is the type that matches anything
+             return it-&gt;second-&gt;isWritable();
+     }
+     
++    bool KindDescriptor::validateAttributeRead(std::string key) {
++        std::map&lt;std::string, AttributeDescriptor *&gt;::iterator it = attributes.find(key);
++        if (it == attributes.end())
++            return false;
++        else
++            return it-&gt;second-&gt;isReadable();
++    }
++    
++    Value KindDescriptor::getDefaultValue(std::string key) {
++        std::map&lt;std::string, AttributeDescriptor *&gt;::iterator it = attributes.find(key);
++        if (it == attributes.end())
++            return Value(Value::DEFAULT);
++        else {
++            Value v = it-&gt;second-&gt;getDefaultValue();
++            if (v.getType() == Value::NIL)
++                return Value(Value::DEFAULT);
++            else
++                return v;
++        }
++    }
++    
++    std::string KindDescriptor::getKind(const Object *obj) {
++        for(std::list&lt;KindDescriptor *&gt;::iterator it = subKinds.begin(); it != subKinds.end(); ++it) {
++            if (!(*it)-&gt;isInitOnly &amp;&amp; (*it)-&gt;validateObject(obj))
++                return (*it)-&gt;kind;
++        }
++        return kind;
++    }
++    
++    bool KindDescriptor::isKind(const Object *obj, std::string match) {
++        if (match == kind)
++            return true;
++        else {
++            // is it a super kind name?
++            for (KindDescriptor *s = super; s != NULL; s = s-&gt;super)
++                if (match == s-&gt;kind)
++                    return true;
++                    
++            // is it a special subkind?
++            if (match == getKind(obj))
++                return true;
++        }
++        return false;
++    }
++    
+     void KindDescriptor::log() {
+         if (super != NULL)
+             Log &lt;&lt; &quot;Kind &quot; &lt;&lt; kind &lt;&lt; &quot; of super &quot; &lt;&lt; super-&gt;kind &lt;&lt; &quot; isClass &quot; &lt;&lt; isClass &lt;&lt; &quot;\n&quot;;
+@@ -130,4 +193,18 @@
+             Log &lt;&lt; &quot;\n&quot;;
+         }
+     }
++    
++    void KindDescriptor::registerSubKind(KindDescriptor *aKind) {
++        subKinds.push_back(aKind);
++    }
++    
++    bool KindDescriptor::validateObject(const Object *obj) {
++        bool result = true;
++        for (std::map&lt;std::string, AttributeDescriptor *&gt;::iterator it = valuedAttributes.begin();
++                it != valuedAttributes.end(); ++it) {
++            if ( it-&gt;second-&gt;getValue() != obj-&gt;getAttr(it-&gt;second-&gt;getName()))
++                return false;
++        }
++        return result;
++    }
+ } // namespace enigma
+
+Modified: trunk/src/KindDescriptor.hh
+===================================================================
+--- trunk/src/KindDescriptor.hh	2008-02-03 19:04:18 UTC (rev 1023)
++++ trunk/src/KindDescriptor.hh	2008-02-06 00:02:56 UTC (rev 1024)
+@@ -21,6 +21,7 @@
+ 
+ #include &quot;AttributeDescriptor.hh&quot;
+ #include &quot;MessageDescriptor.hh&quot;
++#include &lt;list&gt;
+ #include &lt;map&gt;
+ #include &lt;string&gt;
+ 
+@@ -34,16 +35,25 @@
+         void addAttribute(std::string name);
+         AttributeDescriptor * addModifiedAttribute(std::string name);
+         bool validateAttributeWrite(std::string key, Value val);
++        bool validateAttributeRead(std::string key);
++        Value getDefaultValue(std::string key);
++        std::string getKind(const Object *obj);
++        bool isKind(const Object *obj, std::string match);
+         void log();
+     private:
+         std::string kind;
+         KindDescriptor *super;
++        std::list&lt;KindDescriptor *&gt; subKinds;
+         bool isAbstract;  // object instantiation not possible
+         bool isClass;     // 
+-        bool isInitOnly;  // isKind is never true 
++        bool isInitOnly;  // kind just for instanciation of new clones - isKind is never true 
+         int numStates;
+         std::map&lt;std::string, MessageDescriptor *&gt; messages;
+         std::map&lt;std::string, AttributeDescriptor *&gt; attributes;
++        std::map&lt;std::string, AttributeDescriptor *&gt; valuedAttributes;
++        
++        void registerSubKind(KindDescriptor *aKind);
++        bool validateObject(const Object *obj);
+     };
+ } // namespace enigma
+ #endif
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2008-02-03 19:04:18 UTC (rev 1023)
++++ trunk/src/Object.cc	2008-02-06 00:02:56 UTC (rev 1024)
+@@ -135,11 +135,11 @@
+     }
+     
+     std::string Object::getKind() const {
+-        return getClass();
++        return ObjectValidator::instance()-&gt;getKind(this);
+     }
+     
+     bool Object::isKind(const std::string &amp;kind) const {
+-        return true;
++        return ObjectValidator::instance()-&gt;isKind(this, kind);
+     }
+ 
+     bool Object::validateMessage(std::string msg, Value arg) {
+@@ -153,12 +153,18 @@
+     
+     
+     void Object::set_attrib(const string&amp; key, const Value&amp; val) {
+-        if (val)         // only set non-default values
+-            attribs[key] = val;  //.insert (key, val);
++        if (val) {        // only set non-default values
++            if (val.getType() == Value::NIL &amp;&amp; server::EnigmaCompatibility &gt;= 1.10)
++                // delete attribute
++                attribs.remove_key(key);
++            else
++                attribs[key] = val;  //.insert (key, val);
++        }
+     }
+     
+     
+     void Object::setAttrChecked(const std::string&amp; key, const Value &amp;val) {
++        // allow all user attributes and those system attributes with write allowance
+         if (key.find('_') == 0 || ObjectValidator::instance()-&gt;validateAttributeWrite(this, key, val))
+             setAttr(key, val);
+     }
+@@ -168,13 +174,20 @@
+     }
+     
+     Value Object::getAttrChecked(const std::string &amp;key) const {
+-        return getAttr(key);
++        // allow all user attributes and those system attributes with read allowance
++        if (key.find('_') == 0 || ObjectValidator::instance()-&gt;validateAttributeRead(this, key))
++            return getAttr(key);
++        
++        ASSERT(false, XLevelRuntime, ecl::strf(&quot;Object: attribute '%s' read not allowed for kind '%s'&quot;,
++                key.c_str(), getKind().c_str()).c_str());
++        return Value();
+     }
+     
+     Value Object::getAttr(const string&amp; key) const {
+         AttribMap::const_iterator i = attribs.find(key);
+-        if (i == attribs.end())
+-            return Value(Value::DEFAULT);
++        if (i == attribs.end()) 
++//            return Value(Value::DEFAULT);
++            return ObjectValidator::instance()-&gt;getDefaultValue(this, key);
+         else
+             return i-&gt;second;
+     }
+
+Modified: trunk/src/Object.hh
+===================================================================
+--- trunk/src/Object.hh	2008-02-03 19:04:18 UTC (rev 1023)
++++ trunk/src/Object.hh	2008-02-06 00:02:56 UTC (rev 1024)
+@@ -34,18 +34,18 @@
+     class Value;
+ 
+     /**
+-     *  Object is the base class for all ``objects'' in the world.
++     * Object is the base class for all &quot;objects&quot; in the world.
+      * The most important facilities this class provides are:
+      *
+-     * (1) A way to clone() and dispose() objects.  This is mainly used
++     * - A way to clone() and dispose() objects.  This is mainly used
+      *     in function MakeObject() to create new objects of a given
+      *     type.
+      * 
+-     * (2) A way to pass messages between unrelated objects via message().
++     * - A way to pass messages between unrelated objects via message().
+      *     This allows us to send messages to objects from Lua and to
+      *     decouple objects types as much as possible.
+      * 
+-     * (3) A way to get and set attributes.  These attributes are quite
++     * - A way to get and set attributes.  These attributes are quite
+      *     similar to instance variables, but they can be easily modified
+      *     from Lua.  This makes it possible to modify certain object
+      *     parameters (such as the text on a piece of paper or the color
+@@ -219,6 +219,7 @@
+         
+         static int next_id;
+         static std::map&lt;int, Object *&gt; objects;
++        
+         int id;
+         AttribMap attribs;
+         
+
+Modified: trunk/src/ObjectValidator.cc
+===================================================================
+--- trunk/src/ObjectValidator.cc	2008-02-03 19:04:18 UTC (rev 1023)
++++ trunk/src/ObjectValidator.cc	2008-02-06 00:02:56 UTC (rev 1024)
+@@ -35,10 +35,19 @@
+ XERCES_CPP_NAMESPACE_USE 
+ 
+ namespace enigma {
+-    ObjectValidator *ObjectValidator::theSingleton = 0;
++    ObjectValidator *ObjectValidator::theSingleton = NULL;
++    bool ObjectValidator::mayInitialize = false;
+     
++    void ObjectValidator::didInitXML() {
++        mayInitialize = true;
++    }
++    
+     ObjectValidator* ObjectValidator::instance() {
+-        if (theSingleton == NULL) {
++        // autoinitialize on first access, but block any access during 
++        // bootstraping as XML cannot be loaded at this stage. This may
++        // and shall cause NULL pointer exceptions on inproper usage 
++        // in basic object initialization!
++        if (theSingleton == NULL &amp;&amp; mayInitialize) {
+             theSingleton = new ObjectValidator();
+             theSingleton-&gt;init();
+         }
+@@ -148,7 +157,7 @@
+         return kind-&gt;validateMessage(msg);
+     }
+ 
+-    AttributeDescriptor *ObjectValidator::getDefaultAttribute(std::string name) {
++    AttributeDescriptor *ObjectValidator::getDefaultAttributeDesc(std::string name) {
+         std::map&lt;std::string, AttributeDescriptor *&gt;::iterator it = defaultAttributes.find(name);
+         if (it != defaultAttributes.end())
+             return it-&gt;second;
+@@ -163,21 +172,58 @@
+         return clone;
+     }
+ 
+-    bool ObjectValidator::validateAttributeWrite(Object *obj, std::string key, Value val) {
++    bool ObjectValidator::validateAttributeWrite(const Object *obj, std::string key, Value val) {
+         KindDescriptor *kind = getKindDesc(obj-&gt;getClass());
+         if (kind == NULL) {
+-            return true;    // object is not under validator control
++            return true;    // object is not under validator control - allow write
+         }
++        // TODO search specific sub kind if necessary
+         return kind-&gt;validateAttributeWrite(key, val);
+     }
+     
+-    bool ObjectValidator::validateAttributeRead(Object *obj, std::string key) {
++    bool ObjectValidator::validateAttributeRead(const Object *obj, std::string key) {
+         KindDescriptor *kind = getKindDesc(obj-&gt;getClass());
+         if (kind == NULL) {
+             return true;    // object is not under validator control
+         }
+-        return true;
++        // TODO search specific sub kind if necessary
++        return kind-&gt;validateAttributeRead(key);
+     }
++    
++    Value ObjectValidator::getDefaultValue(const Object *obj, std::string key) {
++        static bool recursive = false;
++                
++        // block potential recursions
++        if (recursive)
++            return Value(Value::DEFAULT);
++            
++        recursive = true;
++        KindDescriptor *kind = getKindDesc(obj-&gt;getClass());  // getClass is critical if it uses attributes
++        recursive = false;
++        
++        if (kind == NULL) {
++            return Value(Value::DEFAULT);    // object is not under validator control
++        }
++        // TODO search specific sub kind if necessary
++        return kind-&gt;getDefaultValue(key);
++    }
++    
++    std::string ObjectValidator::getKind(const Object *obj) {
++        std::string className = obj-&gt;getClass();
++        KindDescriptor *kind = getKindDesc(className);
++        if (kind == NULL) {
++            return className;    // object is not under validator control
++        }
++        return kind-&gt;getKind(obj);
++    }
++    
++    bool ObjectValidator::isKind(const Object *obj, std::string match) {
++        KindDescriptor *kind = getKindDesc(obj-&gt;getClass());
++        if (kind == NULL) {
++            return false;    // object is not under validator control
++        }
++        return kind-&gt;isKind(obj, match);
++    }
+ 
+     void ObjectValidator::scanAttributeElement(DOMElement *attribElement) {
+         std::string name = XMLtoUtf8(attribElement-&gt;getAttribute(Utf8ToXML(&quot;name&quot;).x_str())).c_str();
+@@ -287,10 +333,6 @@
+                     Value maxValue = parseTypedValue(maxAttribute, maxString, valType);
+                     cloneAttr-&gt;setMaxValue(maxValue);
+                 }
+-                if (maxString != &quot;&quot;) {
+-                    Value maxValue = parseTypedValue(maxAttribute, maxString, valType);
+-                    cloneAttr-&gt;setMaxValue(maxValue);
+-                }
+                 if (valString != &quot;&quot;) {
+                     Value value = parseTypedValue(valAttribute, valString, valType);
+                     cloneAttr-&gt;setValue(value);
+
+Modified: trunk/src/ObjectValidator.hh
+===================================================================
+--- trunk/src/ObjectValidator.hh	2008-02-03 19:04:18 UTC (rev 1023)
++++ trunk/src/ObjectValidator.hh	2008-02-06 00:02:56 UTC (rev 1024)
+@@ -46,21 +46,27 @@
+     public:
+         
+         static ObjectValidator *instance();
++        static void didInitXML();
++        
+         ~ObjectValidator();
+         void shutdown();
+         
+         KindDescriptor *getKindDesc(std::string name);
+         MessageDescriptor *getMessage(std::string name);
+         bool validateMessage(Object *obj, std::string msg, Value val);
+-        AttributeDescriptor *getDefaultAttribute(std::string name);
++        AttributeDescriptor *getDefaultAttributeDesc(std::string name);
+         AttributeDescriptor *cloneAttribute(AttributeDescriptor *masterAttr);
+-        bool validateAttributeWrite(Object *obj, std::string key, Value val);
+-        bool validateAttributeRead(Object *obj, std::string key);
++        bool validateAttributeWrite(const Object *obj, std::string key, Value val);
++        bool validateAttributeRead(const Object *obj, std::string key);
++        Value getDefaultValue(const Object *obj, std::string key);
++        std::string getKind(const Object *obj);
++        bool isKind(const Object *obj, std::string match);
+         
+     protected:
+         ObjectValidator();
+     private:
+         static ObjectValidator *theSingleton;
++        static bool mayInitialize;
+         
+         void init();
+         void scanAttributeElement(XERCES_CPP_NAMESPACE_QUALIFIER DOMElement *attribElement);
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-02-03 19:04:18 UTC (rev 1023)
++++ trunk/src/lua.cc	2008-02-06 00:02:56 UTC (rev 1024)
+@@ -434,7 +434,7 @@
+     Object *obj = to_object(L,1);
+     const char *key = lua_tostring(L,2);
+     if (obj &amp;&amp; key)
+-        obj-&gt;set_attrib(key, to_value(L, 3));
++        obj-&gt;setAttrChecked(key, to_value(L, 3));
+     else
+         throwLuaError(L, strf(&quot;SetAttrib: invalid object or attribute name '%s'&quot;, key).c_str());
+     return 0;
+@@ -455,7 +455,7 @@
+         return 0;        
+     }
+ 
+-    push_value(L, obj-&gt;getAttr(key));
++    push_value(L, obj-&gt;getAttrChecked(key));
+     return 1;
+ }
+ 
+@@ -1078,7 +1078,7 @@
+                 if (lua_isstring(L, -2))
+                     NameObject(obj, lua_tostring(L, -2));
+             } else {
+-                obj-&gt;set_attrib(key, to_value(L, -2));
++                obj-&gt;setAttrChecked(key, to_value(L, -2));
+             }
+          } else if (lua_tointeger(L, -1) == 2) {  // second entry without a string key is taken as name
+              if (lua_isstring(L, -2))
+@@ -1222,6 +1222,26 @@
+     return 1;
+ }
+ 
++static int objectGetKind(lua_State *L) { 
++    // object type is guaranteed
++    Object * obj = to_object(L, 1);
++    lua_pushstring(L, (obj != NULL) ? obj-&gt;getKind().c_str() : &quot;&quot;);
++    return 1;
++}
++
++static int objectIsKind(lua_State *L) { 
++    // object type is guaranteed
++    Object * obj = to_object(L, 1);
++    if (!lua_isstring(L, 2)) {
++        throwLuaError(L,&quot;Illegal kind - no string&quot;);
++        return 0;
++    }
++    std::string kind = lua_tostring(L, 2);
++    
++    lua_pushboolean(L, (obj != NULL) ? obj-&gt;isKind(kind) : false);
++    return 1;
++}
++
+ static int objectMessageBase(lua_State *L) {
+     // (object, string , value)
+     Object     *obj = to_object(L, -3);
+@@ -1463,7 +1483,7 @@
+                 messageLIFO.push_back(keyStr);
+                 lua_pushcfunction(L, objectDirectMessage);
+             } else {
+-                val = obj-&gt;getAttr(keyStr);
++                val = obj-&gt;getAttrChecked(keyStr);
+                 // user attribute, existing system attribute or nil if no object
+                 push_value(L, val);
+             }
+@@ -1480,7 +1500,7 @@
+     Object *obj = to_object(L,1);
+     const char *key = lua_tostring(L,2);
+     if (obj &amp;&amp; key)
+-        obj-&gt;set_attrib(key, to_value(L, 3));
++        obj-&gt;setAttrChecked(key, to_value(L, 3));
+     else if (obj)  // ignore NULL objects
+         throwLuaError(L, strf(&quot;SetAttrib: invalid object or attribute name '%s'&quot;, key).c_str());
+     return 0;
+@@ -2159,7 +2179,7 @@
+         lua_rawgeti(L, -1, i);  // the object
+         Object *obj = to_object(L, -1);
+         if (obj)                // ignore not existing objects
+-            obj-&gt;set_attrib(name, to_value(L, 3));
++            obj-&gt;setAttrChecked(name, to_value(L, 3));
+         lua_pop(L, 1);          // the object        
+     }
+     return 0;
+@@ -2327,6 +2347,8 @@
+ 
+ static CFunction objectMethods[] = {
+     {objectExistance,               &quot;exists&quot;},
++    {objectIsKind,                  &quot;is&quot;},
++    {objectGetKind,                 &quot;kind&quot;},
+     {killObject,                    &quot;kill&quot;},
+     {objectMessage,                 &quot;message&quot;},
+     {setAttributes,                 &quot;set&quot;},
+
+Modified: trunk/src/main.cc
+===================================================================
+--- trunk/src/main.cc	2008-02-03 19:04:18 UTC (rev 1023)
++++ trunk/src/main.cc	2008-02-06 00:02:56 UTC (rev 1024)
+@@ -299,6 +299,10 @@
+     // set message language
+     init_i18n();
+     
++    // ----- Object declarations
++    ObjectValidator::didInitXML();  // enable initialization
++    ObjectValidator::instance();    // force early initialization (an optional statement)
++
+     // ----- Initialize object repositories
+     InitWorld();
+     if (ap.dumpinfo) {
+@@ -370,9 +374,6 @@
+ 
+     lev::Proxy::countLevels();
+     
+-    // ----- Object declarations
+-    ObjectValidator::instance();    // force early initialization (an optional statement)
+-
+     // ----- Initialize sound tables -- needs sound, oxyd, video (error messages!)
+     sound::InitSoundSets();
+ 
+
+Modified: trunk/src/stones/Switch.cc
+===================================================================
+--- trunk/src/stones/Switch.cc	2008-02-03 19:04:18 UTC (rev 1023)
++++ trunk/src/stones/Switch.cc	2008-02-06 00:02:56 UTC (rev 1024)
+@@ -31,6 +31,10 @@
+         state = OFF;
+     }
+ 
++    std::string Switch::getClass() const {
++        return &quot;st_switch&quot;;
++    }
++    
+     void Switch::set_attrib(const string&amp; key, const Value &amp;val) {
+         if (isDisplayable())
+             if (key == &quot;color&quot; &amp;&amp; state &lt;= ON) {   // recoloring of a switch
+
+Modified: trunk/src/stones/Switch.hh
+===================================================================
+--- trunk/src/stones/Switch.hh	2008-02-03 19:04:18 UTC (rev 1023)
++++ trunk/src/stones/Switch.hh	2008-02-06 00:02:56 UTC (rev 1024)
+@@ -50,6 +50,7 @@
+         Switch(Value color, bool instant = false);
+         
+         // Object interface
++        virtual std::string getClass() const;
+         virtual void set_attrib(const string&amp; key, const Value &amp;val);
+         virtual Value message(const Message &amp;m);
+         
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000455.html">[Enigma-game-svn] r1023 - in trunk: data/schemas src
+</A></li>
+	<LI>Next message: <A HREF="000457.html">[Enigma-game-svn] r1025 - in feature_branches/hp_lotm: images/lotm	input/lotm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#456">[ date ]</a>
+              <a href="thread.html#456">[ thread ]</a>
+              <a href="subject.html#456">[ subject ]</a>
+              <a href="author.html#456">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

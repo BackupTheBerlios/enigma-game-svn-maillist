@@ -1,0 +1,1075 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1588 - in trunk: data/levels/lib doc/reference
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1588%20-%20in%20trunk%3A%20data/levels/lib%20doc/reference&In-Reply-To=%3C200903121618.n2CGIx6x006907%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001017.html">
+   <LINK REL="Next"  HREF="001019.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1588 - in trunk: data/levels/lib doc/reference</H1>
+    <B>andreasl at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1588%20-%20in%20trunk%3A%20data/levels/lib%20doc/reference&In-Reply-To=%3C200903121618.n2CGIx6x006907%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1588 - in trunk: data/levels/lib doc/reference">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Thu Mar 12 17:18:59 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001017.html">[Enigma-game-svn] r1587 - in trunk: doc src
+</A></li>
+        <LI>Next message: <A HREF="001019.html">[Enigma-game-svn] r1589 - in trunk: data/schemas src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1018">[ date ]</a>
+              <a href="thread.html#1018">[ thread ]</a>
+              <a href="subject.html#1018">[ subject ]</a>
+              <a href="author.html#1018">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2009-03-12 17:18:54 +0100 (Thu, 12 Mar 2009)
+New Revision: 1588
+
+Added:
+   trunk/data/levels/lib/libimport.xml
+Modified:
+   trunk/data/levels/lib/liblua.xml
+   trunk/data/levels/lib/libmap.xml
+   trunk/doc/reference/enigma-ref.texi
+Log:
+Trunk:
+ - New library libimport:
+    libimport holds routines and tools to convert external 
+    level files to libmap-maps. Most of its functions derive
+    from earlier versions in libsoko. Currently, only
+    Sokoban and Wanderer level files can be converted.
+    -&gt; Note that the simple conversion into a map does NOT
+       mean that the needed game objects exist in the engine.
+    Available functions:
+     - lib.import.unpack_multilevel
+     - lib.import.uncompress_rle
+     - lib.import.string_replace (a wrapper for string.gsub)
+     - lib.import.string_remove_multiples
+     - lib.import.level_to_map
+     - lib.import.map_sokoban
+     - lib.import.map_wanderer
+ - libmap:
+     - New function lib.map.match
+        Returns a polist of all positions which match a given
+        set of conditions.
+     - New function lib.map.defuse
+        Returns a table of keylength-1-maps, holding the subkeys
+        of the original key. Sometimes useful when converting
+        levels into new API or working with maps.       
+     - New function lib.map.replace_outside
+        Outsorced and generalized from libsoko.
+     - New function lib.map.trim
+        Removes unneccessary lines and columns from a map.
+     - Add support for polists for map:set, map:get, map:paste.
+     - Fix lib.map.sub: Last line was sometimes missing.
+    Note: libmap now depends on lib.lua.deep_copy.
+ - liblua:
+    - add support for polists to print_table
+Todo:
+ - The sokoban libraries are currently rewritten and will be
+   updated lateron.
+
+
+Added: trunk/data/levels/lib/libimport.xml
+===================================================================
+--- trunk/data/levels/lib/libimport.xml	2009-03-11 23:06:32 UTC (rev 1587)
++++ trunk/data/levels/lib/libimport.xml	2009-03-12 16:18:54 UTC (rev 1588)
+@@ -0,0 +1,228 @@
++&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;no&quot; ?&gt;
++&lt;el:level xmlns:xsi=&quot;<A HREF="http://www.w3.org/2001/XMLSchema-instance">http://www.w3.org/2001/XMLSchema-instance</A>&quot; xsi:schemaLocation=&quot;<A HREF="http://enigma-game.org/schema/level/1">http://enigma-game.org/schema/level/1</A> level.xsd&quot; xmlns:el=&quot;<A HREF="http://enigma-game.org/schema/level/1">http://enigma-game.org/schema/level/1</A>&quot;&gt;
++  &lt;el:protected&gt;
++    &lt;el:info el:type=&quot;library&quot;&gt;
++      &lt;el:identity el:title=&quot;&quot; el:id=&quot;lib/libimport&quot;/&gt;
++      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;1&quot; el:status=&quot;experimental&quot;/&gt;
++      &lt;el:author el:name=&quot;Enigma Team&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
++      &lt;el:copyright&gt;Copyright &#169; 2009 Enigma Team&lt;/el:copyright&gt;
++      &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
++      &lt;el:compatibility el:enigma=&quot;1.10&quot;&gt;
++        &lt;el:dependency el:path=&quot;lib/libmap&quot; el:id=&quot;lib/libmap&quot; el:release=&quot;1&quot; el:preload=&quot;true&quot;/&gt;
++      &lt;/el:compatibility&gt;
++      &lt;el:modes el:easy=&quot;false&quot; el:single=&quot;false&quot; el:network=&quot;false&quot;/&gt;
++      &lt;el:comments&gt;
++      &lt;/el:comments&gt;
++      &lt;el:score el:easy=&quot;-&quot; el:difficult=&quot;-&quot;/&gt;
++    &lt;/el:info&gt;
++    &lt;el:luamain&gt;&lt;![CDATA[
++
++-- libimport.xml is dedicated to parse level files of other
++-- games or formats and typically returns libmap-maps.
++-- In this context, the word &quot;level&quot; refers to a string,
++-- representing a level of the other game. &quot;multilevel&quot;
++-- is a string composed of one or more levels.
++-- A &quot;monolevel&quot; is a string which holds a single level,
++-- but also additional information, so it has to be handled
++-- as multilevel to extract the level.
++-- A map is a map in the libmap-sense, i.e. an Enigma level.
++
++lib.import = {}
++setmetatable(lib.import, getmetatable(lib))
++
++lib.import.line_regexp = {}
++
++-------------------
++-- General tools --
++-------------------
++
++function lib.import.unpack_multilevel(multilevel, sublevel_number, format)
++    if type(multilevel) ~= &quot;string&quot; then
++        error(&quot;lib.import.unpack_multilevel: Can't make sense of level type &quot;..type(level)..&quot;.&quot;, 2)
++    end
++    if (type(sublevel_number or 1) ~= &quot;number&quot;) then
++        error(&quot;lib.import.unpack_multilevel: Sublevel number must be an integer.&quot;, 2)
++    end
++    local current_level_number = 0
++    local level = &quot;&quot;
++    -- search the correct sublevel by pattern matching, line for line
++    local in_level = false
++    for line in string.gfind(multilevel, &quot;([^\n\|]*)[\n\|]&quot;) do
++        local start_match, end_match = string.find(line, lib.import.line_regexp[format])
++        if (start_match == 1) and (end_match == string.len(line)) then
++            if not in_level then
++                -- we just entered a new level
++                current_level_number = current_level_number + 1
++                in_level = true
++            end
++            if current_level_number == (sublevel_number or 1) then
++                level = level..line..&quot;\n&quot;
++            end
++        else
++            in_level = false
++        end
++    end  
++    if level == &quot;&quot; then
++        error(&quot;lib.import.unpack_multilevel: Multilevel holds less than &quot;..sublevel_number..&quot; levels!&quot;, 2)
++    end
++    return level
++end
++
++function lib.import.uncompress_rle(level, attribs)
++    local uncompressed = &quot;&quot;
++    local rle_counter = nil
++    local error_on_multiple = (attribs or {}).error_on_multiple
++    for j = 1, string.len(level) do
++        local ch = string.sub(level, j, j)
++        if tonumber(ch) then
++            -- add number for runlength encoding
++            rle_counter = 10 * (rle_counter or 0) + tonumber(ch)
++        else
++            if error_on_multiple and ((rle_counter or 1) &gt; 1) then
++                -- check whether character is allowed as multiple
++                if string.find(ch, error_on_multiple) then
++                    error(&quot;lib.import.uncompress_rle: Level uses rle-compression on an invalid character.&quot;, 2)
++                end
++            end
++            uncompressed = uncompressed .. string.rep(ch, rle_counter or 1)
++            rle_counter = nil
++        end
++    end
++    return uncompressed
++end
++
++function lib.import.string_replace(level, old_string, new_string)
++    return string.gsub(level, old_string, function(s) return new_string end)
++end
++
++function lib.import.string_remove_multiples(level, ch)
++    local result = level
++    while string.find(result, ch..ch) do
++        result = lib.import.string_replace(result, ch..ch, ch)
++    end
++    return result
++end
++
++-- When using level_to_map, make sure in advance that the level ends
++-- with a proper line ending, and only one line ending.
++function lib.import.level_to_map(level, _line_ending, _default_key)
++    local line_ending = _line_ending or &quot;\n&quot;
++    local default_key = _default_key or &quot; &quot;
++    if type(level) ~= &quot;string&quot; then
++        error(&quot;lib.import.level_to_map: Can't make sense of level type &quot;..type(level)..&quot;.&quot;, 2)
++    end
++    if type(line_ending) ~= &quot;string&quot; then
++        error(&quot;lib.import.level_to_map: Can't make sense of line ending type &quot;..type(level)..&quot;.&quot;, 2)
++    end
++    if type(default_key) ~= &quot;string&quot; then
++        error(&quot;lib.import.level_to_map: Can't make sense of default key type &quot;..type(level)..&quot;.&quot;, 2)
++    end
++    local premap = {}
++    local reg_exp_line = &quot;(.-)&quot; .. line_ending
++    string.gsub(level, reg_exp_line, function (s)
++        table.insert(premap, s)
++    end)
++    return wo:newMap(default_key, premap)
++end
++
++----------------------------------------
++-- Specific import data and functions --
++----------------------------------------
++
++--------------------------
++-- Sokoban level format --
++--------------------------
++
++-- Sokoban level files can be very different - they can use
++-- runlength encoding and multilevel files. Sometimes, &quot;|&quot;
++-- is used as line ending instead of or together with &quot;\n&quot;.
++-- &quot; &quot;, &quot;_&quot; and &quot;-&quot; can all represent space. Sometimes, the
++-- outside is filled with &quot; &quot;, then again with &quot;#&quot; (what we
++-- call &quot;redundant walls&quot;). Finally, line width can vary.
++-- We use a slightly generalized version, to include
++-- chessoban levels. Allowed characters are:
++--    - _ space  space
++--    #          wall
++--    .          goal
++--    $ *        box, box with goal
++--    n N        st_chess, st_chess with goal
++--    @ +        player, player with goal
++-- The returned map will use &quot; &quot; for inside space, &quot;-&quot; for
++-- outside space, default key is &quot; &quot;.
++
++lib.import.line_regexp[&quot;sokoban&quot;] =
++      &quot;[ \-\#\_\$\.@\*0-9Nn\+]*&quot;  -- all allowed characters except line ending
++   .. &quot;[\#\$\.@\*Nn\+]+&quot;          -- at least one non-space character
++   .. &quot;[ \-\#\_\$\.@\*0-9Nn\+]*&quot;  -- again all allowed characters except line ending
++
++function lib.import.map_sokoban(multilevel, sublevel_number, keylength_one)
++    if type(multilevel) ~= &quot;string&quot; then
++        error(&quot;lib.import.map_sokoban: Multilevel is not a string.&quot;, 2)
++    end
++    local level
++    level = lib.import.unpack_multilevel(multilevel .. &quot;\n&quot;, sublevel_number or 1, &quot;sokoban&quot;)
++    level = lib.import.uncompress_rle(level, {error_on_multiple = &quot;|\n&quot;})
++    level = lib.import.string_replace(level, &quot;|&quot;, &quot;\n&quot;)
++    level = lib.import.string_remove_multiples(level .. &quot;\n&quot;, &quot;\n&quot;)
++    local map = lib.import.level_to_map(level, &quot;\n&quot;, &quot; &quot;)
++    map:replace(&quot;_&quot;)
++    map:replace(&quot;-&quot;)
++    map:replace_outside(&quot; &quot;, &quot;-&quot;)
++    -- Remove redundant walls by outside:
++    -- A wall is redundant, if it is surrounded by &quot;-&quot; or &quot;#&quot;.
++    -- In this case, it can be replaced by &quot;-&quot;.
++    map.defaultkey = &quot;-&quot;
++    map[map:match({{po(0,0), &quot;#&quot;}, {NEIGHBORS_8, &quot;-&quot;, &quot;#&quot;}})] = &quot;-&quot;
++    map = map:trim()
++    map.defaultkey = &quot; &quot;
++    -- MAP now is a ready-to-use keylength-one-map.
++    -- If KEYLENGTH_ONE is true, we may return the map;
++    -- otherwise, we resolve the characters &quot;*&quot;, &quot;N&quot; and
++    -- &quot;+&quot;, which include triggers.
++    if keylength_one then
++        return map
++    end
++    twocharmap = map * wo:newMap(&quot; &quot;)
++    twocharmap:replace(&quot;. &quot;, &quot; .&quot;)
++    twocharmap:replace(&quot;* &quot;, &quot;$.&quot;)
++    twocharmap:replace(&quot;N &quot;, &quot;n.&quot;)
++    twocharmap:replace(&quot;+ &quot;, &quot;@.&quot;)
++    return twocharmap
++end
++
++---------------------------
++-- Wanderer level format --
++---------------------------
++
++-- Wanderer is a game originally created by Steven Shipway in 1988.
++-- Wanderer level files are uncompressed monolevels with fixed
++-- width. The level itself is followed by a short description
++-- (title/author/email) in a single line or a line of &quot;#&quot;s. Last
++-- line optionally is a number. A Wanderer level knows the
++-- following characters (taken from Wanderer's editor):
++--    : _ #      earth, rock, indestructible rock
++--    * - space  treasure, alternative space, space
++--    O &lt; &gt; ^    falling boulder, arrow from right, arrow from left, balloon
++--    ! + B      landmine, cage, bomb
++--    / \\       deflectors
++--    T A X @    teleport, arrival, exit, start
++--    M S C ~    big monster, baby monster, time capsule, thingy
++
++lib.import.line_regexp[&quot;wanderer&quot;] =
++      &quot;[ \:\_\#\*\-O\&lt;\&gt;\^\!\+B\/\\<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">TAX at MSC</A>\~]+&quot; -- at least one character
++
++function lib.import.map_wanderer(monolevel)
++    -- strip level from text lines
++    local level = lib.import.unpack_multilevel(monolevel, 1, &quot;wanderer&quot;)
++    local map = lib.import.level_to_map(level, &quot;\n&quot;, &quot; &quot;)
++    -- replace alternative space by space (i.e. default key)
++    map:replace(&quot;-&quot;)
++    return map
++end
++
++    ]]&gt;&lt;/el:luamain&gt;
++    &lt;el:i18n&gt;
++    &lt;/el:i18n&gt;
++  &lt;/el:protected&gt;
++&lt;/el:level&gt;
++
+
+Modified: trunk/data/levels/lib/liblua.xml
+===================================================================
+--- trunk/data/levels/lib/liblua.xml	2009-03-11 23:06:32 UTC (rev 1587)
++++ trunk/data/levels/lib/liblua.xml	2009-03-12 16:18:54 UTC (rev 1588)
+@@ -150,10 +150,13 @@
+       else
+         print((prefix or &quot;&quot;) .. &quot;|&quot; .. key_s .. &quot; = | ...&quot;)
+       end
+-    elseif (type(value) == &quot;userdata&quot;) and (usertype(value) == &quot;position&quot;) then
++    elseif usertype(value) == &quot;position&quot; then
+       print((prefix or &quot;&quot;) .. &quot;|&quot; .. key_s .. &quot; = position &quot; .. value.x
+             .. &quot;/&quot; .. value.y)
+-    elseif (type(value) == &quot;userdata&quot;) and (usertype(value) == &quot;object&quot;) then
++    elseif usertype(value) == &quot;polist&quot; then
++      print((prefix or &quot;&quot;) .. &quot;|&quot; .. key_s .. &quot; = polist of &quot; .. #value
++            .. &quot; position(s)&quot;)
++    elseif usertype(value) == &quot;object&quot; then
+       print((prefix or &quot;&quot;) .. &quot;|&quot; .. key_s .. &quot; = object of name '&quot;
+             .. (value.name or &quot;&quot;) .. &quot;'&quot;)
+     else
+
+Modified: trunk/data/levels/lib/libmap.xml
+===================================================================
+--- trunk/data/levels/lib/libmap.xml	2009-03-11 23:06:32 UTC (rev 1587)
++++ trunk/data/levels/lib/libmap.xml	2009-03-12 16:18:54 UTC (rev 1588)
+@@ -8,6 +8,7 @@
+       &lt;el:copyright&gt;Copyright &#169; 2008 Enigma Team&lt;/el:copyright&gt;
+       &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
+       &lt;el:compatibility el:enigma=&quot;1.10&quot;&gt;
++        &lt;el:dependency el:path=&quot;lib/liblua&quot; el:id=&quot;lib/liblua&quot; el:release=&quot;1&quot; el:preload=&quot;true&quot;/&gt;
+       &lt;/el:compatibility&gt;
+       &lt;el:modes el:easy=&quot;false&quot; el:single=&quot;false&quot; el:network=&quot;false&quot;/&gt;
+       &lt;el:comments&gt;
+@@ -30,14 +31,21 @@
+ --   lib.map.fuse(arg1, arg2)                 aka. map1 * map2
+ --   lib.map.transform(map, op)               aka. map ^ op
+ --   lib.map.get(map, posarg)                 aka. map[posarg]
+---   lib.map.set(map, posarg, value)            aka. map[posarg] = value
+---   lib.map.extend(map, posarg)                aka. map:extend(posarg)
+---   lib.map.sub(map, arg1, arg2)               aka. map:sub(arg1, arg2)
+---   lib.map.paste(map1, map2, posarg, ignore)  aka. map1:paste(map2, posarg, ignore)
+---   lib.map.covers(map, pos)                   aka. map:covers(pos)
+---   lib.map.set_default_key(map, newkey)       aka. map:set_default_key(newkey)
++--   lib.map.set(map, posarg, value)          aka. map[posarg] = value
++--   lib.map.covers(map, pos)                 aka. map:covers(pos)
++--   lib.map.defuse(map)                      aka. map:defuse()
++--   lib.map.extend(map, posarg)              aka. map:extend(posarg)
++--   lib.map.match(map, conditions)           aka. map:match(conditions)
++--   lib.map.paste(map1, map2, posarg, ignore)
++--                                            aka. map1:paste(map2, posarg, ignore)
+ --   lib.map.print(map, withXYCounts, left_separator, right_separator)
+ --                                            aka. map:print(...)
++--   lib.map.replace(map, oldkey, newkey)     aka. map:replace(oldkey, newkey)
++--   lib.map.replace_outside(map, oldkey, newkey)
++--                                            aka. map:replace_outside(oldkey, newkey)
++--   lib.map.set_default_key(map, newkey)     aka. map:set_default_key(newkey)
++--   lib.map.sub(map, arg1, arg2)             aka. map:sub(arg1, arg2)
++--   lib.map.trim(map, trimkey)               aka. map:trim(trimkey)
+ -- Please consult the reference manual for details.
+ --
+ 
+@@ -104,6 +112,27 @@
+   return wo:newMap(map1.defaultkey .. map2.defaultkey, result)  
+ end
+ 
++function lib.map.defuse(map)
++  if (type(map) ~= &quot;table&quot;) or (map.type ~= &quot;map&quot;) then
++    error(&quot;lib.map.defuse: Can only work on maps.&quot;, 2)
++  end
++  local kl = rawget(map, &quot;__keylength&quot;)
++  local dk = rawget(map, &quot;__defaultkey&quot;)
++  local result = {}
++  for j = 1, kl do
++    result[j] = wo:newMap(string.sub(dk, j, j), map.width, map.height)
++  end
++  for y = 0, map.height - 1 do
++    for x = 0, map.width - 1 do
++      local key = map[{x,y}]
++      for j = 1, kl do
++        result[j][{x,y}] = string.sub(key, j, j)
++      end
++    end
++  end
++  return result
++end
++
+ function lib.map.transform(map, op)
+   if (type(map) ~= &quot;table&quot;) or (map.type ~= &quot;map&quot;) then
+     error(&quot;lib.map.transform: Can only work on maps.&quot;, 2)
+@@ -161,12 +190,12 @@
+   local result = {}
+   local kl = map.keylength
+   for y = pos1.y + 1, pos2.y + 1 do
+-    if y &lt; map.height then
++    if y &lt;= map.height then
+       result[y-pos1.y] = string.sub(rawget(map, y) or &quot;&quot;,
+                              pos1.x * kl + 1, (pos2.x + 1) * kl) or &quot;&quot;
+     end
+   end
+-  return wo:newMap(map.defaultkey, result)  
++  return wo:newMap(rawget(map, &quot;__defaultkey&quot;), result)  
+ end
+ 
+ function lib.map.paste(map1, map2, posarg)
+@@ -192,6 +221,10 @@
+     for obj in posarg do
+       lib.map.paste(map1, map2, obj)
+     end
++  elseif usertype(posarg) == &quot;polist&quot; then
++    for j = 1, #posarg do
++      lib.map.paste(map1, map2, posarg[j])
++    end
+   elseif type(posarg) == &quot;table&quot; then
+     lib.map.paste(map1, map2, po(posarg))
+   else
+@@ -207,7 +240,7 @@
+   local tile2 = tile2arg or rawget(map, &quot;__defaultkey&quot;)
+   if    (type(tile1) ~= &quot;string&quot;) or (type(tile2) ~= &quot;string&quot;)
+      or (string.len(tile1) ~= kl) or (string.len(tile2) ~= kl) then
+-    error(&quot;lib.map.replace: Tiles do not have the same length as default key.&quot;)
++    error(&quot;lib.map.replace: Tiles do not have the same length as default key.&quot;, 2)
+   end
+   for y = 1, map.height do
+     local line = rawget(map, y)
+@@ -220,6 +253,107 @@
+   end
+ end
+ 
++function lib.map.replace_outside(map, tile1, tile2arg)
++  if (type(map) ~= &quot;table&quot;) or (map.type ~= &quot;map&quot;) then
++    error(&quot;lib.map.replace_outside: Can only work on maps.&quot;, 2)
++  end
++  local kl = rawget(map, &quot;__keylength&quot;)
++  local tile2 = tile2arg or rawget(map, &quot;__defaultkey&quot;)
++  if    (type(tile1) ~= &quot;string&quot;) or (type(tile2) ~= &quot;string&quot;)
++     or (string.len(tile1) ~= kl) or (string.len(tile2) ~= kl) then
++    error(&quot;lib.map.replace_outside: Tiles do not have the same length as default key.&quot;, 2)
++  end
++  if tile1 == tile2 then
++    error(&quot;lib.map.replace_outside: Old and new tile must be different.&quot;, 2)
++  end
++  -- mark outside floor fields from the border
++  local function check_for_outside(x, y)
++    if string.sub(rawget(map, y), kl * (x - 1) + 1, x * kl) == tile1 then
++      map[{x-1, y-1}] = tile2
++      if y &gt; 1          then  check_for_outside(x, y - 1)  end
++      if y &lt; map.height then  check_for_outside(x, y + 1)  end
++      if x &gt; 1          then  check_for_outside(x - 1, y)  end
++      if x &lt; map.width  then  check_for_outside(x + 1, y)  end
++    end
++  end
++  for y = 1, map.height do
++    check_for_outside(1, y)
++    check_for_outside(map.width, y)
++  end
++  for x = 1, map.width do
++    check_for_outside(x, 1)
++    check_for_outside(x, map.height)
++  end
++end
++
++function lib.map.match(map, conditionsarg, ...)
++  if (type(map) ~= &quot;table&quot;) or (map.type ~= &quot;map&quot;) then
++    error(&quot;lib.map.match: Can only work on maps.&quot;, 2)
++  end
++  local kl = rawget(map, &quot;__keylength&quot;)
++  local conditions 
++  if #{...} == 0 then
++    if      (type(conditionsarg) == &quot;table&quot;)
++       and ((usertype(conditionsarg[1]) == &quot;position&quot;) or (usertype(conditionsarg[1]) == &quot;polist&quot;)) then
++      conditions = lib.lua.deep_copy({conditionsarg})
++    else
++      conditions = lib.lua.deep_copy(conditionsarg)
++    end
++  else
++    conditions = lib.lua.deep_copy({conditionsarg, ...})
++  end
++  if type(conditions) == &quot;nil&quot; then
++    conditions = {}
++  end
++  if type(conditions) == &quot;string&quot; then
++    conditions = {{po(0,0), conditions}}
++  end
++  if type(conditions) ~= &quot;table&quot; then
++    error(&quot;lib.map.match: Conditions of wrong type &quot; .. type(conditions)
++        .. &quot;, expected table, string, or nil.&quot;, 2)
++  end
++  for _, condition in pairs(conditions) do
++    if (type(condition) ~= &quot;table&quot;) or (#condition &lt; 2) then
++      error(&quot;lib.map.match: Wrong type in condition list, expected a table with &quot;
++          .. &quot;at least two entries.&quot;, 2)
++    end
++    if (usertype(condition[1]) == &quot;position&quot;) then
++      condition[1] = po(grp({})) .. condition[1]
++    end
++    if (usertype(condition[1]) ~= &quot;polist&quot;) then
++      error(&quot;lib.map.match: Wrong type in condition, expected position or &quot;
++          .. &quot;position list as first entry.&quot;, 2)
++    end
++    for j = 2, #condition do
++      if (type(condition[j]) ~= &quot;string&quot;) or (string.len(condition[j]) ~= kl) then
++        error(&quot;lib.map.match: Tile key in condition has wrong type or key length.&quot;, 2)
++      end
++    end       
++  end
++  local result = po(grp({}))
++  for y = 0, map.height - 1 do
++    for x = 0, map.width - 1 do
++      local conditions_fulfilled = true
++      for _, condition in pairs(conditions) do
++        for j = 1, #condition[1] do
++          if conditions_fulfilled then
++            local ch = map[{x + condition[1][j].x, y + condition[1][j].y}]
++            local found = false
++            for j = 2, #condition do
++              found = found or (condition[j] == ch)
++            end
++            conditions_fulfilled = found  -- at this point, cf was always true
++          end
++        end
++      end
++      if conditions_fulfilled then
++        result = result .. po(x,y)
++      end
++    end
++  end
++  return result
++end
++
+ function lib.map.covers(map, pos)
+   if type(pos) == &quot;table&quot; then
+     return (pos[1] &gt;= 0) and (pos[2] &gt;= 0)
+@@ -247,6 +381,12 @@
+       table.insert(result, lib.map.get(map, obj))
+     end
+     return result
++  elseif usertype(posarg) == &quot;polist&quot; then
++    local result = {}
++    for j = 1, #posarg do
++      result[j] = lib.map.get(map, posarg[j])
++    end
++    return result
+   elseif type(posarg) == &quot;table&quot; then
+     if map:covers(posarg) then
+       local kl = rawget(map, &quot;__keylength&quot;)
+@@ -313,6 +453,14 @@
+           .. value
+           .. string.sub(rawget(map, obj.y + 1), (obj.x + 1) * kl + 1, -1))
+       end
++    elseif usertype(posarg) == &quot;polist&quot; then
++      for j = 1, #posarg do
++        map:extend(posarg[j])
++        rawset(map, posarg[j].y + 1,
++             string.sub(rawget(map, posarg[j].y + 1), 1, posarg[j].x * kl)
++          .. value
++          .. string.sub(rawget(map, posarg[j].y + 1), (posarg[j].x + 1) * kl + 1, -1))
++      end
+     elseif type(posarg) == &quot;table&quot; then
+       lib.map.set(map, po(posarg), value)
+     end
+@@ -350,6 +498,31 @@
+   end
+ end
+ 
++function lib.map.trim(map, trimkeyarg)
++  if (type(map) ~= &quot;table&quot;) or (map.type ~= &quot;map&quot;) then
++    error(&quot;lib.map.trim: Can only work on maps.&quot;, 2)
++  end
++  local border_n = map.height - 1
++  local border_s = 0
++  local border_w = map.width - 1
++  local border_e = 0
++  local trimkey = trimkeyarg or rawget(map, &quot;__defaultkey&quot;)
++  for x = 0, map.width - 1 do
++    for y = 0, map.height - 1 do
++      if map[{x,y}] ~= trimkey then
++        border_n = math.min(border_n, y)
++        border_s = math.max(border_s, y)
++        border_w = math.min(border_w, x)
++        border_e = math.max(border_e, x)        
++      end
++    end
++  end
++  if (border_n &gt;= border_s) or (border_w &gt;= border_e) then
++    return wo:newMap(trimkey)
++  end
++  return map:sub(po(border_w, border_n), po(border_e, border_s))
++end  
++
+ function lib.map.print(map, withXYCounts, left_separator, right_separator)
+   if (type(map) ~= &quot;table&quot;) or (map.type ~= &quot;map&quot;) then
+     error(&quot;lib.map.print: Can only print maps, sorry.&quot;, 2)
+@@ -476,13 +649,17 @@
+     newmap.__defaultkey = defaultKey
+     newmap.__keylength = string.len(defaultKey)
+     -- Set methods and finally metatable.
+-    newmap.print = lib.map.print
+     newmap.covers = lib.map.covers
+-    newmap.set_default_key = lib.map.set_default_key
++    newmap.defuse = lib.map.defuse
+     newmap.extend = lib.map.extend
+-    newmap.sub = lib.map.sub
++    newmap.match = lib.map.match
+     newmap.paste = lib.map.paste
++    newmap.print = lib.map.print
+     newmap.replace = lib.map.replace
++    newmap.replace_outside = lib.map.replace_outside
++    newmap.set_default_key = lib.map.set_default_key
++    newmap.sub = lib.map.sub
++    newmap.trim = lib.map.trim
+     setmetatable(newmap, lib.map.metatable)
+     return newmap
+   end
+
+Modified: trunk/doc/reference/enigma-ref.texi
+===================================================================
+--- trunk/doc/reference/enigma-ref.texi	2009-03-11 23:06:32 UTC (rev 1587)
++++ trunk/doc/reference/enigma-ref.texi	2009-03-12 16:18:54 UTC (rev 1588)
+@@ -13176,6 +13176,7 @@
+ * liblua::       General methods for tables.
+ * libmath::      Mathematical algorithms, like random permutations.
+ * libmap::       Methods for API 2-maps.
++* libimport::    Methods for importing external level files.
+ * libsoko::      A library to interpret Sokoban level files.
+ @end menu
+ 
+@@ -13964,6 +13965,45 @@
+ Note that the reference to @samp{marble2} only works after the marble has been
+ set.
+ 
++Requesting and changing map entries can be used with position lists, object and
++group references as well.
++
++You can replace any occurence of a tile key @samp{tile1} by @samp{tile2} simply
++by
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++mymap:replace(tile1, tile2)
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++You can omit @samp{tile2}, then any occurence of @samp{tile1} will be replaced
++by the default key.
++
++You can also search for positions in a map which fulfill given conditions by
++using @samp{match}, the return value is a position list. The syntax is simple:
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++mymap:match()
++mymap:match(tilekey)
++mymap:match(@{pos1, key1a, key1b, ...@}, @{pos2, key2a, key2b, ...@}, ...)
++mymap:match(@{@{pos1, key1a, key1b, ...@}, @{pos2, key2a, key2b, ...@}, ...@})
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++The first call will return all positions of the map. The second call will
++return all positions with the desired @code{tilekey}. The third and fourth call
++will return all positions @code{x} such that @code{x + pos1} is one of the keys
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{key1a} or @code{key1b} or ..., and such that @code{x + pos2} is one of
++the keys @code{key2a}, @code{2b}, ..., and so on. A tile outside of the map is
++considered to be a default key.
++
++The resulting position list can then be used to replace the matching tile keys:
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++mymap[mymap:match(oldkey)] = newkey
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++is equivalent to @samp{mymap:replace(oldkey, newkey)} (only slower), and
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++mymap[mymap:match({po(0,0), &quot; &quot;}, {NEIGHBORS_4, &quot;.&quot;, &quot;:&quot;})] = &quot;.&quot;
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++will find all occurences of @samp{ }, which are completely surrounded by
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{.}, or @samp{:}, or mixtures of these, and replace them by @samp{.}. As
++all replacements are done after matching, and hence simultaneously, the newly
++introduced @samp{.} will not participate in the matching.
++
+ @c ----------------- Connecting Two Maps --------------------
+ 
+ @node Connecting Two Maps
+@@ -14017,11 +14057,12 @@
+ the default key of @samp{map2} will be ignored, i.e. not drawn onto
+ @samp{map1}. You can change the default key with @samp{map2.defaultkey = ...}
+ prior to the paste command to circumvent this, or use
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{map2.replace(tile)} to replace more tile keys by the default key, such
+-that they are not drawn as well. You can use an object group for @samp{pos}, in
+-this case several copies of @samp{map2} will be pasted into @samp{map1}. There
+-is no guarantee about the sequence in which the maps will be pasted into
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{map1}.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{map2:replace(tile)} to replace more tile keys by the default key, such
++that they are not drawn as well. You can use an object group or position list
++for @samp{pos}, in this case several copies of @samp{map2} will be pasted into
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{map1}. In the first case, there is no guarantee about the sequence in
++which the maps will be pasted into @samp{map1}. In the second case, a latter
++entry in the position list may overwrite the result of earlier entries.
+ 
+ However, there's a fourth possibility: Two maps may represent two different
+ parts of tile keys. Let's give an example to fuse two tile key layers:
+@@ -14061,6 +14102,9 @@
+ Fusing maps can be a mighty technique in combination with the
+ @ref{res.composer}- and @ref{res.autotile}-resolvers.
+ 
++A map can also be defused: @samp{map:defuse()} will return a table of maps,
++where each map is of keylength one, holding the corresponding subkey character.
++
+ @c ----------------- Other Map Tasks --------------------
+ 
+ @node Other Map Tasks
+@@ -14075,14 +14119,6 @@
+ The new default key should have the same length as the old one. However, it is
+ possible to choose a new key length as long as it fits to the map.
+ 
+-You can replace any occurence of a tile key @samp{tile1} by @samp{tile2} simply
+-by
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at example</A>
+-mymap:replace(tile1, tile2)
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at end</A> example
+-You can omit @samp{tile2}, then any occurence of @samp{tile1} will be replaced
+-by the default key.
+-
+ Width and height of a map can be accessed via @samp{mymap.width} and
+ @samp{mymap.height}. However, these values can be changed only through the
+ following commands @samp{mymap:extend} and @samp{mymap:sub}.
+@@ -14096,6 +14132,10 @@
+ be filled with the default key. If the map already covers this position, no
+ change will be done.
+ 
++If you want to check whether a position @samp{pos} lies inside a map, you can
++use @samp{mymap:covers(pos)}, which returns a boolean value. Note that a map
++always starts in @samp{@{0,0@}}.
++
+ @samp{lib.map.sub} allows you to copy a rectangular area of a map and create a
+ &quot;submap&quot; this way. @samp{lib.map.sub} uses the same syntax as
+ @samp{wo:drawRect}, i.e. either
+@@ -14114,10 +14154,56 @@
+ Use @samp{submap:extend(width, height)} to ensure the full width and height.
+ The default key of the submap of course is the default key of the original map.
+ 
+-If you want to check whether a position @samp{pos} lies inside a map, you can
+-use @samp{mymap:covers(pos)}, which returns a boolean value. Note that a map
+-always starts in @samp{@{0,0@}}.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{lib.map.trim} or @samp{mymap:trim(tilekey)} removes all lines and
++columns from the North, South, East and West that consist of @code{tilekey}
++only; it's like trimming a string from white spaces. You can omit
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{tilekey}, then the default key is used instead.
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{mymap:replace_outside(tile1, tile2)} is a kind of combination of
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{replace} and @samp{trim}: All occurrences of @code{tile1}, which are
++connected to the border by a path of @samp{tile1}, are replaced by
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{tile2} (or default key). Example:
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++map1 = wo:newMap(&quot; &quot;, @{&quot; ##########&quot;,
++                       &quot;###      ##&quot;,
++                       &quot;F# D ## # #&quot;,
++                       &quot;#       # #&quot;,
++                       &quot;########   &quot;@})
++map2 = map1:replace_outside(&quot; &quot;, &quot;.&quot;)
++map3 = map1:replace_outside(&quot; &quot;, &quot;#&quot;)
++map3 = map3:replace_outside(&quot;#&quot;, &quot;.&quot;)
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++will yield:
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++map2 = @{&quot;.##########&quot;,
++        &quot;###      ##&quot;,
++        &quot;F# D ## #.#&quot;,
++        &quot;#       #.#&quot;,
++        &quot;########...&quot;@})
++map3 = @{&quot;...........&quot;,
++        &quot;...      ..&quot;,
++        &quot;F. D ## ...&quot;,
++        &quot;.       ...&quot;,
++        &quot;...........&quot;@})
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++You can combine @samp{replace_outside} with @samp{match} to remove irrelevant
++walls:
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++map1.defaultkey = &quot;-&quot;
++map1:replace_outside(&quot; &quot;)
++map1[map1:match({{po(0,0), &quot;#&quot;}, {NEIGHBORS_4, &quot;-&quot;, &quot;#&quot;, &quot;F&quot;}})] = &quot;-&quot;
++map1:trim()
++map1.defaultkey = &quot; &quot;
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++will yield:
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++map1 = @{&quot;---######-&quot;,
++         &quot;--#      #&quot;,
++         &quot;F# D ## #-&quot;,
++         &quot;#       #-&quot;,
++         &quot;-#######--&quot;@})
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++
+ Finally, you can use @samp{mymap:print()} to print @samp{mymap} to standard
+ output. Similar to @ref{lib.lua.print_table}, this is useful for debugging a
+ level by taking a look at its maps, but should not appear in the final level.
+@@ -14130,6 +14216,243 @@
+ be strings to be put between the left coordinate axis and the map, and behind
+ the map (to analyse space characters).
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at node</A> libimport
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at section</A> libimport
++
++libimport is dedicated to parse level files of other games or formats and
++typically returns @ref{libmap}-maps. In this context, the word &quot;level&quot; refers to
++a string, representing a level of the other game. A &quot;monolevel&quot; is a string
++which holds a single level, but also additional information, like titles or
++author names. A &quot;multilevel&quot; is a string composed of one or more monolevels.
++A &quot;map&quot; is a map in the libmap-sense, i.e. an Enigma level.
++
++Apart from the following functions, lib.import includes the minor routines
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{lib.import.string_replace}, which is a wrapper for @code{string.gsub},
++and @samp{lib.import.string_remove_multiples}, which removes multiple
++occurences of a string in another string.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at menu</A>
++* lib.import.unpack_multilevel::        Extract a level from a multilevel.
++* lib.import.uncompress_rle::           Decode run-length encoding.
++* lib.import.level_to_map::             Converts a level into a map.
++* lib.import.map_sokoban::              Converts a Sokoban level into a map.
++* lib.import.map_wanderer::             Converts a Wanderer level into a map.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> menu
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at c</A> ----------------- unpack_multilevel --------------------
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at node</A> lib.import.unpack_multilevel
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at subsection</A> lib.import.unpack_multilevel
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{unpack_multilevel} extracts a level from a multilevel string. For this,
++it needs a regexp describing a single level line.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Syntax:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at b</A>{lib.import.unpack_multilevel}(multilevel, sublevel_number, format)
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{multilevel}
++A multilevel string.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{sublevel_number}
++The number of the level in @code{multilevel} to be extracted. First level is
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{1}. If @code{nil}, @samp{1} is taken as default.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{format}
++A string referencing an entry in @samp{lib.import.line_regexp}. Currently, only
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{sokoban} and @samp{wanderer} are supported. But you can add further
++entries to @samp{lib.import.line_regexp} if neccessary.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> table
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Syntax Samples:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++level_four = lib.import.unpack_multilevel(large_string, 4, &quot;sokoban&quot;)
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Details:}
++A level extracted with @code{unpack_multilevel} has still to be converted into
++a format Enigma understands. A level is a string, and lines of the level are to
++be determined by line endings, which can be quite different. In contrast to
++this, an Enigma map is a table of strings, with each line in a separate entry
++of the table. Hence, at least the line endings have to be dealt with.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at c</A> ----------------- uncompress_rle --------------------
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at node</A> lib.import.uncompress_rle
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at subsection</A> lib.import.uncompress_rle
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{uncompress_rle} takes a string as argument and returns a decoded version
++without run-length encoding.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Syntax:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at b</A>{lib.import.uncompress_rle}(level, attribs)
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{level}
++A level string.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{attribs}
++A table containing further parameters. Currently, the only supported parameter
++is @samp{error_on_multiple}.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> table
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Syntax Samples:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++uncompressed = lib.import.uncompress_rle(compressed, @{error_on_multiple = &quot;\n&quot;@})
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Details:}
++Levels typically include long lines of repeating characters, like walls or
++spaces. To save space, these are sometimes counted and replaced by the total
++number and a single example of the character. This is called &quot;run-length
++encoding&quot;, or RLE.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++&quot;############  A #####BB#&quot; compresses to &quot;12#2 A5#2B#&quot;
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++However, some characters don't make sense to be repeated, like line endings.
++To return an error when trying to repeat a line ending during decompression,
++you can hand a string to the attribute @samp{error_on_multiple}. Any character
++in this string is then forbidden to be repeated. Remember that the @samp{new
++line}-character is represented by @samp{\n} in Lua.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at c</A> ----------------- level_to_map --------------------
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at node</A> lib.import.level_to_map
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at subsection</A> lib.import.level_to_map
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{level_to_map} breaks a level string down into a table of strings, which
++is then converted into a @ref{libmap}-map.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Syntax:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at b</A>{lib.import.level_to_map}(level, line_ending, default_key)
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{level}
++A level string.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{line_ending}
++A string describing a single line ending. Default: @samp{\n}
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{default_key}
++The default key of the returned map. Default: @samp{ }
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> table
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Syntax Samples:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++mymap = lib.import.level_to_map(level, &quot;|&quot;, &quot; &quot;)
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Details:}
++Multiple line endings are interpreted as multiple lines (of which the last
++lines are filled with the default key).
++
++Make sure that the last line of the level ends in a proper line ending, and only
++one line ending. Otherwise, the returned map will be too short or too long.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at c</A> ----------------- map_sokoban --------------------
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at node</A> lib.import.map_sokoban
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at subsection</A> lib.import.map_sokoban
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{map_sokoban} takes a Sokoban multilevel as argument, and returns a
++beautified @ref{libmap}-map.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Syntax:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at b</A>{lib.import.map_sokoban}(multilevel, sublevel_number, keylength_one)
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{multilevel}
++A multilevel string.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{sublevel_number}
++The number of the level to be extracted. First level is @samp{1}. Default:
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{1}
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{keylength_one}
++A boolean value. If @code{false}, the returned map has keylength two. Otherwise,
++it has keylength one. Default: @samp{false}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> table
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Syntax Samples:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++map_four = lib.import.map_sokoban(multilevel, 4, true)
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Details:}
++Sokoban level files can be very different - they can use run-length encoding and
++multilevel files. Sometimes, @samp{|} is used as line ending instead of or even
++together with @samp{\n}. @samp{ }, @samp{_} and @samp{-} can all represent
++space. Sometimes, the outside is filled with @samp{ }, then again with @samp{#}.
++Finally, line width can vary. We use a slightly generalized version, to include
++chessoban levels. Allowed characters are:
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++   - _ space  space
++   #          wall
++   .          goal
++   $ *        box, box with goal
++   n N        st_chess, st_chess with goal
++   @@ +        player, player with goal
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++The returned map will use @samp{ } for inside space, @samp{-} for
++outside space, default key is @samp{ }.
++
++If you chose @samp{keylength_one = true}, the returned map will use the
++characters as described above. Otherwise, the returned map will have keylength
++two, and the characters @samp{*}, @samp{N}, and @samp{+} are resolved into
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{$.}, @samp{n.}, and @samp{@@.} respectively, while the other keys become
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{  }, @samp{- }, @samp{# }, @samp{ .}, @samp{$ }, @samp{n }, and
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{@@ }. You can then use @ref{res.composer} to easily draw your map.
++
++Remember that the returned map uses the inner space @samp{ } or @samp{  } as
++default key. Hence, if you want to paste the map into another one
++(@ref{Connecting Two Maps}), you will have to switch the default key to
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{-} or @samp{- } in beforehand to yield a good result.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at c</A> ----------------- map_wanderer --------------------
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at node</A> lib.import.map_wanderer
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at subsection</A> lib.import.map_wanderer
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{map_wanderer} takes a Wanderer monolevel as argument, and returns a
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at ref</A>{libmap}-map. Note that Enigma does not yet have the neccessary game objects
++to simulate Wanderer.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Syntax:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at b</A>{lib.import.map_wanderer}(monolevel)
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{monolevel}
++A monolevel string.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> table
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Syntax Samples:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++mymap = lib.import.map_wanderer(monolevel)
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Details:}
++Wanderer is a game originally created by Steven Shipway in 1988.
++Wanderer level files are uncompressed monolevels with fixed
++width. The level itself is followed by a short description
++(title/author/email) in a single line or a line of @samp{#}. Last
++line optionally is a number. A Wanderer level knows the
++following characters (taken from Wanderer's editor):
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++   : _ #      earth, rock, indestructible rock
++   * - space  treasure, alternative space, space
++   O &lt; &gt; ^    falling boulder, arrow from right, arrow from left, balloon
++   ! + B      landmine, cage, bomb
++   / \        deflectors
++   T A X @@    teleport, arrival, exit, start
++   M S C ~    big monster, baby monster, time capsule, thingy
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++Due to its fixed width (40) and height (16), a Wanderer level is not always
++surrounded by walls; you might have to add them.
++
++Note that Enigma does not yet support the game elements of Wanderer, hence this
++function currently is only of use to developers.
++
++
+ @node libsoko
+ @section libsoko
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001017.html">[Enigma-game-svn] r1587 - in trunk: doc src
+</A></li>
+	<LI>Next message: <A HREF="001019.html">[Enigma-game-svn] r1589 - in trunk: data/schemas src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1018">[ date ]</a>
+              <a href="thread.html#1018">[ thread ]</a>
+              <a href="subject.html#1018">[ subject ]</a>
+              <a href="author.html#1018">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

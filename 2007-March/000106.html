@@ -1,0 +1,236 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r668 - in branches/1.0/src: . gui lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r668%20-%20in%20branches/1.0/src%3A%20.%20gui%20lev&In-Reply-To=%3C200703210010.l2L0AEVm004978%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000105.html">
+   <LINK REL="Next"  HREF="000107.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r668 - in branches/1.0/src: . gui lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r668%20-%20in%20branches/1.0/src%3A%20.%20gui%20lev&In-Reply-To=%3C200703210010.l2L0AEVm004978%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r668 - in branches/1.0/src: . gui lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Mar 21 01:10:14 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000105.html">[Enigma-game-svn] r667 - branches/1.0/src/gui
+</A></li>
+        <LI>Next message: <A HREF="000107.html">[Enigma-game-svn] r669 - branches/1.0/src/lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#106">[ date ]</a>
+              <a href="thread.html#106">[ thread ]</a>
+              <a href="subject.html#106">[ subject ]</a>
+              <a href="author.html#106">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-03-21 01:10:06 +0100 (Wed, 21 Mar 2007)
+New Revision: 668
+
+Modified:
+   branches/1.0/src/StateManager.cc
+   branches/1.0/src/file.cc
+   branches/1.0/src/file.hh
+   branches/1.0/src/gui/Menu.cc
+   branches/1.0/src/lev/ScoreManager.cc
+   branches/1.0/src/main.cc
+Log:
+Branch 1.0
+- store backups of score and state in a subdir &quot;backup&quot;
+Note: no conflicts will occur on mixed usage with 1.00
+
+
+Modified: branches/1.0/src/StateManager.cc
+===================================================================
+--- branches/1.0/src/StateManager.cc	2007-03-19 23:48:15 UTC (rev 667)
++++ branches/1.0/src/StateManager.cc	2007-03-21 00:10:06 UTC (rev 668)
+@@ -121,12 +121,27 @@
+ 
+         stripIgnorableWhitespace(doc-&gt;getDocumentElement());
+         std::string path = app.userPath + &quot;/state.xml&quot;;
++        std::string pathBackup = app.userPath + &quot;/backup/state.xml&quot;;
+         
+         // backup state every 10th save 
+         if (count%10 == 0) {
+-            std::remove((path + &quot;~2&quot;).c_str());
+-            std::rename((path + &quot;~1&quot;).c_str(), (path + &quot;~2&quot;).c_str());
+-            std::rename((path).c_str(), (path + &quot;~1&quot;).c_str());
++            std::remove((pathBackup + &quot;~2&quot;).c_str());
++            std::remove((path + &quot;~2&quot;).c_str()); // 1.00 bakups
++            if (ecl::FileExists(path + &quot;~1&quot;)) {
++                if (std::difftime(ecl::FileModTime(path + &quot;~1&quot;),
++                        ecl::FileModTime(pathBackup + &quot;~1&quot;)) &gt; 0) {
++                    // backup 1 from 1.00 is newer than backup 1 on backup path
++                    if (Copyfile(path + &quot;~1&quot;, pathBackup + &quot;~2&quot;))
++                        std::remove((path + &quot;~1&quot;).c_str()); // 1.00 bakup
++                } else {
++                    // just in case off previous copy failure
++                    std::rename((pathBackup + &quot;~1&quot;).c_str(), (pathBackup + &quot;~2&quot;).c_str());
++                    std::remove((path + &quot;~1&quot;).c_str()); // 1.00 bakup
++                }
++            } else {
++                std::rename((pathBackup + &quot;~1&quot;).c_str(), (pathBackup + &quot;~2&quot;).c_str());
++            }
++            Copyfile(path, pathBackup + &quot;~1&quot;);
+         }
+ 
+         try {
+@@ -152,8 +167,11 @@
+ 
+         if (!result) {
+             if (count%10 == 0) {
+-                std::rename((path + &quot;~1&quot;).c_str(), (path).c_str());
+-                std::rename((path + &quot;~2&quot;).c_str(), (path + &quot;~1&quot;).c_str());
++                // restore backup in case of error
++                if (Copyfile(pathBackup + &quot;~1&quot;, path)) {
++                    std::remove((pathBackup + &quot;~1&quot;).c_str());
++                    std::rename((pathBackup + &quot;~2&quot;).c_str(), (pathBackup + &quot;~1&quot;).c_str());
++                }
+             }
+             cerr &lt;&lt; XMLtoLocal(Utf8ToXML(errMessage.c_str()).x_str()).c_str();
+             gui::ErrorMenu m(errMessage, N_(&quot;Continue&quot;));
+
+Modified: branches/1.0/src/file.cc
+===================================================================
+--- branches/1.0/src/file.cc	2007-03-19 23:48:15 UTC (rev 667)
++++ branches/1.0/src/file.cc	2007-03-21 00:10:06 UTC (rev 668)
+@@ -361,3 +361,12 @@
+     return is;
+ }
+ 
++bool enigma::Copyfile(std::string fromPath, std::string toPath) {
++    ByteVec content;
++    ifstream ifs(fromPath.c_str(), ios::binary | ios::in);
++    Readfile (ifs, content);
++    ofstream ofs(toPath.c_str(), ios::binary | ios::out);
++    ofs.write(&amp;content[0], content.size());
++    ofs.close();
++    return !ofs.fail();
++}
+
+Modified: branches/1.0/src/file.hh
+===================================================================
+--- branches/1.0/src/file.hh	2007-03-19 23:48:15 UTC (rev 667)
++++ branches/1.0/src/file.hh	2007-03-21 00:10:06 UTC (rev 668)
+@@ -187,6 +187,7 @@
+ 
+     /*! Load a complete file/input stream `is' into `dst'.  */
+     std::istream &amp;Readfile (std::istream &amp;is, ByteVec &amp;dst, int blocksize=512);
++    bool Copyfile(std::string fromPath, std::string toPath);
+     
+     // banned code to file_zip.cc due to macro clashes
+     bool findInZip(std::string zipPath, std::string zippedFilename1,
+
+Modified: branches/1.0/src/gui/Menu.cc
+===================================================================
+--- branches/1.0/src/gui/Menu.cc	2007-03-19 23:48:15 UTC (rev 667)
++++ branches/1.0/src/gui/Menu.cc	2007-03-21 00:10:06 UTC (rev 668)
+@@ -81,6 +81,7 @@
+         Uint32 minMenuTickDuration = 300;
+         if (menuTickDuration &lt; minMenuTickDuration)
+             SDL_Delay(minMenuTickDuration - menuTickDuration);
++        while (SDL_PollEvent(&amp;e)) {}  // clear event queue
+         return !abortp;
+     }
+     
+
+Modified: branches/1.0/src/lev/ScoreManager.cc
+===================================================================
+--- branches/1.0/src/lev/ScoreManager.cc	2007-03-19 23:48:15 UTC (rev 667)
++++ branches/1.0/src/lev/ScoreManager.cc	2007-03-21 00:10:06 UTC (rev 668)
+@@ -357,12 +357,27 @@
+         stripIgnorableWhitespace(doc-&gt;getDocumentElement());
+ //        std::string path = app.userPath + &quot;/score.xml&quot;;
+         std::string zipPath = app.userPath + &quot;/enigma.score&quot;;
++        std::string zipPathBackup = app.userPath + &quot;/backup/enigma.score&quot;;
+         
+         // backup score every 10th save as we save after each level completion once
+         if (count%10 == 0) {
+-            std::remove((zipPath + &quot;~2&quot;).c_str());
+-            std::rename((zipPath + &quot;~1&quot;).c_str(), (zipPath + &quot;~2&quot;).c_str());
+-            std::rename((zipPath).c_str(), (zipPath + &quot;~1&quot;).c_str());
++            std::remove((zipPathBackup + &quot;~2&quot;).c_str());
++            std::remove((zipPath + &quot;~2&quot;).c_str()); // 1.00 bakups
++            if (ecl::FileExists(zipPath + &quot;~1&quot;)) {
++                if (std::difftime(ecl::FileModTime(zipPath + &quot;~1&quot;),
++                        ecl::FileModTime(zipPathBackup + &quot;~1&quot;)) &gt; 0) {
++                    // backup 1 from 1.00 is newer than backup 1 on backup path
++                    if (Copyfile(zipPath + &quot;~1&quot;, zipPathBackup + &quot;~2&quot;))
++                        std::remove((zipPath + &quot;~1&quot;).c_str()); // 1.00 bakup
++                } else {
++                    // just in case off previous copy failure
++                    std::rename((zipPathBackup + &quot;~1&quot;).c_str(), (zipPathBackup + &quot;~2&quot;).c_str());
++                    std::remove((zipPath + &quot;~1&quot;).c_str()); // 1.00 bakup
++                }
++            } else {
++                std::rename((zipPathBackup + &quot;~1&quot;).c_str(), (zipPathBackup + &quot;~2&quot;).c_str());
++            }
++            Copyfile(zipPath, zipPathBackup + &quot;~1&quot;);
+         }
+         
+         try {
+@@ -428,8 +443,11 @@
+ 
+         if (!result) {
+             if (count%10 == 0) {
+-                std::rename((zipPath + &quot;~1&quot;).c_str(), (zipPath).c_str());
+-                std::rename((zipPath + &quot;~2&quot;).c_str(), (zipPath + &quot;~1&quot;).c_str());
++                // restore backup in case of error
++                if (Copyfile(zipPathBackup + &quot;~1&quot;, zipPath)) {
++                    std::remove((zipPathBackup + &quot;~1&quot;).c_str());
++                    std::rename((zipPathBackup + &quot;~2&quot;).c_str(), (zipPathBackup + &quot;~1&quot;).c_str());
++                }
+             }
+             cerr &lt;&lt; XMLtoLocal(Utf8ToXML(errMessage.c_str()).x_str()).c_str();
+             gui::ErrorMenu m(errMessage, N_(&quot;Continue&quot;));
+
+Modified: branches/1.0/src/main.cc
+===================================================================
+--- branches/1.0/src/main.cc	2007-03-19 23:48:15 UTC (rev 667)
++++ branches/1.0/src/main.cc	2007-03-21 00:10:06 UTC (rev 668)
+@@ -612,6 +612,8 @@
+         ecl::FolderCreate (userPath + &quot;/levels/cross&quot;);
+     if (!ecl::FolderExists(userPath + &quot;/levels/legacy_dat&quot;))
+         ecl::FolderCreate (userPath + &quot;/levels/legacy_dat&quot;);   
++    if (!ecl::FolderExists(userPath + &quot;/backup&quot;))
++        ecl::FolderCreate (userPath + &quot;/backup&quot;);   
+ }
+ 
+ void Application::init_i18n()
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000105.html">[Enigma-game-svn] r667 - branches/1.0/src/gui
+</A></li>
+	<LI>Next message: <A HREF="000107.html">[Enigma-game-svn] r669 - branches/1.0/src/lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#106">[ date ]</a>
+              <a href="thread.html#106">[ thread ]</a>
+              <a href="subject.html#106">[ subject ]</a>
+              <a href="author.html#106">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

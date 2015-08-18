@@ -1,0 +1,633 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1034 - in trunk/src: . stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1034%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200802101149.m1ABnPxG012656%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000465.html">
+   <LINK REL="Next"  HREF="000467.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1034 - in trunk/src: . stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1034%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200802101149.m1ABnPxG012656%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1034 - in trunk/src: . stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Feb 10 12:49:25 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000465.html">[Enigma-game-svn] r1033 - in trunk/src: . stones
+</A></li>
+        <LI>Next message: <A HREF="000467.html">[Enigma-game-svn] r1035 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#466">[ date ]</a>
+              <a href="thread.html#466">[ thread ]</a>
+              <a href="subject.html#466">[ subject ]</a>
+              <a href="author.html#466">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-02-10 12:49:24 +0100 (Sun, 10 Feb 2008)
+New Revision: 1034
+
+Modified:
+   trunk/src/ObjectValidator.cc
+   trunk/src/WorldProxy.cc
+   trunk/src/items.cc
+   trunk/src/lua.cc
+   trunk/src/lua.hh
+   trunk/src/stones/Switch.cc
+   trunk/src/world.cc
+   trunk/src/world.hh
+Log:
+Trunk 1.1: new API
+- default floor full support - every grid will always have a floor:
+  - no need of specification of a floor on every tile
+  - the default tile needs a floor
+  - the default tile may define a checkerboard with mutiple floors
+  - the default tile may have other objects - just the floors will be
+    set on missing floors
+- resolver support: the first arg on wo(resolver, default, map) can be
+  - &quot;ti&quot; the tiles map
+  - a function resolver(key, x, y) that returns a tile definition
+- mapless world creation: wo(resolver, default, x, y) creates a world
+  of given size just filled with default floors
+- wo:_register(methodname, function) allows registration of library functions
+  within the world context: additional functions like drawmap, drawborder,...
+  can be written in Lua and hooked into the world. (see testlevel for example)
+- add world read only attributes Width, Height
+- allow world size smaller 20x13 for new API
+- fix attribute read error on objects that are do not yet have a valid
+  xml declaration.
+
+
+Modified: trunk/src/ObjectValidator.cc
+===================================================================
+--- trunk/src/ObjectValidator.cc	2008-02-09 18:41:37 UTC (rev 1033)
++++ trunk/src/ObjectValidator.cc	2008-02-10 11:49:24 UTC (rev 1034)
+@@ -152,7 +152,11 @@
+     bool ObjectValidator::validateMessage(Object *obj, std::string msg, Value val) {
+         KindDescriptor *kind = getKindDesc(obj-&gt;getClass());
+         if (kind == NULL) {
+-            return true;    // object is not under validator control
++            // object is not under validator control
++            if (obj-&gt;getAttr(msg))
++                return false;       // default attribute value - try message
++            else
++                return true;        // existing attribute value - deny message
+         }
+         return kind-&gt;validateMessage(msg);
+     }
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2008-02-09 18:41:37 UTC (rev 1033)
++++ trunk/src/WorldProxy.cc	2008-02-10 11:49:24 UTC (rev 1034)
+@@ -18,8 +18,9 @@
+  */
+ 
+ #include &quot;WorldProxy.hh&quot;
++#include &quot;display.hh&quot;
+ #include &quot;server.hh&quot;
+-#include &quot;display.hh&quot;
++#include &quot;world.hh&quot;
+ 
+ namespace enigma {
+  
+@@ -48,14 +49,16 @@
+             return server::ConserveLevel;
+         } else if (key == &quot;CreatingPreview&quot;) {
+             return server::CreatingPreview;  // read only
++        } else if (key == &quot;Height&quot;) {
++            return Height();
+         } else if (key == &quot;IsDifficult&quot;) {
+             return (server::GetDifficulty() == DIFFICULTY_HARD);  // read only
+         } else if (key == &quot;LevelTime&quot;) {   
+             return server::LevelTime;    // read only
+         } else if (key == &quot;ShowMoves&quot;) {
+             return server::ShowMoves;
+-        } else if (key == &quot;ShowMoves&quot;) {
+-            return server::ShowMoves;
++        } else if (key == &quot;Width&quot;) {
++            return Width();
+         } else if (key == &quot;Brittleness&quot;) {
+             return server::Brittleness;
+         } else if (key == &quot;BumperForce&quot;) {
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-02-09 18:41:37 UTC (rev 1033)
++++ trunk/src/items.cc	2008-02-10 11:49:24 UTC (rev 1034)
+@@ -1366,9 +1366,10 @@
+     }
+     
+     Value Trigger::message (const Message &amp;m) {
+-        if (m.message == &quot;signal&quot;) {
++        if (m.message == &quot;signal&quot; &amp;&amp; (server::GameCompatibility != GAMET_ENIGMA || 
++                server::EnigmaCompatibility &lt; 1.10)) {
+             performAction(m.value.to_bool());  // convert 1/0 values to true/false
+-            return Value();                
++            return Value();
+         } else if (m.message == &quot;_init&quot;) {
+             // the state count at init is wrong as some actors on the grid may
+             // already have existed on_creation, but all are reported via
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-02-09 18:41:37 UTC (rev 1033)
++++ trunk/src/lua.cc	2008-02-10 11:49:24 UTC (rev 1034)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2007 Ronald Lamprecht
++ * Copyright (C) 2007,2008 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -60,6 +60,11 @@
+ #define LUA_ID_GROUP    &quot;_GROUP&quot;
+ #define LUA_ID_TILES    &quot;_TILES&quot;
+ #define LUA_ID_TILE     &quot;_TILE&quot;
++/**
++ * The tile dictionary or function that should be used to resolve tile keys.
++ */
++#define LUA_ID_RESOLVER &quot;_RESOLVER&quot;
++#define LUA_ID_FLOORKEY &quot;_FLOORKEY&quot;
+ 
+ using namespace std;
+ 
+@@ -1678,9 +1683,28 @@
+ 
+ MethodMap worldMethodeMap;
+ 
++static int registerWorldUserMethod(lua_State *L) {
++    // object, name, function
++    if (!(lua_isstring(L, 2) &amp;&amp; lua_isfunction(L, 3))) {
++        throwLuaError(L, &quot;World register method argument error&quot;);
++        return 0;
++    }
++    lua_getmetatable(L, 1);  // world metatable
++    lua_getfield(L, -1, &quot;_usermethods&quot;);
++    if (lua_isnil(L, -1)) {
++        lua_pop(L, 1);      // the bogus nil
++        lua_newtable(L);    // create usermethods
++        lua_pushvalue(L, -1);   // dup to be poped by setfield
++        lua_setfield(L, -3, &quot;_usermethods&quot;);
++    }
++    lua_pushvalue(L, 2);  // the key string as index
++    lua_pushvalue(L, 3);  // the function as value
++    lua_settable(L, -3);
++    return 0;
++}
+ 
+ static int dispatchWorldReadAccess(lua_State *L) {
+-    // 
++    // world, key
+     if (lua_isstring(L, 2)) {
+         std::string keyStr = lua_tostring(L, 2);
+         // TODO check string
+@@ -1689,8 +1713,20 @@
+             // call method
+             lua_pushcfunction(L, iter-&gt;second);
+         } else {
+-            Value v = WorldProxy::instance()-&gt;getAttr(keyStr);
+-            push_value(L, v);
++            if (Value v = WorldProxy::instance()-&gt;getAttr(keyStr))
++                push_value(L, v);
++            else {
++                lua_getmetatable(L, 1);  // world metatable
++                lua_getfield(L, -1, &quot;_usermethods&quot;);
++                if (!lua_isnil(L, -1)) {
++                    lua_pushvalue(L, 2);
++                    lua_gettable(L, -2);
++                    if (lua_isfunction(L, -1))
++                        return 1;
++                }
++                throwLuaError(L, &quot;World read access without a valid key&quot;);
++                return 0;
++            }
+         }
+         return 1;
+     } else {
+@@ -1700,7 +1736,7 @@
+ }
+ 
+ 
+-static int setObjectByTable(lua_State *L, double x, double y) {
++static int setObjectByTable(lua_State *L, double x, double y, bool onlyFloors = false) {
+     // table at -1 
+     int xi = round_down&lt;int&gt;(x);
+     int yi = round_down&lt;int&gt;(y);
+@@ -1719,15 +1755,18 @@
+     }
+     
+     if (name == &quot;fl_nil&quot;) {
+-        KillFloor(GridPos(xi, yi));
++        if (!onlyFloors)
++            KillFloor(GridPos(xi, yi));
+         lua_pop(L, 1);   // object type
+         return 0;
+     } else if (name == &quot;st_nil&quot;) {
+-        KillStone(GridPos(xi, yi));
++        if (!onlyFloors)
++            KillStone(GridPos(xi, yi));
+         lua_pop(L, 1);   // object type
+         return 0;
+     } else if (name == &quot;it_nil&quot;) {
+-        KillItem(GridPos(xi, yi));
++        if (!onlyFloors)
++            KillItem(GridPos(xi, yi));
+         lua_pop(L, 1);   // object type
+         return 0;
+     }
+@@ -1748,23 +1787,30 @@
+             SetFloor(GridPos(xi,yi), dynamic_cast&lt;Floor *&gt;(obj));
+             break;
+         case Object::STONE :
+-            SetStone(GridPos(xi,yi), dynamic_cast&lt;Stone *&gt;(obj));
++            if (!onlyFloors)
++                SetStone(GridPos(xi,yi), dynamic_cast&lt;Stone *&gt;(obj));
++            else
++                DisposeObject(obj);
+             break;
+         case Object::ITEM  :
+-            SetItem(GridPos(xi,yi), dynamic_cast&lt;Item *&gt;(obj));
++            if (!onlyFloors)
++                SetItem(GridPos(xi,yi), dynamic_cast&lt;Item *&gt;(obj));
+             break;
+         case Object::ACTOR :
+-            lua_rawgeti(L, -1, 2);
+-            if (lua_isnumber(L, -1))
+-                x += lua_tonumber(L, -1);
+-            lua_rawgeti(L, -2, 3);
+-            if (lua_isnumber(L, -1))
+-                y += lua_tonumber(L, -1);
+-            lua_pop(L, 2);               
+-            if (IsInsideLevel(GridPos(round_down&lt;int&gt;(x), round_down&lt;int&gt;(y)))) 
+-                AddActor(x, y, dynamic_cast&lt;Actor *&gt;(obj));
+-            else
+-                throwLuaError(L, &quot;World: actor addition to position outside of world&quot;);
++            if (!onlyFloors) {
++                lua_rawgeti(L, -1, 2);
++                if (lua_isnumber(L, -1))
++                    x += lua_tonumber(L, -1);
++                lua_rawgeti(L, -2, 3);
++                if (lua_isnumber(L, -1))
++                    y += lua_tonumber(L, -1);
++                lua_pop(L, 2);               
++                if (IsInsideLevel(GridPos(round_down&lt;int&gt;(x), round_down&lt;int&gt;(y)))) 
++                    AddActor(x, y, dynamic_cast&lt;Actor *&gt;(obj));
++                else
++                    throwLuaError(L, &quot;World: actor addition to position outside of world&quot;);
++            } else
++                DisposeObject(obj);
+             break;
+         default :
+             throwLuaError(L, &quot;World set of unknown object&quot;);
+@@ -1772,7 +1818,7 @@
+     return 0;
+ }
+ 
+-static int setObjectByTile(lua_State *L, double x, double y) {
++static int setObjectByTile(lua_State *L, double x, double y, bool onlyFloors = false) {
+     // tile at -1
+     
+     // this is a recursive function - ensure enough space on the stack
+@@ -1782,25 +1828,88 @@
+     lua_getmetatable(L, -1);
+     lua_rawgeti(L, -1, 1);    // first tile part
+     if (is_tile(L, -1))
+-        setObjectByTile(L, x, y);
++        setObjectByTile(L, x, y, onlyFloors);
+     else
+-        setObjectByTable(L, x, y);
++        setObjectByTable(L, x, y, onlyFloors);
+     lua_pop(L, 1);  // tile or table
+     lua_rawgeti(L, -1, 2);    // second optional tile part
+     if (!lua_isnil(L, -1)) {
+         if (is_tile(L, -1))
+-            setObjectByTile(L, x, y);
++            setObjectByTile(L, x, y, onlyFloors);
+         else
+-            setObjectByTable(L, x, y);
++            setObjectByTable(L, x, y, onlyFloors);
+     }
+     lua_pop(L, 2);  // tile or table or nil + metatable
+     return 0;
+ }
+ 
+-static int initWorld(lua_State *L) {
++static int setObjectByKey(lua_State *L, std::string key, int j, int i, bool onlyFloors = false) {
++    lua_getfield(L, LUA_REGISTRYINDEX, LUA_ID_RESOLVER);
++    lua_pushvalue(L, -1);
++    lua_pushstring(L, key.c_str());
++    if (is_tiles(L, -2)) {
++        lua_gettable(L, -2);        // get tile entry in table
++        lua_remove(L, -2);          // remove extra copy of tile as resolver
++    } else {
++        lua_pushinteger(L, j);
++        lua_pushinteger(L, i);
++        int retval=lua_pcall(L, 3, 1, 0);
++        if (retval!=0) {
++            throwLuaError(L, &quot;Error within tile key resolver&quot;);
++            return 0;
++        }
++        // check result - must be tile or table
++        if (!(is_tile(L, -1) || is_table(L, -1))) {
++            throwLuaError(L, &quot;Tile key resolver error - expected tile or table as return value&quot;);
++            return 0;
++        }
++    }   
++    if (lua_isnil(L, -1)) {
++        throwLuaError(L, ecl::strf(&quot;World init undefined tile '%s' at %d, %d&quot;, 
++                key.c_str(), j, i).c_str());
++        return 0;
++    }
++    setObjectByTile(L, j, i, onlyFloors);
++    lua_pop(L, 1);  // tile
++    if (GetFloor(GridPos(j, i)) == NULL) {
++        lua_pushvalue(L, -1);
++        lua_getfield(L, LUA_REGISTRYINDEX, LUA_ID_FLOORKEY);
++        if (is_tiles(L, -2)) {
++            lua_gettable(L, -2);        // get tile entry in table
++            lua_remove(L, -2);          // remove extra copy of tile as resolver
++        } else {
++            lua_pushinteger(L, j);
++            lua_pushinteger(L, i);
++            int retval=lua_pcall(L, 3, 1, 0);
++            if (retval!=0) {
++                throwLuaError(L, &quot;Error within tile key resolver&quot;);
++                return 0;
++            }
++            // check result - must be tile or table
++            if (!(is_tile(L, -1) || is_table(L, -1))) {
++                throwLuaError(L, &quot;Tile key resolver error - expected tile or table as return value&quot;);
++                return 0;
++            }
++        }   
++        if (lua_isnil(L, -1)) {
++            throwLuaError(L, ecl::strf(&quot;World init undefined default tile at %d, %d&quot;,  j, i).c_str());
++            return 0;
++        }
++        setObjectByTile(L, j, i, true);   // limit to floor set
++        lua_pop(L, 1);  // default tile
++        if (GetFloor(GridPos(j, i)) == NULL) {
++            throwLuaError(L, ecl::strf(&quot;World no floor at %d, %d&quot;, j, i).c_str());
++            return 0;
++        }
++    }
++    lua_pop(L, 1);  // resolver
++    return 0;
++}
++
++static int createWorld(lua_State *L) {
+     // world, (ti|function), string, table
+     if (server::WorldSized) {
+-        throwLuaError(L, &quot;World reinitialization not allowed&quot;);
++        throwLuaError(L, &quot;World recreation not allowed&quot;);
+         return 0;
+     }
+     
+@@ -1808,61 +1917,74 @@
+     int height = 0;
+     int keyLength = 1;
+     std::string defaultKey;
+-    if (!(is_tiles(L, 2) &amp;&amp; lua_isstring(L, 3) &amp;&amp; is_table(L, 4))) {
+-        throwLuaError(L, &quot;World init with false argument types&quot;);
++    if (!((is_tiles(L, 2)||lua_isfunction(L, 2)) &amp;&amp; lua_isstring(L, 3) &amp;&amp; 
++            (is_table(L, 4) || (lua_isnumber(L, 4) &amp;&amp; lua_isnumber(L, 5))))) {
++        throwLuaError(L, &quot;World create with false argument types&quot;);
+         return 0;
+     }
++    
++    // remember resolver and default key for missing floors
++    lua_pushvalue(L, 2);
++    lua_setfield(L, LUA_REGISTRYINDEX, LUA_ID_RESOLVER);  
++    lua_pushvalue(L, 3);
++    lua_setfield(L, LUA_REGISTRYINDEX, LUA_ID_FLOORKEY);  
++    
+     defaultKey = lua_tostring(L, 3);
+     keyLength = defaultKey.length();
+-    height = lua_objlen(L, 4);
+     std::vector&lt;std::string&gt; lines;
+-    Log &lt;&lt; &quot;initWorld  keyLength &quot; &lt;&lt; keyLength &lt;&lt;&quot;\n&quot;;
+-    for (int i = 1; i &lt;= height; i++) {
+-        lua_pushinteger(L, i);
+-        lua_gettable(L, -2);
+-        if (!lua_isstring(L, -1)) {
+-            throwLuaError(L, &quot;World init table has enties that are no strings&quot;);
++    Log &lt;&lt; &quot;createWorld  keyLength &quot; &lt;&lt; keyLength &lt;&lt;&quot;\n&quot;;
++    
++    if (is_table(L, 4)) {
++        height = lua_objlen(L, 4);
++        for (int i = 1; i &lt;= height; i++) {
++            lua_pushinteger(L, i);
++            lua_gettable(L, -2);
++            if (!lua_isstring(L, -1)) {
++                throwLuaError(L, &quot;World create map has enties that are no strings&quot;);
++                return 0;
++            }
++            lines.push_back(lua_tostring(L, -1));
++            lua_pop(L, 1);
++            width = ecl::Max(width, (int)lines.back().length());
++        }
++        if (width % keyLength != 0) {
++            throwLuaError(L, &quot;World create map row with odd length&quot;);
+             return 0;
+         }
+-        lines.push_back(lua_tostring(L, -1));
+-        lua_pop(L, 1);
+-        width = ecl::Max(width, (int)lines.back().length());
++        width = width/keyLength;
++    } else {
++        width = lua_tointeger(L, 4);
++        height = lua_tointeger(L, 5);
++        if (width &lt;= 0 || height &lt;= 0) {
++            throwLuaError(L, &quot;World create with bad size&quot;);
++            return 0;
++        }
++        for (int i = 0; i &lt; height; i++)
++            lines.push_back(&quot;&quot;); 
+     }
+-    if (width % keyLength != 0) {
+-        throwLuaError(L, &quot;World init table row with odd length&quot;);
+-        return 0;
+-    }
+-    width = width/keyLength;
+-    Log &lt;&lt; &quot;initWorld  - w &quot; &lt;&lt; width &lt;&lt; &quot;  - h &quot; &lt;&lt; height &lt;&lt; &quot;\n&quot;;
+-
++    
++    Log &lt;&lt; &quot;createWorld  - w &quot; &lt;&lt; width &lt;&lt; &quot;  - h &quot; &lt;&lt; height &lt;&lt; &quot;\n&quot;;
+     Resize(width, height);
++    display::ResizeGameArea(ecl::Min&lt;int&gt;(20, width), ecl::Min&lt;int&gt;(13, height));
+     
+-    luaL_getmetatable(L, LUA_ID_TILES);
+-    lua_rawgeti(L, -1, 1);               // tiles content table
+     for (int i = 0; i &lt; height; i++) {
+         std::string &amp;line = lines[i];
+         int lineLength = line.length();
+         if (lineLength % keyLength != 0) {
+-            throwLuaError(L, &quot;World init table row with odd length&quot;);
++            throwLuaError(L, &quot;World create map row with odd length&quot;);
+             return 0;
+         }
+         lineLength = lineLength / keyLength;
+         for (int j = 0; j &lt; width; j++) {
+             std::string key;
++            bool isDefault = false;
+             if (j &lt; lineLength) {
+                 key = line.substr(j*keyLength, keyLength);  // tiles key
+             } else {
+                 key = defaultKey;
++                isDefault = true;
+             }
+-            lua_pushstring(L, key.c_str());
+-            lua_rawget(L, -2);        // get tile entry in table
+-            if (lua_isnil(L, -1)) {
+-                throwLuaError(L, ecl::strf(&quot;World init undefined tile '%s' at %d, %d&quot;, 
+-                        key.c_str(), j, i).c_str());
+-                return 0;
+-            }
+-            setObjectByTile(L, j, i);
+-            lua_pop(L, 1);  // tile
++            setObjectByKey(L, key, j, i, isDefault);
+         }
+     }
+     lua_pushinteger(L, width);
+@@ -2387,12 +2509,13 @@
+ static CFunction worldOperations[] = {
+     {dispatchWorldWriteAccess,      &quot;__newindex&quot;}, //  obj[key]=value
+     {dispatchWorldReadAccess,       &quot;__index&quot;},    //  obj[key]
+-    {initWorld,                     &quot;__call&quot;},
++    {createWorld,                   &quot;__call&quot;},
+     {0,0}
+ };
+ 
+ static CFunction worldMethods[] = {
+-    {initWorld,                     &quot;init&quot;},
++    {createWorld,                   &quot;create&quot;},
++    {registerWorldUserMethod,       &quot;_register&quot;},
+     {getFloor,                      &quot;fl&quot;},
+     {getItem,                       &quot;it&quot;},
+     {getStone,                      &quot;st&quot;},
+@@ -2559,6 +2682,13 @@
+     return result;
+ }
+ 
++void SetDefaultFloor(lua_State *L, int x, int y) {
++    lua_getfield(L, LUA_REGISTRYINDEX, LUA_ID_FLOORKEY);
++    std::string key = lua_tostring(L, -1);
++    setObjectByKey(L, key, x, y, true);
++    lua_pop(L, 1);
++}
++
+ Error DoAbsoluteFile(lua_State *L, const string &amp;filename)
+ {
+     int oldtop = lua_gettop(L);
+
+Modified: trunk/src/lua.hh
+===================================================================
+--- trunk/src/lua.hh	2008-02-09 18:41:37 UTC (rev 1033)
++++ trunk/src/lua.hh	2008-02-10 11:49:24 UTC (rev 1034)
+@@ -98,6 +98,8 @@
+     Error CallFunc (lua_State *L, const char *funcname, const ByteVec &amp;arg);
+     
+     std::string NewMessageName(lua_State *L, const Object *obj, const std::string &amp;message);
++    
++    void SetDefaultFloor(lua_State *L, int x, int y);
+ 
+     /**
+      * Run a Lua script using a given absolute path.
+
+Modified: trunk/src/stones/Switch.cc
+===================================================================
+--- trunk/src/stones/Switch.cc	2008-02-09 18:41:37 UTC (rev 1033)
++++ trunk/src/stones/Switch.cc	2008-02-10 11:49:24 UTC (rev 1034)
+@@ -138,8 +138,8 @@
+         {&quot;st_switch_black&quot;, st_switch, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
+         {&quot;st_switch_white&quot;, st_switch, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
+         {&quot;st_switch_instant&quot;, st_switch, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
+-        {&quot;st_switch_instantblack&quot;, st_switch, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
+-        {&quot;st_switch_instantwhite&quot;, st_switch, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++        {&quot;st_switch_instant_black&quot;, st_switch, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++        {&quot;st_switch_instant_white&quot;, st_switch, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
+     };
+     
+     BOOT_REGISTER_START
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-02-09 18:41:37 UTC (rev 1033)
++++ trunk/src/world.cc	2008-02-10 11:49:24 UTC (rev 1034)
+@@ -1560,6 +1560,15 @@
+     server::WorldSized = true;
+ }
+ 
++int Width() {
++    return level-&gt;w;
++}
++
++int Height() {
++    return level-&gt;h;
++}
++
++
+ void WorldPrepareLevel ()
+ {
+     GameTimer.clear();
+@@ -2006,6 +2015,7 @@
+ void KillFloor(GridPos p) 
+ {
+     level-&gt;fl_layer.kill(p);
++    lua::SetDefaultFloor(lua::LevelState(), p.x, p.y);
+ }
+ 
+ Floor *GetFloor(GridPos p) 
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2008-02-09 18:41:37 UTC (rev 1033)
++++ trunk/src/world.hh	2008-02-10 11:49:24 UTC (rev 1034)
+@@ -154,6 +154,8 @@
+ 
+     /* Create a new, empty world with width `w' and height `h`. */
+     void Resize (int w, int h);
++    int Width();
++    int Height();
+ 
+     /* Initialize the world after loading it.  Call this after loading
+        the world to force laser beams to be recalculated etc. */
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000465.html">[Enigma-game-svn] r1033 - in trunk/src: . stones
+</A></li>
+	<LI>Next message: <A HREF="000467.html">[Enigma-game-svn] r1035 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#466">[ date ]</a>
+              <a href="thread.html#466">[ thread ]</a>
+              <a href="subject.html#466">[ subject ]</a>
+              <a href="author.html#466">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

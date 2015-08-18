@@ -1,0 +1,161 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r670 - in branches/1.0/src: . lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r670%20-%20in%20branches/1.0/src%3A%20.%20lev&In-Reply-To=%3C200703242333.l2ONXRR4026224%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000107.html">
+   <LINK REL="Next"  HREF="000109.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r670 - in branches/1.0/src: . lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r670%20-%20in%20branches/1.0/src%3A%20.%20lev&In-Reply-To=%3C200703242333.l2ONXRR4026224%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r670 - in branches/1.0/src: . lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Mar 25 00:33:27 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000107.html">[Enigma-game-svn] r669 - branches/1.0/src/lev
+</A></li>
+        <LI>Next message: <A HREF="000109.html">[Enigma-game-svn] r671 - in branches/1.0/data/levels: enigma_cross	enigma_vi
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#108">[ date ]</a>
+              <a href="thread.html#108">[ thread ]</a>
+              <a href="subject.html#108">[ subject ]</a>
+              <a href="author.html#108">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-03-25 00:33:26 +0100 (Sun, 25 Mar 2007)
+New Revision: 670
+
+Modified:
+   branches/1.0/src/display.cc
+   branches/1.0/src/lev/ScoreManager.cc
+   branches/1.0/src/player.cc
+Log:
+Branch 1.0
+- reId Windows users - 1.00 ids may not be unique due to bug fixed in 1.0 r591
+- statusbar: keep time at 99:59 even if time is greater (instead mod 100)
+- score: save max time 99:59 even if solvage time is greater
+- anti voodoo: disallow dead actors to pick up items
+
+
+Modified: branches/1.0/src/display.cc
+===================================================================
+--- branches/1.0/src/display.cc	2007-03-22 00:16:02 UTC (rev 669)
++++ branches/1.0/src/display.cc	2007-03-24 23:33:26 UTC (rev 670)
+@@ -188,9 +188,13 @@
+ 
+         if (m_showtime_p) {
+             double     abstime       = m_leveltime &gt;= 0 ? m_leveltime : fabs(floor(m_leveltime));
+-            int        minutes       = static_cast&lt;int&gt;(abstime/60) % 100;
++            int        minutes       = static_cast&lt;int&gt;(abstime/60);
+             int        seconds       = static_cast&lt;int&gt;(abstime) % 60;
+ 
++            if (minutes &gt;= 100) {
++                minutes = 99;
++                seconds = 59;
++            }
+             snprintf(buf, BUFSIZE,
+                      m_leveltime &gt;= 0 ? &quot;%d:%02d&quot; : &quot;-%d:%02d&quot;,
+                      minutes, seconds);
+
+Modified: branches/1.0/src/lev/ScoreManager.cc
+===================================================================
+--- branches/1.0/src/lev/ScoreManager.cc	2007-03-22 00:16:02 UTC (rev 669)
++++ branches/1.0/src/lev/ScoreManager.cc	2007-03-24 23:33:26 UTC (rev 670)
+@@ -78,7 +78,7 @@
+             const DOMElement *e = dynamic_cast&lt;const DOMElement *&gt;(node);
+             std::string id = XMLtoUtf8(e-&gt;getAttribute(Utf8ToXML(&quot;id&quot;).x_str())).c_str();
+             if (id.find(&quot;Import &quot;) == 0) {
+-                Log &lt;&lt; &quot;Score reject: &quot; &lt;&lt; id &lt;&lt; &quot;\n&quot;;
++                // reject scores for levels imported from dat files
+                 return DOMNodeFilter::FILTER_REJECT;
+             }
+         }
+@@ -358,6 +358,24 @@
+             finishUserId(std::time(NULL) &amp; 0xFFFF);
+         }
+         
++        if (userId.find(&quot;0000&quot;) == 0) {
++            Log &lt;&lt; &quot;ReId Windows 1.00 User Id: &quot; &lt;&lt; userId &lt;&lt; &quot;\n&quot;;
++            setProperty(&quot;UserId1.00&quot;, userId);
++            app.state-&gt;setProperty(&quot;UserId1.00&quot;, userId);
++            unsigned id1 = std::rand() &amp; 0xFFFF;
++            userId.replace(0, 4, ecl::strf(&quot;%.4lX&quot;,id1));
++            unsigned id2, id3, id4;
++            std::istringstream s2(userId.substr(4, 4));
++            std::istringstream s3(userId.substr(8, 4));
++            s2 &gt;&gt; std::hex &gt;&gt; id2;
++            s3 &gt;&gt; std::hex &gt;&gt; id3;
++            id4 = (id1 ^ id2 ^ id3);
++            userId.replace(12, 4, ecl::strf(&quot;%.4lX&quot;,id4));
++            app.state-&gt;setProperty(&quot;UserId&quot;, userId);
++            setProperty(&quot;UserId&quot;, userId);
++            Log &lt;&lt; &quot;new id: &quot; &lt;&lt; userId &lt;&lt; &quot;\n&quot;;
++        }
++        
+         for (int i = 0, l = levelList-&gt;getLength(); i &lt; l; i++) {
+             DOMElement * levelElem  = dynamic_cast&lt;DOMElement *&gt;(levelList-&gt;item(i));
+             DOMNamedNodeMap * attrXMap = levelElem-&gt;getAttributes();
+@@ -567,6 +585,9 @@
+         if (difficulty == DIFFICULTY_EASY &amp;&amp; !levelProxy-&gt;hasEasymode())
+             difficulty = DIFFICULTY_HARD;
+         
++        if (score &gt; SCORE_MAX)
++            score = SCORE_MAX;  // distinguish from SCORE_SOLVED levels
++            
+         if (!hasValidUserId) {
+             finishUserId(std::time(NULL) &amp; 0xFFFF);
+         }
+
+Modified: branches/1.0/src/player.cc
+===================================================================
+--- branches/1.0/src/player.cc	2007-03-22 00:16:02 UTC (rev 669)
++++ branches/1.0/src/player.cc	2007-03-24 23:33:26 UTC (rev 670)
+@@ -545,7 +545,8 @@
+     Inventory *inv = GetInventory(iplayer);
+     bool dont_pickup = players[iplayer].inhibit_pickup 
+         || a-&gt;is_flying()
+-        || inv-&gt;is_full();
++        || inv-&gt;is_full()
++        || a-&gt;is_dead();
+ 
+     return dont_pickup ? 0 : inv;
+ }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000107.html">[Enigma-game-svn] r669 - branches/1.0/src/lev
+</A></li>
+	<LI>Next message: <A HREF="000109.html">[Enigma-game-svn] r671 - in branches/1.0/data/levels: enigma_cross	enigma_vi
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#108">[ date ]</a>
+              <a href="thread.html#108">[ thread ]</a>
+              <a href="subject.html#108">[ subject ]</a>
+              <a href="author.html#108">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

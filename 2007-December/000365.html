@@ -1,0 +1,632 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r933 - in trunk/src: . gui
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-December/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r933%20-%20in%20trunk/src%3A%20.%20gui&In-Reply-To=%3C200712072346.lB7NkXg6013980%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000364.html">
+   <LINK REL="Next"  HREF="000366.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r933 - in trunk/src: . gui</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r933%20-%20in%20trunk/src%3A%20.%20gui&In-Reply-To=%3C200712072346.lB7NkXg6013980%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r933 - in trunk/src: . gui">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Dec  8 00:46:33 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000364.html">[Enigma-game-svn] r932 - in trunk: data src src/stones
+</A></li>
+        <LI>Next message: <A HREF="000366.html">[Enigma-game-svn] r934 - in trunk: data src src/gui
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#365">[ date ]</a>
+              <a href="thread.html#365">[ thread ]</a>
+              <a href="subject.html#365">[ subject ]</a>
+              <a href="author.html#365">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-12-08 00:46:31 +0100 (Sat, 08 Dec 2007)
+New Revision: 933
+
+Modified:
+   trunk/src/client.cc
+   trunk/src/game.cc
+   trunk/src/gui/Menu.cc
+   trunk/src/gui/Menu.hh
+   trunk/src/gui/OptionsMenu.cc
+   trunk/src/gui/SearchMenu.cc
+   trunk/src/gui/TextField.cc
+   trunk/src/gui/TextField.hh
+   trunk/src/gui/widgets.cc
+   trunk/src/gui/widgets.hh
+   trunk/src/main.cc
+   trunk/src/main.hh
+Log:
+Trunk 1.1: reengineering widget/menu key event handling
+- active widget is now first event handler
+- key focus widget like text fields are second - this allows
+  entering in text in fields without the cursor being on the widget
+- menu specific event handling is last
+- introduce &quot;boss key&quot;: ALT + ESC and window close button terminate
+  Enigma immediatley (with save)
+- Stop options menu from catching right mouse button events for quitting menu
+Note:
+- the only partial working active widget switching with cursor keys is
+  even more restricted as a key focus widget will likely catch the cursor
+  keys. In future tab should be used to switch active widgets.
+
+
+Modified: trunk/src/client.cc
+===================================================================
+--- trunk/src/client.cc	2007-12-05 21:59:33 UTC (rev 932)
++++ trunk/src/client.cc	2007-12-07 23:46:31 UTC (rev 933)
+@@ -221,6 +221,7 @@
+ 
+         case SDL_QUIT:
+             client::Msg_Command(&quot;abort&quot;);
++            app.bossKeyPressed = true;
+             break;
+         }
+     }
+@@ -390,7 +391,11 @@
+     }
+     else if (keymod &amp; KMOD_ALT) {
+         switch (keysym) {
+-        case SDLK_x: abort(); break;
++        case SDLK_ESCAPE:
++            app.bossKeyPressed = true;
++            // fall through
++        case SDLK_x: 
++            abort(); break;
+         case SDLK_t:
+             if (enigma::WizardMode) {
+                 Screen *scr = video::GetScreen();
+@@ -695,6 +700,7 @@
+                 case SDL_KEYDOWN:
+                 case SDL_QUIT:
+                     client::Msg_Command(&quot;abort&quot;);
++                    app.bossKeyPressed = true;
+                     break;
+                 }
+             }
+
+Modified: trunk/src/game.cc
+===================================================================
+--- trunk/src/game.cc	2007-12-05 21:59:33 UTC (rev 932)
++++ trunk/src/game.cc	2007-12-07 23:46:31 UTC (rev 933)
+@@ -80,7 +80,7 @@
+ 
+     double dtime = 0;
+     last_tick_time=SDL_GetTicks();
+-    while (!client::AbortGameP()) {
++    while (!client::AbortGameP() &amp;&amp; !app.bossKeyPressed) {
+         try {
+             client::Tick (dtime);
+             server::Tick (dtime);
+
+Modified: trunk/src/gui/Menu.cc
+===================================================================
+--- trunk/src/gui/Menu.cc	2007-12-05 21:59:33 UTC (rev 932)
++++ trunk/src/gui/Menu.cc	2007-12-07 23:46:31 UTC (rev 933)
+@@ -21,6 +21,7 @@
+ #include &quot;sound.hh&quot;
+ #include &quot;video.hh&quot;
+ #include &quot;options.hh&quot;
++#include &quot;main.hh&quot;
+ #include &quot;nls.hh&quot;
+ #include &quot;ecl.hh&quot;
+ #include &lt;cassert&gt;
+@@ -37,7 +38,7 @@
+     /* -------------------- Menu -------------------- */
+     
+     Menu::Menu()
+-    : active_widget(0), quitp(false), abortp(false) {
++    : active_widget(NULL), key_focus_widget(NULL), quitp(false), abortp(false) {
+     }
+     
+     void Menu::add(Widget *w) {
+@@ -59,6 +60,17 @@
+         abortp=true;
+     }
+     
++    void Menu::set_key_focus(Widget *newfocus) {
++        Widget *oldfocus = key_focus_widget;
++        key_focus_widget = newfocus;
++        if (oldfocus)
++            oldfocus-&gt;invalidate();
++    }
++    
++    bool Menu::is_key_focus(Widget *focus) {
++        return (key_focus_widget == focus);
++    }
++    
+     bool Menu::manage() {
+         quitp=abortp=false;
+         SDL_Event e;
+@@ -69,9 +81,11 @@
+             SCREEN-&gt;flush_updates();
+             while (SDL_PollEvent(&amp;e)) {
+                 handle_event(e);
++                if (app.bossKeyPressed) return true;
+             }
+             SDL_Delay(10);
+             if(active_widget) active_widget-&gt;tick(0.01);
++            if(key_focus_widget &amp;&amp; (key_focus_widget != active_widget)) key_focus_widget-&gt;tick(0.01);
+             tick (0.01);
+             refresh();
+         }
+@@ -110,53 +124,72 @@
+         }
+     }
+     
+-    void Menu::handle_event(const SDL_Event &amp;e) 
+-    {
+-        if (e.type == SDL_KEYDOWN &amp;&amp; 
+-            e.key.keysym.sym == SDLK_RETURN &amp;&amp; 
+-            e.key.keysym.mod &amp; KMOD_ALT)
+-        {
++    void Menu::handle_event(const SDL_Event &amp;e) {
++        
++        // Alt &amp;&amp; Return for Fullscreen Toggle on Linux only
++        if (e.type == SDL_KEYDOWN &amp;&amp;  e.key.keysym.sym == SDLK_RETURN &amp;&amp; 
++                e.key.keysym.mod &amp; KMOD_ALT) {
+             video::ToggleFullscreen();
+             return;
+         }
+-    
++        
++        // Boss quit key Alt &amp;&amp; ESC
++        if (e.type == SDL_KEYDOWN &amp;&amp;  e.key.keysym.sym == SDLK_ESCAPE &amp;&amp; 
++                e.key.keysym.mod &amp; KMOD_ALT) {
++            abort();
++            app.bossKeyPressed = true;
++            return;
++        }
++        
++        
++        // first allow active widget to handle event
++        if (active_widget &amp;&amp; active_widget-&gt;on_event(e))
++            return;
++        
++        // key focus handler next to catch key events
++        if (key_focus_widget &amp;&amp; key_focus_widget-&gt;on_event(e))
++            return;
++        
++        // menu subclass with special handling
+         if (on_event(e))
+             return;
+     
+         switch (e.type) {
+-        case SDL_QUIT:
+-            abort();
+-            break;
+-        case SDL_MOUSEMOTION:
+-            track_active_widget( e.motion.x, e.motion.y );
+-            break;
+-        case SDL_KEYDOWN:
+-            if (!active_widget || !active_widget-&gt;on_event(e)) {
+-                // if not handled by active_widget
+-                switch (e.key.keysym.sym) {
+-                case SDLK_ESCAPE:
+-                    abort();
+-                    break;
+-                case SDLK_DOWN:  goto_adjacent_widget( 0,  1); break;
+-                case SDLK_UP:    goto_adjacent_widget( 0, -1); break;
+-                case SDLK_RIGHT: goto_adjacent_widget( 1,  0); break;
+-                case SDLK_LEFT:  goto_adjacent_widget(-1,  0); break;
+-                default:
+-                    break;
++            case SDL_QUIT:
++                abort();
++                app.bossKeyPressed = true;
++                break;
++            case SDL_MOUSEMOTION:
++                track_active_widget( e.motion.x, e.motion.y );
++                break;
++            case SDL_KEYDOWN:
++                if (!active_widget || !active_widget-&gt;on_event(e)) {
++                    // if not handled by active_widget
++                    switch (e.key.keysym.sym) {
++                    case SDLK_ESCAPE:
++                        abort();
++                        break;
++                    // TODO replace cursor keys with tab for gotos
++                    case SDLK_DOWN:  goto_adjacent_widget( 0,  1); break;
++                    case SDLK_UP:    goto_adjacent_widget( 0, -1); break;
++                    case SDLK_RIGHT: goto_adjacent_widget( 1,  0); break;
++                    case SDLK_LEFT:  goto_adjacent_widget(-1,  0); break;
++                    default:
++                        break;
++                    }
+                 }
+-            }
+-    
+-            break;
+-        case SDL_MOUSEBUTTONDOWN:
+-        case SDL_MOUSEBUTTONUP:
+-            track_active_widget( e.button.x, e.button.y );
+-            if (active_widget) active_widget-&gt;on_event(e);
+-            break;
+-        case SDL_VIDEOEXPOSE:
+-            draw_all();
+-            break;
+-        default:
+-            if (active_widget) active_widget-&gt;on_event(e);
++        
++                break;
++            case SDL_MOUSEBUTTONDOWN:
++            case SDL_MOUSEBUTTONUP:
++                track_active_widget( e.button.x, e.button.y );
++                if (active_widget) active_widget-&gt;on_event(e);
++                break;
++            case SDL_VIDEOEXPOSE:
++                draw_all();
++                break;
++            default:
++                if (active_widget) active_widget-&gt;on_event(e);
+         }
+     }
+     
+
+Modified: trunk/src/gui/Menu.hh
+===================================================================
+--- trunk/src/gui/Menu.hh	2007-12-05 21:59:33 UTC (rev 932)
++++ trunk/src/gui/Menu.hh	2007-12-07 23:46:31 UTC (rev 933)
+@@ -45,10 +45,13 @@
+ 
+         virtual void quit();
+         void abort();
++        
++        // Container interface
++        virtual void set_key_focus(Widget *newfocus);
++        virtual bool is_key_focus(Widget *focus);
+ 
+     protected:
+-        void reset_active_widget()
+-        { active_widget = 0; }
++        void reset_active_widget() { active_widget = NULL; }
+ 
+         // Menu interface.
+         virtual void draw_background(ecl::GC &amp;/*gc*/) {}
+@@ -62,6 +65,7 @@
+ 
+         // Variables.
+         Widget *active_widget;
++        Widget *key_focus_widget;
+         bool quitp, abortp;
+     };
+ 
+
+Modified: trunk/src/gui/OptionsMenu.cc
+===================================================================
+--- trunk/src/gui/OptionsMenu.cc	2007-12-05 21:59:33 UTC (rev 932)
++++ trunk/src/gui/OptionsMenu.cc	2007-12-07 23:46:31 UTC (rev 933)
+@@ -433,13 +433,7 @@
+     bool OptionsMenu::on_event (const SDL_Event &amp;e)
+     {
+         bool handled=false;
+-        if (e.type == SDL_MOUSEBUTTONDOWN
+-            &amp;&amp; e.button.button == SDL_BUTTON_RIGHT)
+-        {
+-            quit();
+-            handled = true;
+-        }
+-        else if (e.type == SDL_KEYUP) {
++        if (e.type == SDL_KEYUP) {
+             if ((e.key.keysym.sym==SDLK_RETURN) &amp;&amp;
+                 (e.key.keysym.mod &amp; KMOD_ALT))
+             {
+
+Modified: trunk/src/gui/SearchMenu.cc
+===================================================================
+--- trunk/src/gui/SearchMenu.cc	2007-12-05 21:59:33 UTC (rev 932)
++++ trunk/src/gui/SearchMenu.cc	2007-12-07 23:46:31 UTC (rev 933)
+@@ -67,6 +67,8 @@
+         commandHList-&gt;add_back(but_ignore);
+         commandHList-&gt;add_back(but_search);
+         this-&gt;add(commandHList, Rect(10, vminfo.height-50, vminfo.width-20, 35));
++        
++        set_key_focus(shallowSearch);
+     }
+     
+     bool SearchMenu::isSearchQuit() {
+
+Modified: trunk/src/gui/TextField.cc
+===================================================================
+--- trunk/src/gui/TextField.cc	2007-12-05 21:59:33 UTC (rev 932)
++++ trunk/src/gui/TextField.cc	2007-12-07 23:46:31 UTC (rev 933)
+@@ -51,6 +51,12 @@
+     textPostCursor= &quot;&quot;;
+ }
+ 
++void TextField::activate() {
++    Button::activate();
++    if (get_parent())
++        get_parent()-&gt;set_key_focus(this);
++}
++
+ void TextField::set_text(const std::string &amp;t) {
+     textPreCursor = t;
+     charSizesPreCursor.clear();
+@@ -107,7 +113,7 @@
+     f-&gt;render (gc, x, y, textPreCursor.c_str());
+     
+     x += w_pre; 
+-    if (m_activep) {
++    if (m_activep || get_parent()-&gt;is_key_focus(this)) {
+         if (showCursor) {
+             set_color(gc, 200,200,200);
+             vline(gc, x, y, h);
+@@ -115,7 +121,7 @@
+         x += w_cursor;
+     }
+     
+-    f-&gt;render (gc, x, y, textPostCursor.c_str());
++    f-&gt;render(gc, x, y, textPostCursor.c_str());
+    
+ }
+ 
+@@ -130,6 +136,7 @@
+         case SDL_KEYDOWN:
+             switch (e.key.keysym.sym) {
+                 case SDLK_RETURN:
++                case SDLK_KP_ENTER:
+                     handeled = true;
+                     isLastActionReturn = true;
+                     invoke_listener();
+
+Modified: trunk/src/gui/TextField.hh
+===================================================================
+--- trunk/src/gui/TextField.hh	2007-12-05 21:59:33 UTC (rev 932)
++++ trunk/src/gui/TextField.hh	2007-12-07 23:46:31 UTC (rev 933)
+@@ -62,6 +62,7 @@
+         bool wasLastActionReturn();
+         
+         // Widget interface.
++        virtual void activate();
+         virtual void tick (double dtime);
+         virtual bool on_event(const SDL_Event &amp;/*e*/);
+         void draw(ecl::GC &amp;gc, const ecl::Rect &amp;r);
+
+Modified: trunk/src/gui/widgets.cc
+===================================================================
+--- trunk/src/gui/widgets.cc	2007-12-05 21:59:33 UTC (rev 932)
++++ trunk/src/gui/widgets.cc	2007-12-07 23:46:31 UTC (rev 933)
+@@ -97,7 +97,7 @@
+     }
+ }
+ 
+-
++
+ /* -------------------- AreaManager -------------------- */
+ 
+ AreaManager::AreaManager(Container *c)
+@@ -290,7 +290,19 @@
+         return get_area();
+ }
+ 
+-
++void Container::set_key_focus(Widget *newfocus) {
++    if (get_parent() != NULL) {
++        get_parent()-&gt;set_key_focus(newfocus);
++    }
++}
++
++bool Container::is_key_focus(Widget *focus) {
++    if (get_parent() != NULL) {
++        return get_parent()-&gt;is_key_focus(focus);
++    } else
++        return false;
++}
++
+ /* -------------------- List -------------------- */
+ 
+ List::List (int spacing) 
+@@ -454,7 +466,6 @@
+     return targetw &gt;= naturalw;
+ }
+ 
+-
+ /* -------------------- VList -------------------- */
+ 
+ void VList::recalc()
+@@ -504,7 +515,6 @@
+     return targeth &gt;= naturalh;
+ }
+ 
+-
+ /* -------------------- Label -------------------- */
+ 
+ Label::Label (const std::string &amp;text,
+@@ -583,7 +593,6 @@
+     w = m_font-&gt;get_width (m_text == &quot;&quot; ? &quot;&quot; : get_text().c_str());
+ }
+ 
+-
+ /* -------------------- UntranslatedLabel -------------------- */
+ 
+ UntranslatedLabel::UntranslatedLabel (const std::string &amp;text,
+@@ -689,7 +698,6 @@
+     }
+ }
+ 
+-
+ /* -------------------- PushButton -------------------- */
+ 
+ PushButton::PushButton() : m_pressedp (false) {
+@@ -698,30 +706,30 @@
+ bool PushButton::on_event(const SDL_Event &amp;e) {
+     Widget::on_event(e);
+     bool was_pressed = m_pressedp;
++    bool handeled = false;
+ 
+     switch (e.type) {
+-    case SDL_KEYDOWN:
+-        if (e.key.keysym.sym != SDLK_RETURN &amp;&amp;
+-            e.key.keysym.sym != SDLK_SPACE) break;
+-        // fall-through
+-    case SDL_MOUSEBUTTONDOWN:
+-        m_pressedp = true;
+-        break;
+-
+-    case SDL_KEYUP:
+-        if (e.key.keysym.sym != SDLK_RETURN &amp;&amp;
+-            e.key.keysym.sym != SDLK_SPACE &amp;&amp;
+-            e.key.keysym.sym != SDLK_PAGEDOWN &amp;&amp;
+-            e.key.keysym.sym != SDLK_PAGEUP) break;
+-        lastUpSym = e.key.keysym.sym;
+-        lastUpBotton = 0;
+-        m_pressedp = false;
+-        break;
+-    case SDL_MOUSEBUTTONUP:
+-        lastUpSym = SDLK_UNKNOWN;
+-        lastUpBotton = e.button.button;
+-        m_pressedp = false;
+-        break;
++        case SDL_KEYDOWN:
++            if (e.key.keysym.sym != SDLK_RETURN) break;
++            // fall-through
++        case SDL_MOUSEBUTTONDOWN:
++            m_pressedp = true;
++            handeled = true;
++            break;
++    
++        case SDL_KEYUP:
++            if (e.key.keysym.sym != SDLK_RETURN) break;
++            lastUpSym = e.key.keysym.sym;
++            lastUpBotton = 0;
++            m_pressedp = false;
++            handeled = true;
++            break;
++        case SDL_MOUSEBUTTONUP:
++            lastUpSym = SDLK_UNKNOWN;
++            lastUpBotton = e.button.button;
++            m_pressedp = false;
++            handeled = true;
++            break;
+     }
+ 
+     bool changed = (was_pressed != m_pressedp);
+@@ -734,7 +742,7 @@
+         }
+     }
+ 
+-    return changed;
++    return handeled;
+ }
+ 
+ void PushButton::deactivate() {
+@@ -756,7 +764,7 @@
+ bool PushButton::soundOk() {
+     return true;
+ }
+-
++
+ /* -------------------- TextButton -------------------- */
+ 
+ ecl::Font *TextButton::menufont = 0;
+@@ -782,7 +790,7 @@
+     f-&gt;render (gc, x, y, text.c_str());
+ }
+ 
+-
++
+ /* -------------------- StaticTextButton -------------------- */
+ 
+ StaticTextButton::StaticTextButton(const string &amp;t, ActionListener *al)
+@@ -815,7 +823,7 @@
+     return StaticTextButton::text;
+ }
+ 
+-
++
+ /* -------------------- Buttons for Options -------------------- */
+ 
+ BoolOptionButton::BoolOptionButton(const char    *option_name,
+
+Modified: trunk/src/gui/widgets.hh
+===================================================================
+--- trunk/src/gui/widgets.hh	2007-12-05 21:59:33 UTC (rev 932)
++++ trunk/src/gui/widgets.hh	2007-12-07 23:46:31 UTC (rev 933)
+@@ -88,7 +88,7 @@
+         int get_h() const { return area.h; }
+ 
+         void set_parent(Container *parent) { m_parent = parent; }
+-        Container *get_parent () const { return m_parent; }
++        Container *get_parent() const { return m_parent; }
+ 
+         void set_listener(ActionListener *al) {
+             m_listener = al;
+@@ -173,6 +173,9 @@
+         void clear();
+         void draw_all();
+ 
++        virtual void set_key_focus(Widget *newfocus);
++        virtual bool is_key_focus(Widget *focus);
++
+         // Widget interface.
+         void draw (ecl::GC&amp; gc, const ecl::Rect &amp;r);
+         void move (int x, int y);
+
+Modified: trunk/src/main.cc
+===================================================================
+--- trunk/src/main.cc	2007-12-05 21:59:33 UTC (rev 932)
++++ trunk/src/main.cc	2007-12-07 23:46:31 UTC (rev 933)
+@@ -225,7 +225,7 @@
+ 
+ Application::Application() : wizard_mode (false), nograb (false), language (&quot;&quot;),
+         defaultLanguage (&quot;&quot;), argumentLanguage (&quot;&quot;), errorInit (false),
+-        isMakePreviews (false) {
++        isMakePreviews (false), bossKeyPressed (false) {
+ }
+ 
+ 
+
+Modified: trunk/src/main.hh
+===================================================================
+--- trunk/src/main.hh	2007-12-05 21:59:33 UTC (rev 932)
++++ trunk/src/main.hh	2007-12-07 23:46:31 UTC (rev 933)
+@@ -210,6 +210,7 @@
+         bool errorInit;
+         bool isMakePreviews;
+         video::VideoModes selectedVideoMode;
++        bool bossKeyPressed;
+ 
+     private:
+         void initSysDatapaths(const std::string &amp;prefFilename);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000364.html">[Enigma-game-svn] r932 - in trunk: data src src/stones
+</A></li>
+	<LI>Next message: <A HREF="000366.html">[Enigma-game-svn] r934 - in trunk: data src src/gui
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#365">[ date ]</a>
+              <a href="thread.html#365">[ thread ]</a>
+              <a href="subject.html#365">[ subject ]</a>
+              <a href="author.html#365">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,255 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1788 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-August/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1788%20-%20trunk/src&In-Reply-To=%3C200908282318.n7SNIsav014918%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001216.html">
+   <LINK REL="Next"  HREF="001218.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1788 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1788%20-%20trunk/src&In-Reply-To=%3C200908282318.n7SNIsav014918%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1788 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Aug 29 01:18:54 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001216.html">[Enigma-game-svn] r1787 - in trunk: data/schemas src/floors	src/items
+</A></li>
+        <LI>Next message: <A HREF="001218.html">[Enigma-game-svn] r1789 - in trunk: data/levels/enigma_cross	data/levels/enigma_viii data/levels/lib doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1217">[ date ]</a>
+              <a href="thread.html#1217">[ thread ]</a>
+              <a href="subject.html#1217">[ subject ]</a>
+              <a href="author.html#1217">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-08-29 01:18:52 +0200 (Sat, 29 Aug 2009)
+New Revision: 1788
+
+Modified:
+   trunk/src/MusicManager.cc
+   trunk/src/MusicManager.hh
+   trunk/src/SoundEngine.cc
+   trunk/src/SoundEngine.hh
+   trunk/src/server.cc
+Log:
+Trunk 1.1:
+- speed up level load by 0.5 seconds for all large levels by fading out
+    menu music parallel to loading of level
+
+
+Modified: trunk/src/MusicManager.cc
+===================================================================
+--- trunk/src/MusicManager.cc	2009-08-27 23:09:11 UTC (rev 1787)
++++ trunk/src/MusicManager.cc	2009-08-28 23:18:52 UTC (rev 1788)
+@@ -32,7 +32,6 @@
+ using namespace enigma;
+ using namespace sound;
+ 
+-
+ /* -------------------- Interface Functions -------------------- */
+ 
+ bool sound::StartMenuMusic()
+@@ -43,10 +42,12 @@
+     }
+ }
+ 
+-bool sound::StartLevelMusic()
++bool sound::StartLevelMusic(bool blocking)
+ {
+     if(MusicManager::instance()-&gt;getMusicContext() != MUSIC_GAME) {
+-        sound::FadeoutMusic();
++        sound::FadeoutMusic(blocking);
++        if (!blocking)
++            return true;
+         MusicManager::instance()-&gt;setMusicContext(MUSIC_GAME);
+     }
+ }
+
+Modified: trunk/src/MusicManager.hh
+===================================================================
+--- trunk/src/MusicManager.hh	2009-08-27 23:09:11 UTC (rev 1787)
++++ trunk/src/MusicManager.hh	2009-08-28 23:18:52 UTC (rev 1788)
+@@ -34,7 +34,7 @@
+     void DefineMusicSingle(std::string title, std::string filename);
+ 
+     bool StartMenuMusic();
+-    bool StartLevelMusic();
++    bool StartLevelMusic(bool blocking =true);
+     void MusicTick(double dtime);
+     void InitMusic();
+     void SetInGameMusicActive(bool active);
+
+Modified: trunk/src/SoundEngine.cc
+===================================================================
+--- trunk/src/SoundEngine.cc	2009-08-27 23:09:11 UTC (rev 1787)
++++ trunk/src/SoundEngine.cc	2009-08-28 23:18:52 UTC (rev 1788)
+@@ -31,7 +31,6 @@
+ using namespace enigma;
+ using namespace sound;
+ 
+-
+ /* -------------------- Local variables -------------------- */
+ namespace
+ {
+@@ -44,7 +43,6 @@
+     bool music_mute         = false;
+ }
+ 
+-
+ /* -------------------- Interface Functions -------------------- */
+ 
+ void sound::Init() 
+@@ -162,9 +160,9 @@
+     sound_engine-&gt;cache_sound(s);
+ }
+ 
+-void sound::FadeoutMusic() 
++void sound::FadeoutMusic(bool blocking) 
+ {
+-    sound_engine-&gt;fadeout_music();
++    sound_engine-&gt;fadeout_music(blocking);
+ }
+ 
+ bool sound::PlayMusic (const std::string &amp;name, double position) 
+@@ -202,7 +200,6 @@
+     sound::SetMusicVolume(options::GetDouble(&quot;MusicVolume&quot;));
+ }
+ 
+-
+ /* -------------------- SoundEngine_SDL implementation -------------------- */
+ 
+ SoundEngine::SoundEngine()
+@@ -336,13 +333,18 @@
+     return false;
+ }
+ 
+-void SoundEngine_SDL::fadeout_music()
++void SoundEngine_SDL::fadeout_music(bool blocking)
+ {
+-    while (Mix_FadingMusic() != MIX_NO_FADING)
++    while (Mix_FadingMusic() != MIX_NO_FADING) {
++        if (!blocking)
++            return;
+         SDL_Delay(10);
++    }
+ 
+     if (Mix_PlayingMusic()) {
+         Mix_FadeOutMusic(500);
++        if (!blocking)
++            return;
+         SDL_Delay(400);
+     }
+     while (Mix_PlayingMusic())
+
+Modified: trunk/src/SoundEngine.hh
+===================================================================
+--- trunk/src/SoundEngine.hh	2009-08-27 23:09:11 UTC (rev 1787)
++++ trunk/src/SoundEngine.hh	2009-08-28 23:18:52 UTC (rev 1788)
+@@ -45,7 +45,7 @@
+     void EnableSound();
+     void DisableMusic();
+     bool PlayMusic(const std::string &amp;name, double position = 0.0);
+-    void FadeoutMusic();
++    void FadeoutMusic(bool blocking =true);
+ 
+     /*! Stop any music currently playing. */
+     void StopMusic();
+@@ -89,7 +89,7 @@
+ 
+         virtual bool play_music(const std::string &amp;filename, double position) = 0;
+         virtual void stop_music() = 0;
+-        virtual void fadeout_music() = 0;
++        virtual void fadeout_music(bool blocking =true) = 0;
+         virtual bool is_music_playing() = 0;
+         
+         // ---------- Sound effects ----------
+@@ -113,7 +113,7 @@
+         void set_music_volume(double /*musicvol*/) {}
+         bool play_music (const std::string &amp;/*filename*/, double /*position*/) { return false; }
+         void stop_music() {}
+-        void fadeout_music() {}
++        void fadeout_music(bool blocking =true) {}
+         bool is_music_playing() { return false; }
+         void clear_cache() {}
+         void define_sound (const SoundName &amp;, const SoundData &amp;) {}
+@@ -136,7 +136,7 @@
+         void set_music_volume(double musicvol);
+         bool play_music (const std::string &amp;filename, double position);
+         void stop_music();
+-        void fadeout_music();
++        void fadeout_music(bool blocking =true);
+         bool is_music_playing();
+         void clear_cache();
+         void define_sound (const SoundName &amp;, const SoundData &amp;);
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2009-08-27 23:09:11 UTC (rev 1787)
++++ trunk/src/server.cc	2009-08-28 23:18:52 UTC (rev 1788)
+@@ -33,6 +33,7 @@
+ #include &quot;player.hh&quot;
+ #include &quot;StateManager.hh&quot;
+ #include &quot;world.hh&quot;
++#include &quot;MusicManager.hh&quot;
+ 
+ #include &quot;enet/enet.h&quot;
+ 
+@@ -150,6 +151,10 @@
+ void load_level(lev::Proxy *levelProxy, bool isRestart)
+ {
+     try {
++    Uint32 start_tick_time = SDL_GetTicks();   // meassure time for level loading
++        if (!CreatingPreview)
++            sound::StartLevelMusic(false);
++            
+         server::LoadedProxy = levelProxy;
+         server::PrepareLevel();
+         IsLevelRestart = isRestart;
+@@ -166,6 +171,8 @@
+                 player::LevelLoaded(isRestart);
+                 client::Msg_LevelLoaded(isRestart);
+         }
++        double exectime = (SDL_GetTicks() - start_tick_time)/1000.0;
++        Log &lt;&lt; ecl::strf(&quot;Server load level did take %g seconds\n&quot;, exectime);
+     }
+     catch (XLevelLoading &amp;err) {
+         std::string levelPathString = 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001216.html">[Enigma-game-svn] r1787 - in trunk: data/schemas src/floors	src/items
+</A></li>
+	<LI>Next message: <A HREF="001218.html">[Enigma-game-svn] r1789 - in trunk: data/levels/enigma_cross	data/levels/enigma_viii data/levels/lib doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1217">[ date ]</a>
+              <a href="thread.html#1217">[ thread ]</a>
+              <a href="subject.html#1217">[ subject ]</a>
+              <a href="author.html#1217">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

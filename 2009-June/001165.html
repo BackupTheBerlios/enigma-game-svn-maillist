@@ -1,0 +1,319 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1736 - in trunk: data data/levels/lib	doc/reference
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1736%20-%20in%20trunk%3A%20data%20data/levels/lib%0A%09doc/reference&In-Reply-To=%3C200906272319.n5RNJYlZ017702%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001164.html">
+   
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1736 - in trunk: data data/levels/lib	doc/reference</H1>
+    <B>andreasl at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1736%20-%20in%20trunk%3A%20data%20data/levels/lib%0A%09doc/reference&In-Reply-To=%3C200906272319.n5RNJYlZ017702%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1736 - in trunk: data data/levels/lib	doc/reference">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Sun Jun 28 01:19:34 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001164.html">[Enigma-game-svn] r1735 - in trunk: attic/images-items data/gfx16	data/gfx32 data/gfx40 data/gfx48 data/gfx64
+</A></li>
+        
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1165">[ date ]</a>
+              <a href="thread.html#1165">[ thread ]</a>
+              <a href="subject.html#1165">[ subject ]</a>
+              <a href="author.html#1165">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2009-06-28 01:19:26 +0200 (Sun, 28 Jun 2009)
+New Revision: 1736
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/data/levels/lib/libmap.xml
+   trunk/data/levels/lib/libpento_1.xml
+   trunk/doc/reference/enigma-ref.texi
+Log:
+Trunk:
+ - Fix libpento: rotation and mirroring of shapes.
+ - Use field &quot;index&quot; for map-transformation-constants instead of field 1.
+ - Extend refman to include &quot;index&quot; and note that map transformations
+   may not be safed directly to attributes, but must use their indices.
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2009-06-27 00:46:26 UTC (rev 1735)
++++ trunk/data/api2init.lua	2009-06-27 23:19:26 UTC (rev 1736)
+@@ -200,24 +200,25 @@
+ FOLLOW_HALFSCREEN = po(9.5, 6)
+ 
+ -- map transformations, aka. read directions
+-MAP_IDENT = {1}
+-MAP_ROT_CW = {2}
+-MAP_ROT_180 = {3}
+-MAP_ROT_CCW = {4}
+-MAP_FLIP_BACKSLASH = {5}
+-MAP_FLIP_HORIZONTAL = {6}
+-MAP_FLIP_SLASH = {7}
+-MAP_FLIP_VERTICAL = {8}
++MAP_IDENT            = {index = 1}
++MAP_ROT_CW           = {index = 2}
++MAP_ROT_180          = {index = 3}
++MAP_ROT_CCW          = {index = 4}
++MAP_FLIP_BACKSLASH   = {index = 5}
++MAP_FLIP_HORIZONTAL  = {index = 6}
++MAP_FLIP_SLASH       = {index = 7}
++MAP_FLIP_VERTICAL    = {index = 8}
+ MAP_COUNT = 8
+ -- Note: The sequence is of importance for lib.map.transformation_compose.
+ MAP_ALL = {MAP_IDENT, MAP_ROT_CW, MAP_ROT_180, MAP_ROT_CCW, MAP_FLIP_BACKSLASH,
+            MAP_FLIP_HORIZONTAL, MAP_FLIP_SLASH, MAP_FLIP_VERTICAL}
+ 
+ for _, transformation in ipairs(MAP_ALL) do
+-    setmetatable(transformation, {_type = &quot;maptransformation&quot;,
++    setmetatable(transformation, {
+         __mul = (function() error(&quot;You have to load libmap to use \&quot;*\&quot; on map transformations.&quot;, 2) end),
+         __pow = (function() error(&quot;You have to load libmap to use \&quot;^\&quot; on map transformations.&quot;, 2) end),
+-        __unm = (function() error(&quot;You have to load libmap to use \&quot;-\&quot; on map transformations.&quot;, 2) end)})
++        __unm = (function() error(&quot;You have to load libmap to use \&quot;-\&quot; on map transformations.&quot;, 2) end),
++        _type = &quot;maptransformation&quot;})
+ end
+ 
+ ---------------------
+
+Modified: trunk/data/levels/lib/libmap.xml
+===================================================================
+--- trunk/data/levels/lib/libmap.xml	2009-06-27 00:46:26 UTC (rev 1735)
++++ trunk/data/levels/lib/libmap.xml	2009-06-27 23:19:26 UTC (rev 1736)
+@@ -648,7 +648,7 @@
+ 
+ function lib.map.transformation_inverse(x)
+     assert_type(x, &quot;lib.map.transformation_inverse first argument&quot;, 2, &quot;maptransformation&quot;)
+-    return MAP_ALL[({[1] = 1, 4, 3, 2, 5, 6, 7, 8})[x[1]]]
++    return MAP_ALL[({1, 4, 3, 2, 5, 6, 7, 8}) [x.index] ]
+ end
+ 
+ function lib.map.transformation_compose(x, y)
+@@ -661,7 +661,7 @@
+                      {5, 8, 7, 6, 1, 4, 3, 2},
+                      {6, 5, 8, 7, 2, 1, 4, 3},
+                      {7, 6, 5, 8, 3, 2, 1, 4},
+-                     {8, 7, 6, 5, 4, 3, 2, 1}}) [x[1]] [y[1]] ]
++                     {8, 7, 6, 5, 4, 3, 2, 1}}) [x.index] [y.index] ]
+ end
+ 
+ function lib.map.transformation_power(x, y)
+@@ -684,7 +684,7 @@
+     __mul = lib.map.transformation_compose,
+     __pow = lib.map.transformation_power,
+     __unm = lib.map.transformation_inverse,
+-    _type = &quot;maptransformation&quot;
++    _type = &quot;maptransformation&quot;,
+ }
+ 
+ for _, transformation in ipairs(MAP_ALL) do
+
+Modified: trunk/data/levels/lib/libpento_1.xml
+===================================================================
+--- trunk/data/levels/lib/libpento_1.xml	2009-06-27 00:46:26 UTC (rev 1735)
++++ trunk/data/levels/lib/libpento_1.xml	2009-06-27 23:19:26 UTC (rev 1736)
+@@ -64,7 +64,7 @@
+         wo:drawMap(context[3], context.src_anchor + offset, &quot; &quot;, shape_map)
+     end
+ 
+-    context.transform = function (transformations)
++    context.transform = function (transformation)
+         local target = st(context.src_area)
+         local cluster = nil
+         if #target ~= 5 then return end
+@@ -75,22 +75,22 @@
+                 return
+             end
+         end
+-        local oldtransform = target[1][&quot;_transform&quot;] or MAP_IDENT
+-        local newtransform = transformations[oldtransform + 1]
++        local oldtransform = MAP_ALL[target[1][&quot;_transform&quot;]] or MAP_IDENT
++        local newtransform = oldtransform * transformation
+         target[1]:get_cluster():kill()
+         local shape = 0 + cluster:sub(2)
+         local shape_map = wo:newMap(&quot; &quot;, context.shapes[shape]) ^ newtransform
+         local offset = po(3 - shape_map.width/2, 3 - shape_map.height/2)
+         wo:drawMap(context[3], context.src_anchor + offset, &quot; &quot;, shape_map)
+-        st(context.src_area)[&quot;_transform&quot;] = newtransform
++        st(context.src_area)[&quot;_transform&quot;] = newtransform.index
+     end
+ 
+     context.rotate = function()
+-        context.transform(context.rotations)
++        context.transform(MAP_ROT_CW)
+     end
+     
+     context.mirror = function()
+-        context.transform(context.mirrors)
++        context.transform(MAP_FLIP_HORIZONTAL)
+     end
+     
+     context.check = function()
+@@ -117,10 +117,6 @@
+     context.shapes = {{&quot;OOOOO&quot;}, {&quot;PP&quot;,&quot;PPP&quot;}, {&quot;QQQQ&quot;,&quot;Q&quot;},{&quot;R&quot;,&quot;RRR&quot;,&quot; R&quot;},
+         {&quot;  SS&quot;,&quot;SSS&quot;},{&quot;T&quot;,&quot;TTT&quot;,&quot;T&quot;},{&quot;U U&quot;,&quot;UUU&quot;},{&quot;VVV&quot;,&quot;V&quot;,&quot;V&quot;},
+         {&quot;W&quot;,&quot;WW&quot;,&quot; WW&quot;},{&quot; X&quot;,&quot;XXX&quot;,&quot; X&quot;},{&quot;YYYY&quot;,&quot; Y&quot;},{&quot;ZZ&quot;,&quot; Z&quot;,&quot; ZZ&quot;}}
+-    context.rotations = {MAP_ROT_CW, MAP_ROT_180, MAP_ROT_CCW, MAP_IDENT, 
+-        MAP_FLIP_VERTICAL, MAP_FLIP_BACKSLASH, MAP_FLIP_HORIZONTAL, MAP_FLIP_SLASH}
+-    context.mirrors = {MAP_FLIP_HORIZONTAL, MAP_FLIP_SLASH, MAP_FLIP_VERTICAL,
+-        MAP_FLIP_BACKSLASH, MAP_ROT_CCW, MAP_IDENT, MAP_ROT_CW, MAP_ROT_180}
+     setmetatable(context, res.metatable)
+     return context
+ end
+
+Modified: trunk/doc/reference/enigma-ref.texi
+===================================================================
+--- trunk/doc/reference/enigma-ref.texi	2009-06-27 00:46:26 UTC (rev 1735)
++++ trunk/doc/reference/enigma-ref.texi	2009-06-27 23:19:26 UTC (rev 1736)
+@@ -8781,6 +8781,9 @@
+ @item @samp{MAP_FLIP_VERTICAL} = flip up and down
+ @end itemize
+ 
++Because map transformations are not numbers, you may not safe them as
++attributes of objects. Instead, you have to use @samp{index} and
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{MAP_ALL}, see @ref{Map Transformation Index and MAP_ALL}.
+ 
+ @c ----------------- Global Attributes --------------------
+ @node Global Attributes
+@@ -20142,9 +20145,10 @@
+ * lib.map.replace_outside::
+ * lib.map.sub::
+ * lib.map.trim::
++* Map Transformation Index and MAP_ALL::
+ * Map Transformation Composition and Powers:: Operators @samp{*} and @samp{^}
+ * Map Transformation Inverse::                Operator @samp{-}
+-* Random and All Map Transformations::
++* Random Map Transformations::
+ @end menu
+ 
+ @c ----------------- Creating Maps --------------------
+@@ -21525,8 +21529,56 @@
+ original map.
+ @end table
+ 
+-* Map Transformation Composition and Powers:: Operators @samp{*} and @samp{^}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at c</A> ----------------- Map Transformation Index and MAP_ALL --------------------
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at node</A> Map Transformation Index and MAP_ALL
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at subsection</A> Map Transformation Index and MAP_ALL
++
++All eight transformation constants (see @ref{map read directions},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at ref</A>{Rotating and Mirroring Maps}, @ref{Map Transformation}) are additionally
++packed into the table @code{MAP_ALL}, so a simple call to
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{ipairs(MAP_ALL)} can iterate over all of them. @code{MAP_ALL} is provided
++without need to load libmap.
++
++Each transformation offers the field @code{&quot;index&quot;}, which returns the number at
++which the transformation appears in @code{MAP_ALL}. libmap is not needed to use
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{&quot;index&quot;} either.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Syntax:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at b</A>{MAP_ALL} = @{@b{MAP_IDENT}, @b{MAP_ROT_CW}, @b{MAP_ROT_180}, @b{MAP_ROT_CCW}, @b{MAP_FLIP_BACKSLASH},
++           @b{MAP_FLIP_HORIZONTAL}, @b{MAP_FLIP_SLASH}, @b{MAP_FLIP_VERTICAL}@}
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at b</A>{transformation_index} = @i{maptransformation}<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">. at b</A>{index}
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{transformation_index}
++An integer between 1 and 8.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{maptransformation}
++A map transformation.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> table
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Syntax Samples:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++MAP_ALL[MAP_ROT_CW.index] == MAP_ROT_CW
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Details:}
++You may not safe map transformations as attributes of objects, for example the
++following will throw an error:
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++no[&quot;stone_a&quot;][&quot;_mytrafo&quot;] = MAP_ROT_CCW
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++Instead, you have to use @code{index} and retrieve the correct transformation
++from @code{MAP_ALL}:
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++no[&quot;stone_a&quot;][&quot;_mytrafo&quot;] = MAP_ROT_CCW.index
++...
++oldtrafo = MAP_ALL[no[&quot;stone_a&quot;][&quot;_mytrafo&quot;]]
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> table
++
+ @c ----------------- Map Transformation Composition and Powers --------------------
+ 
+ @node Map Transformation Composition and Powers
+@@ -21642,26 +21694,16 @@
+ which works just as well(see @ref{Map Transformation Composition and Powers}).
+ @end table
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at c</A> ----------------- Random and All Map Transformations --------------------
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at c</A> ----------------- Random Map Transformations --------------------
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at node</A> Random and All Map Transformations
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at subsection</A> Random and All Map Transformations
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at node</A> Random Map Transformations
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at subsection</A> Random Map Transformations
+ 
+-All eight transformation constants (see @ref{map read directions},
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at ref</A>{Rotating and Mirroring Maps}, @ref{Map Transformation}) are additionally
+-packed into the table @code{MAP_ALL}, so a simple call to
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at code</A>{ipairs(MAP_ALL)} can iterate over all of them. @code{MAP_ALL} is provided
+-without need to load libmap.
++libmap provides the function @code{lib.map.random_transformation()} to pick one
++of the eight transformations by random.
+ 
+-In addition, libmap provides the function
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at code</A>{lib.map.random_transformation()} to pick one of the eight transformations
+-by random.
+-
+ @table @asis
+ @item @b{Syntax:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at b</A>{MAP_ALL} = @{@b{MAP_IDENT}, @b{MAP_ROT_CW}, @b{MAP_ROT_180}, @b{MAP_ROT_CCW}, @b{MAP_FLIP_BACKSLASH},
+-           @b{MAP_FLIP_HORIZONTAL}, @b{MAP_FLIP_SLASH}, @b{MAP_FLIP_VERTICAL}@}
+-
+ @i{randomtransformation} = @b{lib.map.random_transformation}()
+ 
+ @table @asis
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001164.html">[Enigma-game-svn] r1735 - in trunk: attic/images-items data/gfx16	data/gfx32 data/gfx40 data/gfx48 data/gfx64
+</A></li>
+	
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1165">[ date ]</a>
+              <a href="thread.html#1165">[ thread ]</a>
+              <a href="subject.html#1165">[ subject ]</a>
+              <a href="author.html#1165">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

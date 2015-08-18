@@ -1,0 +1,201 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1684 - in trunk: data src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1684%20-%20in%20trunk%3A%20data%20src/stones&In-Reply-To=%3C200905242247.n4OMljgJ029938%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001113.html">
+   <LINK REL="Next"  HREF="001115.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1684 - in trunk: data src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1684%20-%20in%20trunk%3A%20data%20src/stones&In-Reply-To=%3C200905242247.n4OMljgJ029938%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1684 - in trunk: data src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon May 25 00:47:45 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001113.html">[Enigma-game-svn] r1683 - in trunk: data src src/items src/stones
+</A></li>
+        <LI>Next message: <A HREF="001115.html">[Enigma-game-svn] r1686 - trunk/data/levels/enigma_experimental
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1114">[ date ]</a>
+              <a href="thread.html#1114">[ thread ]</a>
+              <a href="subject.html#1114">[ subject ]</a>
+              <a href="author.html#1114">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-05-25 00:47:44 +0200 (Mon, 25 May 2009)
+New Revision: 1684
+
+Modified:
+   trunk/data/models-2d.lua
+   trunk/src/stones/IceBlock.cc
+   trunk/src/stones/IceBlock.hh
+Log:
+Trunk 1.1:
+- st_ice: melt by anim, melt is slower than break, break overrides a melting
+
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2009-05-24 20:49:35 UTC (rev 1683)
++++ trunk/data/models-2d.lua	2009-05-24 22:47:44 UTC (rev 1684)
+@@ -599,9 +599,6 @@
+     local images = DefSubimages(&quot;it_bomb_black_burning&quot;, {h=9})
+     local frames = BuildFrames(images, 100)
+     DefAnim(&quot;it_bomb_black_burning&quot;, frames)
+-    
+-    local frames = BuildFrames({&quot;it_bomb_black_burning8&quot;, &quot;it_bomb_black_burning9&quot;},120)
+-    DefAnim(&quot;it_bomb_black_exploding&quot;, frames)
+ end
+ 
+ -- Burning white bomb --
+@@ -1034,6 +1031,10 @@
+     local frames = BuildFrames(images,50)
+     DefAnim(&quot;st_ice_break-anim&quot;, frames)
+     DefShModel(&quot;st_ice_breaking&quot;, &quot;st_ice_break-anim&quot;, &quot;sh-glass&quot;)
++
++    local frames = BuildFrames(images,100)
++    DefAnim(&quot;st_ice_melt-anim&quot;, frames)
++    DefShModel(&quot;st_ice_melting&quot;, &quot;st_ice_melt-anim&quot;, &quot;sh-glass&quot;)
+ end
+ 
+ -- st-knight --
+
+Modified: trunk/src/stones/IceBlock.cc
+===================================================================
+--- trunk/src/stones/IceBlock.cc	2009-05-24 20:49:35 UTC (rev 1683)
++++ trunk/src/stones/IceBlock.cc	2009-05-24 22:47:44 UTC (rev 1684)
+@@ -33,33 +33,40 @@
+     
+     Value IceBlock::message(const Message &amp;m) {
+         if (m.message == &quot;_explosion&quot; || m.message == &quot;ignite&quot; || m.message == &quot;_cannonball&quot;) {
+-            if (isDisplayable()) {
++            if (isDisplayable() &amp;&amp; state != BREAKING) {  // priorise explosion over melting
+                 state = BREAKING;
+                 set_anim(&quot;st_ice_breaking&quot;);
+             }
+             return Value();
+         } else if (m.message == &quot;heat&quot;) {
+-            if (isDisplayable()) {
+-                GridPos p = get_pos();
+-                setNoAbyssFloor(p, &quot;fl_water&quot;);
+-                KillStone(p);
++            if (isDisplayable() &amp;&amp; state == IDLE) {
++                state = MELTING;
++                set_anim(&quot;st_ice_melting&quot;);
+             }
+             return Value();            
+         }
+         return Stone::message(m);
+     }
+     
++    void IceBlock::setState(int extState) {
++        // block all state write attempts
++    }
++    
+     void IceBlock::init_model() {
+         set_model(&quot;st_ice&quot;);
+     }
+     
+     void IceBlock::animcb() {
+         GridPos p = get_pos();
+-        setNoAbyssFloor(p, &quot;fl_ice&quot;);
+-        setNoAbyssFloor(move(p, NORTH), &quot;fl_ice&quot;);
+-        setNoAbyssFloor(move(p, EAST), &quot;fl_ice&quot;);
+-        setNoAbyssFloor(move(p, SOUTH), &quot;fl_ice&quot;);
+-        setNoAbyssFloor(move(p, WEST), &quot;fl_ice&quot;);
++        if (state == BREAKING) {
++            setNoAbyssFloor(p, &quot;fl_ice&quot;);
++            setNoAbyssFloor(move(p, NORTH), &quot;fl_ice&quot;);
++            setNoAbyssFloor(move(p, EAST), &quot;fl_ice&quot;);
++            setNoAbyssFloor(move(p, SOUTH), &quot;fl_ice&quot;);
++            setNoAbyssFloor(move(p, WEST), &quot;fl_ice&quot;);
++        } else {  // MELTING
++            setNoAbyssFloor(p, &quot;fl_water&quot;);
++        }
+         KillStone(p);
+     }
+     
+@@ -67,8 +74,12 @@
+         return true;
+     }
+     
++    bool IceBlock::is_removable() const {
++        return state == IDLE;
++    }
++    
+     bool IceBlock::is_movable() const {
+-        return (state != BREAKING) ? Stone::is_movable() : false;
++        return (state == IDLE) ? Stone::is_movable() : false;
+     }
+     
+     bool IceBlock::on_move(const GridPos &amp;origin) {
+
+Modified: trunk/src/stones/IceBlock.hh
+===================================================================
+--- trunk/src/stones/IceBlock.hh	2009-05-24 20:49:35 UTC (rev 1683)
++++ trunk/src/stones/IceBlock.hh	2009-05-24 22:47:44 UTC (rev 1684)
+@@ -36,6 +36,7 @@
+         enum iState {
+             IDLE,           ///&lt; 
+             BREAKING,       ///&lt; 
++            MELTING         ///&lt; 
+         };
+     public:
+         IceBlock();
+@@ -44,6 +45,9 @@
+         virtual std::string getClass() const;
+         virtual Value message(const Message &amp;m);
+         
++        // StateObject interface
++        virtual void setState(int extState);
++
+         // GridObject interface
+         virtual void init_model();
+         
+@@ -52,6 +56,7 @@
+         
+         // Stone interface
+         virtual bool is_transparent(Direction d) const;
++        virtual bool is_removable() const;
+         virtual bool is_movable() const;
+         virtual bool on_move(const GridPos &amp;origin);
+         
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001113.html">[Enigma-game-svn] r1683 - in trunk: data src src/items src/stones
+</A></li>
+	<LI>Next message: <A HREF="001115.html">[Enigma-game-svn] r1686 - trunk/data/levels/enigma_experimental
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1114">[ date ]</a>
+              <a href="thread.html#1114">[ thread ]</a>
+              <a href="subject.html#1114">[ subject ]</a>
+              <a href="author.html#1114">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

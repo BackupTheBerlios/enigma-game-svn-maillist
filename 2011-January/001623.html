@@ -1,0 +1,126 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r2199 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2011-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2199%20-%20trunk/src&In-Reply-To=%3C20110124123753.EAF91481290%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001622.html">
+   
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r2199 - trunk/src</H1>
+    <B>ral at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2199%20-%20trunk/src&In-Reply-To=%3C20110124123753.EAF91481290%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r2199 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon Jan 24 13:37:53 CET 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001622.html">[Enigma-game-svn] r2198 - in trunk: data src
+</A></li>
+        
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1623">[ date ]</a>
+              <a href="thread.html#1623">[ thread ]</a>
+              <a href="subject.html#1623">[ subject ]</a>
+              <a href="author.html#1623">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2011-01-24 13:37:53 +0100 (Mon, 24 Jan 2011)
+New Revision: 2199
+
+Modified:
+   trunk/src/lua.cc
+Log:
+fix 2198: autotile resolver problems due to error message
+
+- allow read access to tiles without existing key
+- nil as return value for detection of invalid keys
+- improve argument check for nil values on operators like &quot;..&quot;
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2011-01-23 23:05:25 UTC (rev 2198)
++++ trunk/src/lua.cc	2011-01-24 12:37:53 UTC (rev 2199)
+@@ -2985,7 +2985,11 @@
+ 
+ static int appendTile(lua_State *L) {
+     // (tile|table) .. (tile|table)
+-    if (!((is_tile(L, 1)||is_table(L, 1)) &amp;&amp; (is_tile(L, 1)||is_table(L, 1)))) {
++    if (lua_isnil(L, 2)) {
++        // catch otherwise undetected ti[&quot;x&quot;] access with not existing key
++        throwLuaError(L, &quot;Tile concat of not existing second argument&quot;);
++        return 0;
++    } else if (!((is_tile(L, 1)||is_table(L, 1)) &amp;&amp; (is_tile(L, 2)||is_table(L, 2)))) {
+         throwLuaError(L, &quot;Tile concat of unsupported types&quot;);
+         return 0;
+     }
+@@ -3048,22 +3052,20 @@
+     lua_rawgeti(L, -1, 1);    // content table
+     lua_pushvalue(L, 2);      // copy key
+     lua_rawget(L, -2);        // check for existing entry in table
+-    if (lua_isnil(L, -1)) {
+-        if (key.find(&quot;%%&quot;) != string::npos) {  // autotile wildcard
+-            // insert a dummy tile declaration
+-            lua_pop(L, 3);            // cleanup stack
+-            lua_newtable(L);          // dummy declaration as value for key
+-            dispatchTilesWriteAccess(L); // insert dummy entry
+-            // get entry as return value
+-            lua_getmetatable(L, 1);
+-            lua_rawgeti(L, -1, 1);    // content table
+-            lua_pushvalue(L, 2);      // copy key
+-            lua_rawget(L, -2);        // get entry in table
+-        } else {
+-            throwLuaError(L, ecl::strf(&quot;Tiles: undefined key '%s'&quot;, key.c_str()).c_str());
+-            return 0;
+-        }
++    if (lua_isnil(L, -1) &amp;&amp; (key.find(&quot;%%&quot;) != string::npos)) {  // autotile wildcard
++        // insert a dummy tile declaration
++        lua_pop(L, 3);            // cleanup stack
++        lua_newtable(L);          // dummy declaration as value for key
++        dispatchTilesWriteAccess(L); // insert dummy entry
++        // get entry as return value
++        lua_getmetatable(L, 1);
++        lua_rawgeti(L, -1, 1);    // content table
++        lua_pushvalue(L, 2);      // copy key
++        lua_rawget(L, -2);        // get entry in table
+     }
++    // nil is returned as valid value for not existing keys, what is evaluated
++    // by resolvers like autotile to trigger the generation of missing tile
++    // declarations
+     return 1;
+ }
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001622.html">[Enigma-game-svn] r2198 - in trunk: data src
+</A></li>
+	
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1623">[ date ]</a>
+              <a href="thread.html#1623">[ thread ]</a>
+              <a href="subject.html#1623">[ subject ]</a>
+              <a href="author.html#1623">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

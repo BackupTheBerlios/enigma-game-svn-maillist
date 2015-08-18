@@ -1,0 +1,364 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1797 - in trunk: data src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1797%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200909072246.n87Mkel0031853%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001225.html">
+   <LINK REL="Next"  HREF="001227.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1797 - in trunk: data src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1797%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200909072246.n87Mkel0031853%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1797 - in trunk: data src">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Sep  8 00:46:40 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001225.html">[Enigma-game-svn] r1796 - in trunk: data data/schemas src src/items
+</A></li>
+        <LI>Next message: <A HREF="001227.html">[Enigma-game-svn] Rev 1798
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1226">[ date ]</a>
+              <a href="thread.html#1226">[ thread ]</a>
+              <a href="subject.html#1226">[ subject ]</a>
+              <a href="author.html#1226">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-09-08 00:46:36 +0200 (Tue, 08 Sep 2009)
+New Revision: 1797
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/src/AttributeDescriptor.cc
+   trunk/src/AttributeDescriptor.hh
+   trunk/src/KindDescriptor.cc
+   trunk/src/KindDescriptor.hh
+   trunk/src/Object.cc
+   trunk/src/Object.hh
+   trunk/src/ObjectValidator.cc
+   trunk/src/ObjectValidator.hh
+   trunk/src/lua.cc
+Log:
+Trunk 1.1: 
+- validate Lua attribute write operations on value type mismatches
+- fix old api fire attribute mapping
+Note:
+- many levels will now fail to load due to level typos
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2009-09-06 15:55:26 UTC (rev 1796)
++++ trunk/data/api1init.lua	2009-09-07 22:46:36 UTC (rev 1797)
+@@ -902,6 +902,27 @@
+      if key == &quot;movable&quot; then
+          if val == 1 then _val = true else _val = false end
+      end
++     if key == &quot;burnable&quot; then
++         if val == 1 then _val = true else _val = false end
++     end
++     if key == &quot;eternal&quot; then
++         if val == 1 then _val = true else _val = false end
++     end
++     if key == &quot;fastfire&quot; then
++         if val == 1 then _val = true else _val = false end
++     end
++     if key == &quot;ignitable&quot; then
++         if val == 1 then _val = true else _val = false end
++     end
++     if key == &quot;initfire&quot; then
++         if val == 1 then _val = true else _val = false end
++     end
++     if key == &quot;noash&quot; then
++         if val == 1 then _val = true else _val = false end
++     end
++     if key == &quot;secure&quot; then
++         if val == 1 then _val = true else _val = false end
++     end
+      if key == &quot;type&quot; and _obj_name == &quot;st-door&quot; then
+          _key = &quot;faces&quot;
+          if val == &quot;h&quot; then _val = &quot;ns&quot; else _val = &quot;ew&quot; end
+
+Modified: trunk/src/AttributeDescriptor.cc
+===================================================================
+--- trunk/src/AttributeDescriptor.cc	2009-09-06 15:55:26 UTC (rev 1796)
++++ trunk/src/AttributeDescriptor.cc	2009-09-07 22:46:36 UTC (rev 1797)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2008 Ronald Lamprecht
++ * Copyright (C) 2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -54,6 +54,39 @@
+         return value;
+     }
+     
++    ValidationResult AttributeDescriptor::checkValue(Value val) {
++        switch (type) {
++            case VAL_BOOL :
++                return val.getType() == Value::BOOL ? VALID_OK : VALID_TYPE_MISMATCH;
++                break;
++            case VAL_INT :
++                // TBD add int, min, max check
++                if (name != &quot;code&quot;)
++                    return val.getType() == Value::DOUBLE  ? VALID_OK : VALID_TYPE_MISMATCH;
++                else
++                    return (val.getType() == Value::DOUBLE || val.getType() == Value::STRING)  ? 
++                            VALID_OK : VALID_TYPE_MISMATCH;                    
++                break;
++            case VAL_DOUBLE :
++                return val.getType() == Value::DOUBLE  ? VALID_OK : VALID_TYPE_MISMATCH;
++                break;
++            case VAL_STRING :
++                return val.getType() == Value::STRING  ? VALID_OK : VALID_TYPE_MISMATCH;
++                break;
++            case VAL_TOKENS : {
++                Value::Type vt = val.getType();
++                bool result = (vt == Value::STRING || vt == Value::TOKENS || vt == Value::OBJECT || vt == Value::GROUP);
++                if (name == &quot;destination&quot;)
++                    return (result || vt == Value::POSITION)  ? VALID_OK : VALID_TYPE_MISMATCH;
++                else
++                    return result  ? VALID_OK : VALID_TYPE_MISMATCH;
++                break;
++            }
++            default :
++                return VALID_OK;
++        }
++    }
++    
+     void AttributeDescriptor::setReadable(bool allowRead) {
+         ASSERT(!isKindValue, XFrontend, 
+                 ecl::strf(&quot;Object description initialization error - attribute '%s' made readable for a subkind&quot;,
+
+Modified: trunk/src/AttributeDescriptor.hh
+===================================================================
+--- trunk/src/AttributeDescriptor.hh	2009-09-06 15:55:26 UTC (rev 1796)
++++ trunk/src/AttributeDescriptor.hh	2009-09-07 22:46:36 UTC (rev 1797)
+@@ -20,6 +20,7 @@
+ #define ATTRIBUTEDESCRIPTOR_HH_INCLUDED
+ 
+ #include &quot;Value.hh&quot;
++#include &quot;Object.hh&quot;
+ #include &lt;string&gt;
+ 
+ namespace enigma
+@@ -46,6 +47,7 @@
+         bool isWritable();
+         Value getDefaultValue();
+         Value getValue();
++        ValidationResult checkValue(Value val);
+         void setReadable(bool allowRead);
+         void setWritable(bool allowWrite);
+         void setDefaultValue(const Value &amp;newDefault);
+
+Modified: trunk/src/KindDescriptor.cc
+===================================================================
+--- trunk/src/KindDescriptor.cc	2009-09-06 15:55:26 UTC (rev 1796)
++++ trunk/src/KindDescriptor.cc	2009-09-07 22:46:36 UTC (rev 1797)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2008 Ronald Lamprecht
++ * Copyright (C) 2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -97,13 +97,16 @@
+         return cloneAttribute;
+     }
+     
+-    bool KindDescriptor::validateAttributeWrite(std::string key, Value val) {
++    ValidationResult KindDescriptor::validateAttributeWrite(std::string key, Value val) {
+         std::map&lt;std::string, AttributeDescriptor *&gt;::iterator it = attributes.find(key);
+         if (it == attributes.end())
+-            return false;
++            return VALID_UNKNOWN_KEY;
++        else if (!it-&gt;second-&gt;isWritable())
++            return VALID_ACCESS_DENIED;
++        else if (val.getType() == Value::NIL)  // reset to default value
++            return VALID_OK;
+         else
+-            // TODO validate value - DEFAULT is the type that matches anything
+-            return it-&gt;second-&gt;isWritable();
++            return it-&gt;second-&gt;checkValue(val);
+     }
+     
+     bool KindDescriptor::validateAttributeRead(std::string key) {
+
+Modified: trunk/src/KindDescriptor.hh
+===================================================================
+--- trunk/src/KindDescriptor.hh	2009-09-06 15:55:26 UTC (rev 1796)
++++ trunk/src/KindDescriptor.hh	2009-09-07 22:46:36 UTC (rev 1797)
+@@ -19,6 +19,7 @@
+ #ifndef KINDDESCRIPTOR_HH_INCLUDED
+ #define KINDDESCRIPTOR_HH_INCLUDED
+ 
++#include &quot;Object.hh&quot;
+ #include &quot;AttributeDescriptor.hh&quot;
+ #include &quot;MessageDescriptor.hh&quot;
+ #include &lt;list&gt;
+@@ -34,7 +35,7 @@
+         bool validateMessage(std::string msg);
+         void addAttribute(std::string name);
+         AttributeDescriptor * addModifiedAttribute(std::string name);
+-        bool validateAttributeWrite(std::string key, Value val);
++        ValidationResult validateAttributeWrite(std::string key, Value val);
+         bool validateAttributeRead(std::string key);
+         Value getDefaultValue(std::string key);
+         std::string getKind(const Object *obj);
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2009-09-06 15:55:26 UTC (rev 1796)
++++ trunk/src/Object.cc	2009-09-07 22:46:36 UTC (rev 1797)
+@@ -219,14 +219,24 @@
+                     (*itr)-&gt;setAttr(&quot;fellows&quot;, olist2);
+                 }
+             }
+-        } else if (key.find('_') == 0 || ObjectValidator::instance()-&gt;validateAttributeWrite(this, key, val)) {
+-            if (key == &quot;destination&quot; || key.find(&quot;target&quot;) == 0)
+-                 if (val.maybeNearestObjectReference())
+-                     objFlags |= OBJBIT_INIT; 
+-            setAttr(key, val);
+-        } else
+-            ASSERT(false, XLevelRuntime, ecl::strf(&quot;Object: attribute '%s' write not allowed for kind '%s'&quot;,
+-                    key.c_str(), getKind().c_str()).c_str());
++        } else {
++            ValidationResult result = VALID_OK;
++            if (key.find('_') != 0) 
++                result = ObjectValidator::instance()-&gt;validateAttributeWrite(this, key, val);
++            if (result == VALID_OK) {
++                if (key == &quot;destination&quot; || key.find(&quot;target&quot;) == 0)
++                     if (val.maybeNearestObjectReference())
++                         objFlags |= OBJBIT_INIT; 
++                setAttr(key, val);
++            } else {
++                std::string reason;
++                if (result == VALID_UNKNOWN_KEY) reason = &quot;attribute name unknown&quot;;
++                else if (result == VALID_ACCESS_DENIED) reason = &quot;no write access allowed&quot;;
++                else if (result == VALID_TYPE_MISMATCH) reason = &quot;value typ mismatch&quot;;
++                ASSERT(false, XLevelRuntime, ecl::strf(&quot;Object: attribute '%s' write failed for kind '%s', %s&quot;,
++                        key.c_str(), getKind().c_str(), reason.c_str()).c_str());
++            }
++        }
+     }
+     
+     Value Object::getAttrChecked(const std::string &amp;key) const {
+
+Modified: trunk/src/Object.hh
+===================================================================
+--- trunk/src/Object.hh	2009-09-06 15:55:26 UTC (rev 1796)
++++ trunk/src/Object.hh	2009-09-07 22:46:36 UTC (rev 1797)
+@@ -43,6 +43,14 @@
+         OBJBIT_INIT          =  1&lt;&lt;11  ///&lt; Object needs init message for @ finalization
+     };
+     
++    enum ValidationResult {
++        VALID_OK,
++        VALID_ACCESS_DENIED,
++        VALID_UNKNOWN_KEY,
++        VALID_TYPE_MISMATCH,
++        VALID_ILLEAGAL_VALUE
++    };    
++        
+     class Value;
+ 
+     /**
+
+Modified: trunk/src/ObjectValidator.cc
+===================================================================
+--- trunk/src/ObjectValidator.cc	2009-09-06 15:55:26 UTC (rev 1796)
++++ trunk/src/ObjectValidator.cc	2009-09-07 22:46:36 UTC (rev 1797)
+@@ -184,10 +184,10 @@
+         return clone;
+     }
+ 
+-    bool ObjectValidator::validateAttributeWrite(const Object *obj, std::string key, Value val) {
++    ValidationResult ObjectValidator::validateAttributeWrite(const Object *obj, std::string key, Value val) {
+         KindDescriptor *kind = getKindDesc(obj-&gt;getClass());
+         if (kind == NULL) {
+-            return true;    // object is not under validator control - allow write
++            return VALID_OK;    // object is not under validator control - allow write
+         }
+         // state dependent target/action support
+         if (key.find(&quot;target_&quot;) == 0)
+
+Modified: trunk/src/ObjectValidator.hh
+===================================================================
+--- trunk/src/ObjectValidator.hh	2009-09-06 15:55:26 UTC (rev 1796)
++++ trunk/src/ObjectValidator.hh	2009-09-07 22:46:36 UTC (rev 1797)
+@@ -44,7 +44,6 @@
+      */
+     class ObjectValidator {
+     public:
+-        
+         static ObjectValidator *instance();
+         static void didInitXML();
+         
+@@ -56,7 +55,7 @@
+         bool validateMessage(Object *obj, std::string msg, Value val);
+         AttributeDescriptor *getDefaultAttributeDesc(std::string name);
+         AttributeDescriptor *cloneAttribute(AttributeDescriptor *masterAttr);
+-        bool validateAttributeWrite(const Object *obj, std::string key, Value val);
++        ValidationResult validateAttributeWrite(const Object *obj, std::string key, Value val);
+         bool validateAttributeRead(const Object *obj, std::string key);
+         Value getDefaultValue(const Object *obj, std::string key);
+         std::string getKind(const Object *obj);
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2009-09-06 15:55:26 UTC (rev 1796)
++++ trunk/src/lua.cc	2009-09-07 22:46:36 UTC (rev 1797)
+@@ -1318,7 +1318,15 @@
+          lua_pushvalue(L, -2); // a copy of key for work
+          if (!lua_isnumber(L, -1) &amp;&amp; lua_isstring(L, -1)) {
+             std::string key = lua_tostring(L, -1);
+-            obj-&gt;setAttrChecked(key, to_value(L, -2));  // name set gets handeled by Object
++            try {
++                obj-&gt;setAttrChecked(key, to_value(L, -2));  // name set gets handeled by Object
++            }  
++            catch (const XLevelRuntime &amp;e) {
++                throwLuaError (L, e.what());
++            }
++            catch (...) {
++                throwLuaError (L, &quot;uncaught exception&quot;);
++            }
+          } else if (lua_tointeger(L, -1) == 2) {  // second entry without a string key is taken as name
+              if (!lua_isnumber(L, -2) &amp;&amp; lua_isstring(L, -2))
+                  obj-&gt;setAttrChecked(&quot;name&quot;, lua_tostring(L, -2));
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001225.html">[Enigma-game-svn] r1796 - in trunk: data data/schemas src src/items
+</A></li>
+	<LI>Next message: <A HREF="001227.html">[Enigma-game-svn] Rev 1798
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1226">[ date ]</a>
+              <a href="thread.html#1226">[ thread ]</a>
+              <a href="subject.html#1226">[ subject ]</a>
+              <a href="author.html#1226">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

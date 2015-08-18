@@ -1,0 +1,963 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1261 (repost)
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-August/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1261%20%28repost%29&In-Reply-To=%3C48A879B5.7020105%40T-Online.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000702.html">
+   <LINK REL="Next"  HREF="000704.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1261 (repost)</H1>
+    <B>Ronald Lamprecht</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1261%20%28repost%29&In-Reply-To=%3C48A879B5.7020105%40T-Online.de%3E"
+       TITLE="[Enigma-game-svn] r1261 (repost)">R.Lamprecht at T-Online.de
+       </A><BR>
+    <I>Sun Aug 17 21:19:17 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000702.html">[Enigma-game-svn] r1260 (repost)
+</A></li>
+        <LI>Next message: <A HREF="000704.html">[Enigma-game-svn] r1264 (repost)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#703">[ date ]</a>
+              <a href="thread.html#703">[ thread ]</a>
+              <a href="subject.html#703">[ subject ]</a>
+              <a href="author.html#703">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-08-10 22:20:46 +0200 (Sun, 10 Aug 2008)
+New Revision: 1261
+
+Added:
+    trunk/src/stones/Door.cc
+    trunk/src/stones/Door.hh
+Modified:
+    trunk/data/api1init.lua
+    trunk/data/schemas/objects.xml
+    trunk/src/Makefile.am
+    trunk/src/ox_extra.cc
+    trunk/src/ox_magnum.cc
+    trunk/src/ox_oxyd1.cc
+    trunk/src/ox_peroxyd.cc
+    trunk/src/stones.hh
+    trunk/src/stones/CoinSlot.cc
+    trunk/src/stones_complex.cc
+Log:
+Trunk 1.1: new API reengineering - Door
+- renaming to &quot;st_door&quot;, &quot;st_door_a&quot; to &quot;st_door_d&quot;
+- attribute &quot;flavor&quot;: &quot;a&quot; to &quot;d&quot;, where &quot;d&quot; is h/v door
+- attribute &quot;faces&quot; for flavor &quot;d&quot;: &quot;ns&quot;,&quot;ew&quot; for h/v - logic prepared
+     for arbitrary face combinations, just models missing
+- full StateObject support - state as OPEN, CLOSED; messages open, close,
+     toggle, signal
+- fixed collision problems (edges and OPENING)
+- fixed door on bridge problem (level &quot;Gateway&quot;)
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-08-09 14:04:03 UTC (rev 1260)
++++ trunk/data/api1init.lua	2008-08-10 20:20:46 UTC (rev 1261)
+@@ -123,6 +123,9 @@
+      st_coinslot = &quot;st-coinslot&quot;,
+      st_death = &quot;st-death&quot;,
+      st_death_invisible = &quot;st-death_invisible&quot;,
++    st_door_a = &quot;st-door_a&quot;,
++    st_door_b = &quot;st-door_b&quot;,
++    st_door_c = &quot;st-door_c&quot;,
+      st_floppy = &quot;st-floppy&quot;,
+      st_fourswitch = &quot;st-fourswitch&quot;,
+      st_knight = &quot;st-knight&quot;,
+@@ -286,6 +289,24 @@
+          local obj = enigma._MakeObject(&quot;st_scissors&quot;)
+          enigma._SetAttrib(obj, &quot;inverse&quot;, true)
+          return obj
++    elseif name == &quot;st-door-h&quot; or name == &quot;st-door&quot; then
++        local obj = enigma._MakeObject(&quot;st_door_d&quot;)
++        enigma._SetAttrib(obj, &quot;faces&quot;, &quot;ns&quot;)
++        return obj
++    elseif name == &quot;st-door-h-open&quot; then
++        local obj = enigma._MakeObject(&quot;st_door_d&quot;)
++        enigma._SetAttrib(obj, &quot;faces&quot;, &quot;ns&quot;)
++        enigma._SetAttrib(obj, &quot;state&quot;, 1)
++        return obj
++    elseif name == &quot;st-door-v&quot; then
++        local obj = enigma._MakeObject(&quot;st_door_d&quot;)
++        enigma._SetAttrib(obj, &quot;faces&quot;, &quot;ew&quot;)
++        return obj
++    elseif name == &quot;st-door-h-open&quot; then
++        local obj = enigma._MakeObject(&quot;st_door_d&quot;)
++        enigma._SetAttrib(obj, &quot;faces&quot;, &quot;ew&quot;)
++        enigma._SetAttrib(obj, &quot;state&quot;, 1)
++        return obj
+      end
+
+      newname = RenamingObjectsOld2New[name]
+@@ -331,6 +352,14 @@
+              return &quot;it-key_a&quot;
+          end
+      end
++    if _newname == &quot;st_door&quot; then
++        local flavor = enigma._GetAttrib(obj, &quot;flavor&quot;)
++        if flavor == &quot;d&quot; then
++            return &quot;st-door&quot;
++        else
++            return &quot;st-door_&quot; .. flavor
++        end
++    end
+      if _newname == &quot;it_sensor&quot; then
+          local code = enigma._GetAttrib(obj, &quot;inverse&quot;)
+          if code == false then
+@@ -467,6 +496,10 @@
+       if key == &quot;movable&quot; then
+           if val == 1 then _val = true else _val = false end
+       end
++     if key == &quot;type&quot; and _obj_name == &quot;st-door&quot; then
++         _key = &quot;faces&quot;
++         if val == &quot;h&quot; then _val = &quot;ns&quot; else _val = &quot;ew&quot; end
++     end
+       enigma._SetAttrib(obj, _key, _val)
+  end
+
+@@ -510,6 +543,11 @@
+       if key == &quot;on&quot; then
+           _key = &quot;state&quot;
+       end
++     if key == &quot;type&quot; and _obj_name == &quot;st-door&quot; then
++         faces = enigma._GetAttrib(obj, &quot;faces&quot;)
++         if faces == &quot;ns&quot; then val = &quot;h&quot; else val = &quot;v&quot; end
++         return val
++     end
+
+       local val = enigma._GetAttrib(obj, _key)
+
+@@ -607,6 +645,7 @@
+      st_blocker_new__openclose = &quot;toggle&quot;,
+      st_blocker_new__trigger = &quot;toggle&quot;,
+      st_boulder__direction = &quot;orientate&quot;,
++    st_door__openclose = &quot;toggle&quot;,
+      [&quot;st-fart__trigger&quot;] = &quot;toggle&quot;,
+      st_fourswitch__trigger = &quot;toggle&quot;,
+      st_floppy__onoff = &quot;toggle&quot;,
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-08-09 14:04:03 UTC (rev 1260)
++++ trunk/data/schemas/objects.xml	2008-08-10 20:20:46 UTC (rev 1261)
+@@ -60,6 +60,7 @@
+      &lt;msg name=&quot;disconnect&quot; type=&quot;nil&quot;/&gt;
+      &lt;msg name=&quot;flip&quot; type=&quot;nil&quot;/&gt;
+      &lt;msg name=&quot;hit&quot; type=&quot;object&quot;/&gt;
++    &lt;msg name=&quot;ignite&quot; type=&quot;nil&quot;/&gt;
+      &lt;msg name=&quot;inner_pull&quot; type=&quot;dir&quot;/&gt;
+      &lt;msg name=&quot;kill&quot; type=&quot;nil&quot;/&gt;
+      &lt;msg name=&quot;move&quot; type=&quot;pos&quot;/&gt;
+@@ -469,6 +470,25 @@
+      &lt;object name=&quot;st_death_invisible&quot;&gt;
+        &lt;attr name=&quot;invisible&quot; value=&quot;true&quot;/&gt;
+      &lt;/object&gt;
++    &lt;object name=&quot;st_door&quot;&gt;
++      &lt;attr name=&quot;faces&quot; default=&quot;nesw&quot;/&gt;
++      &lt;attr name=&quot;flavor&quot;/&gt;
++      &lt;msg name=&quot;close&quot;/&gt;
++      &lt;msg name=&quot;open&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_door_a&quot;&gt;
++      &lt;attr name=&quot;flavor&quot; value=&quot;a&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_door_b&quot;&gt;
++      &lt;attr name=&quot;flavor&quot; value=&quot;b&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_door_c&quot;&gt;
++      &lt;attr name=&quot;flavor&quot; value=&quot;c&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_door_d&quot;&gt;
++      &lt;attr name=&quot;flavor&quot; value=&quot;d&quot;/&gt;
++    &lt;/object&gt;
+      &lt;object name=&quot;st_floppy&quot;&gt;
+        &lt;msg name=&quot;on&quot;/&gt;
+        &lt;msg name=&quot;off&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-08-09 14:04:03 UTC (rev 1260)
++++ trunk/src/Makefile.am	2008-08-10 20:20:46 UTC (rev 1261)
+@@ -223,6 +223,8 @@
+  	stones/ConnectiveStone.hh	\
+  	stones/DeathStone.cc	\
+  	stones/DeathStone.hh	\
++	stones/Door.cc		\
++	stones/Door.hh		\
+  	stones/FloppySwitch.cc   \
+  	stones/FloppySwitch.hh   \
+  	stones/FourSwitch.cc	\
+
+Modified: trunk/src/ox_extra.cc
+===================================================================
+--- trunk/src/ox_extra.cc	2008-08-09 14:04:03 UTC (rev 1260)
++++ trunk/src/ox_extra.cc	2008-08-10 20:20:46 UTC (rev 1261)
+@@ -231,8 +231,8 @@
+      UNUSED,              // OxydExtra stone 0x70
+      UNUSED,              // OxydExtra stone 0x71
+      UNUSED,              // OxydExtra stone 0x72
+-    &quot;st-door-h&quot;,         // OxydExtra stone 0x73
+-    &quot;st-door-v&quot;,         // OxydExtra stone 0x74
++    &quot;st_door_d&quot;,         // OxydExtra stone 0x73
++    &quot;st_door_d_ew&quot;,      // OxydExtra stone 0x74
+      UNUSED,              // OxydExtra stone 0x75
+      &quot;st-invisible&quot;,      // OxydExtra stone 0x76
+      UNUSED,              // OxydExtra stone 0x77
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2008-08-09 14:04:03 UTC (rev 1260)
++++ trunk/src/ox_magnum.cc	2008-08-10 20:20:46 UTC (rev 1261)
+@@ -231,12 +231,12 @@
+      &quot;st-mail-w&quot;,                // OxydMagnum stone 0x70
+      &quot;st-mail-e&quot;,                // OxydMagnum stone 0x71
+      &quot;st-mail-s&quot;,                // OxydMagnum stone 0x72
+-    &quot;st-door-h&quot;,                // OxydMagnum stone 0x73
+-    &quot;st-door-v&quot;,                // OxydMagnum stone 0x74
++    &quot;st_door_d&quot;,                // OxydMagnum stone 0x73
++    &quot;st_door_d_ew&quot;,             // OxydMagnum stone 0x74
+      &quot;st-metal&quot;,                 // OxydMagnum stone 0x75
+      &quot;st-invisible&quot;,             // OxydMagnum stone 0x76
+      UNUSED,                     // OxydMagnum stone 0x77
+-    &quot;st-door-v-open&quot;,           // OxydMagnum stone 0x78 
+(st-door-h-open was wrong, look at level #32)
++    &quot;st_door_d_ew_open&quot;,        // OxydMagnum stone 0x78 
+(st-door-h-open was wrong, look at level #32)
+      UNUSED,                     // OxydMagnum stone 0x79
+      &quot;st_laserflop_on&quot;,          // OxydMagnum stone 0x7a (Level 66, 
+this is a solid stone)
+      UNUSED,                     // OxydMagnum stone 0x7b
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2008-08-09 14:04:03 UTC (rev 1260)
++++ trunk/src/ox_oxyd1.cc	2008-08-10 20:20:46 UTC (rev 1261)
+@@ -166,14 +166,14 @@
+      0,                          // Oxyd1 stone 0x00
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      &quot;st-fakeoxyd&quot;,              // Oxyd1 stone 0x11
+-    &quot;st-door_c&quot;,                // Oxyd1 stone 0x12
++    &quot;st_door_c&quot;,                // Oxyd1 stone 0x12
+      &quot;st_brick_es&quot;,              // Oxyd1 stone 0x13
+      &quot;st_brick_sw&quot;,              // Oxyd1 stone 0x14
+      &quot;st_brick_ne&quot;  ,            // Oxyd1 stone 0x15
+      &quot;st_brick_nw&quot;,              // Oxyd1 stone 0x16
+      &quot;st-plain_hole&quot;,            // Oxyd1 stone 0x17
+      &quot;st-oxyd-0x18&quot;,             // Oxyd1 stone 0x18
+-    &quot;st-door_c-open&quot;,           // Oxyd1 stone 0x19
++    &quot;st_door_c_open&quot;,           // Oxyd1 stone 0x19
+      &quot;st-grate1&quot;,                // Oxyd1 stone 0x1a
+      &quot;st-grate2&quot;,                // Oxyd1 stone 0x1b
+      &quot;st-bug&quot;,                   // Oxyd1 stone 0x1c
+@@ -263,12 +263,12 @@
+      &quot;st-mail-w&quot;,                // Oxyd1 stone 0x70
+      &quot;st-mail-e&quot;,                // Oxyd1 stone 0x71
+      &quot;st-mail-s&quot;,                // Oxyd1 stone 0x72
+-    &quot;st-door-h&quot;,                // Oxyd1 stone 0x73
+-    &quot;st-door-v&quot;,                // Oxyd1 stone 0x74
++    &quot;st_door_d&quot;,                // Oxyd1 stone 0x73
++    &quot;st_door_d_ew&quot;,             // Oxyd1 stone 0x74
+      &quot;st-metal&quot;,                 // Oxyd1 stone 0x75
+      &quot;st-invisible&quot;,             // Oxyd1 stone 0x76
+-    &quot;st-door-h-open&quot;,           // Oxyd1 stone 0x77
+-    &quot;st-door-v-open&quot;,           // Oxyd1 stone 0x78
++    &quot;st_door_d_open&quot;,           // Oxyd1 stone 0x77
++    &quot;st_door_d_ew_open&quot;,        // Oxyd1 stone 0x78
+      UNUSED,                     // Oxyd1 stone 0x79
+      &quot;st_laserflop_on&quot;,          // Oxyd1 stone 0x7a (only used in 
+level #23)
+      UNUSED,                     // Oxyd1 stone 0x7b
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-08-09 14:04:03 UTC (rev 1260)
++++ trunk/src/ox_peroxyd.cc	2008-08-10 20:20:46 UTC (rev 1261)
+@@ -303,12 +303,12 @@
+      &quot;st-mail-w&quot;,                // PerOxyd stone 0x70
+      &quot;st-mail-e&quot;,                // PerOxyd stone 0x71
+      &quot;st-mail-s&quot;,                // PerOxyd stone 0x72
+-    &quot;st-door-h&quot;,                // PerOxyd stone 0x73
+-    &quot;st-door-v&quot;,                // PerOxyd stone 0x74
++    &quot;st_door_d&quot;,                // PerOxyd stone 0x73
++    &quot;st_door_d_ew&quot;,             // PerOxyd stone 0x74
+      &quot;st-metal&quot;,                 // PerOxyd stone 0x75
+      &quot;st-stonebrush&quot;,            // PerOxyd stone 0x76
+-    &quot;st-door-h-open&quot;,           // PerOxyd stone 0x77
+-    &quot;st-door-v-open&quot;,           // PerOxyd stone 0x78
++    &quot;st_door_d_open&quot;,           // PerOxyd stone 0x77
++    &quot;st_door_d_ew_open&quot;,        // PerOxyd stone 0x78
+      &quot;st-white1&quot;,                // PerOxyd stone 0x79 (Can be either 
+st-white1 or st-white4)
+      &quot;st-black1&quot;,                // PerOxyd stone 0x7a (Can be either 
+st-black1 or st-black4)
+      &quot;st-metal_hole&quot;,            // PerOxyd stone 0x7b (because it 
+looks similar ...; only link level 79)
+
+Modified: trunk/src/stones/CoinSlot.cc
+===================================================================
+--- trunk/src/stones/CoinSlot.cc	2008-08-09 14:04:03 UTC (rev 1260)
++++ trunk/src/stones/CoinSlot.cc	2008-08-10 20:20:46 UTC (rev 1261)
+@@ -155,7 +155,7 @@
+          bool actionValue = false;
+          bool doInit = false;
+
+-        Log &lt;&lt; &quot;Coinslot state change from &quot; &lt;&lt; state &lt;&lt; &quot; to &quot; &lt;&lt; 
+newIState &lt;&lt; &quot;\n&quot;;
++//        Log &lt;&lt; &quot;Coinslot state change from &quot; &lt;&lt; state &lt;&lt; &quot; to &quot; &lt;&lt; 
+newIState &lt;&lt; &quot;\n&quot;;
+          switch (state) {
+              case OFF :
+                  ASSERT(newIState != ON, XLevelRuntime, &quot;Coinslot - 
+illegal state change from OFF to ON&quot;);
+
+Added: trunk/src/stones/Door.cc
+===================================================================
+--- trunk/src/stones/Door.cc	2008-08-09 14:04:03 UTC (rev 1260)
++++ trunk/src/stones/Door.cc	2008-08-10 20:20:46 UTC (rev 1261)
+@@ -0,0 +1,202 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/Door.hh&quot;
++#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;laser.hh&quot;
++
++namespace enigma {
++    Door::Door(std::string flavor, int initState, std::string faces) : 
+Stone () {
++        state = initState;
++        setAttr(&quot;flavor&quot;, flavor);
++        setAttr(&quot;faces&quot;, faces);
++    }
++
++    std::string Door::getClass() const {
++        return &quot;st_door&quot;;
++    }
++
++    void Door::setAttr(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;flavor&quot;) {
++            Stone::setAttr(key, val);
++            if (val.to_string() != &quot;d&quot;)
++                Stone::setAttr(&quot;faces&quot;, ALL_DIRECTIONS);
++            if (isDisplayable() &amp;&amp; state &lt;= OPEN)
++                init_model();    // need to redisplay after attribute set
++            return;
++        } else if (key == &quot;faces&quot; &amp;&amp; getAttr(&quot;flavor&quot;).to_string() == 
+&quot;d&quot;) {
++            Stone::setAttr(key, val);
++            std::string faces = Stone::getAttr(key).to_string();
++            ASSERT(faces == &quot;ns&quot; || faces == &quot;ew&quot;, XLevelRuntime, &quot;Door 
+type d supports only face 'ns' and 'ew'&quot;);
++        }
++        Stone::setAttr(key, val);
++    }
++
++    Value Door::message(const Message &amp;m) {
++        if (m.message == &quot;ignite&quot; &amp;&amp; getAttr(&quot;flavor&quot;).to_string() == 
+&quot;c&quot; &amp;&amp; server::GameCompatibility == GAMET_OXYD1) {
++            if (isDisplayable())
++                KillStone(get_pos());  // TODO animation &amp; sound
++            return Value();
++        } else
++            return Stone::message(m);
++    }
++
++    int Door::externalState() const {
++        return (state == OPEN) ? 1 : 0;
++    }
++
++    void Door::setState(int extState) {
++        if (isDisplayable()) {
++            if (extState == 1 &amp;&amp; (state == CLOSED || state == CLOSING))
++                set_iState(OPENING);
++            else if (extState == 0 &amp;&amp; (state == OPEN || state == OPENING))
++                set_iState(CLOSING);
++        } else
++            state = extState;
++    }
++
++    void Door::toggleState() {
++        set_iState((state == OPEN || state == OPENING) ? CLOSING : 
+OPENING);
++    }
++
++    void Door::init_model() {
++        string mname = model_basename();
++        if (state == CLOSED)
++            mname += &quot;-closed&quot;;
++        else if (state==OPEN)
++            mname += &quot;-open&quot;;
++        set_model(mname);
++    }
++
++    void Door::animcb() {
++        if (state == OPENING)
++            set_iState(OPEN);
++        else if (state == CLOSING)
++            set_iState(CLOSED);
++    }
++
++    bool Door::is_floating() const {
++        return true;
++    }
++
++    bool Door::is_transparent(Direction d) const {
++        if (state == OPEN)
++            return true;
++        else {
++            DirectionBits faces = (DirectionBits)(ALL_DIRECTIONS ^ 
+getConnections());
++            return !has_dir(faces, d) &amp;&amp; !has_dir(faces, reverse(d));
++        }
++    }
++
++    StoneResponse Door::collision_response(const StoneContact &amp;sc) {
++        Direction cf = contact_face(sc);
++        if (state == OPEN)
++            return STONE_PASS;
++        else {
++            DirectionBits faces = (DirectionBits)(ALL_DIRECTIONS ^ 
+getConnections());
++            StoneResponse result = STONE_PASS;
++            if ((has_dir(faces, WEST) &amp;&amp; (get_pos().x &gt;= 
+sc.actor-&gt;get_pos()[0])) ||
++                    (has_dir(faces, SOUTH) &amp;&amp; (get_pos().y + 1 &lt;= 
+sc.actor-&gt;get_pos()[1])) ||
++                    (has_dir(faces, EAST) &amp;&amp; (get_pos().x + 1 &lt;= 
+sc.actor-&gt;get_pos()[0])) ||
++                    (has_dir(faces, NORTH) &amp;&amp; (get_pos().y &gt;= 
+sc.actor-&gt;get_pos()[1])))
++                result = STONE_REBOUND;
++            return result;
++        }
++    }
++
++    void Door::actor_hit(const StoneContact &amp;sc) {
++        if (getAttr(&quot;flavor&quot;).to_string() == &quot;d&quot;) {
++            // door knocking
++            Item *it = GetItem(get_pos());
++            if (it != NULL &amp;&amp; server::GameCompatibility != GAMET_PEROXYD
++                    &amp;&amp; (server::GameCompatibility != GAMET_ENIGMA || 
+server::EnigmaCompatibility &lt; 1.10 ))
++                SendMessage(it, &quot;_hit&quot;, sc.actor);
++            else
++                performAction(sc.actor);
++        }
++    }
++
++    const char *Door::collision_sound() {
++        return (getAttr(&quot;flavor&quot;).to_string() == &quot;d&quot;) ? &quot;electric&quot; : 
+Stone::collision_sound();
++    }
++
++    FreezeStatusBits Door::get_freeze_bits() {
++        return FREEZEBIT_NO_STONE;
++    }
++
++    std::string Door::model_basename() {
++        std::string flavor = getAttr(&quot;flavor&quot;).to_string();
++        if (flavor != &quot;d&quot;)
++            return std::string(&quot;st-door_&quot;) + flavor;
++        else
++            return (getConnections() == (WESTBIT | EASTBIT)) ? 
+&quot;st-doorh&quot;: &quot;st-doorv&quot;;
++    }
++
++    void Door::set_iState(int newState) {
++        if (isDisplayable()) {
++            std::string basename = model_basename();
++            switch (newState) {
++                case OPEN:
++                    set_model(basename+&quot;-open&quot;);
++                    MaybeRecalcLight(get_pos());
++                    break;
++                case CLOSED:
++                    set_model(basename+&quot;-closed&quot;);
++                    ShatterActorsInsideField (get_pos());
++                    MaybeRecalcLight(get_pos()); // maybe superfluous
++                    break;
++                case OPENING:
++                    sound_event((getAttr(&quot;flavor&quot;).to_string() == &quot;d&quot;) 
+? &quot;dooropen&quot; : &quot;&quot;);
++                    if (state == CLOSING)
++                        get_model()-&gt;reverse();
++                    else
++                        set_anim(basename+&quot;-opening&quot;);
++                    break;
++                case CLOSING:
++                    sound_event((getAttr(&quot;flavor&quot;).to_string() == &quot;d&quot;) 
+? &quot;doorclose&quot; : &quot;&quot;);
++                    if (state == OPENING)
++                        get_model()-&gt;reverse();
++                    else
++                        set_anim(basename+&quot;-closing&quot;);
++                    ShatterActorsInsideField (get_pos());
++                    MaybeRecalcLight(get_pos());
++                    break;
++            }
++        }
++        state = newState;
++    }
++
++
++    DEF_TRAITS(Door, &quot;st_door&quot;, st_door);
++
++    BOOT_REGISTER_START
++        BootRegister(new Door(&quot;d&quot;, 0, &quot;ns&quot;), &quot;st_door&quot;);
++        BootRegister(new Door(&quot;d&quot;, 0, &quot;ns&quot;), &quot;st_door_d&quot;);
++        BootRegister(new Door(&quot;a&quot;, 0), &quot;st_door_a&quot;);
++        BootRegister(new Door(&quot;b&quot;, 0), &quot;st_door_b&quot;);
++        BootRegister(new Door(&quot;c&quot;, 0), &quot;st_door_c&quot;);
++        BootRegister(new Door(&quot;c&quot;, 1), &quot;st_door_c_open&quot;);
++        BootRegister(new Door(&quot;d&quot;, 1, &quot;ns&quot;), &quot;st_door_d_open&quot;);
++        BootRegister(new Door(&quot;d&quot;, 0, &quot;ew&quot;), &quot;st_door_d_ew&quot;);
++        BootRegister(new Door(&quot;d&quot;, 1, &quot;ew&quot;), &quot;st_door_d_ew_open&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/Door.cc
+___________________________________________________________________
+Name: svn:eol-style
+    + native
+
+Added: trunk/src/stones/Door.hh
+===================================================================
+--- trunk/src/stones/Door.hh	2008-08-09 14:04:03 UTC (rev 1260)
++++ trunk/src/stones/Door.hh	2008-08-10 20:20:46 UTC (rev 1261)
+@@ -0,0 +1,78 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef DOOR_HH
++#define DOOR_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /**
++     *
++     */
++    class Door : public Stone {
++        CLONEOBJ(Door);
++        DECL_TRAITS;
++
++    private:
++        enum iState {
++            CLOSED,    ///&lt;
++            OPEN,      ///&lt;
++            CLOSING,   ///&lt;
++            OPENING,   ///&lt;
++        };
++
++    public:
++        Door(std::string flavor, int initState, std::string faces = 
+&quot;nesw&quot;);
++
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++        virtual Value message(const Message &amp;m);
++
++        // StateObject interface
++        virtual int externalState() const;
++        virtual void setState(int extState);
++        virtual void toggleState();
++
++        // GridObject interface
++        virtual void init_model();
++
++        // ModelCallback interface  - Animation callback
++        virtual void animcb();
++
++        // Stone interface
++        virtual bool is_floating() const;
++        virtual bool is_transparent(Direction d) const;
++        virtual StoneResponse collision_response(const StoneContact &amp;sc);
++        virtual void actor_hit(const StoneContact &amp;sc);
++        virtual const char *collision_sound();
++        virtual FreezeStatusBits get_freeze_bits();
++
++    private:
++        std::string model_basename();
++        void set_iState(int newState);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/Door.hh
+___________________________________________________________________
+Name: svn:eol-style
+    + native
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2008-08-09 14:04:03 UTC (rev 1260)
++++ trunk/src/stones.hh	2008-08-10 20:20:46 UTC (rev 1261)
+@@ -53,6 +53,7 @@
+          st_coinslot,
+          st_death,
+          st_death_invisible,
++        st_door,
+          st_easymode,
+          st_explosion,
+          st_fakeoxyda,
+@@ -189,13 +190,13 @@
+          }
+
+          /*! Can a swap-stone or pull-stone swap this stone? */
+-        virtual bool   is_removable() const { return true; }
++        virtual bool is_removable() const { return true; }
+
+          /*! Is this stone floating above the floor (e.g. actors may 
+pass)? */
+          virtual bool is_floating() const { return false; }
+
+          /*! Can laser beams pass through stone? Return is_floating() 
+by default. */
+-        virtual bool   is_transparent (Direction d) const {
++        virtual bool is_transparent(Direction d) const {
+              return is_floating();
+          }
+
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-08-09 14:04:03 UTC (rev 1260)
++++ trunk/src/stones_complex.cc	2008-08-10 20:20:46 UTC (rev 1261)
+@@ -962,233 +962,6 @@
+  }
+
+
+-
+-/* -------------------- DoorBase -------------------- */
+-
+-// Base class for everything that behaves like a door, i.e., it has
+-// four states OPEN, CLOSED, OPENING, CLOSING.
+-namespace
+-{
+-    class DoorBase : public Stone {
+-    protected:
+-        enum State { OPEN, CLOSED, OPENING, CLOSING } state;
+-
+-        DoorBase(const char *name, State initstate=CLOSED)
+-        : Stone(name), state(initstate)
+-        {}
+-
+-        State get_state() const { return state; }
+-        void set_state(State st) { state=st; }
+-
+-        void change_state(State newstate) ;
+-        virtual Value message(const Message &amp;m);
+-    private:
+-        // DoorBase interface
+-        virtual string model_basename() { return get_kind(); }
+-        virtual void init_model();
+-        virtual string opening_sound() const { return &quot;&quot;; }
+-        virtual string closing_sound() const { return &quot;&quot;; }
+-
+-        // Private methods
+-
+-        StoneResponse collision_response(const StoneContact &amp;sc);
+-
+-        void animcb();
+-
+-        // Stone interface
+-        virtual bool is_transparent (Direction) const
+-        { return state==OPEN; }
+-
+-        virtual bool is_sticky (const Actor *) const
+-        { return false; }
+-
+-    private:
+-        FreezeStatusBits get_freeze_bits() { return FREEZEBIT_NO_STONE; 
+}
+-    };
+-}
+-
+-Value DoorBase::message(const Message &amp;m) {
+-    State newstate = state;
+-
+-    if (m.message == &quot;open&quot;) {
+-        newstate = OPENING;
+-    } else if (m.message == &quot;close&quot;) {
+-        newstate = CLOSING;
+-    } else if (m.message == &quot;openclose&quot; || m.message == &quot;toggle&quot;) {
+-        newstate = (state==OPEN || state==OPENING) ? CLOSING : OPENING;
+-    } else if (m.message == &quot;signal&quot;) {
+-        newstate = m.value.to_bool() ? OPENING : CLOSING;
+-    } else {
+-        return Stone::message(m);
+-    }
+-
+-    if (newstate==OPENING &amp;&amp; (state==CLOSED || state==CLOSING))
+-        change_state(OPENING);
+-    else if (newstate==CLOSING &amp;&amp; (state==OPEN || state==OPENING))
+-        change_state(CLOSING);
+-    return Value();
+-}
+-
+-void DoorBase::init_model() {
+-    string mname = model_basename();
+-    if (state == CLOSED)
+-        mname += &quot;-closed&quot;;
+-    else if (state==OPEN)
+-        mname += &quot;-open&quot;;
+-    set_model(mname);
+-}
+-
+-void DoorBase::animcb() {
+-    if (state == OPENING)
+-        change_state(OPEN);
+-    else if (state == CLOSING)
+-        change_state(CLOSED);
+-}
+-
+-StoneResponse
+-DoorBase::collision_response(const StoneContact &amp;/*sc*/)
+-{
+-    return (state == OPEN) ? STONE_PASS:STONE_REBOUND;
+-}
+-
+-void DoorBase::change_state(State newstate)
+-{
+-    string basename = model_basename();
+-
+-    switch (newstate) {
+-    case OPEN:
+-        set_model(basename+&quot;-open&quot;);
+-        MaybeRecalcLight(get_pos());
+-        break;
+-    case CLOSED:
+-        set_model(basename+&quot;-closed&quot;);
+-        ShatterActorsInsideField (get_pos());
+-        MaybeRecalcLight(get_pos()); // maybe superfluous
+-        break;
+-    case OPENING:
+-        sound_event (opening_sound().c_str());
+-        if (state == CLOSING)
+-            get_model()-&gt;reverse();
+-        else
+-            set_anim(basename+&quot;-opening&quot;);
+-        break;
+-    case CLOSING:
+-        sound_event (closing_sound().c_str());
+-        if (state == OPENING)
+-            get_model()-&gt;reverse();
+-        else
+-            set_anim(basename+&quot;-closing&quot;);
+-        ShatterActorsInsideField (get_pos());
+-        MaybeRecalcLight(get_pos());
+-        break;
+-    }
+-    set_state(newstate);
+-}
+-
+-
+-/* -------------------- Door -------------------- */
+-
+-// Attributes:
+-//
+-// :type        h or v for a door that opens horizontally or vertically
+-namespace
+-{
+-    class Door : public DoorBase {
+-        CLONEOBJ(Door);
+-    public:
+-        Door(const char *type=&quot;h&quot;, bool open=false)
+-        : DoorBase(&quot;st-door&quot;, open ? OPEN : CLOSED)
+-        {
+-            setAttr(&quot;type&quot;, type);
+-        }
+-    private:
+-        virtual string opening_sound() const { return &quot;dooropen&quot;; }
+-        virtual string closing_sound() const { return &quot;doorclose&quot;; }
+-        virtual const char *collision_sound() { return &quot;electric&quot;; }
+-        string get_type() const {
+-            string type(getDefaultedAttr(&quot;type&quot;, &quot;h&quot;));
+-            return type;
+-        }
+-
+-        bool is_transparent (Direction) const;
+-        bool is_floating () const {
+-            return true;        // don't let door press buttons
+-        }
+-
+-        void actor_hit(const StoneContact &amp;sc)
+-        {
+-            Log &lt;&lt; &quot;door knocking\n&quot;;
+-            // door knocking
+-            Item *it = GetItem(get_pos());
+-            if (it != NULL &amp;&amp; server::GameCompatibility != GAMET_PEROXYD
+-                    &amp;&amp; (server::GameCompatibility != GAMET_ENIGMA || 
+server::EnigmaCompatibility &lt; 1.10 ))
+-                SendMessage(it, &quot;_hit&quot;, sc.actor);
+-            else
+-                performAction(sc.actor);
+-        }
+-
+-        string model_basename() { return string(&quot;st-door&quot;)+get_type(); }
+-        StoneResponse collision_response(const StoneContact &amp;sc);
+-    };
+-
+-    class Door_a : public DoorBase {
+-        CLONEOBJ(Door_a);
+-    public:
+-        Door_a() : DoorBase(&quot;st-door_a&quot;) {}
+-    };
+-
+-    class Door_b : public DoorBase {
+-        CLONEOBJ(Door_b);
+-    public:
+-        Door_b() : DoorBase(&quot;st-door_b&quot;) {}
+-    };
+-
+-    class Door_c : public DoorBase {
+-        CLONEOBJ(Door_c);
+-    public:
+-        Door_c() : DoorBase(&quot;st-door_c&quot;) {}
+-        Value message(const Message &amp;m) {
+-            if (m.message == &quot;ignite&quot; &amp;&amp; server::GameCompatibility == 
+GAMET_OXYD1) {
+-                KillStone(get_pos());  // TODO animation &amp; sound
+-                return Value();
+-            } else {
+-                return DoorBase::message(m);
+-            }
+-        }
+-    };
+-
+-    class Door_c_open : public DoorBase {  // a hack for oxyd 
+compatibility tests
+-        CLONEOBJ(Door_c_open);
+-    public:
+-        Door_c_open() : DoorBase(&quot;st-door_c&quot;, OPEN) {}
+-    };
+-}
+-
+-bool Door::is_transparent (Direction dir) const {
+-    if (get_type() == &quot;h&quot;)
+-        return state==OPEN || dir==EAST || dir==WEST;
+-    else
+-        return state==OPEN || dir==NORTH || dir==SOUTH;
+-}
+-
+-StoneResponse
+-Door::collision_response(const StoneContact &amp;sc)
+-{
+-    Direction cf = contact_face(sc);
+-    if (state == OPEN)
+-        return STONE_PASS;
+-    else if (state == CLOSING)
+-        return STONE_REBOUND;
+-    else {
+-        string t = get_type();
+-        return ((t == &quot;v&quot; &amp;&amp; (cf==WEST || cf==EAST)) ||
+-                (t == &quot;h&quot; &amp;&amp; (cf==SOUTH || cf==NORTH)))
+-            ? STONE_REBOUND
+-            : STONE_PASS;
+-    }
+-}
+-
+-
+  /* -------------------- ShogunStone -------------------- */
+
+  // Attributes:
+@@ -1713,16 +1486,6 @@
+
+  void Init_complex()
+  {
+-    Register(new Door);
+-    Register(&quot;st-door-h&quot;, new Door(&quot;h&quot;));
+-    Register(&quot;st-door-v&quot;, new Door(&quot;v&quot;));
+-    Register(&quot;st-door-h-open&quot;, new Door(&quot;h&quot;, true));
+-    Register(&quot;st-door-v-open&quot;, new Door(&quot;v&quot;, true));
+-    Register(new Door_a);
+-    Register(new Door_b);
+-    Register(new Door_c);
+-    Register(&quot;st-door_c-open&quot;, new Door_c_open);
+-
+      Register(new HollowStoneImpulseStone);
+
+      MailStone::setup();
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000702.html">[Enigma-game-svn] r1260 (repost)
+</A></li>
+	<LI>Next message: <A HREF="000704.html">[Enigma-game-svn] r1264 (repost)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#703">[ date ]</a>
+              <a href="thread.html#703">[ thread ]</a>
+              <a href="subject.html#703">[ subject ]</a>
+              <a href="author.html#703">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,304 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r573 - in trunk: lib-src/enigma-core src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r573%20-%20in%20trunk%3A%20lib-src/enigma-core%20src&In-Reply-To=%3C200701122159.l0CLxiFA029786%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000012.html">
+   <LINK REL="Next"  HREF="000014.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r573 - in trunk: lib-src/enigma-core src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r573%20-%20in%20trunk%3A%20lib-src/enigma-core%20src&In-Reply-To=%3C200701122159.l0CLxiFA029786%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r573 - in trunk: lib-src/enigma-core src">ral at mail.berlios.de
+       </A><BR>
+    <I>Fri Jan 12 22:59:44 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000012.html">[Enigma-game-svn] r572 - branches/1.0/doc/manual
+</A></li>
+        <LI>Next message: <A HREF="000014.html">[Enigma-game-svn] r574 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#13">[ date ]</a>
+              <a href="thread.html#13">[ thread ]</a>
+              <a href="subject.html#13">[ subject ]</a>
+              <a href="author.html#13">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-01-12 22:59:43 +0100 (Fri, 12 Jan 2007)
+New Revision: 573
+
+Modified:
+   trunk/lib-src/enigma-core/ecl_util.hh
+   trunk/src/actors.cc
+   trunk/src/d_engine.hh
+   trunk/src/display.cc
+Log:
+- fix r550 hide actors without necessarity of movement
+- minor code optimizations
+
+
+Modified: trunk/lib-src/enigma-core/ecl_util.hh
+===================================================================
+--- trunk/lib-src/enigma-core/ecl_util.hh	2007-01-11 19:12:30 UTC (rev 572)
++++ trunk/lib-src/enigma-core/ecl_util.hh	2007-01-12 21:59:43 UTC (rev 573)
+@@ -37,8 +37,8 @@
+ ** constructor or assignment operator.
+ */
+     class Nocopy {
+-        Nocopy(const Nocopy&amp;);
+-        Nocopy&amp; operator=(const Nocopy&amp;);
++        Nocopy(const Nocopy&amp;);            // not implemented to cause compiler error message on usage!
++        Nocopy&amp; operator=(const Nocopy&amp;); // not implemented to cause compiler error message on usage!
+     public:
+         Nocopy() {}
+     };
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2007-01-11 19:12:30 UTC (rev 572)
++++ trunk/src/actors.cc	2007-01-12 21:59:43 UTC (rev 573)
+@@ -1065,8 +1065,8 @@
+ 
+ void BasicBall::disable_shield() {
+     if (has_shield()) {
+-	m_shield_rest_time = 0;
+-	update_halo();
++        m_shield_rest_time = 0;
++        update_halo();
+     }
+ }
+ 
+@@ -1077,16 +1077,6 @@
+ void BasicBall::update_halo() {
+     HaloState newstate = m_halostate;
+ 
+-    double radius = get_actorinfo()-&gt;radius;
+-    string halokind;
+-
+-    // Determine which halomodel has to be used:
+-    if (radius == 19.0/64) { // Halo for normal balls
+-        halokind=&quot;halo&quot;;
+-    }else if (radius == 13.0f/64) { // Halo for small balls
+-        halokind=&quot;halo-small&quot;;
+-    }
+-
+     if (m_shield_rest_time &lt;= 0)
+         newstate = NOHALO;
+     else if (m_shield_rest_time &lt;= 3.0)
+@@ -1095,9 +1085,19 @@
+         newstate = HALONORMAL;
+ 
+     if (newstate != m_halostate) {
+-	if (m_halostate == NOHALO){
+-	   m_halosprite = display::AddSprite (get_pos(), halokind.c_str());
+-    }
++        double radius = get_actorinfo()-&gt;radius;
++        string halokind;
++    
++        // Determine which halomodel has to be used:
++        if (radius == 19.0/64) { // Halo for normal balls
++            halokind = &quot;halo&quot;;
++        } else if (radius == 13.0f/64) { // Halo for small balls
++            halokind = &quot;halo-small&quot;;
++        }
++
++        if (m_halostate == NOHALO){
++            m_halosprite = display::AddSprite (get_pos(), halokind.c_str());
++        }
+         switch (newstate) {
+         case NOHALO:
+             // remove halo
+@@ -1113,8 +1113,7 @@
+             break;
+         }
+         m_halostate = newstate;
+-    }
+-    else if (m_halostate != NOHALO) {
++    } else if (m_halostate != NOHALO) {
+         m_halosprite.move (get_pos());
+     }
+ }
+
+Modified: trunk/src/d_engine.hh
+===================================================================
+--- trunk/src/d_engine.hh	2007-01-11 19:12:30 UTC (rev 572)
++++ trunk/src/d_engine.hh	2007-01-12 21:59:43 UTC (rev 573)
+@@ -197,12 +197,11 @@
+         int          screenpos[2];
+         SpriteLayer  layer;
+         bool         visible;
+-        bool         mayNeedRedraw;
+         Sprite *     above[3];
+         Sprite *     beneath[3];
+ 
+         Sprite (const V2 &amp; p, SpriteLayer l, Model *m)
+-        : model(m), pos(p), layer(l), visible(true), mayNeedRedraw(false)
++        : model(m), pos(p), layer(l), visible(true)
+         {
+             screenpos[0] = screenpos[1] = 0;
+             above[0] = above[1] = above[2] = NULL;
+@@ -229,7 +228,7 @@
+         void move_sprite (SpriteId, const ecl::V2&amp; newpos);
+         void replace_sprite (SpriteId id, Model *m);
+ 
+-        void redraw_sprite_region (SpriteId id, bool is_add);
++        void redraw_sprite_region (SpriteId id);
+         void draw_sprites (bool shades, ecl::GC &amp;gc, const WorldArea &amp;a);
+ 
+         Model *get_model (SpriteId id) { return sprites[id]-&gt;model; }
+@@ -243,6 +242,8 @@
+         SpriteList bottomSprites; // bottom sprite for each x
+ 
+     private:
++        void update_sprite_region (Sprite * s, bool is_add, bool is_redraw_only = false);
++        
+         // ModelLayer interface
+         virtual void tick (double /*dtime*/);
+ 
+
+Modified: trunk/src/display.cc
+===================================================================
+--- trunk/src/display.cc	2007-01-11 19:12:30 UTC (rev 572)
++++ trunk/src/display.cc	2007-01-12 21:59:43 UTC (rev 573)
+@@ -846,16 +846,22 @@
+ }
+ 
+ void SpriteHandle::hide() const {
+-    if(layer-&gt;get_sprite(id)-&gt;visible) {
+-        layer-&gt;get_sprite(id)-&gt;visible = false;
+-        layer-&gt;get_sprite(id)-&gt;mayNeedRedraw = false;
++    if (layer) {
++        Sprite * s = layer-&gt;get_sprite(id);
++        if(s-&gt;visible) {
++            s-&gt;visible = false;
++            layer-&gt;redraw_sprite_region(id);
++        }
+     }
+ }
+ 
+ void SpriteHandle::show() const {
+-    if(not layer-&gt;get_sprite(id)-&gt;visible) {
+-        layer-&gt;get_sprite(id)-&gt;visible = true;
+-        layer-&gt;get_sprite(id)-&gt;mayNeedRedraw = true;
++    if (layer) {
++        Sprite * s = layer-&gt;get_sprite(id);
++        if(!s-&gt;visible) {
++            s-&gt;visible = true;
++            layer-&gt;redraw_sprite_region(id);
++        }
+     }
+ }
+ 
+@@ -890,15 +896,14 @@
+     int newx, newy;
+     get_engine()-&gt;world_to_video (newpos, &amp;newx, &amp;newy);
+ 
+-    if (newx != sprite-&gt;screenpos[0] || newy != sprite-&gt;screenpos[1] ||
+-            sprite-&gt;mayNeedRedraw ) {
+-        redraw_sprite_region(id, false); // make sure old sprite is removed
++    if (newx != sprite-&gt;screenpos[0] || newy != sprite-&gt;screenpos[1]) {
++        update_sprite_region(sprite, false); // make sure old sprite is removed
+         sprite-&gt;pos = newpos;
+         sprite-&gt;screenpos[0] = newx;
+         sprite-&gt;screenpos[1] = newy;
+         if (Anim2d* anim = dynamic_cast&lt;Anim2d*&gt;(sprite-&gt;model))
+             anim-&gt;move (newx, newy);
+-        redraw_sprite_region(id, true); // draw new sprite
++        update_sprite_region(sprite, true); // draw new sprite
+     }
+ }
+ 
+@@ -925,7 +930,7 @@
+     get_engine()-&gt;world_to_video (sprite-&gt;pos, &amp;sprite-&gt;screenpos[0], &amp;sprite-&gt;screenpos[1]);
+     if (Model *m = sprite-&gt;model)
+         m-&gt;expose (this, sprite-&gt;screenpos[0], sprite-&gt;screenpos[1]);
+-    redraw_sprite_region(id, true);
++    update_sprite_region(sprite, true);
+     numsprites += 1;
+     return id;
+ }
+@@ -933,20 +938,20 @@
+ void DL_Sprites::replace_sprite (SpriteId id, Model *m) {
+     Sprite *sprite = sprites[id];
+     if (Model *old = sprite-&gt;model) {
+-        redraw_sprite_region(id, false);
++        update_sprite_region(sprite, false);
+         old-&gt;remove (this);
+         delete old;
+     }
+     sprite-&gt;model = m;
+     if (m) {
+         m-&gt;expose (this, sprite-&gt;screenpos[0], sprite-&gt;screenpos[1]);
+-        redraw_sprite_region(id, true);
++        update_sprite_region(sprite, true);
+     }
+ }
+ 
+ void DL_Sprites::kill_sprite (SpriteId id) {
+     if (Sprite *sprite = sprites[id]) {
+-        redraw_sprite_region(id, false);
++        update_sprite_region(sprite, false);
+         if (Model *m = sprite-&gt;model) {
+             m-&gt;remove (this);
+         }
+@@ -991,9 +996,12 @@
+ //     draw_sprites (false, gc);
+ }
+ 
+-void DL_Sprites::redraw_sprite_region (SpriteId id, bool is_add) 
+-{
++void DL_Sprites::redraw_sprite_region (SpriteId id) {
+     Sprite *s = sprites[id];
++    update_sprite_region(s, true, true);
++}
++
++void DL_Sprites::update_sprite_region (Sprite * s, bool is_add, bool is_redraw_only) {
+     if (s &amp;&amp; s-&gt;model) {
+         Rect r, redrawr;
+         s-&gt;model-&gt;get_extension (r);
+@@ -1002,6 +1010,8 @@
+         DisplayEngine *e = get_engine();
+         e-&gt;video_to_world (r, redrawr);
+         e-&gt;mark_redraw_area (redrawr);
++        if (is_redraw_only)
++            return;
+         
+         int x = redrawr.x;
+         for (int i = 0; i &lt; redrawr.w; i++, x++) {
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000012.html">[Enigma-game-svn] r572 - branches/1.0/doc/manual
+</A></li>
+	<LI>Next message: <A HREF="000014.html">[Enigma-game-svn] r574 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#13">[ date ]</a>
+              <a href="thread.html#13">[ thread ]</a>
+              <a href="subject.html#13">[ subject ]</a>
+              <a href="author.html#13">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

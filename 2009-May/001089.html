@@ -1,0 +1,300 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1659 - in trunk: data src src/items src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1659%20-%20in%20trunk%3A%20data%20src%20src/items%20src/stones&In-Reply-To=%3C200905032040.n43KeV1x025945%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001088.html">
+   <LINK REL="Next"  HREF="001090.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1659 - in trunk: data src src/items src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1659%20-%20in%20trunk%3A%20data%20src%20src/items%20src/stones&In-Reply-To=%3C200905032040.n43KeV1x025945%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1659 - in trunk: data src src/items src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun May  3 22:40:31 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001088.html">[Enigma-game-svn] r1658 - in trunk/data/levels: enigma_cross	enigma_ii enigma_iii enigma_iv enigma_oxyd enigma_v enigma_viii
+</A></li>
+        <LI>Next message: <A HREF="001090.html">[Enigma-game-svn] r1660 - trunk/src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1089">[ date ]</a>
+              <a href="thread.html#1089">[ thread ]</a>
+              <a href="subject.html#1089">[ subject ]</a>
+              <a href="author.html#1089">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-05-03 22:40:30 +0200 (Sun, 03 May 2009)
+New Revision: 1659
+
+Modified:
+   trunk/data/models-2d.lua
+   trunk/src/items/Bomb.cc
+   trunk/src/items/Bomb.hh
+   trunk/src/stones/IceBlock.cc
+   trunk/src/stones/IceBlock.hh
+   trunk/src/world.cc
+Log:
+Trunk 1.1:
+- crash fix 0.92 explosion effect handling
+- st_ice - add breaking anim support:
+  - engine code complete
+  - model code ready but commented with alias substitution
+  - images missing
+- fix bomb explosion on stone hit:
+  - add a delay by animation to avoid destruction of hit causing stone
+
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2009-05-03 17:44:23 UTC (rev 1658)
++++ trunk/data/models-2d.lua	2009-05-03 20:40:30 UTC (rev 1659)
+@@ -599,13 +599,19 @@
+     local images = DefSubimages(&quot;it_bomb_black_burning&quot;, {h=9})
+     local frames = BuildFrames(images, 100)
+     DefAnim(&quot;it_bomb_black_burning&quot;, frames)
++    
++    local frames = BuildFrames({&quot;it_bomb_black_burning8&quot;, &quot;it_bomb_black_burning9&quot;},120)
++    DefAnim(&quot;it_bomb_black_exploding&quot;, frames)
+ end
+ 
+ -- Burning white bomb --
+ do
+     local images = DefSubimages(&quot;it_bomb_white_burning&quot;, {h=9})
+     local frames = BuildFrames(images, 100)
+-    DefAnim(&quot;it_bomb_white_burning&quot;, frames)
++    DefAnim(&quot;it_bomb_white_burning&quot;, frames
++    )
++    local frames = BuildFrames({&quot;it_bomb_white_burning8&quot;, &quot;it_bomb_white_burning9&quot;},120)
++    DefAnim(&quot;it_bomb_white_exploding&quot;, frames)
+ end
+ 
+ -- Burning dynamite --
+@@ -1015,6 +1021,16 @@
+    DefShModel(&quot;st-fourswitch-w&quot;, &quot;st-fourswitch4&quot;, &quot;sh-round&quot;)
+ end
+ 
++-- st_ice --
++do
++    DefAlias(&quot;st_ice&quot;, &quot;st_rawglass&quot;)
++    DefAlias(&quot;st_ice_breaking&quot;, &quot;it_debris_water&quot;)
++--    local images = DefSubimages(&quot;st_ice_break&quot;, {h=3})
++--    local frames = BuildFrames(images,50)
++--    DefAnim(&quot;st_ice_break-anim&quot;, frames)
++--    DefShModel(&quot;st_ice_breaking&quot;, &quot;st_ice_break-anim&quot;, &quot;sh-glass&quot;)
++end
++
+ -- st-knight --
+ do
+     local images = DefSubimages(&quot;st-knight&quot;, {modelname=&quot;knight&quot;, h=5})
+
+Modified: trunk/src/items/Bomb.cc
+===================================================================
+--- trunk/src/items/Bomb.cc	2009-05-03 17:44:23 UTC (rev 1658)
++++ trunk/src/items/Bomb.cc	2009-05-03 20:40:30 UTC (rev 1659)
+@@ -98,11 +98,11 @@
+             case GAMET_OXYDMAGNUM:
+                 if (!st-&gt;isKind(&quot;st_box_wood&quot;))
+                     // st-wood does not cause bombs to explode
+-                    explode();
++                    ignite(); //delayed explosion to avoid selfdestruction on move
+                 break;
+             default :
+                 if (!st-&gt;isKind(&quot;st_box_hay&quot;))
+-                    explode();
++                    ignite(); //delayed explosion to avoid selfdestruction on move
+                 break;
+         }
+     }
+@@ -114,6 +114,14 @@
+         }
+     }
+     
++    void Bomb::ignite() {
++        if (state == IDLE) {
++            state = BURNING;
++            std::string color = (getAttr(&quot;color&quot;) == BLACK) ? &quot;black&quot; : &quot;white&quot;;
++            set_anim(ecl::strf(&quot;it_bomb_%s_exploding&quot;, color.c_str()));   // shortened burning
++        }
++    }
++    
+     void Bomb::explode() {
+         GridPos p = get_pos();
+         Value vc = getAttr(&quot;color&quot;);
+
+Modified: trunk/src/items/Bomb.hh
+===================================================================
+--- trunk/src/items/Bomb.hh	2009-05-03 17:44:23 UTC (rev 1658)
++++ trunk/src/items/Bomb.hh	2009-05-03 20:40:30 UTC (rev 1659)
+@@ -62,6 +62,7 @@
+         
+     private:
+         void burn();
++        void ignite();
+         void explode();
+         int traitsIdx() const;
+     };
+
+Modified: trunk/src/stones/IceBlock.cc
+===================================================================
+--- trunk/src/stones/IceBlock.cc	2009-05-03 17:44:23 UTC (rev 1658)
++++ trunk/src/stones/IceBlock.cc	2009-05-03 20:40:30 UTC (rev 1659)
+@@ -33,18 +33,16 @@
+     
+     Value IceBlock::message(const Message &amp;m) {
+         if (m.message == &quot;_explosion&quot; || m.message == &quot;ignite&quot;) {
+-            GridPos p = get_pos();
+-            setNoAbyssFloor(p, &quot;fl_ice&quot;);
+-            setNoAbyssFloor(move(p, NORTH), &quot;fl_ice&quot;);
+-            setNoAbyssFloor(move(p, EAST), &quot;fl_ice&quot;);
+-            setNoAbyssFloor(move(p, SOUTH), &quot;fl_ice&quot;);
+-            setNoAbyssFloor(move(p, WEST), &quot;fl_ice&quot;);
+-            KillStone(p);
++            if (isDisplayable()) {
++                set_anim(&quot;st_ice_breaking&quot;);
++            }
+             return Value();
+         } else if (m.message == &quot;heat&quot;) {
+-            GridPos p = get_pos();
+-            setNoAbyssFloor(p, &quot;fl_water&quot;);
+-            KillStone(p);
++            if (isDisplayable()) {
++                GridPos p = get_pos();
++                setNoAbyssFloor(p, &quot;fl_water&quot;);
++                KillStone(p);
++            }
+             return Value();            
+         }
+         return Stone::message(m);
+@@ -54,6 +52,16 @@
+         set_model(&quot;st_rawglass&quot;);
+     }
+     
++    void IceBlock::animcb() {
++        GridPos p = get_pos();
++        setNoAbyssFloor(p, &quot;fl_ice&quot;);
++        setNoAbyssFloor(move(p, NORTH), &quot;fl_ice&quot;);
++        setNoAbyssFloor(move(p, EAST), &quot;fl_ice&quot;);
++        setNoAbyssFloor(move(p, SOUTH), &quot;fl_ice&quot;);
++        setNoAbyssFloor(move(p, WEST), &quot;fl_ice&quot;);
++        KillStone(p);
++    }
++    
+     bool IceBlock::is_transparent(Direction d) const {
+         return true;
+     }
+
+Modified: trunk/src/stones/IceBlock.hh
+===================================================================
+--- trunk/src/stones/IceBlock.hh	2009-05-03 17:44:23 UTC (rev 1658)
++++ trunk/src/stones/IceBlock.hh	2009-05-03 20:40:30 UTC (rev 1659)
+@@ -32,6 +32,11 @@
+         CLONEOBJ(IceBlock);
+         DECL_TRAITS;
+         
++    private:
++        enum iState {
++            IDLE,           ///&lt; 
++            BREAKING,       ///&lt; 
++        };
+     public:
+         IceBlock();
+ 
+@@ -42,6 +47,9 @@
+         // GridObject interface
+         virtual void init_model();
+         
++        // ModelCallback interface
++        virtual void animcb();
++        
+         // Stone interface
+         virtual bool is_transparent(Direction d) const;
+         virtual bool on_move(const GridPos &amp;origin);
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2009-05-03 17:44:23 UTC (rev 1658)
++++ trunk/src/world.cc	2009-05-03 20:40:30 UTC (rev 1659)
+@@ -2000,16 +2000,13 @@
+ 
+     for (int a = 0; a&lt;AFFECTED_FIELDS; ++a) {
+         GridPos  dest            = get_neighbour(center, a);
+-        Item    *item            = GetItem(dest);
+-        Stone   *stone           = GetStone(dest);
+-        Floor   *floor           = GetFloor(dest);
+         bool     direct_neighbor = a&lt;=4;
+ 
+         switch (type) {
+             case EXPLOSION_DYNAMITE:
+-                if (stone) SendMessage(stone, &quot;ignite&quot;);
+-                if (item)  SendMessage(item, &quot;ignite&quot;);
+-                if (floor) SendMessage(floor, &quot;ignite&quot;);
++                if (Stone *stone = GetStone(dest)) SendMessage(stone, &quot;ignite&quot;);
++                if (Item *item = GetItem(dest))  SendMessage(item, &quot;ignite&quot;);
++                if (Floor *floor = GetFloor(dest)) SendMessage(floor, &quot;ignite&quot;);
+                 break;
+ 
+             case EXPLOSION_BLACKBOMB:
+@@ -2017,9 +2014,9 @@
+                     explosion(center, dest, &quot;it_explosion_nil&quot;);
+                 } else if (server::GameCompatibility == GAMET_ENIGMA) {
+                     // Note: should not ignite in non-enigma-mode!
+-                    if (stone) SendMessage(stone, &quot;ignite&quot;);
+-                    if (item)  SendMessage(item, &quot;ignite&quot;);
+-                    if (floor) SendMessage(floor, &quot;ignite&quot;);
++                    if (Stone *stone = GetStone(dest)) SendMessage(stone, &quot;ignite&quot;);
++                    if (Item *item = GetItem(dest))  SendMessage(item, &quot;ignite&quot;);
++                    if (Floor *floor = GetFloor(dest)) SendMessage(floor, &quot;ignite&quot;);
+                 }
+                 break;
+     
+@@ -2033,9 +2030,9 @@
+     
+             case EXPLOSION_DISPENSER:
+                 if (direct_neighbor) {
+-                    if (stone) SendMessage(stone, &quot;_dispenser&quot;);
+-                    if (item) SendMessage(item, &quot;_dispenser&quot;);
+-                    if (floor) SendMessage(floor, &quot;_dispenser&quot;);
++                    if (Stone *stone = GetStone(dest)) SendMessage(stone, &quot;_dispenser&quot;);
++                    if (Item *item = GetItem(dest)) SendMessage(item, &quot;_dispenser&quot;);
++                    if (Floor *floor = GetFloor(dest)) SendMessage(floor, &quot;_dispenser&quot;);
+                 }
+                 break;
+     
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001088.html">[Enigma-game-svn] r1658 - in trunk/data/levels: enigma_cross	enigma_ii enigma_iii enigma_iv enigma_oxyd enigma_v enigma_viii
+</A></li>
+	<LI>Next message: <A HREF="001090.html">[Enigma-game-svn] r1660 - trunk/src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1089">[ date ]</a>
+              <a href="thread.html#1089">[ thread ]</a>
+              <a href="subject.html#1089">[ subject ]</a>
+              <a href="author.html#1089">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

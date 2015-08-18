@@ -1,0 +1,556 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1190 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1190%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200806242141.m5OLfZKd000351%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000623.html">
+   <LINK REL="Next"  HREF="000625.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1190 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1190%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200806242141.m5OLfZKd000351%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1190 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Jun 24 23:41:35 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000623.html">[Enigma-game-svn] r1189 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000625.html">[Enigma-game-svn] r1191 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#624">[ date ]</a>
+              <a href="thread.html#624">[ thread ]</a>
+              <a href="subject.html#624">[ subject ]</a>
+              <a href="author.html#624">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-06-24 23:41:23 +0200 (Tue, 24 Jun 2008)
+New Revision: 1190
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/api2init.lua
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/items.cc
+   trunk/src/items.hh
+   trunk/src/stones/MirrorStone.cc
+Log:
+Trunk 1.1: new API reengineering
+- fix Mirror turning sound - r1183
+- fix Oneway false orientation interpretation - r1183
+- fix Mirror signal behaviour on DAT
+- reengineering it-signalfilter*:
+  - elimination on new API
+  - subkind of it_sensor for DAT
+- add new API constants FOLLOW_FULLSCREEN, FOLLOW_HALFSCREEN
+- add new API planar mirror constants BACKSLASH, HORIZONTAL, SLASH, VERTICAL
+- reengineering it-abyss:
+  - renamed to it_trap
+  - glasses added trap spotting
+  - run animation on falling actor
+- reengineering it-landmine
+  - renamed to it_landmine
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-06-22 18:59:15 UTC (rev 1189)
++++ trunk/data/api1init.lua	2008-06-24 21:41:23 UTC (rev 1190)
+@@ -57,10 +57,12 @@
+     it_glasses = &quot;it-glasses&quot;,
+     it_glasses_broken = &quot;it-glasses-broken&quot;,
+     it_hammer = &quot;it-hammer&quot;,
++    it_landmine = &quot;it-landmine&quot;,
+     it_magnet = &quot;it-magnet&quot;,
+     it_magnet_on = &quot;it-magnet-on&quot;,
+     it_magnet_off = &quot;it-magnet-off&quot;,
+     it_sword = &quot;it-sword&quot;,
++    it_trap = &quot;it-abyss&quot;,
+     it_trigger = &quot;it-trigger&quot;,
+     it_umbrella = &quot;it-umbrella&quot;,
+     it_vortex = &quot;it-vortex-open&quot;,
+@@ -302,7 +304,7 @@
+     if string.sub(_newname, 1, 8) == &quot;st_laser&quot; then
+         return &quot;st-laser&quot;
+     end
+-    if _newname == &quot;it_mirror&quot; then
++    if _newname == &quot;st_mirror&quot; then
+         return &quot;st-mirror&quot;
+     end
+     if _oldname ~= nil then
+@@ -412,7 +414,7 @@
+      if key == &quot;invisible&quot; then
+          if val == 1 then _val = true else _val = false end
+      end
+-     if key == &quot;orientation&quot; then
++     if key == &quot;orientation&quot; and _obj_name == &quot;st-mirror&quot; then
+          _val = (6 - val) % 4
+      end
+      if key == &quot;transparent&quot; then
+@@ -506,7 +508,7 @@
+      if key == &quot;invisible&quot; then
+          if val == false then val = 0 else val = 1 end
+      end
+-     if key == &quot;orientation&quot; then
++     if key == &quot;orientation&quot; and _obj_name == &quot;st-mirror&quot; then
+          val = (5 - val) % 4 + 1
+      end
+      if key == &quot;transparent&quot; then
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2008-06-22 18:59:15 UTC (rev 1189)
++++ trunk/data/api2init.lua	2008-06-24 21:41:23 UTC (rev 1190)
+@@ -101,6 +101,12 @@
+ EAST  = 2
+ NORTH = 3
+ 
++-- alternative orientation notation for mirrors
++BACKSLASH  = 0
++HORIZONTAL = 1
++SLASH      = 2
++VERTICAL   = 3
++
+ -- essential
+ DISPENSIBLE   = 0
+ INDISPENSIBLE = 1
+@@ -113,12 +119,16 @@
+ SPOT_ACTORIMPULSE   =   4
+ SPOT_SENSOR         =   8
+ SPOT_LIGHTPASSENGER =  16
++SPOT_TRAP           =  32
+ 
+ -- Follower
+ FOLLOW_NO     = 0
+ FOLLOW_SCROLL = 1
+ FOLLOW_FLIP   = 2
+ 
++FOLLOW_FULLSCREEN = po(19, 12)
++FOLLOW_HALFSCREEN = po(9.5, 6)
++
+ ---------------------
+ -- Utility Methods --
+ ---------------------
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-06-22 18:59:15 UTC (rev 1189)
++++ trunk/data/models-2d.lua	2008-06-24 21:41:23 UTC (rev 1190)
+@@ -403,7 +403,6 @@
+         &quot;it-hill&quot;,
+         &quot;it-hollow&quot;,
+         &quot;it-hstrip&quot;,
+-        &quot;it-landmine&quot;,
+         &quot;it-magicwand&quot;,
+         &quot;it-odometer&quot;,
+         &quot;it-pencil&quot;,
+@@ -437,6 +436,7 @@
+     DefImage(&quot;it_glasses_broken&quot;, {filename=&quot;it-glasses-broken&quot;})
+     DefImage(&quot;it_hammer&quot;, {filename=&quot;it-hammer&quot;})
+     DefImage(&quot;it_key&quot;, {filename=&quot;it-key&quot;})
++    DefImage(&quot;it_landmine&quot;, {filename=&quot;it-landmine&quot;})
+     DefImage(&quot;it_sword&quot;, {filename=&quot;it-sword&quot;})
+     DefImage(&quot;it_umbrella&quot;, {filename=&quot;it-umbrella&quot;})
+     DefImage(&quot;it_wrench&quot;, {filename=&quot;it-wrench&quot;})
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-06-22 18:59:15 UTC (rev 1189)
++++ trunk/data/schemas/objects.xml	2008-06-24 21:41:23 UTC (rev 1190)
+@@ -129,6 +129,7 @@
+     &lt;object name=&quot;it_key&quot;&gt;
+       &lt;attr name=&quot;code&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;it_landmine&quot;/&gt;
+     &lt;object name=&quot;it_magnet&quot;&gt;
+       &lt;attr name=&quot;range&quot; default=&quot;nil&quot;/&gt;
+       &lt;attr name=&quot;strength&quot; default=&quot;nil&quot;/&gt;
+@@ -155,6 +156,11 @@
+       &lt;msg name=&quot;_init&quot;/&gt;
+       &lt;msg name=&quot;_jumping&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;it_trap&quot;&gt;
++      &lt;msg name=&quot;open&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++      &lt;msg name=&quot;_glasses&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;it_umbrella&quot;/&gt;
+     &lt;object name=&quot;it_umbrella_new&quot; init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;it_vortex&quot;&gt;
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-06-22 18:59:15 UTC (rev 1189)
++++ trunk/src/items.cc	2008-06-24 21:41:23 UTC (rev 1190)
+@@ -3182,11 +3182,15 @@
+    activated only once. */
+     class Sensor : public Item {
+         CLONEOBJ(Sensor);
+-        DECL_TRAITS_ARRAY(2, traitsIdx());
++        DECL_TRAITS_ARRAY(4, traitsIdx());
++    private:
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_ISFILTER  =   1&lt;&lt;24    ///&lt; sensor that filters signals, too
++        };
+     public:
+         static void setup();
+             
+-        Sensor(bool inverse);
++        Sensor(bool inverse, bool isFilter = false);
+         
+         // Object interface
+         virtual Value message(const Message &amp;m);
+@@ -3208,12 +3212,18 @@
+     };
+     
+     void Sensor::setup() {
+-        RegisterItem (new Sensor(false));
+-        RegisterItem (new Sensor(true));
++        RegisterItem(new Sensor(false));
++        RegisterItem(new Sensor(true));
++        RegisterItem(new Sensor(true, true));
++        RegisterItem(new Sensor(false, true));
+     }
+     
+-    Sensor::Sensor(bool inverse) {
++    Sensor::Sensor(bool inverse, bool isFilter) {
+         Object::setAttr(&quot;inverse&quot;, inverse);
++        if (isFilter) {
++            objFlags |= OBJBIT_ISFILTER;
++            Item::setAttr(&quot;invisible&quot;, true);
++        }
+     }
+     
+     Value Sensor::message(const Message &amp;m) {
+@@ -3227,6 +3237,10 @@
+         } else if (m.message == &quot;_glasses&quot;) {
+             if (isDisplayable())
+                 init_model();            
++        } else if (m.message == &quot;signal&quot; &amp;&amp; (objFlags &amp; OBJBIT_ISFILTER)) {
++            if (m.value == 1)
++                performAction(true);   // invertion done by Object
++            return Value();
+         }
+         return Item::message(m);
+     }
+@@ -3259,56 +3273,19 @@
+     }
+     
+     int Sensor::traitsIdx() const {
+-        return getAttr(&quot;inverse&quot;).to_bool() ? 1 : 0;
++        int idx = getAttr(&quot;inverse&quot;).to_bool() ? 1 : 0;
++        if (objFlags &amp; OBJBIT_ISFILTER)
++            idx +=2;
++        return idx;
+     }
+ 
+-    ItemTraits Sensor::traits[2] = {
++    ItemTraits Sensor::traits[4] = {
+         {&quot;it_sensor&quot;,  it_sensor,  itf_static},
+-        {&quot;it_sensor&quot;,  it_inversesensor,  itf_static}
++        {&quot;it_sensor&quot;,  it_inversesensor,  itf_static},
++        {&quot;it_sensor_filter1&quot;, it_signalfilter1, itf_static | itf_invisible, 0.0},  // DAT only
++        {&quot;it_sensor_filter0&quot;, it_signalfilter0, itf_static | itf_invisible, 0.0}   // DAT only
+     };
+ 
+-/* -------------------- Signal filters -------------------- */
+-namespace
+-{
+-    class SignalFilterItem : public Item {
+-        CLONEOBJ(SignalFilterItem);
+-        DECL_TRAITS_ARRAY(2, type);
+-
+-        SignalFilterItem(int type_) : type(type_) {
+-            ASSERT(type &gt;= 0 &amp;&amp; type &lt;= 1, XLevelRuntime, &quot;SignalFilterItem: type unknown&quot;);
+-        }
+-
+-        virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;signal&quot;) {
+-                int value = m.value;
+-//                 warning(&quot;received signal with value %i&quot;, value);
+-                if (value)
+-                    performAction(type != 0);
+-                return Value();
+-            }
+-            return Item::message(m);
+-        }
+-
+-        // type of signal filter
+-        // 0 : receive 1 -&gt; send 0
+-        // 1 : receive 1 -&gt; send 1
+-        int type;
+-
+-    public:
+-        static void setup() {
+-            RegisterItem (new SignalFilterItem(0));
+-            RegisterItem (new SignalFilterItem(1));
+-        }
+-    };
+-    ItemTraits SignalFilterItem::traits[2] = {
+-        {&quot;it-signalfilter0&quot;, it_signalfilter0,
+-            itf_static | itf_invisible | itf_fireproof, 0.0},
+-        {&quot;it-signalfilter1&quot;, it_signalfilter1,
+-            itf_static | itf_invisible | itf_fireproof, 0.0},
+-    };
+-}
+-
+-
+ /* -------------------- EasyKillStone -------------------- */
+ 
+ /*
+@@ -3537,53 +3514,111 @@
+     };
+ 
+ 
+-/* -------------------- Invisible abyss -------------------- */
+-namespace
+-{
+-    class InvisibleAbyss : public Item {
+-        CLONEOBJ(InvisibleAbyss);
++/* -------------------- Invisible Trap -------------------- */
++    class Trap : public Item {
++        CLONEOBJ(Trap);
+         DECL_TRAITS;
+-        bool actor_hit(Actor *a) {
+-            SendMessage(a, &quot;fall&quot;);
+-            return false;
+-        }
++    
+     public:
+-        InvisibleAbyss() {}
++        Trap();
++        
++        // Object interface
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual void setState(int extState);
++        
++        // GridObject interface
++        virtual void init_model();
++
++        // ModelCallback interface
++        virtual void animcb();
++
++        // Item interface
++        virtual bool actor_hit(Actor *a);        
+     };
+-    DEF_TRAITSF(InvisibleAbyss, &quot;it-abyss&quot;, it_abyss,
+-                itf_static | itf_invisible | itf_fireproof);
+-}
++    
++    Trap::Trap() {
++    }
++    
++    Value Trap::message(const Message &amp;m) {
++        if (m.message == &quot;_glasses&quot;) {
++            if (isDisplayable())
++                init_model();            
++        }
++        return Item::message(m);
++    }
++    
++    void Trap::setState(int extState) {
++        if (state == 0) {       // no toggle back of a broken (open) trap
++            state == extState;
++            init_model();
++        }
++    }
++    
++    void Trap::init_model() {
++        if (state == 0 &amp;&amp; ((server::GlassesVisibility &amp; 32) == 0))
++            set_model(&quot;invisible&quot;);
++        else
++            set_model(&quot;it_trap&quot;);
++        
++    }
++    
++    void Trap::animcb() {
++        init_model();
++    }
++    
++    bool Trap::actor_hit(Actor *a) {
++        SendMessage(a, &quot;fall&quot;);
++        if (state == 0) {
++            state = 1;
++            set_anim(&quot;it_trap_breaking&quot;);
++        }
++        return false;
++    }
++        
++    DEF_TRAITSF(Trap, &quot;it_trap&quot;, it_trap, itf_static | itf_fireproof);
+ 
+ 
+ /* -------------------- Landmine -------------------- */
+-namespace
+-{
+     class Landmine : public Item {
+         CLONEOBJ(Landmine);
+         DECL_TRAITS;
+ 
+-	void explode() {
+-            sound_event (&quot;landmine&quot;);
+-	    replace (it_explosion2);
++    public:
++        Landmine();
++
++        // Item interface
++        virtual bool actor_hit(Actor *a);
++        virtual void on_stonehit(Stone *st);
++    
++    private:
++        void explode();
++    };
++
++    Landmine::Landmine() {
++    }
++    
++    bool Landmine::actor_hit (Actor *a) {
++        const double ITEM_RADIUS = 0.3;
++        double dist = length(a-&gt;get_pos() - get_pos().center());
++        if (dist &lt; ITEM_RADIUS)
++            explode();
++        return false;
++    }
++    
++    void Landmine::on_stonehit(Stone *st) { 
++        explode();
++    }
++    
++	void Landmine::explode() {
++        sound_event (&quot;landmine&quot;);
++        replace(it_explosion2);
+ 	}
+ 
+-        bool actor_hit (Actor *a) {
+-            const double ITEM_RADIUS = 0.3;
+-            double dist = length(a-&gt;get_pos() - get_pos().center());
+-            if (dist &lt; ITEM_RADIUS)
+-		explode();
+-            return false;
+-        }
++    DEF_TRAITSF(Landmine, &quot;it_landmine&quot;, it_landmine, itf_static);
+ 
+-        void on_stonehit(Stone *) { explode(); }
+-    public:
+-        Landmine()
+-        {}
+-    };
+-    DEF_TRAITSF(Landmine, &quot;it-landmine&quot;, it_landmine, itf_static);
+-}
+ 
+-
+ /* -------------------- Cross -------------------- */
+     class Cross : public Item, public TimeHandler {
+         CLONEOBJ(Cross);
+@@ -4111,7 +4146,7 @@
+     RegisterItem (new Hill);
+     RegisterItem (new Hollow);
+     RegisterItem (new HStrip);
+-    RegisterItem (new InvisibleAbyss);
++    RegisterItem (new Trap);
+     RegisterItem (new Key);
+     RegisterItem (new Landmine);
+     RegisterItem (new MagicWand);
+@@ -4133,7 +4168,6 @@
+     RegisterItem (new SeedVolcano);
+     Sensor::setup();
+     ShogunDot::setup();
+-    SignalFilterItem::setup();
+     RegisterItem (new Spade);
+     RegisterItem (new Spoon);
+     RegisterItem (new Spring1);
+
+Modified: trunk/src/items.hh
+===================================================================
+--- trunk/src/items.hh	2008-06-22 18:59:15 UTC (rev 1189)
++++ trunk/src/items.hh	2008-06-24 21:41:23 UTC (rev 1190)
+@@ -29,7 +29,6 @@
+         it_none = 0,
+         it_1pkillstone,
+         it_2pkillstone,
+-        it_abyss,
+         it_bag,
+         it_banana,
+         it_blackbomb,
+@@ -120,6 +119,7 @@
+         it_sword,
+         it_tinyhill,
+         it_tinyhollow,
++        it_trap,
+         it_trigger,
+         it_umbrella,
+         it_vortex_open,
+
+Modified: trunk/src/stones/MirrorStone.cc
+===================================================================
+--- trunk/src/stones/MirrorStone.cc	2008-06-22 18:59:15 UTC (rev 1189)
++++ trunk/src/stones/MirrorStone.cc	2008-06-24 21:41:23 UTC (rev 1190)
+@@ -115,16 +115,19 @@
+     
+     Value MirrorStone::message(const Message &amp;m) {
+         if (m.message == &quot;orientate&quot;) {
+-            setAttr(&quot;orientation&quot;, m.value);
++            setAttr(&quot;state&quot;, m.value);   // enforce value check
+             return Value();
+         } else if ((m.message == &quot;turn&quot; || m.message == &quot;turnback&quot;)) {
+-            setAttr(&quot;orientation&quot;, (m.message == &quot;turn&quot; &amp;&amp; !getAttr(&quot;counterclock&quot;).to_bool() || 
++            setAttr(&quot;state&quot;, (m.message == &quot;turn&quot; &amp;&amp; !getAttr(&quot;counterclock&quot;).to_bool() || 
+                     m.message == &quot;turnback&quot; &amp;&amp; getAttr(&quot;counterclock&quot;).to_bool())
+                     ? rotate_cw((Direction)state) : rotate_ccw((Direction)state));
+             return Value();
+         } else if (m.message == &quot;signal&quot;) {
+             if (m.value == 1)
+                 toggleState();
++            else if (m.value == 0 &amp;&amp; server::GameCompatibility != GAMET_ENIGMA)
++                // rotate mirror in opposite direction
++                setState(!getAttr(&quot;counterclock&quot;).to_bool() ? rotate_ccw((Direction)state) : rotate_cw((Direction)state));
+             return Value();
+         } else if (m.message == &quot;_trigger&quot;) {
+             if (m.value == 1)
+@@ -147,6 +150,7 @@
+         if (isDisplayable()) {
+             init_model();
+             RecalcLight();
++            sound_event (&quot;mirrorturn&quot;);
+         }
+      }
+     
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000623.html">[Enigma-game-svn] r1189 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000625.html">[Enigma-game-svn] r1191 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#624">[ date ]</a>
+              <a href="thread.html#624">[ thread ]</a>
+              <a href="subject.html#624">[ subject ]</a>
+              <a href="author.html#624">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

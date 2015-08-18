@@ -1,0 +1,2573 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1268 - in trunk/src: . items
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-August/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1268%20-%20in%20trunk/src%3A%20.%20items&In-Reply-To=%3C200808142151.m7ELp6Uw004367%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000693.html">
+   <LINK REL="Next"  HREF="000699.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1268 - in trunk/src: . items</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1268%20-%20in%20trunk/src%3A%20.%20items&In-Reply-To=%3C200808142151.m7ELp6Uw004367%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1268 - in trunk/src: . items">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Aug 14 23:51:06 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000693.html">[Enigma-game-svn] r1259 - in team_levelpacks: . team_test_new_api	team_test_physics
+</A></li>
+        <LI>Next message: <A HREF="000699.html">[Enigma-game-svn] r1269 - trunk/src/items
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#700">[ date ]</a>
+              <a href="thread.html#700">[ thread ]</a>
+              <a href="subject.html#700">[ subject ]</a>
+              <a href="author.html#700">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-08-14 23:51:05 +0200 (Thu, 14 Aug 2008)
+New Revision: 1268
+
+Added:
+   trunk/src/items/Magnet.cc
+   trunk/src/items/Sensor.cc
+   trunk/src/items/Sensor.hh
+   trunk/src/items/StripItem.cc
+   trunk/src/items/StripItem.hh
+   trunk/src/items/Trigger.cc
+   trunk/src/items/Trigger.hh
+   trunk/src/items/Vortex.cc
+   trunk/src/items/Vortex.hh
+   trunk/src/items/WormHole.cc
+   trunk/src/items/WormHole.hh
+Modified:
+   trunk/src/Makefile.am
+   trunk/src/items.cc
+Log:
+Trunk 1.1: new API reengineering
+- desintegrated from items.cc:
+    vortex, magnet, wormhole, sensor, trigger, strip
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-08-13 22:02:20 UTC (rev 1267)
++++ trunk/src/Makefile.am	2008-08-14 21:51:05 UTC (rev 1268)
+@@ -201,8 +201,20 @@
+ 	items/BlockerItem.hh	\
+ 	items/GlassesItem.cc	\
+ 	items/GlassesItem.hh	\
++	items/Magnet.cc		\
++	items/Magnet.hh		\
++	items/Sensor.cc		\
++	items/Sensor.hh		\
+ 	items/ShogunDot.cc	\
+ 	items/ShogunDot.hh	\
++	items/StripItem.cc	\
++	items/StripItem.hh	\
++	items/Trigger.cc	\
++	items/Trigger.hh	\
++	items/Vortex.cc		\
++	items/Vortex.hh		\
++	items/Wormhole.cc	\
++	items/Wormhole.hh	\
+ 	others/Other.cc		\
+ 	others/Other.hh		\
+ 	others/Rubberband.cc	\
+
+Added: trunk/src/items/Magnet.cc
+===================================================================
+--- trunk/src/items/Magnet.cc	2008-08-13 22:02:20 UTC (rev 1267)
++++ trunk/src/items/Magnet.cc	2008-08-14 21:51:05 UTC (rev 1268)
+@@ -0,0 +1,101 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;items/Magnet.hh&quot;
++#include &quot;actors.hh&quot;
++//#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++//#include &quot;server.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    Magnet::Magnet(bool isOn) : Item(), correctedStrength (0.6 * 30), squareRange (1000 * 1000) {
++        state = isOn ? ON : OFF;
++    }
++
++    std::string Magnet::getClass() const {
++        return &quot;it_magnet&quot;;
++    }
++    
++    void Magnet::setAttr(const std::string &amp;key, const Value &amp;val) {
++        if (key == &quot;range&quot;) {
++            double range = (val.getType() == Value::NIL) ? server::MagnetRange : (double)val;
++            squareRange = range * range;
++        } else if (key == &quot;strength&quot;) {
++            correctedStrength = 0.6 * ((val.getType() == Value::NIL) ? server::MagnetForce : (double)val);
++        }
++        Item::setAttr(key, val);
++    }
++    
++    Value Magnet::message(const Message &amp;m) {
++        if (m.message == &quot;_updateglobals&quot; &amp;&amp; m.value.to_string() == &quot;it_magnet&quot;) {
++            if (getAttr(&quot;range&quot;).getType() == Value::DEFAULT) {
++                squareRange = server::MagnetRange * server::MagnetRange;
++            }
++            if (getAttr(&quot;strength&quot;).getType() == Value::DEFAULT) {
++                correctedStrength = 0.6 * server::MagnetForce;
++            }
++            return Value();
++        }
++        return Item::message(m);
++    }
++    void Magnet::init_model() {
++        set_model(ecl::strf(&quot;it-magnet%s&quot;, state == ON ? &quot;-on&quot; : &quot;-off&quot;));
++    }
++    
++    void Magnet::on_creation(GridPos p) {
++        if (getAttr(&quot;range&quot;).getType() == Value::DEFAULT) {
++            squareRange = server::MagnetRange * server::MagnetRange;
++        }
++        if (getAttr(&quot;strength&quot;).getType() == Value::DEFAULT) {
++            correctedStrength = 0.6 * server::MagnetForce;
++        }
++
++        AddForceField(this);
++        Item::on_creation(p);
++    }
++    
++    void Magnet::on_removal(GridPos p) {
++        Item::on_removal(p);
++        RemoveForceField(this);
++    }
++    
++    void Magnet::add_force(Actor *a, V2 &amp;f) {
++        if (state == ON) {
++            V2 dv = get_pos().center() - a-&gt;get_pos_force();
++            double squareDist = square(dv);
++
++            if (squareDist &gt;= 0.04 &amp;&amp; squareDist &lt; squareRange)
++                f += (correctedStrength / squareDist) * dv;
++        }
++    }
++    
++    ItemTraits Magnet::traits[2] = {
++        { &quot;it_magnet_off&quot;, it_magnet_off, itf_static | itf_indestructible, 0.0 },
++        { &quot;it_magnet_on&quot;,  it_magnet_on,  itf_static | itf_indestructible, 0.0 },
++    };
++    
++    BOOT_REGISTER_START
++        BootRegister(new Magnet(true), &quot;it_magnet&quot;);
++        BootRegister(new Magnet(false), &quot;it_magnet_off&quot;);
++        BootRegister(new Magnet(true), &quot;it_magnet_on&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/items/Magnet.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/Sensor.cc
+===================================================================
+--- trunk/src/items/Sensor.cc	2008-08-13 22:02:20 UTC (rev 1267)
++++ trunk/src/items/Sensor.cc	2008-08-14 21:51:05 UTC (rev 1268)
+@@ -0,0 +1,105 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;items/Sensor.hh&quot;
++#include &quot;actors.hh&quot;
++//#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;server.hh&quot;
++#include &quot;world.hh&quot;
++#include &quot;items/GlassesItem.hh&quot;
++
++namespace enigma {
++    Sensor::Sensor(bool inverse, bool isFilter) {
++        Object::setAttr(&quot;inverse&quot;, inverse);
++        if (isFilter) {
++            objFlags |= OBJBIT_ISFILTER;
++            Item::setAttr(&quot;invisible&quot;, true);
++        }
++    }
++    
++    Value Sensor::message(const Message &amp;m) {
++        if (m.message == &quot;_hit&quot;) {   // door knocking forward to black/whitballstone
++            setAttr(&quot;$hitactor&quot;, m.value);
++            performAction(true);
++            setAttr(&quot;$hitactor&quot;, (Object *)NULL);
++            return Value();
++        } else if (m.message == &quot;_hitactor&quot;) {
++            return getAttr(&quot;$hitactor&quot;);
++        } else if (m.message == &quot;_glasses&quot;) {
++            if (isDisplayable())
++                init_model();            
++        } else if (m.message == &quot;signal&quot; &amp;&amp; (objFlags &amp; OBJBIT_ISFILTER)) {
++            if (m.value == 1)
++                performAction(true);   // invertion done by Object
++            return Value();
++        }
++        return Item::message(m);
++    }
++    
++    void Sensor::setAttr(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;invisible&quot;) {
++            Item::setAttr(key, val);
++            if (isDisplayable())
++                init_model();
++            return;
++        }
++        Item::setAttr(key, val);
++    }
++    
++    void Sensor::init_model() {
++        if (getAttr(&quot;invisible&quot;).to_bool() &amp;&amp; ((server::GlassesVisibility &amp; Glasses::SENSOR) == 0))
++            set_model(&quot;invisible&quot;);
++        else
++            set_model(&quot;it_sensor&quot;);
++    }
++
++    void Sensor::animcb() {
++        init_model();
++    }
++
++    void Sensor::actor_enter(Actor *a) {
++        if (!getAttr(&quot;invisible&quot;).to_bool())
++            set_anim(&quot;it_sensor_hit&quot;);
++        performAction(true);
++    }
++    
++    int Sensor::traitsIdx() const {
++        int idx = getAttr(&quot;inverse&quot;).to_bool() ? 1 : 0;
++        if (objFlags &amp; OBJBIT_ISFILTER)
++            idx +=2;
++        return idx;
++    }
++
++    ItemTraits Sensor::traits[4] = {
++        {&quot;it_sensor&quot;,  it_sensor,  itf_static}, 
++        {&quot;it_sensor_inverse&quot;,  it_inversesensor,  itf_static},
++        {&quot;it_sensor_filter1&quot;, it_signalfilter1, itf_static | itf_invisible, 0.0},  // DAT only
++        {&quot;it_sensor_filter0&quot;, it_signalfilter0, itf_static | itf_invisible, 0.0}   // DAT only
++    };
++    BOOT_REGISTER_START
++        BootRegister(new Sensor(true), &quot;it_sensor&quot;);
++        BootRegister(new Sensor(false), &quot;it_sensor_inverse&quot;);
++        BootRegister(new Sensor(true, true), &quot;it_sensor_filter1&quot;);
++        BootRegister(new Sensor(false, true), &quot;it_sensor_filter0&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
++    
+
+
+Property changes on: trunk/src/items/Sensor.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/Sensor.hh
+===================================================================
+--- trunk/src/items/Sensor.hh	2008-08-13 22:02:20 UTC (rev 1267)
++++ trunk/src/items/Sensor.hh	2008-08-14 21:51:05 UTC (rev 1268)
+@@ -0,0 +1,60 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef SENSORITEM_HH
++#define SENSORITEM_HH
++
++#include &quot;items.hh&quot;
++
++#include &quot;enigma.hh&quot;
++
++namespace enigma {
++    class Sensor : public Item {
++        CLONEOBJ(Sensor);
++        DECL_ITEMTRAITS_ARRAY(4, traitsIdx());
++    private:
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_ISFILTER  =   1&lt;&lt;24    ///&lt; sensor that filters signals, too
++        };
++    public:
++        static void setup();
++            
++        Sensor(bool inverse, bool isFilter = false);
++        
++        // Object interface
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++        
++        // GridObject interface
++        virtual void init_model();
++
++        // ModelCallback interface
++        virtual void animcb();
++
++        // Item interface
++        virtual void actor_enter(Actor *a);
++    
++    private:
++        int traitsIdx() const;
++    };
++    
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/items/Sensor.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/StripItem.cc
+===================================================================
+--- trunk/src/items/StripItem.cc	2008-08-13 22:02:20 UTC (rev 1267)
++++ trunk/src/items/StripItem.cc	2008-08-14 21:51:05 UTC (rev 1268)
+@@ -0,0 +1,138 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;items/StripItem.hh&quot;
++#include &quot;actors.hh&quot;
++//#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    StripItem::StripItem(std::string connections) {
++        setAttr(&quot;connections&quot;, connections);
++    }
++        
++    std::string StripItem::getClass() const {
++        return &quot;it_strip&quot;;
++    }
++    
++    void StripItem::setState(int extState) {
++        // block state set
++    }
++    
++    std::string StripItem::getModelName() const {
++        return getClass();
++    }
++    
++    void StripItem::init_model() {
++        // need to bypass Item's implementation
++        GridObject::init_model();
++    }
++
++    bool StripItem::covers_floor(ecl::V2 pos, Actor *a) const {
++        if (GridPos(pos) != get_pos())
++            return false;
++
++        double velocity = 0;
++        if (a != NULL) 
++            velocity = ecl::length(a-&gt;get_actorinfo()-&gt;vel);
++            
++        // calculate the maximal horizontal or vertical distance from the center:
++        // gurantee that a large marble can touch a neighboring stone at speed 0,
++        // and a fast marble does not step off the strip on hitting a neighbor stone.
++        // A fast marble might not reach the stone in one timestep while being
++        // on top of the strip and is afterwards moved forward off the strip.
++        // Thus we must expand the strip with increasing speed of the actor - call
++        // it a relativistic effect :-)
++        // d = 1/2 - 19/64 - 0.02 + velocity/400 
++        //  = 1/2 - radius large marble - epsilon + velocity/(1/2.5 ms)
++        // we need to limit the speed to avoid a fast marble traversing the gap in
++        // two timesteps! 
++        double MAXDIST = 0.183125 + ecl::Clamp(velocity/400, 0.0, 0.125);
++        
++        double ycenter = get_pos().y + 0.5;
++        double xcenter = get_pos().x + 0.5;
++        DirectionBits cbits = getConnections();
++        
++        return (((fabs(pos[1] - ycenter) &lt;= MAXDIST) &amp;&amp; ((fabs(pos[0] - xcenter) &lt;= MAXDIST)  ||
++                   ((pos[0] &lt;= xcenter + MAXDIST) &amp;&amp; (cbits &amp; WESTBIT)) || ((pos[0] &gt;= xcenter - MAXDIST) &amp;&amp; (cbits &amp; EASTBIT))))
++                || ((fabs(pos[0] - xcenter) &lt;= MAXDIST) 
++                &amp;&amp; (((pos[1] &lt;= ycenter + MAXDIST) &amp;&amp; (cbits &amp; NORTHBIT)) || ((pos[1] &gt;= ycenter - MAXDIST) &amp;&amp; (cbits &amp; SOUTHBIT)))))
++                ? true : false;
++    }
++    
++    double StripItem::getFriction(ecl::V2 pos, double defaultFriction, Actor *a) {
++        Value v = getAttr(&quot;friction&quot;);
++        if (v &amp;&amp; covers_floor(pos, a))
++            return v;
++        else
++            return defaultFriction;
++    }
++    
++    ecl::V2 StripItem::calcMouseforce(Actor *a, ecl::V2 mouseForce, ecl::V2 floorForce) {
++        Value v = getAttr(&quot;adhesion&quot;);
++        if (v &amp;&amp; covers_floor(a-&gt;get_pos(), a))
++            return mouseForce * (double)v ;
++        else
++            return floorForce;        
++    }
++        
++    int StripItem::traitsIdx() const {
++        return getConnections();
++    }
++
++    ItemTraits StripItem::traits[16] = {
++        {&quot;it_strip&quot;,  it_strip,  itf_static},
++        {&quot;it_strip_w&quot;,  it_strip_w,  itf_static},
++        {&quot;it_strip_s&quot;,  it_strip_s,  itf_static},
++        {&quot;it_strip_sw&quot;,  it_strip_sw,  itf_static},
++        {&quot;it_strip_e&quot;,  it_strip_e,  itf_static},
++        {&quot;it_strip_ew&quot;,  it_strip_ew,  itf_static},
++        {&quot;it_strip_es&quot;,  it_strip_es,  itf_static},
++        {&quot;it_strip_esw&quot;,  it_strip_esw,  itf_static},
++        {&quot;it_strip_n&quot;,  it_strip_n,  itf_static},
++        {&quot;it_strip_nw&quot;,  it_strip_nw,  itf_static},
++        {&quot;it_strip_ns&quot;,  it_strip_ns,  itf_static},
++        {&quot;it_strip_nsw&quot;,  it_strip_nsw,  itf_static},
++        {&quot;it_strip_ne&quot;,  it_strip_ne,  itf_static},
++        {&quot;it_strip_new&quot;,  it_strip_new,  itf_static},
++        {&quot;it_strip_nes&quot;,  it_strip_nes,  itf_static},
++        {&quot;it_strip_nesw&quot;,  it_strip_nesw,  itf_static}
++    };
++    
++    BOOT_REGISTER_START
++        BootRegister(new StripItem(&quot;&quot;), &quot;it_strip&quot;);
++        BootRegister(new StripItem(&quot;w&quot;), &quot;it_strip_w&quot;);
++        BootRegister(new StripItem(&quot;s&quot;), &quot;it_strip_s&quot;);
++        BootRegister(new StripItem(&quot;sw&quot;), &quot;it_strip_sw&quot;);
++        BootRegister(new StripItem(&quot;e&quot;), &quot;it_strip_e&quot;);
++        BootRegister(new StripItem(&quot;ew&quot;), &quot;it_strip_ew&quot;);
++        BootRegister(new StripItem(&quot;es&quot;), &quot;it_strip_es&quot;);
++        BootRegister(new StripItem(&quot;esw&quot;), &quot;it_strip_esw&quot;);
++        BootRegister(new StripItem(&quot;n&quot;), &quot;it_strip_n&quot;);
++        BootRegister(new StripItem(&quot;nw&quot;), &quot;it_strip_nw&quot;);
++        BootRegister(new StripItem(&quot;ns&quot;), &quot;it_strip_ns&quot;);
++        BootRegister(new StripItem(&quot;nsw&quot;), &quot;it_strip_nsw&quot;);
++        BootRegister(new StripItem(&quot;ne&quot;), &quot;it_strip_ne&quot;);
++        BootRegister(new StripItem(&quot;new&quot;), &quot;it_strip_new&quot;);
++        BootRegister(new StripItem(&quot;nes&quot;), &quot;it_strip_nes&quot;);
++        BootRegister(new StripItem(&quot;nesw&quot;), &quot;it_strip_nesw&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/items/StripItem.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/StripItem.hh
+===================================================================
+--- trunk/src/items/StripItem.hh	2008-08-13 22:02:20 UTC (rev 1267)
++++ trunk/src/items/StripItem.hh	2008-08-14 21:51:05 UTC (rev 1268)
+@@ -0,0 +1,57 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef STRIPITEM_HH
++#define STRIPITEM_HH
++
++#include &quot;items.hh&quot;
++
++#include &quot;enigma.hh&quot;
++
++namespace enigma {
++    class StripItem : public Item {
++        CLONEOBJ(StripItem);
++        DECL_ITEMTRAITS_ARRAY(16, traitsIdx());
++        
++    public:
++        static void setup();
++                
++        StripItem(std::string connections);
++        
++        // Object interface
++        virtual std::string getClass() const;
++
++        // StateObject interface
++        virtual void setState(int extState);
++        
++        // GridObject interface
++        virtual std::string getModelName() const;
++        virtual void init_model();
++                
++        // Items interface
++        virtual bool covers_floor(ecl::V2 pos, Actor *a) const;
++        virtual double getFriction(ecl::V2 pos, double defaultFriction, Actor *a);
++        virtual ecl::V2 calcMouseforce(Actor *a, ecl::V2 mouseForce, ecl::V2 floorForce);
++        
++    private:
++        int traitsIdx() const;
++    };
++    
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/items/StripItem.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/Trigger.cc
+===================================================================
+--- trunk/src/items/Trigger.cc	2008-08-13 22:02:20 UTC (rev 1267)
++++ trunk/src/items/Trigger.cc	2008-08-14 21:51:05 UTC (rev 1268)
+@@ -0,0 +1,137 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;items/Trigger.hh&quot;
++#include &quot;actors.hh&quot;
++//#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;server.hh&quot;
++#include &quot;world.hh&quot;
++
++#include &lt;vector&gt;
++
++namespace enigma {
++    Trigger::Trigger() {
++        setAttr(&quot;invisible&quot;, false);
++    }
++    
++    Value Trigger::message (const Message &amp;m) {
++        if (m.message == &quot;signal&quot; &amp;&amp; (server::GameCompatibility != GAMET_ENIGMA || 
++                server::EnigmaCompatibility &lt; 1.10)) {
++            performAction(m.value.to_bool());  // convert 1/0 values to true/false
++            return Value();
++        } else if (m.message == &quot;_init&quot;) {
++            // the state count at init is wrong as some actors on the grid may
++            // already have existed on_creation, but all are reported via
++            // actor_enter due to actors on_creation.
++            // Thus we need to reset and recount the actors:
++            state = 0;
++            
++            // old Enigma versions did issue performAction what is incompatible
++            updateIState(countActors(),
++                    server::EnigmaCompatibility &gt;= 1.10 || server::GameCompatibility != GAMET_ENIGMA); 
++            return Value();
++        } else if (m.message == &quot;_jumping&quot; ) {
++            updateIState(m.value.to_bool() ? -1 : +1);
++        }
++        return Item::message(m);
++    }
++        
++    int Trigger::externalState() const {
++        return state != 0 ? 1 : 0;
++    }
++    
++    void Trigger::setState(int extState) {
++        return;   // ignore any write attempts
++    }
++    
++    void Trigger::on_creation(GridPos p) {
++        state = 0;
++        updateIState(countActors(), true);
++        init_model();
++    }
++        
++    void Trigger::init_model() {
++        if (getAttr(&quot;invisible&quot;).to_bool())
++            set_model(&quot;invisible&quot;);
++        else if (state != 0)
++            set_model(&quot;it-trigger1&quot;);
++        else
++            set_model(&quot;it-trigger&quot;);
++    }
++    
++    void Trigger::actor_enter(Actor *a) {
++        if (!a-&gt;is_flying())
++            updateIState(+1, !server::WorldInitialized);
++    }
++    
++    void Trigger::actor_leave(Actor *a) {
++        if (!a-&gt;is_flying())
++            updateIState(-1, !server::WorldInitialized);
++    }
++    
++    void Trigger::stone_change(Stone *) {
++        updateIState(0);
++    }
++    
++    int Trigger::countActors() {
++        std::vector&lt;Actor*&gt; actors;
++        GetActorsInsideField (get_pos(), actors);
++        int count = 0;
++        for (std::vector&lt;Actor*&gt;::iterator it = actors.begin(); it != actors.end(); ++it)
++            if (!(*it)-&gt;is_flying()) count++;
++        return count;
++    }
++    
++    void Trigger::updateIState(int diffActors, bool refuseAction) {
++        int oldState = state;
++        
++        state += 2 * diffActors;
++        
++        Stone *st = GetStone(get_pos());
++        state &amp;= ~1;  // delete stone pressure bit
++        if (st != NULL &amp;&amp; (!st-&gt;is_floating() || st-&gt;is_kind(&quot;st-puzzle*&quot;))) {
++            // Hack to make hollow puzzle stones press triggers
++            state |= 1;   // add stone pressure bit
++        }
++                
++//        Log &lt;&lt; &quot;Trigger update old state &quot; &lt;&lt; oldState &lt;&lt; &quot; - new state &quot; &lt;&lt; state &lt;&lt; &quot; refuse action &quot; &lt;&lt; refuseAction &lt;&lt; &quot;\n&quot;;
++    
++        if ((oldState == 0 &amp;&amp; state != 0) || (oldState != 0 &amp;&amp; state == 0)) {
++            init_model();
++            if (!refuseAction) {
++                if (state != 0) {
++                    sound_event (&quot;triggerdown&quot;);
++                    performAction(true);
++                } else {
++                    sound_event (&quot;triggerup&quot;);
++                    performAction(false);
++                }
++            }
++        }
++    }
++
++    DEF_ITEMTRAITSF(Trigger, &quot;it_trigger&quot;, it_trigger, itf_static | itf_indestructible);
++
++    BOOT_REGISTER_START
++        BootRegister(new Trigger(), &quot;it_trigger&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/items/Trigger.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/Trigger.hh
+===================================================================
+--- trunk/src/items/Trigger.hh	2008-08-13 22:02:20 UTC (rev 1267)
++++ trunk/src/items/Trigger.hh	2008-08-14 21:51:05 UTC (rev 1268)
+@@ -0,0 +1,72 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef TRIGGERITEM_HH
++#define TRIGGERITEM_HH
++
++#include &quot;items.hh&quot;
++
++#include &quot;enigma.hh&quot;
++
++namespace enigma {
++    /**
++     * A switch that is triggered by actors crossing it on the floor and stones
++     * being pushed onto it. The external state is read only - value 1 (ON) is
++     * reported if the trigger is pressed either by an actor or a stone, a value
++     * 0 (OFF) otherwise.&lt;p&gt;
++     * Note that due to the Enigma 1.10 standards no actions will be performed
++     * on initialization or setting of a trigger, even if actors or a stone are
++     * positioned on the grid. But state and model are set according to the other
++     * objects.&lt;p&gt;
++     * The internal state stores the current number of actors and the presence
++     * of a stone. The stone is flagged as the least significant bit, the actor
++     * count is stored in the bits above, what is simply an addition of 2 times
++     * the actor count to the state. This coding simplifies requests and avoids
++     * usage of additional ivars for the complete logical state.
++     */
++    class Trigger : public Item {
++        CLONEOBJ(Trigger);
++        DECL_ITEMTRAITS;
++    public:
++        Trigger();
++        
++        // Object interface
++        virtual Value message (const Message &amp;m);
++        
++        // StateObject interface
++        virtual int externalState() const;
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void on_creation(GridPos p);
++        virtual void init_model();
++        
++        // Item interface
++        virtual void actor_enter(Actor *a);
++        virtual void actor_leave(Actor *a);
++        virtual void stone_change(Stone *st);
++    private:
++        // Methods
++        int countActors();
++        void updateIState(int diffActors = 0, bool refuseAction = false);
++
++    };
++    
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/items/Trigger.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/Vortex.cc
+===================================================================
+--- trunk/src/items/Vortex.cc	2008-08-13 22:02:20 UTC (rev 1267)
++++ trunk/src/items/Vortex.cc	2008-08-14 21:51:05 UTC (rev 1268)
+@@ -0,0 +1,272 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;items/Vortex.hh&quot;
++#include &quot;actors.hh&quot;
++#include &quot;client.hh&quot;
++#include &quot;errors.hh&quot;
++#include &quot;server.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    Vortex::Vortex(bool open) : Item() {
++        state = open ? OPEN : CLOSED;
++        setAttr(&quot;$dest_idx&quot;, 0);
++        setAttr(&quot;$dest_vortex&quot;, (Object *)NULL);
++        setAttr(&quot;$grabbed_actor&quot;, (Object *)NULL);
++    }
++
++    Vortex::~Vortex() {
++        GameTimer.remove_alarm(this);
++        if (Actor *actor = dynamic_cast&lt;Actor *&gt;((Object *)getAttr(&quot;$grabbed_actor&quot;))) {
++            // release an actor that is grabbed on behalf of this vortex - actor state FALLING_VORTEX
++            SendMessage(actor, &quot;rise&quot;);
++        }
++    }
++
++    std::string Vortex::getClass() const {
++        return &quot;it_vortex&quot;;
++    }
++    
++    Value Vortex::message(const Message &amp;m) {
++        if (m.message == &quot;_passed&quot; &amp;&amp; getAttr(&quot;autoclose&quot;).to_bool()) {
++            setState(0);
++            performAction(getAttr(&quot;$grabbed_actor&quot;));
++            return Value();
++        }
++        return Item::message(m);
++    }
++
++    int Vortex::externalState() const {
++        return (state &gt;= CLOSED &amp;&amp; state &lt;= CLOSING) ? 0 : 1 ;
++    }
++    
++    void Vortex::setState(int extState) {
++        if (isDisplayable()) {
++            if (extState == 1) {  // open
++                if (state == CLOSING) {
++                    state = OPENING;
++                    get_model()-&gt;reverse(); // reverse animation
++                }
++                else if (state == CLOSED) {
++                    state = OPENING;
++                    sound_event (&quot;vortexopen&quot;);
++                    init_model();
++                }
++            } else if (extState == 0) { // close
++                if (state == OPENING) {
++                    state = CLOSING;
++                    get_model()-&gt;reverse(); // reverse animation
++                }
++                else if (state == OPEN) {
++                    state = CLOSING;
++                    sound_event (&quot;vortexclose&quot;);
++                    init_model();
++                }
++            }
++        } else {
++            if (extState &lt;= 1 &amp;&amp; extState &gt;= 0)
++                state = 1 - extState;
++        }
++    }
++        
++    void Vortex::toggleState() {
++        if (state == OPEN || state == OPENING)
++            setState(0);
++        else
++            setState(1);
++    }
++    
++    void Vortex::init_model() {
++        switch(state) {
++            case WARPING:
++            case OPEN:
++            case EMITTING:
++            case SWALLOWING:
++                set_model(&quot;it-vortex-open&quot;);
++                break;
++            case CLOSED: 
++                set_model(&quot;it-vortex-closed&quot;); break;
++            case OPENING: 
++                set_anim(&quot;it-vortex-opening&quot;); break;
++            case CLOSING: 
++                set_anim(&quot;it-vortex-closing&quot;); break;
++        }
++    }
++    
++    void Vortex::on_removal(GridPos p) {
++        Item::on_removal(p);
++        ASSERT(state != WARPING &amp;&amp; state != SWALLOWING &amp;&amp; state != EMITTING,
++            XLevelRuntime, &quot;Tried to kill a busy vortex. Please use another way.&quot;);
++    }
++    
++    void Vortex::animcb() {
++        if (state == CLOSING) {
++            state = CLOSED;
++            init_model();
++        }
++        else if (state == OPENING) {
++            state = OPEN;
++            init_model();
++        }
++    }
++    
++    bool Vortex::actor_hit (Actor *actor) {
++        if (state == OPEN &amp;&amp; (length((actor-&gt;get_pos()) - get_pos().center()) &lt; 0.25) &amp;&amp; actor-&gt;can_be_warped())
++            prepare_for_warp (actor);
++        return false;
++    }
++    
++    void Vortex::alarm() {
++        if (state == WARPING) {
++            perform_warp();
++        } else if (state == EMITTING) {
++            emit_actor(dynamic_cast&lt;Vortex *&gt;((Object *)getAttr(&quot;$dest_vortex&quot;)));
++        } else if (state == SWALLOWING) {
++            state = WARPING;
++            sound_event (&quot;hitfloor&quot;);
++            perform_warp();
++        } else
++            ASSERT (0, XLevelRuntime, &quot;Vortex: alarm called with inconsistent state&quot;);
++    }
++    
++    void Vortex::prepare_for_warp (Actor *actor) {
++        SendMessage(actor, &quot;fallvortex&quot;);
++        setAttr(&quot;$dest_idx&quot;, 0);
++        setAttr(&quot;$grabbed_actor&quot;, actor);
++        state = SWALLOWING;
++    
++        GameTimer.set_alarm(this, 0.4, false);
++    }
++    
++    void Vortex::emit_actor(Vortex *destVortex) {
++        if (destVortex == NULL)   // destination vortex got killed in meantime
++            destVortex = this;    // reemit from source vortex 
++        V2 v(destVortex-&gt;get_pos().center());
++        if (Actor *actor = dynamic_cast&lt;Actor *&gt;((Object *)getAttr(&quot;$grabbed_actor&quot;))) {
++            WarpActor(actor, v[0], v[1], false);
++            SendMessage(actor, &quot;rise&quot;);
++            if (destVortex != this) {
++                bool isScissor = to_bool(getDefaultedAttr(&quot;scissor&quot;, 
++                        (server::EnigmaCompatibility &gt;= 1.10) || server::GameCompatibility != GAMET_ENIGMA));
++                if (isScissor)
++                    SendMessage(actor, &quot;disconnect&quot;);
++            }
++        }
++        state = OPEN;
++        if (this != destVortex &amp;&amp; getAttr(&quot;autoclose&quot;).to_bool())  // do not close source vortex if destination is currently blocked
++            setState(0);
++        if (this != destVortex)
++            performAction(getAttr(&quot;$grabbed_actor&quot;));
++    
++        setAttr(&quot;$grabbed_actor&quot;, (Object *)NULL);
++    }
++
++    void Vortex::warp_to(const ecl::V2 &amp;target) {
++        client::Msg_Sparkle (target);
++        if (Actor *actor = dynamic_cast&lt;Actor *&gt;((Object *)getAttr(&quot;$grabbed_actor&quot;))) {
++            WarpActor(actor, target[0], target[1], false);
++            SendMessage(actor, &quot;appear&quot;);
++            bool isScissor = to_bool(getDefaultedAttr(&quot;scissor&quot;, 
++                    (server::EnigmaCompatibility &gt;= 1.10) || server::GameCompatibility != GAMET_ENIGMA));
++            if (isScissor)
++                SendMessage(actor, &quot;disconnect&quot;);
++        }
++        state = OPEN;
++        if (getAttr(&quot;autoclose&quot;).to_bool())
++            setState(0);
++    
++        performAction(getAttr(&quot;$grabbed_actor&quot;));
++        setAttr(&quot;$grabbed_actor&quot;, (Object *)NULL);
++    }
++
++    void Vortex::perform_warp() {
++        Actor *actor = dynamic_cast&lt;Actor *&gt;((Object *)getAttr(&quot;$grabbed_actor&quot;));
++        if (actor == NULL)
++            return;
++    
++        ASSERT (state == WARPING, XLevelRuntime, &quot;Vortex: perform_warp called with inconsistent state&quot;);
++    
++        V2 v_target;
++    
++        // is another target position defined?
++        int dest_idx = getAttr(&quot;$dest_idx&quot;);
++        if (Object::getDestinationByIndex(dest_idx, v_target)) {
++            GridPos  p_target(v_target);
++    
++            Vortex *v = dynamic_cast&lt;Vortex*&gt;(GetItem(p_target));
++    
++            if (v) {                // Destination is also a vortex
++                Stone *st = GetStone(p_target);
++    
++                if (st &amp;&amp; st-&gt;is_sticky(actor)) {
++                    // is destination vortex blocked? redirect
++                    setAttr(&quot;$dest_idx&quot;, dest_idx + 1);
++                    client::Msg_Sparkle(v_target);
++                    WarpActor(actor, v_target[0], v_target[1], false);
++                    GameTimer.set_alarm(this, 0.4, false);
++                }
++                else {
++                    switch (v-&gt;state) {
++                        case OPEN:
++                        case OPENING:
++                            // destination is open
++                            emit_actor(v);
++                            break;
++        
++                        case CLOSED:
++                        case CLOSING:
++                            // destination is closed
++                            SendMessage(v, &quot;open&quot;);
++                            setAttr(&quot;$dest_vortex&quot;, v);
++                            state = EMITTING;
++                            GameTimer.set_alarm(this, 0.4, false);
++                            break;
++                        case SWALLOWING:
++                        case WARPING:
++                        case EMITTING:
++                            // destination is busy -&gt; don't warp actor, emit
++                            // it where it has started
++                            emit_actor(this);
++                    }
++                }
++            } else {
++                warp_to(v_target);
++            }
++        }
++        else {
++            // if no target defined, don't warp actor
++            emit_actor(this);
++        }
++    }
++
++    ItemTraits Vortex::traits[2] = {
++        {&quot;it_vortex_closed&quot;, it_vortex_closed, itf_static | itf_fireproof, 0.0},
++        {&quot;it_vortex_open&quot;, it_vortex_open,     itf_static | itf_fireproof, 0.0}
++    };
++
++    BOOT_REGISTER_START
++        BootRegister(new Vortex(true), &quot;it_vortex&quot;);
++        BootRegister(new Vortex(false), &quot;it_vortex_closed&quot;);
++        BootRegister(new Vortex(true), &quot;it_vortex_open&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/items/Vortex.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/Vortex.hh
+===================================================================
+--- trunk/src/items/Vortex.hh	2008-08-13 22:02:20 UTC (rev 1267)
++++ trunk/src/items/Vortex.hh	2008-08-14 21:51:05 UTC (rev 1268)
+@@ -0,0 +1,81 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef VORTEXITEM_HH
++#define VORTEXITEM_HH
++
++#include &quot;items.hh&quot;
++
++#include &quot;enigma.hh&quot;
++
++namespace enigma {
++    class Vortex : public Item, public TimeHandler {
++    private:
++        enum iState {
++            OPEN,          ///&lt; TODO exchange OPEN, CLOSED to match external state 
++            CLOSED,        ///&lt;
++            OPENING,       ///&lt;
++            CLOSING,       ///&lt;
++            WARPING,       ///&lt; an open vortex occupied in process of sending a marble
++            EMITTING,      ///&lt; an open vortex occupied, waiting for the destination to open
++            SWALLOWING     ///&lt; an open vortex eats up a marble
++        };
++
++    public:
++        CLONEOBJ(Vortex);
++        DECL_ITEMTRAITS_ARRAY(2, is_open());
++        
++        Vortex(bool opened);
++        virtual ~Vortex();
++
++        // Object interface
++        virtual std::string getClass() const;
++        virtual Value message(const Message &amp;m);
++
++        // StateObject interface
++        virtual int externalState() const;
++        virtual void setState(int extState);
++        virtual void toggleState();
++
++        // GridObject interface
++        virtual void init_model();
++        virtual void on_removal(GridPos p);
++        
++        // ModelCallback interface
++        virtual void animcb();
++
++        // Item interface
++        virtual bool actor_hit(Actor*);
++
++        // TimeHandler interface
++        virtual void alarm();
++
++    private:
++        void prepare_for_warp(Actor *actor);
++        void emit_actor(Vortex *destVortex);
++
++        void perform_warp();    // warp swallowed actor(s)
++        void warp_to(const ecl::V2 &amp;target);
++
++        bool is_open() const { return externalState() == 1 ; }
++
++    };
++    
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/items/Vortex.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/WormHole.cc
+===================================================================
+--- trunk/src/items/WormHole.cc	2008-08-13 22:02:20 UTC (rev 1267)
++++ trunk/src/items/WormHole.cc	2008-08-14 21:51:05 UTC (rev 1268)
+@@ -0,0 +1,157 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;items/WormHole.hh&quot;
++#include &quot;actors.hh&quot;
++//#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++//#include &quot;server.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    WormHole::WormHole(bool isOn) : Item(), correctedStrength (0.6 * 30), squareRange (1000 * 1000) {
++        state = isOn ? ON_IDLE : OFF_IDLE;    // includes warping false
++    }
++    
++    std::string WormHole::getClass() const {
++        return &quot;it_wormhole&quot;;
++    }
++    
++    void WormHole::setAttr(const std::string &amp;key, const Value &amp;val) {
++        if (key == &quot;range&quot;) {
++            double range = (val.getType() == Value::NIL) ? server::WormholeRange : (double)val;
++            squareRange = range * range;
++        } else if (key == &quot;strength&quot;) {
++            correctedStrength = 0.6 * ((val.getType() == Value::NIL) ? server::WormholeForce : (double)val);
++        }
++        Item::setAttr(key, val);
++    }
++    
++    Value WormHole::message(const Message &amp;m) {
++        if (m.message == &quot;_updateglobals&quot; &amp;&amp; m.value.to_string() == &quot;it_wormhole&quot;) {
++            if (getAttr(&quot;range&quot;).getType() == Value::DEFAULT) {
++                squareRange = server::WormholeRange * server::WormholeRange;
++            }
++            if (getAttr(&quot;strength&quot;).getType() == Value::DEFAULT) {
++                correctedStrength = 0.6 * server::WormholeForce;
++            }
++            return Value(); 
++        }
++        return Item::message(m);
++    }
++
++    int WormHole::externalState() const {
++        return state % 2;
++    }
++    
++    void WormHole::setState(int extState) {
++        // switch force on and off
++        if (extState != state % 2) {          // react only on force changes
++            state = (state &amp; ~1) + extState;  // keep other flags
++            if (isDisplayable()) {
++                if (extState == 1)
++                    AddForceField(this);
++                else
++                    RemoveForceField(this);
++            }
++        }
++    }
++    
++    void WormHole::on_creation (GridPos p) {
++        Item::on_creation (p);
++        if (getAttr(&quot;range&quot;).getType() == Value::DEFAULT) {
++            squareRange = server::WormholeRange * server::WormholeRange;
++        }
++        if (getAttr(&quot;strength&quot;).getType() == Value::DEFAULT) {
++            correctedStrength = 0.6 * server::WormholeForce;
++        }
++        if (state % 2 == 1)
++            AddForceField(this);
++    }
++
++    void WormHole::on_removal(GridPos p) {
++        GameTimer.remove_alarm(this);
++        state &amp;= ~2;  // remove teleport engaged flag
++        if (state % 2 == 1)
++            RemoveForceField(this);
++        Item::on_removal(p);
++        ASSERT((state &amp; 4) == 0, XLevelRuntime, &quot;Tried to kill a busy wormhole. Please use another way.&quot;);
++    }
++    
++    void WormHole::init_model() {
++        if ((state &amp; 3) == ON_IDLE)
++            set_anim(&quot;it-wormhole&quot;);
++        else
++            set_model(&quot;it-wormhole-off&quot;);
++    }
++    
++    bool WormHole::actor_hit(Actor *actor) {
++        ASSERT((state &amp; 4) == 0, XLevelRuntime, &quot;WormHole:: Recursion detected!&quot;);
++        if ((state &amp; 2) == 0 &amp;&amp; near_center_p(actor)) {   // may teleport
++            client::Msg_Sparkle (get_pos().center());
++            V2 targetpos;
++            if (getDestinationByIndex(0, targetpos)) {
++                sound_event (&quot;warp&quot;);
++                double latency = getAttr(&quot;interval&quot;);
++                if(latency &gt; 0) {
++                    state |= 2;  // mark engaged
++                    GameTimer.set_alarm(this, latency, false);
++                    init_model();
++                }
++                state |= 4;  // mark warping
++                bool isScissor = to_bool(getAttr(&quot;scissor&quot;)) || server::GameCompatibility != GAMET_ENIGMA;
++                if (isScissor)
++                    SendMessage(actor, &quot;disconnect&quot;);
++                WarpActor(actor, targetpos[0], targetpos[1], false);
++                state &amp;= ~4; // release warping
++            }
++        }
++        return false;
++    }
++    
++    void WormHole::add_force(Actor *a, V2 &amp;f) {
++        V2 dv = get_pos().center() - a-&gt;get_pos_force();
++        double squareDist = square(dv);
++
++        if (squareDist &gt;= 0.025 &amp;&amp; squareDist &lt; squareRange)
++            f += (correctedStrength / squareDist) * dv;
++    }
++    
++    void WormHole::alarm() {
++        state &amp;= ~2;  // remove teleport engaged flag
++        init_model();
++    }
++    
++    bool WormHole::near_center_p(Actor *a) {
++        return (square(a-&gt;get_pos() - get_pos().center()) &lt; 0.015625);  // 0.125 ^ 2
++    }
++    
++    ItemTraits WormHole::traits[2] = {
++        { &quot;it_wormhole_off&quot;, it_wormhole_off, itf_static, 0.0 },
++        { &quot;it_wormhole_on&quot;,  it_wormhole_on,  itf_static, 0.0 }
++    };
++
++    BOOT_REGISTER_START
++        BootRegister(new WormHole(true), &quot;it_wormhole&quot;);
++        BootRegister(new WormHole(false), &quot;it_wormhole_off&quot;);
++        BootRegister(new WormHole(true), &quot;it_wormhole_on&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/items/WormHole.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/items/WormHole.hh
+===================================================================
+--- trunk/src/items/WormHole.hh	2008-08-13 22:02:20 UTC (rev 1267)
++++ trunk/src/items/WormHole.hh	2008-08-14 21:51:05 UTC (rev 1268)
+@@ -0,0 +1,77 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef WORMHOLEITEM_HH
++#define WORMHOLEITEM_HH
++
++#include &quot;items.hh&quot;
++
++#include &quot;enigma.hh&quot;
++
++namespace enigma {
++    class WormHole : public Item, public ForceField, public TimeHandler {
++    private:
++        /**
++         * warping as bit 2 of state
++         */
++        enum iState {
++            OFF_IDLE,        ///&lt; force off, ready to teleport
++            ON_IDLE,         ///&lt; force on,  ready to teleport
++            OFF_ENGAGED,     ///&lt; force off, rejecting teleport
++            ON_ENGAGED       ///&lt; force on,  rejecting teleport
++        };
++        
++    public:
++        CLONEOBJ(WormHole);
++        DECL_ITEMTRAITS_ARRAY(2, state &amp; 1);
++        
++        WormHole(bool isOn);
++        
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const std::string &amp;key, const Value &amp;val);
++        virtual Value message(const Message &amp;m);
++
++        // StateObject interface
++        virtual int externalState() const;
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
++        virtual void init_model();
++        
++        // Item interface
++        virtual bool actor_hit(Actor *a);
++
++        // ForceField interface
++        virtual void add_force(Actor *a, V2 &amp;f);
++        
++        // TimeHandler interface
++        virtual void alarm();
++        
++    private:
++        bool near_center_p(Actor *a);
++
++        double correctedStrength;     ///&lt; 0.6 * strength
++        double squareRange;           ///&lt; range of the force squared
++    };
++    
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/items/WormHole.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-08-13 22:02:20 UTC (rev 1267)
++++ trunk/src/items.cc	2008-08-14 21:51:05 UTC (rev 1268)
+@@ -1425,153 +1425,6 @@
+ }
+ 
+ 
+-/* -------------------- Trigger -------------------- */
+-    /**
+-     * A switch that is triggered by actors crossing it on the floor and stones
+-     * being pushed onto it. The external state is read only - value 1 (ON) is
+-     * reported if the trigger is pressed either by an actor or a stone, a value
+-     * 0 (OFF) otherwise.&lt;p&gt;
+-     * Note that due to the Enigma 1.10 standards no actions will be performed
+-     * on initialization or setting of a trigger, even if actors or a stone are
+-     * positioned on the grid. But state and model are set according to the other
+-     * objects.&lt;p&gt;
+-     * The internal state stores the current number of actors and the presence
+-     * of a stone. The stone is flagged as the least significant bit, the actor
+-     * count is stored in the bits above, what is simply an addition of 2 times
+-     * the actor count to the state. This coding simplifies requests and avoids
+-     * usage of additional ivars for the complete logical state.
+-     */
+-    class Trigger : public Item {
+-        CLONEOBJ(Trigger);
+-        DECL_ITEMTRAITS;
+-    public:
+-        Trigger();
+-        
+-        // Object interface
+-        virtual Value message (const Message &amp;m);
+-        
+-        // StateObject interface
+-        virtual int externalState() const;
+-        virtual void setState(int extState);
+-
+-        // GridObject interface
+-        virtual void on_creation(GridPos p);
+-        virtual void init_model();
+-        
+-        // Item interface
+-        virtual void actor_enter(Actor *a);
+-        virtual void actor_leave(Actor *a);
+-        virtual void stone_change(Stone *st);
+-    private:
+-        // Methods
+-        int countActors();
+-        void updateIState(int diffActors = 0, bool refuseAction = false);
+-
+-    };
+-
+-    DEF_ITEMTRAITSF(Trigger, &quot;it_trigger&quot;, it_trigger, itf_static | itf_indestructible);
+-    
+-    Trigger::Trigger() {
+-        setAttr(&quot;invisible&quot;, false);
+-    }
+-    
+-    Value Trigger::message (const Message &amp;m) {
+-        if (m.message == &quot;signal&quot; &amp;&amp; (server::GameCompatibility != GAMET_ENIGMA || 
+-                server::EnigmaCompatibility &lt; 1.10)) {
+-            performAction(m.value.to_bool());  // convert 1/0 values to true/false
+-            return Value();
+-        } else if (m.message == &quot;_init&quot;) {
+-            // the state count at init is wrong as some actors on the grid may
+-            // already have existed on_creation, but all are reported via
+-            // actor_enter due to actors on_creation.
+-            // Thus we need to reset and recount the actors:
+-            state = 0;
+-            
+-            // old Enigma versions did issue performAction what is incompatible
+-            updateIState(countActors(),
+-                    server::EnigmaCompatibility &gt;= 1.10 || server::GameCompatibility != GAMET_ENIGMA); 
+-            return Value();
+-        } else if (m.message == &quot;_jumping&quot; ) {
+-            updateIState(m.value.to_bool() ? -1 : +1);
+-        }
+-        return Item::message(m);
+-    }
+-        
+-    int Trigger::externalState() const {
+-        return state != 0 ? 1 : 0;
+-    }
+-    
+-    void Trigger::setState(int extState) {
+-        return;   // ignore any write attempts
+-    }
+-    
+-    void Trigger::on_creation(GridPos p) {
+-        state = 0;
+-        updateIState(countActors(), true);
+-        init_model();
+-    }
+-        
+-    void Trigger::init_model() {
+-        if (getAttr(&quot;invisible&quot;).to_bool())
+-            set_model(&quot;invisible&quot;);
+-        else if (state != 0)
+-            set_model(&quot;it-trigger1&quot;);
+-        else
+-            set_model(&quot;it-trigger&quot;);
+-    }
+-    
+-    void Trigger::actor_enter(Actor *a) {
+-        if (!a-&gt;is_flying())
+-            updateIState(+1, !server::WorldInitialized);
+-    }
+-    
+-    void Trigger::actor_leave(Actor *a) {
+-        if (!a-&gt;is_flying())
+-            updateIState(-1, !server::WorldInitialized);
+-    }
+-    
+-    void Trigger::stone_change(Stone *) {
+-        updateIState(0);
+-    }
+-    
+-    int Trigger::countActors() {
+-        vector&lt;Actor*&gt; actors;
+-        GetActorsInsideField (get_pos(), actors);
+-        int count = 0;
+-        for (vector&lt;Actor*&gt;::iterator it = actors.begin(); it != actors.end(); ++it)
+-            if (!(*it)-&gt;is_flying()) count++;
+-        return count;
+-    }
+-    
+-    void Trigger::updateIState(int diffActors, bool refuseAction) {
+-        int oldState = state;
+-        
+-        state += 2 * diffActors;
+-        
+-        Stone *st = GetStone(get_pos());
+-        state &amp;= ~1;  // delete stone pressure bit
+-        if (st != NULL &amp;&amp; (!st-&gt;is_floating() || st-&gt;is_kind(&quot;st-puzzle*&quot;))) {
+-            // Hack to make hollow puzzle stones press triggers
+-            state |= 1;   // add stone pressure bit
+-        }
+-                
+-//        Log &lt;&lt; &quot;Trigger update old state &quot; &lt;&lt; oldState &lt;&lt; &quot; - new state &quot; &lt;&lt; state &lt;&lt; &quot; refuse action &quot; &lt;&lt; refuseAction &lt;&lt; &quot;\n&quot;;
+-    
+-        if ((oldState == 0 &amp;&amp; state != 0) || (oldState != 0 &amp;&amp; state == 0)) {
+-            init_model();
+-            if (!refuseAction) {
+-                if (state != 0) {
+-                    sound_event (&quot;triggerdown&quot;);
+-                    performAction(true);
+-                } else {
+-                    sound_event (&quot;triggerup&quot;);
+-                    performAction(false);
+-                }
+-            }
+-        }
+-    }
+-
+-
+ /* -------------------- Seed -------------------- */
+ namespace
+ {
+@@ -1673,603 +1526,6 @@
+ }
+ 
+ 
+-/* -------------------- Magnet -------------------- */
+-
+-    class Magnet : public Item, public ForceField {
+-    private:
+-        enum iState {
+-            OFF,
+-            ON
+-        };
+-       
+-    public:
+-        CLONEOBJ(Magnet);
+-        DECL_ITEMTRAITS_ARRAY(2, state);
+-
+-        Magnet(bool isOn);
+-        
+-        // Object interface
+-        virtual std::string getClass() const;
+-        virtual void setAttr(const std::string &amp;key, const Value &amp;val);
+-        virtual Value message(const Message &amp;m);
+-
+-        // GridObject interface
+-        virtual void on_creation(GridPos p);
+-        virtual void on_removal(GridPos p);
+-        virtual void init_model();
+-
+-        // ForceField interface
+-        virtual void add_force(Actor *a, V2 &amp;f);
+-        
+-    private:
+-        double correctedStrength;     // 0.6 * strength
+-        double squareRange;
+-    };
+-    
+-    Magnet::Magnet(bool isOn) : Item(), correctedStrength (0.6 * 30), squareRange (1000 * 1000) {
+-        state = isOn ? ON : OFF;
+-    }
+-
+-    std::string Magnet::getClass() const {
+-        return &quot;it_magnet&quot;;
+-    }
+-    
+-    void Magnet::setAttr(const std::string &amp;key, const Value &amp;val) {
+-        if (key == &quot;range&quot;) {
+-            double range = (val.getType() == Value::NIL) ? server::MagnetRange : (double)val;
+-            squareRange = range * range;
+-        } else if (key == &quot;strength&quot;) {
+-            correctedStrength = 0.6 * ((val.getType() == Value::NIL) ? server::MagnetForce : (double)val);
+-        }
+-        Item::setAttr(key, val);
+-    }
+-    
+-    Value Magnet::message(const Message &amp;m) {
+-        if (m.message == &quot;_updateglobals&quot; &amp;&amp; m.value.to_string() == &quot;it_magnet&quot;) {
+-            if (getAttr(&quot;range&quot;).getType() == Value::DEFAULT) {
+-                squareRange = server::MagnetRange * server::MagnetRange;
+-            }
+-            if (getAttr(&quot;strength&quot;).getType() == Value::DEFAULT) {
+-                correctedStrength = 0.6 * server::MagnetForce;
+-            }
+-            return Value();
+-        }
+-        return Item::message(m);
+-    }
+-    void Magnet::init_model() {
+-        set_model(ecl::strf(&quot;it-magnet%s&quot;, state == ON ? &quot;-on&quot; : &quot;-off&quot;));
+-    }
+-    
+-    void Magnet::on_creation(GridPos p) {
+-        if (getAttr(&quot;range&quot;).getType() == Value::DEFAULT) {
+-            squareRange = server::MagnetRange * server::MagnetRange;
+-        }
+-        if (getAttr(&quot;strength&quot;).getType() == Value::DEFAULT) {
+-            correctedStrength = 0.6 * server::MagnetForce;
+-        }
+-
+-        AddForceField(this);
+-        Item::on_creation(p);
+-    }
+-    
+-    void Magnet::on_removal(GridPos p) {
+-        Item::on_removal(p);
+-        RemoveForceField(this);
+-    }
+-    
+-    void Magnet::add_force(Actor *a, V2 &amp;f) {
+-        if (state == ON) {
+-            V2 dv = get_pos().center() - a-&gt;get_pos_force();
+-            double squareDist = square(dv);
+-
+-            if (squareDist &gt;= 0.04 &amp;&amp; squareDist &lt; squareRange)
+-                f += (correctedStrength / squareDist) * dv;
+-        }
+-    }
+-    
+-    ItemTraits Magnet::traits[2] = {
+-        { &quot;it_magnet_off&quot;, it_magnet_off, itf_static | itf_indestructible, 0.0 },
+-        { &quot;it_magnet_on&quot;,  it_magnet_on,  itf_static | itf_indestructible, 0.0 },
+-    };
+-
+-
+-/* -------------------- Wormhole -------------------- */
+-
+-/** \page it-wormhole Worm hole
+-
+-Worm holes teleport actors to another place.  They have a variable
+-attracting force field.
+-
+-\subsection wormholea Attributes
+-- \b targetx:       X coordinate of the destination
+-- \b targety:       Y coordinate of the destination
+-- \b strength:      Strength of the force field (default: 50)
+-- \b range:         Range of the force field
+-
+-\subsection wormholee Example
+-\verbatim
+-set_item(&quot;it-wormhole&quot;, 1,1, {targetx=5.5, targety=10.5, strength=50, range=5})
+-\endverbatim
+-*/
+-
+-
+-    class WormHole : public Item, public ForceField, public TimeHandler {
+-    private:
+-        /**
+-         * warping as bit 2 of state
+-         */
+-        enum iState {
+-            OFF_IDLE,        ///&lt; force off, ready to teleport
+-            ON_IDLE,         ///&lt; force on,  ready to teleport
+-            OFF_ENGAGED,     ///&lt; force off, rejecting teleport
+-            ON_ENGAGED       ///&lt; force on,  rejecting teleport
+-        };
+-        
+-    public:
+-        CLONEOBJ(WormHole);
+-        DECL_ITEMTRAITS_ARRAY(2, state &amp; 1);
+-        
+-        WormHole(bool isOn);
+-        
+-        // Object interface
+-        virtual std::string getClass() const;
+-        virtual void setAttr(const std::string &amp;key, const Value &amp;val);
+-        virtual Value message(const Message &amp;m);
+-
+-        // StateObject interface
+-        virtual int externalState() const;
+-        virtual void setState(int extState);
+-
+-        // GridObject interface
+-        virtual void on_creation(GridPos p);
+-        virtual void on_removal(GridPos p);
+-        virtual void init_model();
+-        
+-        // Item interface
+-        virtual bool actor_hit(Actor *a);
+-
+-        // ForceField interface
+-        virtual void add_force(Actor *a, V2 &amp;f);
+-        
+-        // TimeHandler interface
+-        virtual void alarm();
+-        
+-    private:
+-        bool near_center_p(Actor *a);
+-
+-        double correctedStrength;     ///&lt; 0.6 * strength
+-        double squareRange;           ///&lt; range of the force squared
+-    };
+-
+-    WormHole::WormHole(bool isOn) : Item(), correctedStrength (0.6 * 30), squareRange (1000 * 1000) {
+-        state = isOn ? ON_IDLE : OFF_IDLE;    // includes warping false
+-    }
+-    
+-    std::string WormHole::getClass() const {
+-        return &quot;it_wormhole&quot;;
+-    }
+-    
+-    void WormHole::setAttr(const std::string &amp;key, const Value &amp;val) {
+-        if (key == &quot;range&quot;) {
+-            double range = (val.getType() == Value::NIL) ? server::WormholeRange : (double)val;
+-            squareRange = range * range;
+-        } else if (key == &quot;strength&quot;) {
+-            correctedStrength = 0.6 * ((val.getType() == Value::NIL) ? server::WormholeForce : (double)val);
+-        }
+-        Item::setAttr(key, val);
+-    }
+-    
+-    Value WormHole::message(const Message &amp;m) {
+-        if (m.message == &quot;_updateglobals&quot; &amp;&amp; m.value.to_string() == &quot;it_wormhole&quot;) {
+-            if (getAttr(&quot;range&quot;).getType() == Value::DEFAULT) {
+-                squareRange = server::WormholeRange * server::WormholeRange;
+-            }
+-            if (getAttr(&quot;strength&quot;).getType() == Value::DEFAULT) {
+-                correctedStrength = 0.6 * server::WormholeForce;
+-            }
+-            return Value(); 
+-        }
+-        return Item::message(m);
+-    }
+-
+-    int WormHole::externalState() const {
+-        return state % 2;
+-    }
+-    
+-    void WormHole::setState(int extState) {
+-        // switch force on and off
+-        if (extState != state % 2) {          // react only on force changes
+-            state = (state &amp; ~1) + extState;  // keep other flags
+-            if (isDisplayable()) {
+-                if (extState == 1)
+-                    AddForceField(this);
+-                else
+-                    RemoveForceField(this);
+-            }
+-        }
+-    }
+-    
+-    void WormHole::on_creation (GridPos p) {
+-        Item::on_creation (p);
+-        if (getAttr(&quot;range&quot;).getType() == Value::DEFAULT) {
+-            squareRange = server::WormholeRange * server::WormholeRange;
+-        }
+-        if (getAttr(&quot;strength&quot;).getType() == Value::DEFAULT) {
+-            correctedStrength = 0.6 * server::WormholeForce;
+-        }
+-        if (state % 2 == 1)
+-            AddForceField(this);
+-    }
+-
+-    void WormHole::on_removal(GridPos p) {
+-        GameTimer.remove_alarm(this);
+-        state &amp;= ~2;  // remove teleport engaged flag
+-        if (state % 2 == 1)
+-            RemoveForceField(this);
+-        Item::on_removal(p);
+-        ASSERT((state &amp; 4) == 0, XLevelRuntime, &quot;Tried to kill a busy wormhole. Please use another way.&quot;);
+-    }
+-    
+-    void WormHole::init_model() {
+-        if ((state &amp; 3) == ON_IDLE)
+-            set_anim(&quot;it-wormhole&quot;);
+-        else
+-            set_model(&quot;it-wormhole-off&quot;);
+-    }
+-    
+-    bool WormHole::actor_hit(Actor *actor) {
+-        ASSERT((state &amp; 4) == 0, XLevelRuntime, &quot;WormHole:: Recursion detected!&quot;);
+-        if ((state &amp; 2) == 0 &amp;&amp; near_center_p(actor)) {   // may teleport
+-            client::Msg_Sparkle (get_pos().center());
+-            V2 targetpos;
+-            if (getDestinationByIndex(0, targetpos)) {
+-                sound_event (&quot;warp&quot;);
+-                double latency = getAttr(&quot;interval&quot;);
+-                if(latency &gt; 0) {
+-                    state |= 2;  // mark engaged
+-                    GameTimer.set_alarm(this, latency, false);
+-                    init_model();
+-                }
+-                state |= 4;  // mark warping
+-                bool isScissor = to_bool(getAttr(&quot;scissor&quot;)) || server::GameCompatibility != GAMET_ENIGMA;
+-                if (isScissor)
+-                    SendMessage(actor, &quot;disconnect&quot;);
+-                WarpActor(actor, targetpos[0], targetpos[1], false);
+-                state &amp;= ~4; // release warping
+-            }
+-        }
+-        return false;
+-    }
+-    
+-    void WormHole::add_force(Actor *a, V2 &amp;f) {
+-        V2 dv = get_pos().center() - a-&gt;get_pos_force();
+-        double squareDist = square(dv);
+-
+-        if (squareDist &gt;= 0.025 &amp;&amp; squareDist &lt; squareRange)
+-            f += (correctedStrength / squareDist) * dv;
+-    }
+-    
+-    void WormHole::alarm() {
+-        state &amp;= ~2;  // remove teleport engaged flag
+-        init_model();
+-    }
+-    
+-    bool WormHole::near_center_p(Actor *a) {
+-        return (square(a-&gt;get_pos() - get_pos().center()) &lt; 0.015625);  // 0.125 ^ 2
+-    }
+-    
+-    ItemTraits WormHole::traits[2] = {
+-        { &quot;it_wormhole_off&quot;, it_wormhole_off, itf_static, 0.0 },
+-        { &quot;it_wormhole_on&quot;,  it_wormhole_on,  itf_static, 0.0 }
+-    };
+-
+-
+-
+-/* -------------------- Vortex -------------------- */
+-
+-/** \page it-vortex Vortex
+-
+-Vortexes teleport actors to another place.
+-
+-They may be opened or closed. Is a vortex is closed, the actor cannot enter.
+-
+-
+-\subsection vortexm Messages
+-- \b open       opens the vortex
+-- \b close      closes the vortex
+-- \b trigger, openclose
+-- \b signal     signal value: 1 -&gt; &quot;open&quot;; 0 -&gt; &quot;close&quot;
+-*/
+-
+-    class Vortex : public Item, public TimeHandler {
+-    private:
+-        enum iState {
+-            OPEN,          ///&lt; TODO exchange OPEN, CLOSED to match external state 
+-            CLOSED,        ///&lt;
+-            OPENING,       ///&lt;
+-            CLOSING,       ///&lt;
+-            WARPING,       ///&lt; an open vortex occupied in process of sending a marble
+-            EMITTING,      ///&lt; an open vortex occupied, waiting for the destination to open
+-            SWALLOWING     ///&lt; an open vortex eats up a marble
+-        };
+-
+-    public:
+-        CLONEOBJ(Vortex);
+-        DECL_ITEMTRAITS_ARRAY(2, is_open());
+-        
+-        Vortex(bool opened);
+-        virtual ~Vortex();
+-
+-        // Object interface
+-        virtual std::string getClass() const;
+-        virtual Value message(const Message &amp;m);
+-
+-        // StateObject interface
+-        virtual int externalState() const;
+-        virtual void setState(int extState);
+-        virtual void toggleState();
+-
+-        // GridObject interface
+-        virtual void init_model();
+-        virtual void on_removal(GridPos p);
+-        
+-        // ModelCallback interface
+-        virtual void animcb();
+-
+-        // Item interface
+-        virtual bool actor_hit(Actor*);
+-
+-        // TimeHandler interface
+-        virtual void alarm();
+-
+-    private:
+-        void prepare_for_warp(Actor *actor);
+-        void emit_actor(Vortex *destVortex);
+-
+-        void perform_warp();    // warp swallowed actor(s)
+-        void warp_to(const V2 &amp;target);
+-
+-        bool is_open() const { return externalState() == 1 ; }
+-
+-    };
+-
+-    ItemTraits Vortex::traits[2] = {
+-        {&quot;it_vortex_closed&quot;, it_vortex_closed, itf_static | itf_fireproof, 0.0},
+-        {&quot;it_vortex_open&quot;, it_vortex_open,     itf_static | itf_fireproof, 0.0}
+-    };
+-
+-    Vortex::Vortex(bool open) : Item() {
+-        state = open ? OPEN : CLOSED;
+-        setAttr(&quot;$dest_idx&quot;, 0);
+-        setAttr(&quot;$dest_vortex&quot;, (Object *)NULL);
+-        setAttr(&quot;$grabbed_actor&quot;, (Object *)NULL);
+-    }
+-
+-    Vortex::~Vortex() {
+-        GameTimer.remove_alarm(this);
+-        if (Actor *actor = dynamic_cast&lt;Actor *&gt;((Object *)getAttr(&quot;$grabbed_actor&quot;))) {
+-            // release an actor that is grabbed on behalf of this vortex - actor state FALLING_VORTEX
+-            SendMessage(actor, &quot;rise&quot;);
+-        }
+-    }
+-
+-    std::string Vortex::getClass() const {
+-        return &quot;it_vortex&quot;;
+-    }
+-    
+-    Value Vortex::message(const Message &amp;m) {
+-        if (m.message == &quot;_passed&quot; &amp;&amp; getAttr(&quot;autoclose&quot;).to_bool()) {
+-            setState(0);
+-            performAction(getAttr(&quot;$grabbed_actor&quot;));
+-            return Value();
+-        }
+-        return Item::message(m);
+-    }
+-
+-    int Vortex::externalState() const {
+-        return (state &gt;= CLOSED &amp;&amp; state &lt;= CLOSING) ? 0 : 1 ;
+-    }
+-    
+-    void Vortex::setState(int extState) {
+-        if (isDisplayable()) {
+-            if (extState == 1) {  // open
+-                if (state == CLOSING) {
+-                    state = OPENING;
+-                    get_model()-&gt;reverse(); // reverse animation
+-                }
+-                else if (state == CLOSED) {
+-                    state = OPENING;
+-                    sound_event (&quot;vortexopen&quot;);
+-                    init_model();
+-                }
+-            } else if (extState == 0) { // close
+-                if (state == OPENING) {
+-                    state = CLOSING;
+-                    get_model()-&gt;reverse(); // reverse animation
+-                }
+-                else if (state == OPEN) {
+-                    state = CLOSING;
+-                    sound_event (&quot;vortexclose&quot;);
+-                    init_model();
+-                }
+-            }
+-        } else {
+-            if (extState &lt;= 1 &amp;&amp; extState &gt;= 0)
+-                state = 1 - extState;
+-        }
+-    }
+-        
+-    void Vortex::toggleState() {
+-        if (state == OPEN || state == OPENING)
+-            setState(0);
+-        else
+-            setState(1);
+-    }
+-    
+-    void Vortex::init_model() {
+-        switch(state) {
+-            case WARPING:
+-            case OPEN:
+-            case EMITTING:
+-            case SWALLOWING:
+-                set_model(&quot;it-vortex-open&quot;);
+-                break;
+-            case CLOSED: 
+-                set_model(&quot;it-vortex-closed&quot;); break;
+-            case OPENING: 
+-                set_anim(&quot;it-vortex-opening&quot;); break;
+-            case CLOSING: 
+-                set_anim(&quot;it-vortex-closing&quot;); break;
+-        }
+-    }
+-    
+-    void Vortex::on_removal(GridPos p) {
+-        Item::on_removal(p);
+-        ASSERT(state != WARPING &amp;&amp; state != SWALLOWING &amp;&amp; state != EMITTING,
+-            XLevelRuntime, &quot;Tried to kill a busy vortex. Please use another way.&quot;);
+-    }
+-    
+-    void Vortex::animcb() {
+-        if (state == CLOSING) {
+-            state = CLOSED;
+-            init_model();
+-        }
+-        else if (state == OPENING) {
+-            state = OPEN;
+-            init_model();
+-        }
+-    }
+-    
+-    bool Vortex::actor_hit (Actor *actor) {
+-        if (state == OPEN &amp;&amp; (length((actor-&gt;get_pos()) - get_pos().center()) &lt; 0.25) &amp;&amp; actor-&gt;can_be_warped())
+-            prepare_for_warp (actor);
+-        return false;
+-    }
+-    
+-    void Vortex::alarm() {
+-        if (state == WARPING) {
+-            perform_warp();
+-        } else if (state == EMITTING) {
+-            emit_actor(dynamic_cast&lt;Vortex *&gt;((Object *)getAttr(&quot;$dest_vortex&quot;)));
+-        } else if (state == SWALLOWING) {
+-            state = WARPING;
+-            sound_event (&quot;hitfloor&quot;);
+-            perform_warp();
+-        } else
+-            ASSERT (0, XLevelRuntime, &quot;Vortex: alarm called with inconsistent state&quot;);
+-    }
+-    
+-    void Vortex::prepare_for_warp (Actor *actor) {
+-        SendMessage(actor, &quot;fallvortex&quot;);
+-        setAttr(&quot;$dest_idx&quot;, 0);
+-        setAttr(&quot;$grabbed_actor&quot;, actor);
+-        state = SWALLOWING;
+-    
+-        GameTimer.set_alarm(this, 0.4, false);
+-    }
+-    
+-    void Vortex::emit_actor(Vortex *destVortex) {
+-        if (destVortex == NULL)   // destination vortex got killed in meantime
+-            destVortex = this;    // reemit from source vortex 
+-        V2 v(destVortex-&gt;get_pos().center());
+-        if (Actor *actor = dynamic_cast&lt;Actor *&gt;((Object *)getAttr(&quot;$grabbed_actor&quot;))) {
+-            WarpActor(actor, v[0], v[1], false);
+-            SendMessage(actor, &quot;rise&quot;);
+-            if (destVortex != this) {
+-                bool isScissor = to_bool(getDefaultedAttr(&quot;scissor&quot;, 
+-                        (server::EnigmaCompatibility &gt;= 1.10) || server::GameCompatibility != GAMET_ENIGMA));
+-                if (isScissor)
+-                    SendMessage(actor, &quot;disconnect&quot;);
+-            }
+-        }
+-        state = OPEN;
+-        if (this != destVortex &amp;&amp; getAttr(&quot;autoclose&quot;).to_bool())  // do not close source vortex if destination is currently blocked
+-            setState(0);
+-        if (this != destVortex)
+-            performAction(getAttr(&quot;$grabbed_actor&quot;));
+-    
+-        setAttr(&quot;$grabbed_actor&quot;, (Object *)NULL);
+-    }
+-
+-    void Vortex::warp_to(const V2 &amp;target) {
+-        client::Msg_Sparkle (target);
+-        if (Actor *actor = dynamic_cast&lt;Actor *&gt;((Object *)getAttr(&quot;$grabbed_actor&quot;))) {
+-            WarpActor(actor, target[0], target[1], false);
+-            SendMessage(actor, &quot;appear&quot;);
+-            bool isScissor = to_bool(getDefaultedAttr(&quot;scissor&quot;, 
+-                    (server::EnigmaCompatibility &gt;= 1.10) || server::GameCompatibility != GAMET_ENIGMA));
+-            if (isScissor)
+-                SendMessage(actor, &quot;disconnect&quot;);
+-        }
+-        state = OPEN;
+-        if (getAttr(&quot;autoclose&quot;).to_bool())
+-            setState(0);
+-    
+-        performAction(getAttr(&quot;$grabbed_actor&quot;));
+-        setAttr(&quot;$grabbed_actor&quot;, (Object *)NULL);
+-    }
+-
+-    void Vortex::perform_warp() {
+-        Actor *actor = dynamic_cast&lt;Actor *&gt;((Object *)getAttr(&quot;$grabbed_actor&quot;));
+-        if (actor == NULL)
+-            return;
+-    
+-        ASSERT (state == WARPING, XLevelRuntime, &quot;Vortex: perform_warp called with inconsistent state&quot;);
+-    
+-        V2 v_target;
+-    
+-        // is another target position defined?
+-        int dest_idx = getAttr(&quot;$dest_idx&quot;);
+-        if (Object::getDestinationByIndex(dest_idx, v_target)) {
+-            GridPos  p_target(v_target);
+-    
+-            Vortex *v = dynamic_cast&lt;Vortex*&gt;(GetItem(p_target));
+-    
+-            if (v) {                // Destination is also a vortex
+-                Stone *st = GetStone(p_target);
+-    
+-                if (st &amp;&amp; st-&gt;is_sticky(actor)) {
+-                    // is destination vortex blocked? redirect
+-                    setAttr(&quot;$dest_idx&quot;, dest_idx + 1);
+-                    client::Msg_Sparkle(v_target);
+-                    WarpActor(actor, v_target[0], v_target[1], false);
+-                    GameTimer.set_alarm(this, 0.4, false);
+-                }
+-                else {
+-                    switch (v-&gt;state) {
+-                        case OPEN:
+-                        case OPENING:
+-                            // destination is open
+-                            emit_actor(v);
+-                            break;
+-        
+-                        case CLOSED:
+-                        case CLOSING:
+-                            // destination is closed
+-                            SendMessage(v, &quot;open&quot;);
+-                            setAttr(&quot;$dest_vortex&quot;, v);
+-                            state = EMITTING;
+-                            GameTimer.set_alarm(this, 0.4, false);
+-                            break;
+-                        case SWALLOWING:
+-                        case WARPING:
+-                        case EMITTING:
+-                            // destination is busy -&gt; don't warp actor, emit
+-                            // it where it has started
+-                            emit_actor(this);
+-                    }
+-                }
+-            } else {
+-                warp_to(v_target);
+-            }
+-        }
+-        else {
+-            // if no target defined, don't warp actor
+-            emit_actor(this);
+-        }
+-    }
+-
+-
+ /* -------------------- YinYang item -------------------- */
+ namespace
+ {
+@@ -2841,117 +2097,6 @@
+ }
+ 
+ 
+-/* -------------------- Sensors -------------------- */
+-
+-
+-/* Basically behave like regular triggers, but they are invisible and can be
+-   activated only once. */
+-    class Sensor : public Item {
+-        CLONEOBJ(Sensor);
+-        DECL_ITEMTRAITS_ARRAY(4, traitsIdx());
+-    private:
+-        enum ObjectPrivatFlagsBits {
+-            OBJBIT_ISFILTER  =   1&lt;&lt;24    ///&lt; sensor that filters signals, too
+-        };
+-    public:
+-        static void setup();
+-            
+-        Sensor(bool inverse, bool isFilter = false);
+-        
+-        // Object interface
+-        virtual Value message(const Message &amp;m);
+-        
+-        // StateObject interface
+-        virtual void setAttr(const string&amp; key, const Value &amp;val);
+-        
+-        // GridObject interface
+-        virtual void init_model();
+-
+-        // ModelCallback interface
+-        virtual void animcb();
+-
+-        // Item interface
+-        virtual void actor_enter(Actor *a);
+-    
+-    private:
+-        int traitsIdx() const;
+-    };
+-    
+-    void Sensor::setup() {
+-        RegisterItem(new Sensor(false));
+-        RegisterItem(new Sensor(true));
+-        RegisterItem(new Sensor(true, true));
+-        RegisterItem(new Sensor(false, true));
+-    }
+-    
+-    Sensor::Sensor(bool inverse, bool isFilter) {
+-        Object::setAttr(&quot;inverse&quot;, inverse);
+-        if (isFilter) {
+-            objFlags |= OBJBIT_ISFILTER;
+-            Item::setAttr(&quot;invisible&quot;, true);
+-        }
+-    }
+-    
+-    Value Sensor::message(const Message &amp;m) {
+-        if (m.message == &quot;_hit&quot;) {   // door knocking forward to black/whitballstone
+-            setAttr(&quot;$hitactor&quot;, m.value);
+-            performAction(true);
+-            setAttr(&quot;$hitactor&quot;, (Object *)NULL);
+-            return Value();
+-        } else if (m.message == &quot;_hitactor&quot;) {
+-            return getAttr(&quot;$hitactor&quot;);
+-        } else if (m.message == &quot;_glasses&quot;) {
+-            if (isDisplayable())
+-                init_model();            
+-        } else if (m.message == &quot;signal&quot; &amp;&amp; (objFlags &amp; OBJBIT_ISFILTER)) {
+-            if (m.value == 1)
+-                performAction(true);   // invertion done by Object
+-            return Value();
+-        }
+-        return Item::message(m);
+-    }
+-    
+-    void Sensor::setAttr(const string&amp; key, const Value &amp;val) {
+-        if (key == &quot;invisible&quot;) {
+-            Item::setAttr(key, val);
+-            if (isDisplayable())
+-                init_model();
+-            return;
+-        }
+-        Item::setAttr(key, val);
+-    }
+-    
+-    void Sensor::init_model() {
+-        if (getAttr(&quot;invisible&quot;).to_bool() &amp;&amp; ((server::GlassesVisibility &amp; Glasses::SENSOR) == 0))
+-            set_model(&quot;invisible&quot;);
+-        else
+-            set_model(&quot;it_sensor&quot;);
+-    }
+-
+-    void Sensor::animcb() {
+-        init_model();
+-    }
+-
+-    void Sensor::actor_enter(Actor *) {
+-        if (!getAttr(&quot;invisible&quot;).to_bool())
+-            set_anim(&quot;it_sensor_hit&quot;);
+-        performAction(true);
+-    }
+-    
+-    int Sensor::traitsIdx() const {
+-        int idx = getAttr(&quot;inverse&quot;).to_bool() ? 1 : 0;
+-        if (objFlags &amp; OBJBIT_ISFILTER)
+-            idx +=2;
+-        return idx;
+-    }
+-
+-    ItemTraits Sensor::traits[4] = {
+-        {&quot;it_sensor&quot;,  it_sensor,  itf_static}, 
+-        {&quot;it_sensor_inverse&quot;,  it_inversesensor,  itf_static},
+-        {&quot;it_sensor_filter1&quot;, it_signalfilter1, itf_static | itf_invisible, 0.0},  // DAT only
+-        {&quot;it_sensor_filter0&quot;, it_signalfilter0, itf_static | itf_invisible, 0.0}   // DAT only
+-    };
+-
+ /* -------------------- EasyKillStone -------------------- */
+ 
+ /*
+@@ -3433,148 +2578,6 @@
+     
+     DEF_ITEMTRAITSF(DeathItem, &quot;it_death&quot;, it_death, itf_static | itf_indestructible);
+ 
+-/* -------------------- Strip Items  -------------------- */
+-    class StripItem : public Item {
+-        CLONEOBJ(StripItem);
+-        DECL_ITEMTRAITS_ARRAY(16, traitsIdx());
+-        
+-    public:
+-        static void setup();
+-                
+-        StripItem(std::string connections);
+-        
+-        // Object interface
+-        virtual std::string getClass() const;
+-
+-        // StateObject interface
+-        virtual void setState(int extState);
+-        
+-        // GridObject interface
+-        virtual std::string getModelName() const;
+-        virtual void init_model();
+-                
+-        // Items interface
+-        virtual bool covers_floor(ecl::V2 pos, Actor *a) const;
+-        virtual double getFriction(ecl::V2 pos, double defaultFriction, Actor *a);
+-        virtual ecl::V2 calcMouseforce(Actor *a, ecl::V2 mouseForce, ecl::V2 floorForce);
+-        
+-    private:
+-        int traitsIdx() const;
+-    };
+-    
+-    
+-    void StripItem::setup() {
+-        RegisterItem(new StripItem(&quot;&quot;));
+-        RegisterItem(new StripItem(&quot;w&quot;));
+-        RegisterItem(new StripItem(&quot;s&quot;));
+-        RegisterItem(new StripItem(&quot;sw&quot;));
+-        RegisterItem(new StripItem(&quot;e&quot;));
+-        RegisterItem(new StripItem(&quot;ew&quot;));
+-        RegisterItem(new StripItem(&quot;es&quot;));
+-        RegisterItem(new StripItem(&quot;esw&quot;));
+-        RegisterItem(new StripItem(&quot;n&quot;));
+-        RegisterItem(new StripItem(&quot;nw&quot;));
+-        RegisterItem(new StripItem(&quot;ns&quot;));
+-        RegisterItem(new StripItem(&quot;nsw&quot;));
+-        RegisterItem(new StripItem(&quot;ne&quot;));
+-        RegisterItem(new StripItem(&quot;new&quot;));
+-        RegisterItem(new StripItem(&quot;nes&quot;));
+-        RegisterItem(new StripItem(&quot;nesw&quot;));
+-    }
+-    
+-    StripItem::StripItem(std::string connections) {
+-        setAttr(&quot;connections&quot;, connections);
+-    }
+-        
+-    std::string StripItem::getClass() const {
+-        return &quot;it_strip&quot;;
+-    }
+-    
+-    void StripItem::setState(int extState) {
+-        // block state set
+-    }
+-    
+-    std::string StripItem::getModelName() const {
+-        return getClass();
+-    }
+-    
+-    void StripItem::init_model() {
+-        // need to bypass Item's implementation
+-        GridObject::init_model();
+-    }
+-
+-    bool StripItem::covers_floor(ecl::V2 pos, Actor *a) const {
+-        if (GridPos(pos) != get_pos())
+-            return false;
+-
+-        double velocity = 0;
+-        if (a != NULL) 
+-            velocity = ecl::length(a-&gt;get_actorinfo()-&gt;vel);
+-            
+-        // calculate the maximal horizontal or vertical distance from the center:
+-        // gurantee that a large marble can touch a neighboring stone at speed 0,
+-        // and a fast marble does not step off the strip on hitting a neighbor stone.
+-        // A fast marble might not reach the stone in one timestep while being
+-        // on top of the strip and is afterwards moved forward off the strip.
+-        // Thus we must expand the strip with increasing speed of the actor - call
+-        // it a relativistic effect :-)
+-        // d = 1/2 - 19/64 - 0.02 + velocity/400 
+-        //  = 1/2 - radius large marble - epsilon + velocity/(1/2.5 ms)
+-        // we need to limit the speed to avoid a fast marble traversing the gap in
+-        // two timesteps! 
+-        double MAXDIST = 0.183125 + ecl::Clamp(velocity/400, 0.0, 0.125);
+-        
+-        double ycenter = get_pos().y + 0.5;
+-        double xcenter = get_pos().x + 0.5;
+-        DirectionBits cbits = getConnections();
+-        
+-        return (((fabs(pos[1] - ycenter) &lt;= MAXDIST) &amp;&amp; ((fabs(pos[0] - xcenter) &lt;= MAXDIST)  ||
+-                   ((pos[0] &lt;= xcenter + MAXDIST) &amp;&amp; (cbits &amp; WESTBIT)) || ((pos[0] &gt;= xcenter - MAXDIST) &amp;&amp; (cbits &amp; EASTBIT))))
+-                || ((fabs(pos[0] - xcenter) &lt;= MAXDIST) 
+-                &amp;&amp; (((pos[1] &lt;= ycenter + MAXDIST) &amp;&amp; (cbits &amp; NORTHBIT)) || ((pos[1] &gt;= ycenter - MAXDIST) &amp;&amp; (cbits &amp; SOUTHBIT)))))
+-                ? true : false;
+-    }
+-    
+-    double StripItem::getFriction(ecl::V2 pos, double defaultFriction, Actor *a) {
+-        Value v = getAttr(&quot;friction&quot;);
+-        if (v &amp;&amp; covers_floor(pos, a))
+-            return v;
+-        else
+-            return defaultFriction;
+-    }
+-    
+-    ecl::V2 StripItem::calcMouseforce(Actor *a, ecl::V2 mouseForce, ecl::V2 floorForce) {
+-        Value v = getAttr(&quot;adhesion&quot;);
+-        if (v &amp;&amp; covers_floor(a-&gt;get_pos(), a))
+-            return mouseForce * (double)v ;
+-        else
+-            return floorForce;        
+-    }
+-        
+-    int StripItem::traitsIdx() const {
+-        return getConnections();
+-    }
+-
+-    ItemTraits StripItem::traits[16] = {
+-        {&quot;it_strip&quot;,  it_strip,  itf_static},
+-        {&quot;it_strip_w&quot;,  it_strip_w,  itf_static},
+-        {&quot;it_strip_s&quot;,  it_strip_s,  itf_static},
+-        {&quot;it_strip_sw&quot;,  it_strip_sw,  itf_static},
+-        {&quot;it_strip_e&quot;,  it_strip_e,  itf_static},
+-        {&quot;it_strip_ew&quot;,  it_strip_ew,  itf_static},
+-        {&quot;it_strip_es&quot;,  it_strip_es,  itf_static},
+-        {&quot;it_strip_esw&quot;,  it_strip_esw,  itf_static},
+-        {&quot;it_strip_n&quot;,  it_strip_n,  itf_static},
+-        {&quot;it_strip_nw&quot;,  it_strip_nw,  itf_static},
+-        {&quot;it_strip_ns&quot;,  it_strip_ns,  itf_static},
+-        {&quot;it_strip_nsw&quot;,  it_strip_nsw,  itf_static},
+-        {&quot;it_strip_ne&quot;,  it_strip_ne,  itf_static},
+-        {&quot;it_strip_new&quot;,  it_strip_new,  itf_static},
+-        {&quot;it_strip_nes&quot;,  it_strip_nes,  itf_static},
+-        {&quot;it_strip_nesw&quot;,  it_strip_nesw,  itf_static}
+-    };
+-
+-
+ /* -------------------- it-surprise -------------------- */
+ namespace
+ {
+@@ -3828,9 +2831,6 @@
+     RegisterItem (new Key);
+     RegisterItem (new Landmine);
+     RegisterItem (new MagicWand);
+-    Register (&quot;it_magnet&quot;, new Magnet(false));
+-    RegisterItem (new Magnet(true));
+-    RegisterItem (new Magnet(false));
+     RegisterItem (new Odometer);
+     RegisterItem (new OnePKillStone);
+     RegisterItem (new OxydBridge);
+@@ -3844,32 +2844,23 @@
+     RegisterItem (new SeedWood);
+     RegisterItem (new SeedNowood);
+     RegisterItem (new SeedVolcano);
+-    Sensor::setup();
+     RegisterItem (new Spade);
+     RegisterItem (new Spoon);
+     RegisterItem (new Spring1);
+     RegisterItem (new Spring2);
+     RegisterItem (new Springboard);
+     RegisterItem (new Squashed);
+-    StripItem::setup();
+     RegisterItem (new SurpriseItem);
+     RegisterItem (new Sword(false));
+     Register (&quot;it_sword_new&quot;, new Sword(true));
+     RegisterItem (new TinyHill);
+     RegisterItem (new TinyHollow);
+-    RegisterItem (new Trigger);
+     RegisterItem (new TwoPKillStone);
+     RegisterItem (new Umbrella(false));
+     Register (&quot;it_umbrella_new&quot;, new Umbrella(true));
+-    Register (&quot;it_vortex&quot;, new Vortex(true));
+-    RegisterItem (new Vortex(false));
+-    RegisterItem (new Vortex(true));
+     RegisterItem (new Weight);
+     RegisterItem (new WhiteBomb);
+     RegisterItem (new Wrench);
+-    RegisterItem (new WormHole(false));
+-    RegisterItem (new WormHole(true));
+-    Register (&quot;it_wormhole&quot;, new WormHole(true));
+     RegisterItem (new YinYang);
+ }
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000693.html">[Enigma-game-svn] r1259 - in team_levelpacks: . team_test_new_api	team_test_physics
+</A></li>
+	<LI>Next message: <A HREF="000699.html">[Enigma-game-svn] r1269 - trunk/src/items
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#700">[ date ]</a>
+              <a href="thread.html#700">[ thread ]</a>
+              <a href="subject.html#700">[ subject ]</a>
+              <a href="author.html#700">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

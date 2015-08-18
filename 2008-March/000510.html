@@ -1,0 +1,748 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1077 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1077%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200803182200.m2IM0MAJ005979%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000509.html">
+   <LINK REL="Next"  HREF="000511.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1077 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1077%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200803182200.m2IM0MAJ005979%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1077 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Mar 18 23:00:22 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000509.html">[Enigma-game-svn] r1076 - homepage/input/lotm
+</A></li>
+        <LI>Next message: <A HREF="000511.html">[Enigma-game-svn] r1078 - in trunk: data data/schemas src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#510">[ date ]</a>
+              <a href="thread.html#510">[ thread ]</a>
+              <a href="subject.html#510">[ subject ]</a>
+              <a href="author.html#510">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-03-18 23:00:12 +0100 (Tue, 18 Mar 2008)
+New Revision: 1077
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/items.cc
+   trunk/src/player.cc
+   trunk/src/stones.cc
+   trunk/src/stones/BoulderStone.cc
+   trunk/src/stones/BoulderStone.hh
+   trunk/src/stones/TimerStone.cc
+   trunk/src/stones/TimerStone.hh
+   trunk/src/util.cc
+   trunk/src/util.hh
+Log:
+Trunk 1.1: new API
+- BoulderStone: reenginieering from PhotoStone to GridObject/lightDirChanged(),
+  Boulder now reacts on each additional light
+- TimerStone: made swappable - 1.01 did produce hangups, last revision did
+  switch off timers on swapping
+- fix basic Timer class hangups - intervals &lt; 0.01 seconds on periodic
+  alarms now cause an ASSERT
+- basic Timer class: return remaining time on alarm removal
+- reengineering it-umbrella to it_umbrella with complete light handling
+- reengineering it-extralife to it_extralife with complete light handling
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-03-16 09:40:29 UTC (rev 1076)
++++ trunk/data/api1init.lua	2008-03-18 22:00:12 UTC (rev 1077)
+@@ -47,12 +47,14 @@
+ RenamingObjectsNew2Old = {
+     it_blocker = &quot;it-blocker&quot;,
+     it_blocker_new = &quot;it-blocker-new&quot;,
++    it_extralife = &quot;it_extralife&quot;,
+     it_hammer = &quot;it-hammer&quot;,
+     it_magnet = &quot;it-magnet&quot;,
+     it_magnet_on = &quot;it-magnet-on&quot;,
+     it_magnet_off = &quot;it-magnet-off&quot;,
+     it_sword = &quot;it-sword&quot;,
+     it_trigger = &quot;it-trigger&quot;,
++    it_umbrella = &quot;it-umbrella&quot;,
+     it_wormhole_on = &quot;it-wormhole&quot;,
+     it_wormhole_off = &quot;it-wormhole-off&quot;,
+     st_blocker = &quot;st-blocker&quot;,
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-03-16 09:40:29 UTC (rev 1076)
++++ trunk/data/models-2d.lua	2008-03-18 22:00:12 UTC (rev 1077)
+@@ -403,7 +403,6 @@
+         &quot;it-drop&quot;,
+         &quot;it-dummy&quot;,
+         &quot;it-dynamite&quot;,
+-        &quot;it-extralife&quot;,
+         &quot;it-flagblack&quot;,
+         &quot;it-flagwhite&quot;,
+         &quot;it-floppy&quot;,
+@@ -428,7 +427,6 @@
+         &quot;it-surprise&quot;,
+         &quot;it-tinyhill&quot;,
+         &quot;it-tinyhollow&quot;,
+-        &quot;it-umbrella&quot;,
+         &quot;it-vstrip&quot;,
+         &quot;it-weight&quot;,
+         &quot;it-whitebomb&quot;,
+@@ -438,8 +436,10 @@
+     DefImages(itemlist)
+ 
+     DefImage(&quot;it-brake&quot;, {filename=&quot;st-brake&quot;})
++    DefImage(&quot;it_extralife&quot;, {filename=&quot;it-extralife&quot;})
+     DefImage(&quot;it_hammer&quot;, {filename=&quot;it-hammer&quot;})
+     DefImage(&quot;it_sword&quot;, {filename=&quot;it-sword&quot;})
++    DefImage(&quot;it_umbrella&quot;, {filename=&quot;it-umbrella&quot;})
+ end
+ 
+ -------------------------
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-03-16 09:40:29 UTC (rev 1076)
++++ trunk/data/schemas/objects.xml	2008-03-18 22:00:12 UTC (rev 1077)
+@@ -16,6 +16,7 @@
+     &lt;attr name=&quot;range&quot; type=&quot;double&quot; default=&quot;1.0&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;scissor&quot; type=&quot;bool&quot; default=&quot;true&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;state&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;1&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;static&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;strength&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;target&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+   &lt;/attributes&gt;
+@@ -64,6 +65,8 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;it_blocker_new&quot; init=&quot;true&quot;&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;it_extralife&quot;/&gt;
++    &lt;object name=&quot;it_extralife_new&quot; init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;it_hammer&quot;/&gt;
+     &lt;object name=&quot;it_hammer_new&quot; init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;it_magnet&quot;&gt;
+@@ -91,6 +94,8 @@
+       &lt;msg name=&quot;off&quot;/&gt;
+       &lt;msg name=&quot;signal&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;it_umbrella&quot;/&gt;
++    &lt;object name=&quot;it_umbrella_new&quot; init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;it_wormhole_off&quot;&gt;
+       &lt;attr name=&quot;state&quot; value=&quot;0&quot;/&gt;
+     &lt;/object&gt;
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-03-16 09:40:29 UTC (rev 1076)
++++ trunk/src/items.cc	2008-03-18 22:00:12 UTC (rev 1077)
+@@ -421,49 +421,133 @@
+ 
+ 
+ /* -------------------- ExtraLife -------------------- */
+-namespace
+-{
+-    class ExtraLife : public Item {
++
++    class ExtraLife : public Item, public TimeHandler {
+         CLONEOBJ(ExtraLife);
+         DECL_TRAITS;
+-        std::string get_inventory_model() {
+-            if (player::CurrentPlayer()==0)
+-                return &quot;inv-blackball&quot;;
+-            else
+-                return &quot;inv-whiteball&quot;;
++        
++    public:
++        ExtraLife(bool isNew);
++
++        // GridObject interface
++        virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
++        virtual void lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs);
++        
++        // Item interface
++        virtual string get_inventory_model();
++
++        // TimeHandler interface
++        virtual void alarm();
++    };
++
++    ExtraLife::ExtraLife(bool isNew) : Item() {
++        if (isNew) {
++            objFlags |= ALL_DIRECTIONS;
+         }
++    }
++    
++    std::string ExtraLife::get_inventory_model() {
++        if (player::CurrentPlayer()==0)
++            return &quot;inv-blackball&quot;;
++        else
++            return &quot;inv-whiteball&quot;;
++    }
+ 
+-        void processLight(Direction d) {
++    void ExtraLife::on_creation(GridPos p) {
++        if ((objFlags &amp; ALL_DIRECTIONS) == ALL_DIRECTIONS) {
++            // a new transformed extralife
++            GameTimer.set_alarm(this, 0.2, false);
++        } else {
++            updateCurrentLightDirs();
++            activatePhoto();
++        }
++        Item::on_creation(p);
++    }
++    
++    void ExtraLife::on_removal(GridPos p) {
++        GameTimer.remove_alarm(this);
++        objFlags &amp;= ~ALL_DIRECTIONS;
++        Item::on_removal(p);
++    }
++    
++    void ExtraLife::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
++        if (added_dirs(oldDirs, newDirs) != 0) {
+             sound_event (&quot;itemtransform&quot;);
+-            replace (it_glasses);
++            replace(it_glasses);
+         }
++    }
++    
++    void ExtraLife::alarm() {
++            DirectionBits db = updateCurrentLightDirs();
++            activatePhoto();        
++    }
+ 
+-    public:
+-        ExtraLife() {}
+-    };
+-    DEF_TRAITS(ExtraLife, &quot;it-extralife&quot;, it_extralife);
+-}
++    DEF_TRAITS(ExtraLife, &quot;it_extralife&quot;, it_extralife);
+ 
+ /* -------------------- Umbrella -------------------- */
+-namespace
+-{
+-    class Umbrella : public Item {
++
++    class Umbrella : public Item, public TimeHandler {
+         CLONEOBJ(Umbrella);
+         DECL_TRAITS;
+-        void processLight(Direction d) {
+-            if (server::GameCompatibility != enigma::GAMET_PEROXYD)
+-                replace(it_explosion1);
+-        }
+-        ItemAction activate(Actor *a, GridPos) {
+-            SendMessage(a, &quot;shield&quot;);
+-            return ITEM_KILL;
+-        }
++
+     public:
+-        Umbrella() {}
++        Umbrella(bool isNew);
++
++        // GridObject interface
++        virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
++        virtual void lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs);
++
++        // Item interface
++        virtual ItemAction activate(Actor* a, GridPos p);
++        
++        // TimeHandler interface
++        virtual void alarm();
+     };
+-    DEF_TRAITS (Umbrella, &quot;it-umbrella&quot;, it_umbrella);
+-}
+ 
++    Umbrella::Umbrella(bool isNew) : Item() {
++        if (isNew) {
++            objFlags |= ALL_DIRECTIONS;
++        }
++    }
++    
++    void Umbrella::on_creation(GridPos p) {
++        if ((objFlags &amp; ALL_DIRECTIONS) == ALL_DIRECTIONS) {
++            // a new transformed umbrella
++            GameTimer.set_alarm(this, 0.2, false);
++        } else {
++            updateCurrentLightDirs();
++            activatePhoto();
++        }
++        Item::on_creation(p);
++    }
++    
++    void Umbrella::on_removal(GridPos p) {
++        GameTimer.remove_alarm(this);
++        objFlags &amp;= ~ALL_DIRECTIONS;
++        Item::on_removal(p);
++    }
++    
++    void Umbrella::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
++        if (added_dirs(oldDirs, newDirs) != 0 &amp;&amp; server::GameCompatibility != enigma::GAMET_PEROXYD) {
++            sound_event (&quot;itemtransform&quot;);
++            replace(it_explosion1);
++        }
++    }
++    
++    ItemAction Umbrella::activate(Actor *a, GridPos) {
++        SendMessage(a, &quot;shield&quot;);
++        return ITEM_KILL;
++    }
++    
++    void Umbrella::alarm() {
++            DirectionBits db = updateCurrentLightDirs();
++            activatePhoto();        
++    }
++
++    DEF_TRAITS (Umbrella, &quot;it_umbrella&quot;, it_umbrella);
++
+ /* -------------------- Spoon -------------------- */
+ namespace
+ {
+@@ -591,7 +675,7 @@
+ 
+         void processLight(Direction d) {
+             sound_event (&quot;itemtransform&quot;);
+-            replace (it_umbrella);
++            transform(&quot;it_umbrella_new&quot;);
+         }
+ 
+         void on_stonehit(Stone *) {
+@@ -631,7 +715,7 @@
+ 
+         void processLight(Direction d) {
+             sound_event (&quot;itemtransform&quot;);
+-            replace (it_extralife);
++            transform(&quot;it_extralife_new&quot;);
+         }
+     public:
+         Coin4() {
+@@ -3850,7 +3934,8 @@
+     RegisterItem (new Explosion2);
+     RegisterItem (new Explosion3);
+     Extinguisher::setup();
+-    RegisterItem (new ExtraLife);
++    RegisterItem (new ExtraLife(false));
++    Register (&quot;it_extralife_new&quot;, new ExtraLife(true));
+     RegisterItem (new FlagBlack);
+     RegisterItem (new FlagWhite);
+     RegisterItem (new Floppy);
+@@ -3901,7 +3986,8 @@
+     RegisterItem (new TinyHollow);
+     RegisterItem (new Trigger);
+     RegisterItem (new TwoPKillStone);
+-    RegisterItem (new Umbrella);
++    RegisterItem (new Umbrella(false));
++    Register (&quot;it_umbrella_new&quot;, new Umbrella(true));
+     RegisterItem (new Vortex(false));
+     RegisterItem (new Vortex(true));
+     RegisterItem (new VStrip);
+
+Modified: trunk/src/player.cc
+===================================================================
+--- trunk/src/player.cc	2008-03-16 09:40:29 UTC (rev 1076)
++++ trunk/src/player.cc	2008-03-18 22:00:12 UTC (rev 1077)
+@@ -122,7 +122,7 @@
+ bool LevelLocalData::remove_extralife (Actor *a) 
+ {
+     Inventory *inv = player::GetInventory(a);
+-    int        idx = inv-&gt;find(&quot;it-extralife&quot;);
++    int        idx = inv-&gt;find(&quot;it_extralife&quot;);
+ 
+     if (idx == -1) // no extralife found
+         return false;
+@@ -166,7 +166,7 @@
+             extralives[i] = -1;
+             do {
+                 ++extralives[i];
+-                idxLife = players[i].inventory.find(&quot;it-extralife&quot;, ++idxLife);
++                idxLife = players[i].inventory.find(&quot;it_extralife&quot;, ++idxLife);
+             } while (idxLife != -1);
+         } else {
+             // new game provides 2 extralives
+@@ -376,7 +376,7 @@
+ static bool has_extralive(unsigned pl, unsigned num) {
+     size_t idx = 0;
+     for (int i = 0; i &lt; num; i++) {
+-        int idxLife = players[pl].inventory.find(&quot;it-extralife&quot;, idx);
++        int idxLife = players[pl].inventory.find(&quot;it_extralife&quot;, idx);
+         if (idxLife == -1)
+             return false;
+         else
+@@ -491,7 +491,7 @@
+             for (unsigned pl = 0; pl&lt;players.size(); ++pl) {
+                 Inventory *inv = player::GetInventory(pl);
+                 for (int i=0; i&lt;numDead[pl]; i++) {
+-                    int idx = inv-&gt;find(&quot;it-extralife&quot;);
++                    int idx = inv-&gt;find(&quot;it_extralife&quot;);
+                     ASSERT (idx != -1, XLevelRuntime, &quot;Missing extralife for restart of level&quot;);
+                     delete inv-&gt;yield_item(idx);
+                 }
+
+Modified: trunk/src/stones/BoulderStone.cc
+===================================================================
+--- trunk/src/stones/BoulderStone.cc	2008-03-16 09:40:29 UTC (rev 1076)
++++ trunk/src/stones/BoulderStone.cc	2008-03-18 22:00:12 UTC (rev 1077)
+@@ -38,7 +38,7 @@
+                 Object::setAttr(key, val);
+             return;
+         }
+-        PhotoStone::setAttr(key, val);
++        Stone::setAttr(key, val);
+     }
+ 
+     Value BoulderStone::message(const Message &amp;m) {
+@@ -51,7 +51,7 @@
+                     ? rotate_cw(getDir()) : rotate_ccw(getDir()));
+             return Value();
+         }
+-        return PhotoStone::message(m);
++        return Stone::message(m);
+     }
+ 
+     int BoulderStone::externalState() const {
+@@ -63,13 +63,9 @@
+     }
+     
+     void BoulderStone::on_creation(GridPos p) {
+-        PhotoStone::on_creation(p);
+-        photo_activate();
++        activatePhoto();
++        Stone::on_creation(p);
+     }
+-    void BoulderStone::on_removal(GridPos p) {
+-        photo_deactivate();
+-        PhotoStone::on_removal(p);
+-    }
+     
+     void BoulderStone::init_model() {
+         std::string mname  = &quot;st-bolder&quot; + to_suffix(getDir());
+@@ -109,6 +105,12 @@
+         }
+     }
+ 
++    void BoulderStone::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
++        if (added_dirs(oldDirs, newDirs) != 0) {
++            setDir(reverse(getDir()));
++        }
++    }
++    
+     void BoulderStone::actor_hit(const StoneContact &amp;sc) {
+         if (state == FALLING)
+             return;
+@@ -142,13 +144,6 @@
+         move_stone(impulse.dir);  // due to rotator and impulsestone
+     }
+ 
+-    void BoulderStone::notify_laseron() {
+-        setDir(reverse(getDir()));
+-    }
+-    
+-    void BoulderStone::notify_laseroff() {
+-    }
+-
+     Direction BoulderStone::getDir() const {
+         return to_direction(getAttr(&quot;orientation&quot;));
+     }
+
+Modified: trunk/src/stones/BoulderStone.hh
+===================================================================
+--- trunk/src/stones/BoulderStone.hh	2008-03-16 09:40:29 UTC (rev 1076)
++++ trunk/src/stones/BoulderStone.hh	2008-03-18 22:00:12 UTC (rev 1077)
+@@ -21,7 +21,7 @@
+ #define BOULDERSTONE_HH
+ 
+ #include &quot;stones.hh&quot;
+-#include &quot;laser.hh&quot;
++//#include &quot;laser.hh&quot;
+ 
+ #include &quot;stones_internal.hh&quot;
+ 
+@@ -30,7 +30,7 @@
+     /** 
+      * 
+      */
+-    class BoulderStone : public PhotoStone {
++    class BoulderStone : public Stone {
+         CLONEOBJ(BoulderStone);
+         DECL_TRAITS;
+     private:
+@@ -53,8 +53,8 @@
+ 
+         // GridObject interface
+         virtual void on_creation(GridPos p);
+-        virtual void on_removal(GridPos p);
+         virtual void init_model();
++        virtual void lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs);
+         
+         // ModelCallback interface
+         virtual void animcb();
+@@ -66,10 +66,6 @@
+         virtual void on_impulse(const Impulse&amp; impulse);
+ //        virtual const char *collision_sound();
+ 
+-        // PhotoStone interface
+-        virtual void notify_laseron();
+-        virtual void notify_laseroff();
+-        
+     private:
+         Direction getDir() const;
+         void setDir(Direction d);
+
+Modified: trunk/src/stones/TimerStone.cc
+===================================================================
+--- trunk/src/stones/TimerStone.cc	2008-03-16 09:40:29 UTC (rev 1076)
++++ trunk/src/stones/TimerStone.cc	2008-03-18 22:00:12 UTC (rev 1077)
+@@ -27,15 +27,27 @@
+ namespace enigma {
+     
+     TimerStone::TimerStone() : Stone(&quot;st_timer&quot;) {
+-        state = ON_TRUE;
++        state = ON;
+     }
+     
++    TimerStone::~TimerStone() {
++        GameTimer.remove_alarm(this);
++    }
++    
+     std::string TimerStone::getClass() const {
+         return &quot;st_timer&quot;;
+     }
+     
++    Value TimerStone::message(const Message &amp;m) {
++        if (m.message == &quot;_model_reanimated&quot;) {
++            init_model();
++            return Value();
++        }
++        return Stone::message(m);
++    }
++    
+     int TimerStone::externalState() const {
+-        return state == 0 ? 0 : 1;
++        return state == OFF ? 0 : 1;
+     }
+     
+     void TimerStone::setState(int extState) {
+@@ -48,15 +60,16 @@
+                     GameTimer.remove_alarm(this);
+                 }
+             }
+-        } else
++        } else {
+             state = extState;
++        }
+     }
+     
+     void TimerStone::init_model() {
+         if (getAttr(&quot;invisible&quot;).to_bool()) {
+             set_model(&quot;invisible&quot;);
+         } else {
+-            set_model(state == 0 ? &quot;st-timeroff&quot; : &quot;st-timer&quot;);
++            set_model(state == OFF ? &quot;st-timeroff&quot; : &quot;st-timer&quot;);
+         }
+     }
+     
+@@ -64,28 +77,25 @@
+         updateAlarm();
+         Stone::on_creation(p);
+     }
+-    
+-    void TimerStone::on_removal(GridPos p) {
+-        GameTimer.remove_alarm(this);
+-        state = OFF;
+-        Stone::on_removal(p);
+-    }
+-    
++        
+     void TimerStone::alarm() {
+         bool actionValue = (state == ON_TRUE);
+-        state = 3 - state;   // toggle between ON_TRUE and ON_FALSE
+-        if(!getAttr(&quot;loop&quot;).to_bool())
++        state ^= 1;   // toggle between ON_TRUE and ON_FALSE
++        if(!getAttr(&quot;loop&quot;).to_bool()) {
+             setState(OFF);
+-            
++            if (isDisplayable())
++                init_model();
++        }
+         performAction(actionValue);
+     }
+     
+     void TimerStone::updateAlarm() {
+-        if (state &gt; 0)
++        if (state == ON) {
++            state = ON_TRUE;
+             GameTimer.set_alarm(this, (double)getAttr(&quot;interval&quot;), getAttr(&quot;loop&quot;).to_bool());
++        }
+     }
+ 
+-
+     BOOT_REGISTER_START
+         BootRegister(new TimerStone(), &quot;st_timer&quot;);
+     BOOT_REGISTER_END
+
+Modified: trunk/src/stones/TimerStone.hh
+===================================================================
+--- trunk/src/stones/TimerStone.hh	2008-03-16 09:40:29 UTC (rev 1076)
++++ trunk/src/stones/TimerStone.hh	2008-03-18 22:00:12 UTC (rev 1077)
+@@ -26,22 +26,26 @@
+     /** 
+      * 
+      * 
+-     * 
++     * Note that a timer has to continue to run even if it is removed from the grid
++     * to support swapping. Thus the alarm has to removed on delete or destructor.
+      */
+     class TimerStone : public Stone, public TimeHandler {
+         CLONEOBJ(TimerStone);
+     private:
+         enum iState {
+-            OFF, 
++            OFF,          ///&lt; timer is inactive, next action value is true (default)
++            ON,           ///&lt; timer is yet inactive, but will start running on being
+             ON_TRUE,      ///&lt; timer is active, next action value is true
+             ON_FALSE      ///&lt; timer is active, next action value is false
+         };
+ 
+     public:
+         TimerStone();
++        ~TimerStone();
+ 
+         // Object interface
+         virtual std::string getClass() const;
++        virtual Value message(const Message &amp;m);
+         
+         // StateObject interface
+         virtual int externalState() const;
+@@ -50,7 +54,6 @@
+         // GridObject interface
+         virtual void init_model();
+         virtual void on_creation(GridPos p);
+-        virtual void on_removal(GridPos p);
+         
+         // TimeHandler interface
+         virtual void alarm();
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-03-16 09:40:29 UTC (rev 1076)
++++ trunk/src/stones.cc	2008-03-18 22:00:12 UTC (rev 1077)
+@@ -435,7 +435,7 @@
+         return;
+ 
+     if (enigma::Inventory *inv = player::GetInventory(sc.actor)) {
+-        int lifepos = inv-&gt;find(&quot;it-extralife&quot;);
++        int lifepos = inv-&gt;find(&quot;it_extralife&quot;);
+         if (lifepos != -1) {
+             delete inv-&gt;yield_item(lifepos);
+             player::RedrawInventory (inv);
+
+Modified: trunk/src/util.cc
+===================================================================
+--- trunk/src/util.cc	2008-03-16 09:40:29 UTC (rev 1076)
++++ trunk/src/util.cc	2008-03-18 22:00:12 UTC (rev 1077)
+@@ -20,9 +20,11 @@
+ #include &lt;algorithm&gt;
+ #include &lt;functional&gt;
+ 
++#include &quot;util.hh&quot;
++
+ #include &quot;ecl_util.hh&quot;
++#include &quot;errors.hh&quot;
+ 
+-#include &quot;util.hh&quot;
+ 
+ using enigma::Timer;
+ using enigma::TimeHandler;
+@@ -42,7 +44,7 @@
+         bool expired() const;
+         void mark_removed();
+         bool has_handler (enigma::TimeHandler *th) const;
+-    private:
++
+         // Variables
+         enigma::TimeHandler *handler;
+         double               interval;
+@@ -133,17 +135,23 @@
+ 
+ void Timer::set_alarm(TimeHandler *th, double interval, bool repeatp) 
+ {
++    ASSERT(interval &gt; 0, XLevelRuntime, &quot;Timer error: timer with interval &lt;= 0 seconds&quot;);
++    ASSERT(!repeatp || interval &gt;= 0.01, XLevelRuntime, &quot;Timer error: looping timer with interval &lt; 0.01 seconds&quot;);
+     if (interval &gt; 0)
+         self.alarms.push_back(Alarm(th, interval, repeatp));
+ }
+ 
+ 
+-void Timer::remove_alarm(TimeHandler *th) 
+-{
++double Timer::remove_alarm(TimeHandler *th) {
++    double timeleft = 0;
+     list&lt;Alarm&gt;::iterator e = self.alarms.end();
+-    for (list&lt;Alarm&gt;::iterator it = self.alarms.begin(); it != e; ++it) 
+-        if (it-&gt;has_handler (th))
++    for (list&lt;Alarm&gt;::iterator it = self.alarms.begin(); it != e; ++it) {
++        if (it-&gt;has_handler (th)) {
+             it-&gt;mark_removed();
++            timeleft = it-&gt;timeleft;
++        }
++    }
++    return timeleft;
+ }
+ 
+ 
+
+Modified: trunk/src/util.hh
+===================================================================
+--- trunk/src/util.hh	2008-03-16 09:40:29 UTC (rev 1076)
++++ trunk/src/util.hh	2008-03-18 22:00:12 UTC (rev 1077)
+@@ -38,7 +38,7 @@
+         void activate (TimeHandler *th);
+         void deactivate (TimeHandler* th);
+         void set_alarm (TimeHandler* th, double interval, bool repeatp = false);
+-        void remove_alarm (TimeHandler *th);
++        double remove_alarm(TimeHandler *th);
+         void clear();
+ 
+         void tick(double dtime);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000509.html">[Enigma-game-svn] r1076 - homepage/input/lotm
+</A></li>
+	<LI>Next message: <A HREF="000511.html">[Enigma-game-svn] r1078 - in trunk: data data/schemas src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#510">[ date ]</a>
+              <a href="thread.html#510">[ thread ]</a>
+              <a href="subject.html#510">[ subject ]</a>
+              <a href="author.html#510">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

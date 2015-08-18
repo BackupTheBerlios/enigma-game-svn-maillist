@@ -1,0 +1,230 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1454 - in trunk: data src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1454%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200901142158.n0ELwGLQ031442%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000882.html">
+   <LINK REL="Next"  HREF="000884.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1454 - in trunk: data src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1454%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200901142158.n0ELwGLQ031442%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1454 - in trunk: data src">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Jan 14 22:58:16 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000882.html">[Enigma-game-svn] r1453 - in trunk: data/schemas src src/items
+</A></li>
+        <LI>Next message: <A HREF="000884.html">[Enigma-game-svn] r1455 - feature_branches/hp_lotm/input/articles
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#883">[ date ]</a>
+              <a href="thread.html#883">[ thread ]</a>
+              <a href="subject.html#883">[ subject ]</a>
+              <a href="author.html#883">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-01-14 22:58:15 +0100 (Wed, 14 Jan 2009)
+New Revision: 1454
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/src/WorldProxy.cc
+   trunk/src/items.cc
+   trunk/src/lua.cc
+   trunk/src/server.cc
+   trunk/src/server.hh
+Log:
+Trunk 1.1: new API reengineering
+- fix pencils ability to make cross items
+- rename OXYD_GREY to OXYD_GRAY
+- fix new API global variable &quot;IsDifficult&quot; to keep correct value on
+  commandline based mode switches
+- group add method &quot;nearest(obj)&quot; - returns the nearest object of the group to
+  the given obj
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2009-01-13 21:58:32 UTC (rev 1453)
++++ trunk/data/api2init.lua	2009-01-14 21:58:15 UTC (rev 1454)
+@@ -105,7 +105,7 @@
+ OXYD_PURPLE =  5
+ OXYD_WHITE  =  6
+ OXYD_BLACK  =  7
+-OXYD_GREY   =  8
++OXYD_GRAY   =  8
+ OXYD_ORANGE =  9
+ OXYD_PINE   = 10
+ OXYD_BROWN  = 11
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2009-01-13 21:58:32 UTC (rev 1453)
++++ trunk/src/WorldProxy.cc	2009-01-14 21:58:15 UTC (rev 1454)
+@@ -63,7 +63,7 @@
+         } else if (key == &quot;Height&quot;) {
+             return Height();
+         } else if (key == &quot;IsDifficult&quot;) {
+-            return (server::GetDifficulty() == DIFFICULTY_HARD);  // read only
++            return server::IsDifficult;  // read only
+         } else if (key == &quot;LevelTime&quot;) {   
+             return server::LevelTime;    // read only
+         } else if (key == &quot;ProvideExtralifes&quot;) {
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2009-01-13 21:58:32 UTC (rev 1453)
++++ trunk/src/items.cc	2009-01-14 21:58:15 UTC (rev 1454)
+@@ -1440,7 +1440,7 @@
+                 } else  if (model == &quot;fl_ice&quot;) {
+                     SetItem (p, MakeItem(&quot;it_crack_s&quot;));
+                 } else {
+-                    SetItem (p, MakeItem(&quot;it-cross&quot;));
++                    SetItem (p, MakeItem(&quot;it_cross&quot;));
+                 }
+                 return ITEM_KILL;
+             }
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2009-01-13 21:58:32 UTC (rev 1453)
++++ trunk/src/lua.cc	2009-01-14 21:58:15 UTC (rev 1454)
+@@ -3069,6 +3069,40 @@
+     return pushNewGroup(L, newSort);
+ }
+ 
++static int nearestGroup(lua_State *L) {
++    // group
++    if (lua_gettop(L) &lt; 1 || !is_group(L, 1)) {
++        throwLuaError(L, &quot;Syntax error - usage of '.' instead of ':'&quot;);
++        return 0;
++    }
++    if (!(lua_gettop(L) == 2 &amp;&amp; is_object(L, 2))) {
++        throwLuaError(L, &quot;Syntax error: expected object reference as first argument&quot;);
++        return 0;
++    }
++
++    ObjectList oldList = toObjectList(L, 1);
++    Object *center = to_object(L, 2);
++    double mindist = -1;
++    Object *candidate = NULL;
++    
++    for (ObjectList::iterator itr = oldList.begin(); itr != oldList.end(); ++itr) {
++        if (mindist &lt; 0) {
++            candidate = *itr;
++            mindist = center-&gt;squareDistance(candidate);
++        } else {
++            double newdist = center-&gt;squareDistance(*itr);
++            
++            // replace last candidate by new closer object, choose a unique candidate
++            if (mindist &gt; newdist || ((mindist == newdist) &amp;&amp; (*itr)-&gt;isSouthOrEastOf(candidate))) {
++                candidate = *itr;
++                mindist = newdist;
++            }
++        }
++    }
++    pushobject(L, candidate);
++    return 1;
++}
++
+ MethodMap polistMethodeMap;
+ 
+ static int dispatchPolistWriteAccess(lua_State *L) {
+@@ -3324,6 +3358,7 @@
+     {shuffleGroup,                  &quot;shuffle&quot;},
+     {sortGroup,                     &quot;sort&quot;},
+     {subGroup,                      &quot;sub&quot;},
++    {nearestGroup,                  &quot;nearest&quot;},
+     {0,0}
+ };
+ 
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2009-01-13 21:58:32 UTC (rev 1453)
++++ trunk/src/server.cc	2009-01-14 21:58:15 UTC (rev 1454)
+@@ -83,6 +83,7 @@
+ bool     server::AllowTogglePlayer;
+ bool     server::CreatingPreview = false;   // read only for Lua
+ bool     server::ConserveLevel;
++bool     server::IsDifficult;               // read only for Lua
+ bool     server::IsLevelRestart;            // no Lua access
+ bool     server::ProvideExtralifes;
+ bool     server::SurviveFinish;
+@@ -245,7 +246,7 @@
+ void server::PrepareLevel()
+ {
+     state = sv_waiting_for_clients;
+-
++    
+     server::NoCollisions = false;
+     server::WorldInitialized  = false;
+     server::LevelTime         = 0.0;
+@@ -290,6 +291,7 @@
+ }
+ 
+ void server::PrepareLua() {
++    server::IsDifficult = (GetDifficulty() == DIFFICULTY_HARD);
+     // Restart the Lua environment so symbol definitions from
+     // different levels do not get in each other's way.
+     int api = (server::EnigmaCompatibility &lt; 1.10) ? 1 : 2;
+@@ -636,7 +638,7 @@
+ {
+     lev::Index *ind = lev::Index::getCurrentIndex();
+     lev::Proxy *curProxy = ind-&gt;getCurrent();
+-    int i= app.state-&gt;getInt (&quot;Difficulty&quot;);
++    int i= app.state-&gt;getInt(&quot;Difficulty&quot;);
+     if (i == DIFFICULTY_EASY &amp;&amp; !server::CreatingPreview &amp;&amp; curProxy-&gt;hasEasymode())
+         return DIFFICULTY_EASY;
+     else
+
+Modified: trunk/src/server.hh
+===================================================================
+--- trunk/src/server.hh	2009-01-13 21:58:32 UTC (rev 1453)
++++ trunk/src/server.hh	2009-01-14 21:58:15 UTC (rev 1454)
+@@ -58,6 +58,7 @@
+     // True: do not reset level when player dies
+     extern bool     ConserveLevel;
+ 
++    extern bool     IsDifficult;
+     extern bool     IsLevelRestart;
+     extern bool     ProvideExtralifes;
+     extern bool     SurviveFinish;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000882.html">[Enigma-game-svn] r1453 - in trunk: data/schemas src src/items
+</A></li>
+	<LI>Next message: <A HREF="000884.html">[Enigma-game-svn] r1455 - feature_branches/hp_lotm/input/articles
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#883">[ date ]</a>
+              <a href="thread.html#883">[ thread ]</a>
+              <a href="subject.html#883">[ subject ]</a>
+              <a href="author.html#883">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

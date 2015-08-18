@@ -1,0 +1,232 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r2196 - in trunk: data doc/reference src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2011-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2196%20-%20in%20trunk%3A%20data%20doc/reference%20src&In-Reply-To=%3C20110109223344.9EFB3480BEC%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   
+   <LINK REL="Next"  HREF="001621.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r2196 - in trunk: data doc/reference src</H1>
+    <B>ral at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2196%20-%20in%20trunk%3A%20data%20doc/reference%20src&In-Reply-To=%3C20110109223344.9EFB3480BEC%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r2196 - in trunk: data doc/reference src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Jan  9 23:33:43 CET 2011</I>
+    <P><UL>
+        
+        <LI>Next message: <A HREF="001621.html">[Enigma-game-svn] r2197 - homepage/input
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1620">[ date ]</a>
+              <a href="thread.html#1620">[ thread ]</a>
+              <a href="subject.html#1620">[ subject ]</a>
+              <a href="author.html#1620">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2011-01-09 23:33:43 +0100 (Sun, 09 Jan 2011)
+New Revision: 2196
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/doc/reference/enigma-ref.texi
+   trunk/src/lua.cc
+Log:
+resolver autotile: substitute wildcard in keys, too.
+
+- see refman description
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2010-12-31 18:30:43 UTC (rev 2195)
++++ trunk/data/api2init.lua	2011-01-09 22:33:43 UTC (rev 2196)
+@@ -1,5 +1,5 @@
+ ------------------------------------------------------------------------
+--- Copyright (C) 2008,2009 Ronald Lamprecht
++-- Copyright (C) 2008,2009,2010,211 Ronald Lamprecht
+ --
+ -- This program is free software; you can redistribute it and/or
+ -- modify it under the terms of the GNU General Public License
+@@ -546,15 +546,16 @@
+     return context
+ end
+ 
+-function res.autotile_newtile(key, template, substitution)
++function res.autotile_newtile(context, evaluator, key, x, y, template, substitution)
+     local decl = template:_declaration()  -- get a deep copy
+     local result
+     for i, tile in ipairs(decl) do
+         if type(tile) == &quot;string&quot; then
++            local subkey = string.gsub(tile, &quot;%%%%&quot;, substitution)
+             if result == nil then
+-                result = ti[tile]
++                result = evaluator(context[3], subkey, x, y)
+             else
+-                result = result .. ti[tile]
++                result = result .. evaluator(context[3], subkey, x, y)
+             end
+         else
+             local at = {}   -- attribute table
+@@ -603,7 +604,7 @@
+                     and first &lt;= candidate and candidate &lt;= last then
+                 local tile = evaluator(context[3], key, x, y)
+                 if tile == nil then
+-                    res.autotile_newtile(key, ti[rule[3]], candidate - first + offset)
++                    res.autotile_newtile(context, evaluator, key, x, y, ti[rule[3]], candidate - first + offset)
+                     return ti[key]
+                 else
+                     return tile
+@@ -613,7 +614,7 @@
+             -- prefix based substitution
+             local tile = evaluator(context[3], key, x, y)
+             if tile == nil then
+-                res.autotile_newtile(key, ti[rule[2]], string.sub(key, #(rule[1]) + 1))
++                res.autotile_newtile(context, evaluator, key, x, y, ti[rule[2]], string.sub(key, #(rule[1]) + 1))
+                 return ti[key]
+             else
+                 return tile
+
+Modified: trunk/doc/reference/enigma-ref.texi
+===================================================================
+--- trunk/doc/reference/enigma-ref.texi	2010-12-31 18:30:43 UTC (rev 2195)
++++ trunk/doc/reference/enigma-ref.texi	2011-01-09 22:33:43 UTC (rev 2196)
+@@ -23501,11 +23501,14 @@
+ Prefix rules need a key length of at least 2. You can not use it with maps
+ of just one character per tile. The resolver will create a tile declaration for
+ any tile key in the map that matches the given prefix. A copy of the template
+-will be taken and all occurrences of the two characters @samp{%%} will be
+-substituted by a single percent sign followed by the suffix of the used tile
+-key. Thus a key of @samp{AD} will target the laser @samp{laser%D}. You need to
+-use the key @samp{LD} in the map for the matching laser.
++will be taken.
+ 
++Within this copy of the template all occurrences of the two characters @samp{%%}
++in explicit object declarations will be substituted by a single percent sign 
++followed by the suffix of the used tile key. Thus a key of @samp{AD} will target
++the laser @samp{laser%D}. You need to use the key @samp{LD} in the map for the 
++matching laser.
++
+ Rangerules match any tile key in the given range. It can well be used in one
+ character key maps. But it can be used in multicharacter maps, too. In this case
+ the given first and last keys may just differ in the last character. Again a
+@@ -23524,6 +23527,19 @@
+ ti[&quot;template&quot;] = ti[&quot;~&quot;] .. ti(@{&quot;it_trigger&quot;, target=@{&quot;door%%#*&quot;,&quot;laser%%&quot;@}@}) .. @{&quot;st_grate1&quot;@}
+ @end example
+ 
++A pattern substitution can even take place on a key of a referenced base tile.
++Every occurrence of the two characters @samp{%%} in the key will be substituted
++by the suffix of the used tile key without a preceeding percent sign. E.g. the
++template:
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++ti[&quot;template&quot;] = ti[&quot;P%%&quot;] .. @{&quot;st_floppy&quot;, target=&quot;laser%%&quot;@}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++
++applied to a key with the suffix @samp{d} will result in a base tile key @samp{Pd}.
++This feature is especially useful if the autotile resolver is chained to 
++another subresolver which generates the base tiles.
++
+ @item @b{Full Example:}
+ @example
+ ti[&quot; &quot;] = @{&quot;fl_sahara&quot;@}
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2010-12-31 18:30:43 UTC (rev 2195)
++++ trunk/src/lua.cc	2011-01-09 22:33:43 UTC (rev 2196)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2007,2008,2009,2010 Ronald Lamprecht
++ * Copyright (C) 2007,2008,2009,2010,2011 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -3004,19 +3004,6 @@
+ 
+ MethodMap tilesMethodeMap;
+ 
+-static int dispatchTilesReadAccess(lua_State *L) {
+-//    Log &lt;&lt; &quot;Tiles read key - &quot; &lt;&lt; lua_tostring(L, 2) &lt;&lt; &quot;\n&quot;;
+-    if (!lua_isstring(L, 2)) {     // sideeffect: numbers are converted to string
+-        throwLuaError(L, &quot;Tiles: key is not a string&quot;);
+-        return 0;
+-    }
+-    lua_getmetatable(L, 1);
+-    lua_rawgeti(L, -1, 1);    // content table
+-    lua_pushvalue(L, 2);      // copy key
+-    lua_rawget(L, -2);        // check for existing entry in table
+-    return 1;
+-}
+-
+ static int dispatchTilesWriteAccess(lua_State *L) {
+ //    Log &lt;&lt; &quot;Tiles write key - &quot; &lt;&lt; lua_tostring(L, 2) &lt;&lt; &quot;\n&quot;;
+     if (server::EnigmaCompatibility &lt; 1.10) {
+@@ -3050,6 +3037,31 @@
+     return 0;
+ }
+ 
++static int dispatchTilesReadAccess(lua_State *L) {
++//    Log &lt;&lt; &quot;Tiles read key - &quot; &lt;&lt; lua_tostring(L, 2) &lt;&lt; &quot;\n&quot;;
++    if (!lua_isstring(L, 2)) {     // sideeffect: numbers are converted to string
++        throwLuaError(L, &quot;Tiles: key is not a string&quot;);
++        return 0;
++    }
++    std::string key = lua_tostring(L, 2);
++    lua_getmetatable(L, 1);
++    lua_rawgeti(L, -1, 1);    // content table
++    lua_pushvalue(L, 2);      // copy key
++    lua_rawget(L, -2);        // check for existing entry in table
++    if (lua_isnil(L, -1) &amp;&amp; key.find(&quot;%%&quot;) != string::npos) {  // autotile wildcard
++        // insert a dummy tile declaration
++        lua_pop(L, 3);            // cleanup stack
++        lua_newtable(L);          // dummy declaration as value for key
++        dispatchTilesWriteAccess(L); // insert dummy entry
++        // get entry as return value
++        lua_getmetatable(L, 1);
++        lua_rawgeti(L, -1, 1);    // content table
++        lua_pushvalue(L, 2);      // copy key
++        lua_rawget(L, -2);        // get entry in table
++    }
++    return 1;
++}
++
+ static int pushNewTiles(lua_State *L) {
+     // tiles is a singleton
+     
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	
+	<LI>Next message: <A HREF="001621.html">[Enigma-game-svn] r2197 - homepage/input
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1620">[ date ]</a>
+              <a href="thread.html#1620">[ thread ]</a>
+              <a href="subject.html#1620">[ subject ]</a>
+              <a href="author.html#1620">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

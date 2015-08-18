@@ -1,0 +1,359 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1717 - in trunk/data: . levels/enigma_i	levels/enigma_viii levels/lib
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1717%20-%20in%20trunk/data%3A%20.%20levels/enigma_i%0A%09levels/enigma_viii%20levels/lib&In-Reply-To=%3C200906131938.n5DJcYS3009737%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001145.html">
+   <LINK REL="Next"  HREF="001147.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1717 - in trunk/data: . levels/enigma_i	levels/enigma_viii levels/lib</H1>
+    <B>andreasl at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1717%20-%20in%20trunk/data%3A%20.%20levels/enigma_i%0A%09levels/enigma_viii%20levels/lib&In-Reply-To=%3C200906131938.n5DJcYS3009737%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1717 - in trunk/data: . levels/enigma_i	levels/enigma_viii levels/lib">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Sat Jun 13 21:38:34 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001145.html">[Enigma-game-svn] r1716 - in trunk/doc/reference: . images
+</A></li>
+        <LI>Next message: <A HREF="001147.html">[Enigma-game-svn] r1718 - in trunk/data: gfx32 gfx40 gfx48
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1146">[ date ]</a>
+              <a href="thread.html#1146">[ thread ]</a>
+              <a href="subject.html#1146">[ subject ]</a>
+              <a href="author.html#1146">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2009-06-13 21:38:31 +0200 (Sat, 13 Jun 2009)
+New Revision: 1717
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/data/levels/enigma_i/alain05_2.xml
+   trunk/data/levels/enigma_viii/andreas48_2.xml
+   trunk/data/levels/lib/libmap.xml
+   trunk/data/levels/lib/libpento_1.xml
+Log:
+Trunk:
+ - Extending map transformations: Type (always), composition,
+   inverses and random (with libmap only).
+    - adaptions in libmap, libpento, alain05, andreas48, api2init
+Note:
+ - Half of the constants have been renamed from MAP_MIRROR_* to MAP_FLIP_*.
+   Refman-entry will follow soon.
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2009-06-12 22:19:19 UTC (rev 1716)
++++ trunk/data/api2init.lua	2009-06-13 19:38:31 UTC (rev 1717)
+@@ -199,17 +199,27 @@
+ FOLLOW_FULLSCREEN = po(19, 12)
+ FOLLOW_HALFSCREEN = po(9.5, 6)
+ 
+--- Read directions for maps
+-MAP_IDENT = 0
+-MAP_ROT_CW = 1
+-MAP_ROT_180 = 2
+-MAP_ROT_CCW = 3
+-MAP_MIRROR_BACKSLASH = 4
+-MAP_MIRROR_HORIZONTAL = 5
+-MAP_MIRROR_SLASH = 6
+-MAP_MIRROR_VERTICAL = 7
+-MAP_COUNT = 7
++-- map transformations, aka. read directions
++MAP_IDENT = {1}
++MAP_ROT_CW = {2}
++MAP_ROT_180 = {3}
++MAP_ROT_CCW = {4}
++MAP_FLIP_BACKSLASH = {5}
++MAP_FLIP_HORIZONTAL = {6}
++MAP_FLIP_SLASH = {7}
++MAP_FLIP_VERTICAL = {8}
++MAP_COUNT = 8
++-- Note: The sequence is of importance for lib.map.transformation_compose.
++MAP_ALL = {MAP_IDENT, MAP_ROT_CW, MAP_ROT_180, MAP_ROT_CCW, MAP_FLIP_BACKSLASH,
++           MAP_FLIP_HORIZONTAL, MAP_FLIP_SLASH, MAP_FLIP_VERTICAL}
+ 
++for _, transformation in ipairs(MAP_ALL) do
++    setmetatable(transformation, {_type = &quot;maptransformation&quot;,
++        __mul = (function() error(&quot;You have to load libmap to use \&quot;*\&quot; on map transformations.&quot;, 2) end),
++        __pow = (function() error(&quot;You have to load libmap to use \&quot;^\&quot; on map transformations.&quot;, 2) end),
++        __unm = (function() error(&quot;You have to load libmap to use \&quot;-\&quot; on map transformations.&quot;, 2) end)})
++end
++
+ ---------------------
+ -- Utility Methods --
+ ---------------------
+@@ -226,13 +236,13 @@
+         -- Analyse arguments 4 to 6
+         local ignore, map, readdir
+         if (etype(arg3) == &quot;map&quot;) then
+-            assert_type(arg4, &quot;wo:drawMap fourth argument (read direction)&quot;, 2, &quot;nil&quot;, &quot;integer&quot;)
++            assert_type(arg4, &quot;wo:drawMap fourth argument (read direction)&quot;, 2, &quot;nil&quot;, &quot;maptransformation&quot;)
+             map = arg3
+             ignore = map.defaultkey
+             readdir = arg4 or MAP_IDENT
+         else
+             assert_type(arg4, &quot;wo:drawMap fourth argument (map)&quot;, 2, &quot;table&quot;, &quot;map&quot;)
+-            assert_type(arg5, &quot;wo:drawMap fifth argument (read direction)&quot;, 2, &quot;nil&quot;, &quot;integer&quot;)
++            assert_type(arg5, &quot;wo:drawMap fifth argument (read direction)&quot;, 2, &quot;nil&quot;, &quot;maptransformation&quot;)
+             ignore = arg3
+             map = arg4
+             readdir = arg5 or MAP_IDENT
+@@ -240,21 +250,20 @@
+                 &quot;wo:drawMap: Ignore key and default key differ in length.&quot;, 2)
+         end
+         local len = string.len(ignore)
+-        assert_bool((readdir &gt;= MAP_IDENT) and (readdir &lt;= MAP_COUNT), &quot;wo:drawMap: Unknown read direction.&quot;, 2)
+         -- Prepare read direction rotation
+         local w, h = 0, 0
+         local function rot(x, y)
+             -- The difference of this function to the one in libmap
+             -- results among others from different coordinate origins
+             -- and different application of rot.
+-            return ({[MAP_IDENT]             = {x,         y},
+-                     [MAP_ROT_CW]            = {h + 1 - y, x},
+-                     [MAP_ROT_180]           = {w + 1 - x, h + 1 - y},
+-                     [MAP_ROT_CCW]           = {y,         w + 1 - x},
+-                     [MAP_MIRROR_HORIZONTAL] = {w + 1 - x, y},
+-                     [MAP_MIRROR_VERTICAL]   = {x,         h + 1 - y},
+-                     [MAP_MIRROR_SLASH]      = {y,         x},
+-                     [MAP_MIRROR_BACKSLASH]  = {h + 1 - y, w + 1 - x} })[readdir]
++            return ({[MAP_IDENT]           = {x,         y},
++                     [MAP_ROT_CW]          = {h + 1 - y, x},
++                     [MAP_ROT_180]         = {w + 1 - x, h + 1 - y},
++                     [MAP_ROT_CCW]         = {y,         w + 1 - x},
++                     [MAP_FLIP_HORIZONTAL] = {w + 1 - x, y},
++                     [MAP_FLIP_VERTICAL]   = {x,         h + 1 - y},
++                     [MAP_FLIP_SLASH]      = {y,         x},
++                     [MAP_FLIP_BACKSLASH]  = {h + 1 - y, w + 1 - x} })[readdir]
+         end
+         if readdir ~= MAP_IDENT then
+             -- Calculate height and width for rotation if neccessary
+
+Modified: trunk/data/levels/enigma_i/alain05_2.xml
+===================================================================
+--- trunk/data/levels/enigma_i/alain05_2.xml	2009-06-12 22:19:19 UTC (rev 1716)
++++ trunk/data/levels/enigma_i/alain05_2.xml	2009-06-13 19:38:31 UTC (rev 1717)
+@@ -3,7 +3,7 @@
+   &lt;el:protected&gt;
+     &lt;el:info el:type=&quot;level&quot;&gt;
+       &lt;el:identity el:title=&quot;The Enigmhanoi Towers&quot; el:subtitle=&quot;&quot; el:id=&quot;alain05&quot;/&gt;
+-      &lt;el:version el:score=&quot;1&quot; el:release=&quot;2&quot; el:revision=&quot;3&quot; el:status=&quot;released&quot;/&gt;
++      &lt;el:version el:score=&quot;1&quot; el:release=&quot;2&quot; el:revision=&quot;4&quot; el:status=&quot;released&quot;/&gt;
+       &lt;el:author  el:name=&quot;Alain Busser&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
+       &lt;el:copyright&gt;Copyright &#169; 2006 Alain Busser&lt;/el:copyright&gt;
+       &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
+@@ -47,7 +47,8 @@
+ if wo[&quot;IsDifficult&quot;] then
+     wo:drawMap(ti, no[&quot;anchor&quot;] + 2 * S, &quot; &quot;, {&quot;XXXXX&quot;, &quot;Xw eX&quot;, &quot;XXSXX&quot;, &quot;XXXXX&quot;})
+ else
+-    wo:drawMap(ti, no[&quot;anchor&quot;] + 2 * S, &quot; &quot;, {&quot;XXXXX&quot;, &quot;XXSeX&quot;, &quot;Xw XX&quot;, &quot;XXXXX&quot;}, cond(random() &lt; 0.5, MAP_MIRROR_VERTICAL, MAP_IDENT))
++    wo:drawMap(ti, no[&quot;anchor&quot;] + 2 * S, &quot; &quot;, {&quot;XXXXX&quot;, &quot;XXSeX&quot;, &quot;Xw XX&quot;, &quot;XXXXX&quot;},
++               cond(random() &lt; 0.5, MAP_FLIP_VERTICAL, MAP_IDENT))
+ end
+  ]]&gt;&lt;/el:luamain&gt;
+     &lt;el:i18n&gt;
+
+Modified: trunk/data/levels/enigma_viii/andreas48_2.xml
+===================================================================
+--- trunk/data/levels/enigma_viii/andreas48_2.xml	2009-06-12 22:19:19 UTC (rev 1716)
++++ trunk/data/levels/enigma_viii/andreas48_2.xml	2009-06-13 19:38:31 UTC (rev 1717)
+@@ -3,7 +3,7 @@
+   &lt;el:protected&gt;
+     &lt;el:info el:type=&quot;level&quot;&gt;
+       &lt;el:identity el:title=&quot;Styles Change&quot; el:subtitle=&quot;But dynamite is forever&quot; el:id=&quot;andreas48&quot;/&gt;
+-      &lt;el:version el:score=&quot;2&quot; el:release=&quot;2&quot; el:revision=&quot;19&quot; el:status=&quot;released&quot;/&gt;
++      &lt;el:version el:score=&quot;2&quot; el:release=&quot;2&quot; el:revision=&quot;20&quot; el:status=&quot;released&quot;/&gt;
+       &lt;el:author el:name=&quot;Andreas Lochmann&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
+       &lt;el:copyright&gt;Copyright &#169; 2008 Andreas Lochmann&lt;/el:copyright&gt;
+       &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
+@@ -293,10 +293,10 @@
+   replace_key_in_map(j, &quot; &quot;, &quot;H&quot;, 2*glasses2 + maze_offset)
+   replace_key_in_map(j, &quot; &quot;, &quot;E&quot;, 2*extralife + maze_offset)
+   if random(2) == 1 then
+-    maze_maps[j] = maze_maps[j] ^ MAP_MIRROR_VERTICAL
++    maze_maps[j] = maze_maps[j] ^ MAP_FLIP_VERTICAL
+   end
+   if random(2) == 1 then
+-    maze_maps[j] = maze_maps[j] ^ MAP_MIRROR_HORIZONTAL
++    maze_maps[j] = maze_maps[j] ^ MAP_FLIP_HORIZONTAL
+   end
+   maze_maps[j] = maze_maps[j] * (&quot;&quot;..j)
+ end
+
+Modified: trunk/data/levels/lib/libmap.xml
+===================================================================
+--- trunk/data/levels/lib/libmap.xml	2009-06-12 22:19:19 UTC (rev 1716)
++++ trunk/data/levels/lib/libmap.xml	2009-06-13 19:38:31 UTC (rev 1717)
+@@ -3,7 +3,7 @@
+   &lt;el:protected&gt;
+     &lt;el:info el:type=&quot;library&quot;&gt;
+       &lt;el:identity el:title=&quot;&quot; el:id=&quot;lib/libmap&quot;/&gt;
+-      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;3&quot; el:status=&quot;released&quot;/&gt;
++      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;4&quot; el:status=&quot;released&quot;/&gt;
+       &lt;el:author  el:name=&quot;Enigma Team&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
+       &lt;el:copyright&gt;Copyright &#169; 2008 Enigma Team&lt;/el:copyright&gt;
+       &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
+@@ -127,24 +127,21 @@
+ 
+ function lib.map.transform(map, op)
+     assert_type(map, &quot;lib.map.transform first argument&quot;, 2, &quot;map&quot;)
+-    assert_type(op, &quot;lib.map.transform second argument&quot;, 2, &quot;natural&quot;)
+-    if op &gt; 7 then
+-        error(&quot;lib.map.transform: Unknown transformation request.&quot;, 2)
+-    end
++    assert_type(op, &quot;lib.map.transform second argument&quot;, 2, &quot;maptransformation&quot;)
+     local w, h = map.width, map.height
+     local function rot(x, y)
+-        return ({[MAP_IDENT]             = {x,         y},
+-                 [MAP_ROT_CW]            = {y,         h - 1 - x},
+-                 [MAP_ROT_180]           = {w - 1 - x, h - 1 - y},
+-                 [MAP_ROT_CCW]           = {w - 1 - y, x},
+-                 [MAP_MIRROR_HORIZONTAL] = {w - 1 - x, y},
+-                 [MAP_MIRROR_VERTICAL]   = {x,         h - 1 - y},
+-                 [MAP_MIRROR_SLASH]      = {y,         x},
+-                 [MAP_MIRROR_BACKSLASH]  = {w - 1 - y, h - 1 - x}     })[op]
++        return ({[MAP_IDENT]           = {x,         y},
++                 [MAP_ROT_CW]          = {y,         h - 1 - x},
++                 [MAP_ROT_180]         = {w - 1 - x, h - 1 - y},
++                 [MAP_ROT_CCW]         = {w - 1 - y, x},
++                 [MAP_FLIP_HORIZONTAL] = {w - 1 - x, y},
++                 [MAP_FLIP_VERTICAL]   = {x,         h - 1 - y},
++                 [MAP_FLIP_SLASH]      = {y,         x},
++                 [MAP_FLIP_BACKSLASH]  = {w - 1 - y, h - 1 - x}     })[op]
+     end
+     local new_w, new_h = w, h
+-    if    (op == MAP_ROT_CW) or (op == MAP_ROT_CCW)
+-         or (op == MAP_MIRROR_SLASH) or (op == MAP_MIRROR_BACKSLASH) then
++    if      (op == MAP_ROT_CW)     or (op == MAP_ROT_CCW)
++         or (op == MAP_FLIP_SLASH) or (op == MAP_FLIP_BACKSLASH) then
+         new_w, new_h = h, w
+     end
+     local result = {}
+@@ -632,6 +629,59 @@
+     end
+ )
+ 
++-----------------------------
++-- Transformation handling --
++-----------------------------
++
++function lib.map.random_transformation()
++    return MAP_ALL[random(MAP_COUNT)]
++end
++
++function lib.map.transformation_inverse(x)
++    assert_type(x, &quot;lib.map.transformation_inverse first argument&quot;, 2, &quot;maptransformation&quot;)
++    return MAP_ALL[({[1] = 1, 4, 3, 2, 5, 6, 7, 8})[x[1]]]
++end
++
++function lib.map.transformation_compose(x, y)
++    assert_type(x, &quot;lib.map.transformation_compose first argument&quot;, 2, &quot;maptransformation&quot;)
++    assert_type(y, &quot;lib.map.transformation_compose second argument&quot;, 2, &quot;maptransformation&quot;)    
++    return MAP_ALL[({{1, 2, 3, 4, 5, 6, 7, 8},
++                     {2, 3, 4, 1, 6, 7, 8, 5},
++                     {3, 4, 1, 2, 7, 8, 5, 6},
++                     {4, 1, 2, 3, 8, 5, 6, 7},
++                     {5, 8, 7, 6, 1, 4, 3, 2},
++                     {6, 5, 8, 7, 2, 1, 4, 3},
++                     {7, 6, 5, 8, 3, 2, 1, 4},
++                     {8, 7, 6, 5, 4, 3, 2, 1}}) [x[1]] [y[1]] ]
++end
++
++function lib.map.transformation_power(x, y)
++    assert_type(x, &quot;lib.map.transformation_power first argument&quot;, 2, &quot;maptransformation&quot;)
++    assert_type(y, &quot;lib.map.transformation_power second argument&quot;, 2, &quot;maptransformation&quot;, &quot;integer&quot;)
++    if type(y) == &quot;number&quot; then
++        local result = MAP_IDENT
++        -- Any 4th power of any element is trivial, so we mod by 4.
++        -- Note that negative powers work as expected.
++        for j = 1, y % 4 do
++            result = result * x
++        end
++        return result
++    else
++        return x*y
++    end
++end
++
++lib.map.transformation_metatable = {
++    __mul = lib.map.transformation_compose,
++    __pow = lib.map.transformation_power,
++    __unm = lib.map.transformation_inverse,
++    _type = &quot;maptransformation&quot;
++}
++
++for _, transformation in ipairs(MAP_ALL) do
++    setmetatable(transformation, lib.map.transformation_metatable)
++end
++
+     ]]&gt;&lt;/el:luamain&gt;
+     &lt;el:i18n&gt;
+     &lt;/el:i18n&gt;
+
+Modified: trunk/data/levels/lib/libpento_1.xml
+===================================================================
+--- trunk/data/levels/lib/libpento_1.xml	2009-06-12 22:19:19 UTC (rev 1716)
++++ trunk/data/levels/lib/libpento_1.xml	2009-06-13 19:38:31 UTC (rev 1717)
+@@ -3,7 +3,7 @@
+   &lt;el:protected&gt;
+     &lt;el:info el:type=&quot;library&quot;&gt;
+       &lt;el:identity el:title=&quot;&quot; el:id=&quot;lib/libpento&quot;/&gt;
+-      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;3&quot; el:status=&quot;released&quot;/&gt;
++      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;4&quot; el:status=&quot;released&quot;/&gt;
+       &lt;el:author  el:name=&quot;Ronald Lamprecht&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
+       &lt;el:copyright&gt;Copyright &#169; 2009 Ronald Lamprecht&lt;/el:copyright&gt;
+       &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
+@@ -118,10 +118,9 @@
+         {&quot;  SS&quot;,&quot;SSS&quot;},{&quot;T&quot;,&quot;TTT&quot;,&quot;T&quot;},{&quot;U U&quot;,&quot;UUU&quot;},{&quot;VVV&quot;,&quot;V&quot;,&quot;V&quot;},
+         {&quot;W&quot;,&quot;WW&quot;,&quot; WW&quot;},{&quot; X&quot;,&quot;XXX&quot;,&quot; X&quot;},{&quot;YYYY&quot;,&quot; Y&quot;},{&quot;ZZ&quot;,&quot; Z&quot;,&quot; ZZ&quot;}}
+     context.rotations = {MAP_ROT_CW, MAP_ROT_180, MAP_ROT_CCW, MAP_IDENT, 
+-        MAP_MIRROR_VERTICAL, MAP_MIRROR_BACKSLASH, MAP_MIRROR_HORIZONTAL, 
+-        MAP_MIRROR_SLASH}
+-    context.mirrors = {MAP_MIRROR_HORIZONTAL, MAP_MIRROR_SLASH, MAP_MIRROR_VERTICAL,
+-        MAP_MIRROR_BACKSLASH, MAP_ROT_CCW, MAP_IDENT, MAP_ROT_CW, MAP_ROT_180}
++        MAP_FLIP_VERTICAL, MAP_FLIP_BACKSLASH, MAP_FLIP_HORIZONTAL, MAP_FLIP_SLASH}
++    context.mirrors = {MAP_FLIP_HORIZONTAL, MAP_FLIP_SLASH, MAP_FLIP_VERTICAL,
++        MAP_FLIP_BACKSLASH, MAP_ROT_CCW, MAP_IDENT, MAP_ROT_CW, MAP_ROT_180}
+     setmetatable(context, res.metatable)
+     return context
+ end
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001145.html">[Enigma-game-svn] r1716 - in trunk/doc/reference: . images
+</A></li>
+	<LI>Next message: <A HREF="001147.html">[Enigma-game-svn] r1718 - in trunk/data: gfx32 gfx40 gfx48
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1146">[ date ]</a>
+              <a href="thread.html#1146">[ thread ]</a>
+              <a href="subject.html#1146">[ subject ]</a>
+              <a href="author.html#1146">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

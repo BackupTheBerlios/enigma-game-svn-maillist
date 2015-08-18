@@ -1,0 +1,490 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1160 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1160%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200805262138.m4QLcRip006054%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000593.html">
+   <LINK REL="Next"  HREF="000595.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1160 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1160%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200805262138.m4QLcRip006054%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1160 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon May 26 23:38:27 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000593.html">[Enigma-game-svn] r1159 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="000595.html">[Enigma-game-svn] r1161 - in trunk: data data/schemas src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#594">[ date ]</a>
+              <a href="thread.html#594">[ thread ]</a>
+              <a href="subject.html#594">[ subject ]</a>
+              <a href="author.html#594">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-05-26 23:38:26 +0200 (Mon, 26 May 2008)
+New Revision: 1160
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Inventory.hh
+   trunk/src/WorldProxy.cc
+   trunk/src/items.cc
+   trunk/src/player.cc
+   trunk/src/server.cc
+   trunk/src/server.hh
+   trunk/src/stones/LightPassengerStone.cc
+   trunk/src/stones/OxydStone.cc
+   trunk/src/stones/OxydStone.hh
+   trunk/src/stones_simple.cc
+   trunk/src/world.hh
+Log:
+Trunk 1.1: new API reengineering item glasses
+- it-glasses renamed to it_glasses
+- fix glasses for multiple instances in inventory
+- fix glasses for black plus white marbles
+- glasses made configurable what to show - state
+- global variable to request current glasses type
+- world attribute &quot;ExtralifeGlasses&quot; for type of glasses on lasered extralife
+Note:
+- glasses use some code hacks, should be improved when items get separated
+- all glasses affected objects need special handling for swapping, etc.
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2008-05-25 21:44:30 UTC (rev 1159)
++++ trunk/data/api2init.lua	2008-05-26 21:38:26 UTC (rev 1160)
+@@ -106,6 +106,13 @@
+ INDISPENSIBLE = 1
+ PERKIND       = 2
+ 
++-- glasses
++SPOT_DEATH          =   1
++SPOT_HOLLOW         =   2
++SPOT_ACTORIMPULSE   =   4
++SPOT_SENSOR         =   8
++SPOT_LIGHTPASSENGER =  16
++
+ ---------------------
+ -- Utility Methods --
+ ---------------------
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-05-25 21:44:30 UTC (rev 1159)
++++ trunk/data/models-2d.lua	2008-05-26 21:38:26 UTC (rev 1160)
+@@ -401,7 +401,6 @@
+         &quot;it-dynamite&quot;,
+         &quot;it-flagblack&quot;,
+         &quot;it-flagwhite&quot;,
+-        &quot;it-glasses&quot;,
+         &quot;it-glasses-broken&quot;,
+         &quot;it-hill&quot;,
+         &quot;it-hollow&quot;,
+@@ -436,6 +435,7 @@
+     DefImage(&quot;it_cross&quot;, {filename=&quot;it-cross&quot;})
+     DefImage(&quot;it_extralife&quot;, {filename=&quot;it-extralife&quot;})
+     DefImage(&quot;it_floppy&quot;, {filename=&quot;it-floppy&quot;})
++    DefImage(&quot;it_glasses&quot;, {filename=&quot;it-glasses&quot;})
+     DefImage(&quot;it_hammer&quot;, {filename=&quot;it-hammer&quot;})
+     DefImage(&quot;it_key&quot;, {filename=&quot;it-key&quot;})
+     DefImage(&quot;it_sword&quot;, {filename=&quot;it-sword&quot;})
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-05-25 21:44:30 UTC (rev 1159)
++++ trunk/data/schemas/objects.xml	2008-05-26 21:38:26 UTC (rev 1160)
+@@ -54,6 +54,7 @@
+     &lt;msg name=&quot;_bombstone&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_brush&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_explosion&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;_glasses&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_hit&quot; type=&quot;object&quot;/&gt;
+     &lt;msg name=&quot;_init&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_jumping&quot; type=&quot;bool&quot;/&gt;
+@@ -111,6 +112,9 @@
+     &lt;object name=&quot;it_extralife&quot;/&gt;
+     &lt;object name=&quot;it_extralife_new&quot; init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;it_floppy&quot;/&gt;
++    &lt;object name=&quot;it_glasses&quot;&gt;
++      &lt;attr name=&quot;state&quot; max=&quot;31&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;it_hammer&quot;/&gt;
+     &lt;object name=&quot;it_hammer_new&quot; init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;it_key&quot;&gt;
+
+Modified: trunk/src/Inventory.hh
+===================================================================
+--- trunk/src/Inventory.hh	2008-05-25 21:44:30 UTC (rev 1159)
++++ trunk/src/Inventory.hh	2008-05-26 21:38:26 UTC (rev 1160)
+@@ -26,7 +26,6 @@
+ 
+ namespace enigma
+ {
+-//    using Item;          // TODO: remove this after moving Item into enigma namespace
+     class Item;
+     class Inventory : public ItemHolder {
+     public:
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2008-05-25 21:44:30 UTC (rev 1159)
++++ trunk/src/WorldProxy.cc	2008-05-26 21:38:26 UTC (rev 1160)
+@@ -67,6 +67,8 @@
+             return server::BumperForce;
+         } else if (key == &quot;ElectricForce&quot;) {
+             return server::ElectricForce;
++        } else if (key == &quot;ExtralifeGlasses&quot;) {
++            return server::ExtralifeGlasses;
+         } else if (key == &quot;FlatForce&quot;) {
+             return server::FlatForce;
+         } else if (key == &quot;FrictionFactor&quot;) {
+@@ -113,6 +115,8 @@
+             server::BumperForce = val;
+         } else if (key == &quot;ElectricForce&quot;) {
+             server::ElectricForce = val;
++        } else if (key == &quot;ExtralifeGlasses&quot;) {
++            server::ExtralifeGlasses = val;
+         } else if (key == &quot;FlatForce&quot;) {
+             server::FlatForce = val;
+         } else if (key == &quot;FrictionFactor&quot;) {
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-05-25 21:44:30 UTC (rev 1159)
++++ trunk/src/items.cc	2008-05-26 21:38:26 UTC (rev 1160)
+@@ -441,6 +441,7 @@
+         
+         // Item interface
+         virtual string get_inventory_model();
++        virtual void setup_successor(Item *newitem);
+ 
+         // TimeHandler interface
+         virtual void alarm();
+@@ -483,6 +484,10 @@
+         }
+     }
+     
++    void  ExtraLife::setup_successor(Item *newitem) {
++        newitem-&gt;setState(server::ExtralifeGlasses);
++    }
++    
+     void ExtraLife::alarm() {
+             DirectionBits db = updateCurrentLightDirs();
+             activatePhoto();        
+@@ -3410,34 +3415,74 @@
+ 
+ 
+ /* -------------------- Glasses -------------------- */
+-namespace
+-{
+     class Glasses : public Item {
+         CLONEOBJ(Glasses);
+         DECL_TRAITS;
+ 
+-        static bool wears_glasses(Actor *a) {
+-            return player::GetInventory(a)-&gt;find(&quot;it-glasses&quot;) != -1;
++    public:
++        enum Spot {
++            NOTHING         =  0,   // broken glasses
++            DEATH           =  1,
++            HOLLOW          =  2,
++            ACTORIMPULSE    =  4,
++            SENSOR          =  8,
++            LIGHTPASSENGER  = 16,
++            MAX             = 31
++        };
++        
++        static void updateGlasses();
++        
++        Glasses();
++        
++        // StateObject interface
++        virtual int maxState() const;
++        virtual void toggleState();
++        
++        // Items interface
++        virtual void on_drop(Actor *a);
++        virtual void on_pickup(Actor *a);
++        virtual void on_stonehit(Stone *st);
++        
++    };
++    
++    void Glasses::updateGlasses() {
++        Inventory *ci = player::GetInventory(player::CurrentPlayer());
++        int newVisibility = 0;
++        int i = -1;
++        while ((i = ci-&gt;find(&quot;it_glasses&quot;, i+1)) != -1) {
++            Glasses *gl = dynamic_cast&lt;Glasses *&gt;(ci-&gt;get_item(i));
++            newVisibility |= gl-&gt;state;
+         }
+-
+-        void on_drop(Actor *a) {
+-            if (!wears_glasses(a)) // 'this' was the only it-glasses
+-                BroadcastMessage(&quot;glasses&quot;, 0.0, GRID_STONES_BIT);
++        if (newVisibility != server::GlassesVisibility) {
++            server::GlassesVisibility = newVisibility;
++            BroadcastMessage(&quot;_glasses&quot;, newVisibility, GRID_STONES_BIT);
+         }
+-        void on_pickup(Actor *a) {
+-            if (!wears_glasses(a)) // no glasses before
+-                BroadcastMessage(&quot;glasses&quot;, 1.0, GRID_STONES_BIT);
+-        }
+-        void on_stonehit(Stone *) {
+-            sound_event (&quot;shatter&quot;);
+-            replace (it_glasses_broken);
+-        }
+-    public:
+-        Glasses()
+-        {}
+-    };
+-    DEF_TRAITS(Glasses, &quot;it-glasses&quot;, it_glasses);
+-}
++    }
++    
++    Glasses::Glasses() {
++        state = DEATH + HOLLOW + LIGHTPASSENGER;
++    }
++    
++    int Glasses::maxState() const {
++        return MAX;
++    }
++    
++    void Glasses::toggleState() {
++        // ignore toggle
++    }
++    
++    void Glasses::on_drop(Actor *a) {
++        updateGlasses();
++    }
++    void Glasses::on_pickup(Actor *a) {
++        updateGlasses();
++    }
++    void Glasses::on_stonehit(Stone *) {
++        sound_event (&quot;shatter&quot;);
++        replace(it_glasses_broken);
++    }
++        
++    DEF_TRAITS(Glasses, &quot;it_glasses&quot;, it_glasses);
+ 
+ 
+ /* -------------------- Invisible abyss -------------------- */
+@@ -3571,6 +3616,7 @@
+                 if (Inventory *inv = player::MayPickup(a, NULL)) {
+                     std::vector&lt;Item *&gt;::size_type oldSize = m_contents.size();
+                     inv-&gt;takeItemsFrom(this);
++                    Glasses::updateGlasses();
+                     if (oldSize != m_contents.size() &amp;&amp; !inv-&gt;willAddItem(this)) {
+                         // some items have been picked up but the bag will not
+                         // be picked up (and cause the following actions)
+
+Modified: trunk/src/player.cc
+===================================================================
+--- trunk/src/player.cc	2008-05-25 21:44:30 UTC (rev 1159)
++++ trunk/src/player.cc	2008-05-26 21:38:26 UTC (rev 1160)
+@@ -270,6 +270,7 @@
+     else {
+         icurrent_player = iplayer;
+         RedrawInventory (GetInventory(iplayer));
++        dynamic_cast&lt;Item *&gt;(GetObjectTemplate(&quot;it_glasses&quot;))-&gt;on_pickup(NULL);  // ugly hack to call updateGlasses
+     }
+ }
+ 
+@@ -566,8 +567,8 @@
+ {
+     if (Inventory *inv = MayPickup(a, GetField(p)-&gt;item)) {
+         if (Item *item = YieldItem(p)) {
++            inv-&gt;add_item(item);
+             item-&gt;on_pickup(a);
+-            inv-&gt;add_item(item);
+             RedrawInventory (inv);
+             sound::EmitSoundEvent (&quot;pickup&quot;, p.center());
+         }
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2008-05-25 21:44:30 UTC (rev 1159)
++++ trunk/src/server.cc	2008-05-26 21:38:26 UTC (rev 1160)
+@@ -95,6 +95,8 @@
+ double   server::EnigmaCompatibility;       // no Lua access
+ double   server::FlatForce;
+ double   server::FrictionFactor;
++int      server::GlassesVisibility;         // no Lua access
++int      server::ExtralifeGlasses;
+ double   server::HoleForce;
+ double   server::IceFriction;
+ lev::levelStatusType   server::LevelStatus; // no Lua access
+@@ -244,6 +246,8 @@
+     server::SlopeForce        = 25.0;
+     server::FlatForce         = 0.0;
+     server::FrictionFactor    = 1.0;
++    server::GlassesVisibility = 0;     // nothing
++    server::ExtralifeGlasses  = 19;  // death + hollow + lightpassenger
+     server::IceFriction       = 1.0;
+     server::ElectricForce     = 15.0;
+     server::BumperForce       = 200.0;
+
+Modified: trunk/src/server.hh
+===================================================================
+--- trunk/src/server.hh	2008-05-25 21:44:30 UTC (rev 1159)
++++ trunk/src/server.hh	2008-05-26 21:38:26 UTC (rev 1160)
+@@ -95,6 +95,9 @@
+     extern double   WaterSinkSpeed;
+ 
+     extern double   SwampSinkSpeed;
++    
++    extern int      GlassesVisibility;
++    extern int      ExtralifeGlasses;
+ 
+ /* --------------------  Force multipliers... -------------------- */
+ 
+
+Modified: trunk/src/stones/LightPassengerStone.cc
+===================================================================
+--- trunk/src/stones/LightPassengerStone.cc	2008-05-25 21:44:30 UTC (rev 1159)
++++ trunk/src/stones/LightPassengerStone.cc	2008-05-26 21:38:26 UTC (rev 1160)
+@@ -50,8 +50,8 @@
+             if (objFlags &amp; OBJBIT_LIGHTNEWDIRS)
+                 lightDirChanged(NODIRBIT, (DirectionBits)(objFlags &amp; OBJBIT_LIGHTNEWDIRS));
+             return Value();            
+-        } else if (m.message == &quot;glasses&quot;) {
+-            if (to_bool(m.value) != (objFlags &amp; OBJBIT_VISIBLE)) {
++        } else if (m.message == &quot;_glasses&quot;) {
++            if ((((int)(m.value) &amp; 16) != 0) != ((objFlags &amp; OBJBIT_VISIBLE) != 0)) {
+                 objFlags ^= OBJBIT_VISIBLE; // toggle visibility bit
+                 init_model();
+             }
+@@ -146,6 +146,11 @@
+         if (a != NULL &amp;&amp; state == BLINK &amp;&amp; player::WieldedItemIs(a, &quot;it_hammer&quot;)) {
+             state = BREAK;
+             init_model();
++        } else if (state == OFF &amp;&amp; player::WieldedItemIs(a, &quot;it_brush&quot;)) {
++            Item * it = GetItem(get_pos());
++            if (it != NULL &amp;&amp; get_id(it) == it_cross)
++                KillItem(get_pos());
++            setState(1);
+         }
+     }
+ 
+@@ -201,6 +206,10 @@
+                     objFlags |= OBJBIT_BLOCKED;
+                 }
+                 move_stone(skateDir);
++                Item * it = GetItem(get_pos());
++                if (it != NULL &amp;&amp; get_id(it) == it_cross) {
++                    setState(0);
++                }
+             }
+             GameTimer.set_alarm(this, calcInterval(), false);
+         }
+
+Modified: trunk/src/stones/OxydStone.cc
+===================================================================
+--- trunk/src/stones/OxydStone.cc	2008-05-25 21:44:30 UTC (rev 1159)
++++ trunk/src/stones/OxydStone.cc	2008-05-26 21:38:26 UTC (rev 1160)
+@@ -902,7 +902,7 @@
+             set_model(string(&quot;st-oxyd&quot;)+(std::string)val);
+     }
+         
+-    int OxydStone::maxState() {
++    int OxydStone::maxState() const {
+         return 2;
+     }
+     
+
+Modified: trunk/src/stones/OxydStone.hh
+===================================================================
+--- trunk/src/stones/OxydStone.hh	2008-05-25 21:44:30 UTC (rev 1159)
++++ trunk/src/stones/OxydStone.hh	2008-05-26 21:38:26 UTC (rev 1160)
+@@ -87,7 +87,7 @@
+         virtual void setAttr(const string&amp; key, const Value &amp;val);
+ 
+         // StateObject interface
+-        virtual int maxState();
++        virtual int maxState() const;
+         virtual void toggleState();
+         virtual int externalState() const;
+         virtual void setState(int extState);
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-05-25 21:44:30 UTC (rev 1159)
++++ trunk/src/stones_simple.cc	2008-05-26 21:38:26 UTC (rev 1160)
+@@ -132,8 +132,8 @@
+ 
+         virtual Value message(const Message &amp;m)
+         {
+-            if (traits-&gt;hollow &amp;&amp; m.message == &quot;glasses&quot;) {
+-                if (to_int(m.value)) {
++            if (traits-&gt;hollow &amp;&amp; m.message == &quot;_glasses&quot;) {
++                if (to_int(m.value) &amp; 2) {  // hollow
+                     if (!sunglasses) {
+                         sunglasses = true;
+                         set_model( &quot;invisible&quot;);
+@@ -1860,8 +1860,8 @@
+         }
+ 
+         virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;glasses&quot;) {
+-                if (to_int(m.value)) {
++            if (m.message == &quot;_glasses&quot;) {
++                if (to_int(m.value) &amp; 1) {   // Glasses::DEATH
+                     if (!visible) {
+                         visible = true;
+                         set_visible_model();
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2008-05-25 21:44:30 UTC (rev 1159)
++++ trunk/src/world.hh	2008-05-26 21:38:26 UTC (rev 1160)
+@@ -129,9 +129,6 @@
+     /* Output a message whenever a message is being sent. */
+     extern bool TrackMessages;
+ 
+-    /* A hack to implement BlackBallsStone and WhiteBallsStone. */
+-    extern Actor *CurrentCollisionActor;
+-
+ //----------------------------------------------------------------------
+ // FUNCTIONS
+ //----------------------------------------------------------------------
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000593.html">[Enigma-game-svn] r1159 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="000595.html">[Enigma-game-svn] r1161 - in trunk: data data/schemas src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#594">[ date ]</a>
+              <a href="thread.html#594">[ thread ]</a>
+              <a href="subject.html#594">[ subject ]</a>
+              <a href="author.html#594">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

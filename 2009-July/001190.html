@@ -1,0 +1,491 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1761 - in trunk/src: . lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1761%20-%20in%20trunk/src%3A%20.%20lev&In-Reply-To=%3C200907192109.n6JL9Dds032494%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001189.html">
+   <LINK REL="Next"  HREF="001191.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1761 - in trunk/src: . lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1761%20-%20in%20trunk/src%3A%20.%20lev&In-Reply-To=%3C200907192109.n6JL9Dds032494%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1761 - in trunk/src: . lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Jul 19 23:09:13 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001189.html">[Enigma-game-svn] r1760 - in trunk/data/levels: enigma_cross	enigma_i enigma_ii enigma_iii enigma_iv enigma_ix	enigma_tutorial enigma_vi enigma_viii
+</A></li>
+        <LI>Next message: <A HREF="001191.html">[Enigma-game-svn] r1762 - in trunk: data/levels/lib src src/items	src/lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1190">[ date ]</a>
+              <a href="thread.html#1190">[ thread ]</a>
+              <a href="subject.html#1190">[ subject ]</a>
+              <a href="author.html#1190">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-07-19 23:09:12 +0200 (Sun, 19 Jul 2009)
+New Revision: 1761
+
+Modified:
+   trunk/src/file.cc
+   trunk/src/file.hh
+   trunk/src/lev/Proxy.cc
+   trunk/src/lev/Proxy.hh
+   trunk/src/lev/SubProxy.cc
+   trunk/src/lev/SubProxy.hh
+   trunk/src/lua.cc
+   trunk/src/main.cc
+Log:
+Trunk 1.1: 
+- support of external data:
+  - legal local &quot;path&quot; attribut values are &quot;./anyname&quot; and 
+      &quot;externaldata/anyname&quot;
+  - all external data files are stored at &quot;path&quot; with suffix &quot;.txt&quot;
+  - download of &quot;url&quot; via curl (http, ftp, ...)
+  - download only when no local copy exists
+  - store downloaded file at &quot;path&quot;
+  - Lua API extension: wo:externalData(&quot;path&quot;) for retrieval as string
+Note:
+  - together with multilevel feature and libimport any Sokoban levelpack
+    is now directly playable on Enigma.
+  - libimport currently supports only linefeed terminated files
+  - levelpack composer does not yet support external data
+  - some error checks needs to be improved in external data support
+
+Modified: trunk/src/file.cc
+===================================================================
+--- trunk/src/file.cc	2009-07-19 13:31:58 UTC (rev 1760)
++++ trunk/src/file.cc	2009-07-19 21:09:12 UTC (rev 1761)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004,2005 Daniel Heck
++ * Copyright (C) 2006,2007,2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -17,6 +18,8 @@
+  *
+  */
+ #include &quot;file.hh&quot;
++
++#include &quot;errors.hh&quot;
+ #include &quot;enigma.hh&quot;
+ #include &quot;video.hh&quot;
+ #include &quot;main.hh&quot;
+@@ -33,6 +36,7 @@
+ #include &lt;ios&gt;
+ #include &lt;iostream&gt;
+ #include &lt;fstream&gt;
++#include &lt;curl/curl.h&gt;
+ 
+ using namespace enigma;
+ using namespace ecl;
+@@ -380,3 +384,38 @@
+     ofs.close();
+     return !ofs.fail();
+ }
++
++    CURL *easycurl;
++    
++    bool enigma::InitCurl() {
++        if (curl_global_init(CURL_GLOBAL_ALL) != 0)
++            return false;
++        
++        easycurl = curl_easy_init();
++        return easycurl != NULL;
++    }
++    
++    void enigma::ShutdownCurl() {
++        curl_easy_cleanup(easycurl);
++        curl_global_cleanup();
++    }
++    
++    size_t curl_writefunction(void *src, size_t size, size_t nmemb, void *dataptr) {
++        ByteVec *dest = (ByteVec *)dataptr;
++        size_t oldlen = dest-&gt;size();
++        dest-&gt;resize(oldlen + size * nmemb);
++        std::memcpy(&amp;(*dest)[oldlen], src, size * nmemb);
++        Log &lt;&lt; &quot;curl write &quot; &lt;&lt; size * nmemb &lt;&lt; &quot; new size &quot; &lt;&lt; dest-&gt;size() &lt;&lt; &quot;\n&quot;;
++        return size * nmemb;
++    }
++    
++    void enigma::Downloadfile(std::string url, ByteVec &amp;dst) {
++        ASSERT(curl_easy_setopt(easycurl, CURLOPT_URL, url.c_str()) == CURLE_OK, XLevelLoading, 
++                (&quot;Curl url error on '&quot; + url + &quot;'&quot;).c_str());
++        ASSERT(curl_easy_setopt(easycurl, CURLOPT_WRITEFUNCTION, curl_writefunction) == CURLE_OK, XLevelLoading, 
++                (&quot;Curl funtion error on '&quot; + url + &quot;'&quot;).c_str());
++        ASSERT(curl_easy_setopt(easycurl, CURLOPT_WRITEDATA, &amp;dst) == CURLE_OK, XLevelLoading, 
++                (&quot;Curl data set error on '&quot; + url + &quot;'&quot;).c_str());
++        ASSERT(curl_easy_perform(easycurl) == CURLE_OK, XLevelLoading,
++                (&quot;Curl download error on '&quot; + url + &quot;'&quot;).c_str());
++    }
+
+Modified: trunk/src/file.hh
+===================================================================
+--- trunk/src/file.hh	2009-07-19 13:31:58 UTC (rev 1760)
++++ trunk/src/file.hh	2009-07-19 21:09:12 UTC (rev 1761)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2006,2007,2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -19,11 +20,12 @@
+ #ifndef FILE_HH_INCLUDED
+ #define FILE_HH_INCLUDED
+ 
++#include &quot;ecl_error.hh&quot;
++
+ #include &lt;iosfwd&gt;
+ #include &lt;vector&gt;
+ #include &lt;list&gt;
+ #include &lt;memory&gt;
+-#include &quot;ecl_error.hh&quot;
+ 
+ namespace enigma
+ {
+@@ -185,7 +187,11 @@
+     };
+ 
+ /* -------------------- Helper functions -------------------- */
+-
++    
++    bool InitCurl();
++    void ShutdownCurl();
++    void Downloadfile(std::string url, ByteVec &amp;dst);
++    
+     /*! Load a complete file/input stream `is' into `dst'.  */
+     std::istream &amp;Readfile (std::istream &amp;is, ByteVec &amp;dst, int blocksize=512);
+     bool Copyfile(std::string fromPath, std::string toPath);
+
+Modified: trunk/src/lev/Proxy.cc
+===================================================================
+--- trunk/src/lev/Proxy.cc	2009-07-19 13:31:58 UTC (rev 1760)
++++ trunk/src/lev/Proxy.cc	2009-07-19 21:09:12 UTC (rev 1761)
+@@ -408,9 +408,9 @@
+         } else if (normPathType == pt_absolute || normPathType == pt_url) { 
+             absLevelPath = normFilePath;
+         } else if(normPathType == pt_resource) {
+-            if(!app.resourceFS-&gt;findFile (&quot;levels/&quot; + normFilePath + &quot;.xml&quot;, 
++            if(!app.resourceFS-&gt;findFile(&quot;levels/&quot; + normFilePath + &quot;.xml&quot;, 
+                         absLevelPath, isptr) &amp;&amp;
+-                    !app.resourceFS-&gt;findFile (&quot;levels/&quot; + normFilePath + &quot;.lua&quot;, 
++                    !app.resourceFS-&gt;findFile(&quot;levels/&quot; + normFilePath + &quot;.lua&quot;, 
+                         absLevelPath, isptr)) {
+                 return NULL;
+             }
+@@ -444,11 +444,11 @@
+             // preload plain Lua file or zipped level
+             if (isptr.get() != NULL) {
+                 // zipped file
+-                Readfile (*isptr, levelCode);
++                Readfile(*isptr, levelCode);
+             } else {
+                 // plain file
+                 basic_ifstream&lt;char&gt; ifs(absLevelPath.c_str(), ios::binary | ios::in);
+-                Readfile (ifs, levelCode);
++                Readfile(ifs, levelCode);
+             }
+             std::string oPath = newBasePath + &quot;/&quot; + newPackPath + &quot;/&quot; + filename;
+             if (backup) {
+@@ -545,7 +545,7 @@
+         // xml or lua
+         size_t extbegin = absLevelPath.rfind ('.');
+         if (extbegin != string::npos) {
+-            string ext = absLevelPath.substr (extbegin);
++            std::string ext = absLevelPath.substr(extbegin);
+         
+             if (normPathType != pt_url &amp;&amp; (ext == &quot;.lua&quot; || ext == &quot;.ell&quot;)) {
+                 useFileLoader = true;
+@@ -555,10 +555,10 @@
+                 // use file loader only for zipped xml files
+                 useFileLoader = (isptr.get() != NULL) ? true : false;
+             } else {
+-                throw XLevelLoading (&quot;Unknown file extension in &quot; + absLevelPath);
++                throw XLevelLoading(&quot;Unknown file extension in &quot; + absLevelPath);
+             }
+         } else {
+-                throw XLevelLoading (&quot;Unknown file extension in &quot; + absLevelPath);
++                throw XLevelLoading(&quot;Unknown file extension in &quot; + absLevelPath);
+         }
+ 
+         // load
+@@ -707,6 +707,7 @@
+             server::PrepareLua();
+         }
+         processDependencies();
++        processExternaldata();
+         loadLuaCode();
+     }
+ 
+@@ -848,6 +849,101 @@
+             throw XLevelLoading(&quot;load attempt of undeclared library&quot;);
+     }
+     
++    void Proxy::processExternaldata() {
++        if (doc != NULL) {
++            DOMNodeList *extList = infoElem-&gt;getElementsByTagNameNS(
++                    levelNS, Utf8ToXML(&quot;externaldata&quot;).x_str());
++            for (int i = 0, l = extList-&gt;getLength();  i &lt; l; i++) {
++                DOMElement *extElem = dynamic_cast&lt;DOMElement *&gt;(extList-&gt;item(i));
++                std::string extNormPath;
++                std::string extUrl;
++                extNormPath = XMLtoUtf8(extElem-&gt;getAttributeNS(levelNS, 
++                        Utf8ToXML(&quot;path&quot;).x_str())).c_str();
++                extUrl = XMLtoUtf8(extElem-&gt;getAttributeNS(levelNS, 
++                        Utf8ToXML(&quot;url&quot;).x_str())).c_str();
++//                Log &lt;&lt; &quot;EData: Path=&quot;&lt;&lt;extNormPath&lt;&lt; &quot; Url=&quot; &lt;&lt; extUrl&lt;&lt;&quot;\n&quot;;
++                // load every external data resource just once even if multiple urls are given
++                if (externalData.find(extNormPath) == externalData.end()) {
++                    std::auto_ptr&lt;std::istream&gt; isptr;
++                    ByteVec extCode;
++                    
++                    std::string extFilename;
++                    std::string extPath;
++                    bool isLocal = true;
++                    if (extNormPath.find(&quot;./&quot;) == 0) {
++                        extFilename = extNormPath.substr(2);
++                        if (normPathType == pt_resource) {
++                            extPath = normFilePath.substr(0, normFilePath.rfind('/') + 1) + extFilename + &quot;.txt&quot;;
++                        } else if (normPathType == pt_absolute) {
++                            extPath = absLevelPath.substr(0, absLevelPath.rfind('/') + 1) + extFilename + &quot;.txt&quot;;
++                        } else
++                            ASSERT(false, XLevelLoading, (&quot;Invalid external data path '&quot; + extNormPath + &quot;'&quot;).c_str());
++                    } else if  (extNormPath.find(&quot;externaldata/&quot;) == 0) {
++                        extFilename = extNormPath.substr(13);
++                        isLocal = false;
++                        extPath = extNormPath + &quot;.txt&quot;;
++                    } else {
++                        ASSERT(false, XLevelLoading, (&quot;Invalid external data path '&quot; + extNormPath + &quot;'&quot;).c_str());
++                    }
++                    
++                    // TODO check extFilename no further /, no suffix, legal chars
++                    
++                    // resolve resource path to filepath
++                    std::string absExtPath;
++//                    Log &lt;&lt; &quot;External data extPath &quot; &lt;&lt; extPath &lt;&lt; &quot;\n&quot;;
++                    bool haveLocalCopy = true;
++                    if (normPathType == pt_absolute) {
++                        absExtPath = extPath;
++                    } else { 
++                        haveLocalCopy = app.resourceFS-&gt;findFile(&quot;levels/&quot; + extPath, absExtPath, isptr);
++                    }
++
++                    // preload plain file or zipped file
++                    if (haveLocalCopy &amp;&amp; isptr.get() != NULL) {
++                        // zipped file
++                        Readfile(*isptr, extCode);
++                    } else if (haveLocalCopy) {
++                        // plain file
++                        basic_ifstream&lt;char&gt; ifs(absExtPath.c_str(), ios::binary | ios::in);
++                        if (ifs != NULL)
++                            Readfile(ifs, extCode);
++                        else
++                            haveLocalCopy = false;
++                    }
++                    
++                    if (!haveLocalCopy) {
++                        // need to download via curl
++                        absExtPath = app.userPath + &quot;/levels/&quot; + extPath;
++//                        Log &lt;&lt; &quot;External data download via curl '&quot; &lt;&lt; extUrl &lt;&lt; &quot;' - '&quot; &lt;&lt; absExtPath &lt;&lt;&quot;'\n&quot;;
++
++                        // TODO try catch assertions with proper handling, checksums
++                        Downloadfile(extUrl, extCode);
++                        
++                        // save a local copy
++                        ofstream ofs(absExtPath.c_str(), ios::binary | ios::out);
++                        ofs.write(&amp;extCode[0], extCode.size());
++                        ofs.close();
++                        if (ofs.fail())
++                            Log &lt;&lt; &quot;External data failed to write local copy to '&quot; &lt;&lt; absExtPath &lt;&lt; &quot;'\n&quot;;
++                        
++                        // terminate the yet unterminated code string
++                        extCode.push_back(0);
++                    }
++                    
++                    std::string extString = reinterpret_cast&lt;const char *&gt;(&amp;extCode[0]);
++//                    Log &lt;&lt; &quot;External data loaded:\n&quot; &lt;&lt; extString &lt;&lt; &quot;\n&quot;;
++                    externalData[extNormPath] = extString;
++                }
++            }
++        }
++    }
++    
++    std::string Proxy::getExternalData(std::string pathId) {
++        std::map&lt;std::string, std::string&gt;::iterator itr = externalData.find(pathId); // [] access would create map entries!
++        ASSERT(itr != externalData.end(), XLevelRuntime, (&quot;Unknown external data access '&quot; + pathId + &quot;'\n&quot;).c_str());
++        return itr-&gt;second;
++    }
++    
+     void Proxy::loadLuaCode() {
+         lua_State *L = lua::LevelState();
+         DOMNodeList * luamainList = doc-&gt;getElementsByTagNameNS(levelNS, Utf8ToXML(&quot;luamain&quot;).x_str());
+
+Modified: trunk/src/lev/Proxy.hh
+===================================================================
+--- trunk/src/lev/Proxy.hh	2009-07-19 13:31:58 UTC (rev 1760)
++++ trunk/src/lev/Proxy.hh	2009-07-19 21:09:12 UTC (rev 1761)
+@@ -123,6 +123,7 @@
+         virtual int getDifficultScore();
+         virtual GameType getEngineCompatibility();
+         virtual double getEnigmaCompatibility();
++        virtual std::string getExternalData(std::string pathId);
+         
+         /**
+          * the levels file address that can be used independent of a level pack
+@@ -180,6 +181,7 @@
+         bool hasSingleModeFlag;
+         bool hasNetworkModeFlag;
+         scoreUnitType scoreUnit;
++        std::map&lt;std::string, std::string&gt; externalData;
+         /**
+          * The compatibility that needs to be preset on level load.
+          * Usually level set the compatibility themselves on load. But heritage
+@@ -195,7 +197,8 @@
+         void load(bool onlyMetadata, bool expectLevel);
+         void loadDoc();
+         void loadLuaCode();
+-        void processDependencies();   
++        void processDependencies();
++        void processExternaldata();
+         void registerPreloadDependency(std::string depPath, std::string depId,
+             int depRelease, bool depPreload, std::string depUrl);
+         std::string getType();
+
+Modified: trunk/src/lev/SubProxy.cc
+===================================================================
+--- trunk/src/lev/SubProxy.cc	2009-07-19 13:31:58 UTC (rev 1760)
++++ trunk/src/lev/SubProxy.cc	2009-07-19 21:09:12 UTC (rev 1761)
+@@ -151,6 +151,10 @@
+         return multiProxy-&gt;getEnigmaCompatibility();
+     }
+     
++    std::string SubProxy::getExternalData(std::string pathId) {
++        return multiProxy-&gt;getExternalData(pathId);
++    }
++    
+     std::string SubProxy::getNormLevelPath() {
+         return getNormFilePath() + ecl::strf(&quot;_%d&quot;, subNum);
+     }
+
+Modified: trunk/src/lev/SubProxy.hh
+===================================================================
+--- trunk/src/lev/SubProxy.hh	2009-07-19 13:31:58 UTC (rev 1760)
++++ trunk/src/lev/SubProxy.hh	2009-07-19 21:09:12 UTC (rev 1761)
+@@ -54,6 +54,7 @@
+         virtual int getDifficultScore();
+         virtual GameType getEngineCompatibility();
+         virtual double getEnigmaCompatibility();
++        virtual std::string getExternalData(std::string pathId);
+         virtual std::string getNormLevelPath();
+         virtual std::string getAbsLevelPath();
+         
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2009-07-19 13:31:58 UTC (rev 1760)
++++ trunk/src/lua.cc	2009-07-19 21:09:12 UTC (rev 1761)
+@@ -2799,6 +2799,17 @@
+     return 0;
+ }
+ 
++static int externalData(lua_State *L) {
++    // world, path  -- 
++    if (!lua_isstring(L, 2)) {
++            throwLuaError(L, &quot;External data access without path id string&quot;);
++            return 0;
++    }
++    lev::Proxy * curProxy = lev::Index::getCurrentProxy();
++    lua_pushstring(L, curProxy-&gt;getExternalData(lua_tostring(L, 2)).c_str());
++    return 1;
++}
++
+ MethodMap tileMethodeMap;
+ 
+ static int dispatchTileWriteAccess(lua_State *L) {
+@@ -3506,6 +3517,7 @@
+     {getItem,                       &quot;it&quot;},
+     {getStone,                      &quot;st&quot;},
+     {shuffleOxyd,                   &quot;shuffleOxyd&quot;},
++    {externalData,                  &quot;externalData&quot;},
+     {0,0}
+ };
+ 
+
+Modified: trunk/src/main.cc
+===================================================================
+--- trunk/src/main.cc	2009-07-19 13:31:58 UTC (rev 1760)
++++ trunk/src/main.cc	2009-07-19 21:09:12 UTC (rev 1761)
+@@ -345,8 +345,14 @@
+     lua::CheckedDoFile (L, app.systemFS, &quot;sound-defaults.lua&quot;);
+     lua::DoSubfolderfile (L, &quot;soundsets&quot;, &quot;soundset.lua&quot;);
+ 
+-    // ----- Initialize network layer
+-    if (enet_initialize () != 0) {
++    // ----- Initialize TCP network layer
++    if (!InitCurl()) {
++        fprintf (stderr, &quot;An error occurred while initializing Curl.\n&quot;);
++        exit (1);
++    }
++    
++    // ----- Initialize UDP network layer
++    if (enet_initialize() != 0) {
+         fprintf (stderr, &quot;An error occurred while initializing ENet.\n&quot;);
+         exit (1);
+     }
+@@ -693,6 +699,8 @@
+         ecl::FolderCreate (userPath + &quot;/levels/auto&quot;);
+     if (!ecl::FolderExists(userPath + &quot;/levels/cross&quot;))
+         ecl::FolderCreate (userPath + &quot;/levels/cross&quot;);
++    if (!ecl::FolderExists(userPath + &quot;/levels/externaldata&quot;))
++        ecl::FolderCreate (userPath + &quot;/levels/externaldata&quot;);
+     if (!ecl::FolderExists(userPath + &quot;/levels/legacy_dat&quot;))
+         ecl::FolderCreate (userPath + &quot;/levels/legacy_dat&quot;);   
+     if (!ecl::FolderExists(userPath + &quot;/backup&quot;))
+@@ -833,6 +841,7 @@
+     video::Shutdown();
+     sound::Shutdown();
+     enet_deinitialize();
++    enigma::ShutdownCurl();
+     lua::ShutdownGlobal();
+     XMLPlatformUtils::Terminate();
+     delete ::nullbuffer;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001189.html">[Enigma-game-svn] r1760 - in trunk/data/levels: enigma_cross	enigma_i enigma_ii enigma_iii enigma_iv enigma_ix	enigma_tutorial enigma_vi enigma_viii
+</A></li>
+	<LI>Next message: <A HREF="001191.html">[Enigma-game-svn] r1762 - in trunk: data/levels/lib src src/items	src/lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1190">[ date ]</a>
+              <a href="thread.html#1190">[ thread ]</a>
+              <a href="subject.html#1190">[ subject ]</a>
+              <a href="author.html#1190">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

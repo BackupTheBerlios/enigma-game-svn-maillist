@@ -1,0 +1,579 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r997 - in trunk: data src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r997%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200801212254.m0LMsrbx022154%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000428.html">
+   <LINK REL="Next"  HREF="000430.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r997 - in trunk: data src src/stones</H1>
+    <B>raoul at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r997%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200801212254.m0LMsrbx022154%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r997 - in trunk: data src src/stones">raoul at mail.berlios.de
+       </A><BR>
+    <I>Mon Jan 21 23:54:53 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000428.html">[Enigma-game-svn] r996 - in feature_branches/hp_lotm: images/lotm	input input/articles input/lotm
+</A></li>
+        <LI>Next message: <A HREF="000430.html">[Enigma-game-svn] r998 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#429">[ date ]</a>
+              <a href="thread.html#429">[ thread ]</a>
+              <a href="subject.html#429">[ subject ]</a>
+              <a href="author.html#429">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: raoul
+Date: 2008-01-21 23:54:52 +0100 (Mon, 21 Jan 2008)
+New Revision: 997
+
+Added:
+   trunk/src/stones/KeySwitch.cc
+   trunk/src/stones/KeySwitch.hh
+Modified:
+   trunk/data/init.lua
+   trunk/src/Makefile.am
+   trunk/src/ox_magnum.cc
+   trunk/src/ox_oxyd1.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/st_switches.cc
+   trunk/src/stones.hh
+   trunk/src/world.cc
+Log:
+Trunk 1.1: Reengineering
+
+-&gt; KeySwitch finished
+
+
+
+Modified: trunk/data/init.lua
+===================================================================
+--- trunk/data/init.lua	2008-01-21 00:57:25 UTC (rev 996)
++++ trunk/data/init.lua	2008-01-21 22:54:52 UTC (rev 997)
+@@ -65,6 +65,25 @@
+ end
+ 
+ function enigma.MakeObject(name)
++    if name == &quot;st-key&quot; then
++        local obj = enigma._MakeObject(&quot;st_key&quot;)
++        -- Old API keycode default was 0 for st-key, but 1 for it-key!
++        enigma._SetAttrib(obj, &quot;keycode&quot;, 0)
++        return obj
++    elseif name == &quot;st-key_a&quot; then
++        local obj = enigma._MakeObject(&quot;st_key&quot;)
++        enigma._SetAttrib(obj, &quot;keycode&quot;, 1)
++        return obj
++    elseif name == &quot;st-key_b&quot; then
++        local obj = enigma._MakeObject(&quot;st_key&quot;)
++        enigma._SetAttrib(obj, &quot;keycode&quot;, 2)
++        return obj
++    elseif name == &quot;st-key_c&quot; then
++        local obj = enigma._MakeObject(&quot;st_key&quot;)
++        enigma._SetAttrib(obj, &quot;keycode&quot;, 3)
++        return obj
++    end
++
+     newname = RenamingObjectsOld2New[name]
+     if newname ~= nil then
+         return enigma._MakeObject(newname)
+@@ -76,6 +95,21 @@
+ function enigma.GetKind(obj)
+     local _newname = enigma._GetKind(obj)
+     local _oldname = RenamingObjectsNew2Old[_newname]
++
++    if _newname == &quot;st_key&quot; then
++        local code = enigma._GetAttrib(obj, &quot;keycode&quot;)
++        if code == 0 then
++            return &quot;st-key&quot;
++        elseif code == 1 then
++            return &quot;st-key_a&quot;
++        elseif code == 2 then
++            return &quot;st-key_b&quot;
++        elseif code == 3 then
++            return &quot;st-key_c&quot;
++        else -- arbitrary keycodes
++            return &quot;st-key&quot;
++        end
++    end
+     if _oldname ~= nil then
+         return _oldname
+     else
+@@ -87,6 +121,7 @@
+      local _val = val
+      local _key = key
+      local _obj_name = enigma.GetKind(obj)
++
+      if _obj_name == &quot;st-oxyd&quot; then
+          if key == &quot;color&quot; then
+ 	     _val = 0 + val   -- convert to int
+@@ -123,7 +158,9 @@
+         if (d == nil) or (type(d) ~= &quot;table&quot;) then
+             d = {}
+         end
++
+         local c = {}
++
+         for str in string.gmatch(val, &quot;%d+&quot;) do
+             table.insert(c, 0 + str)
+         end
+@@ -145,20 +182,17 @@
+ function enigma.GetAttrib(obj, key)
+      local _key = key
+      local _obj_name = enigma.GetKind(obj)
+-
+      if (_obj_name == &quot;st-switch&quot;) or (_obj_name == &quot;st-switch_black&quot;)
+              or (_obj_name == &quot;st-switch_white&quot;) 
+              or (_obj_name == &quot;st-floppy&quot;) then
+          if key == &quot;on&quot; then
+ 	     _key = &quot;state&quot;
+-	 end
++	     end
+      end
+      if key == &quot;blackball&quot; or key == &quot;whiteball&quot; then
+          _key = &quot;color&quot;
+      end
+-
+      local val = enigma._GetAttrib(obj, _key)
+-     
+      if key == &quot;blackball&quot; then
+         if val == 0 then val = 1 else val = 0 end
+      end
+@@ -212,6 +246,7 @@
+     [&quot;st-fart__trigger&quot;] = &quot;toggle&quot;,
+     st_fourswitch__trigger = &quot;toggle&quot;,
+     st_floppy__onoff = &quot;toggle&quot;,
++    st_key__onoff = &quot;toggle&quot;,
+     [&quot;st-stoneimpulse__trigger&quot;] = &quot;signal&quot;,
+     [&quot;st-stoneimpulse-hollow__trigger&quot;] = &quot;signal&quot;,
+     [&quot;st-stoneimpulse_movable__trigger&quot;] = &quot;signal&quot;,
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-01-21 00:57:25 UTC (rev 996)
++++ trunk/src/Makefile.am	2008-01-21 22:54:52 UTC (rev 997)
+@@ -197,6 +197,8 @@
+ 	stones/FloppySwitch.cc   \
+ 	stones/FourSwitch.cc	\
+ 	stones/FourSwitch.hh	\
++	stones/KeySwitch.cc	\
++	stones/KeySwitch.hh	\
+ 	stones/OxydStone.cc	\
+ 	stones/OxydStone.hh	\
+ 	stones/Switch.cc	\
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2008-01-21 00:57:25 UTC (rev 996)
++++ trunk/src/ox_magnum.cc	2008-01-21 22:54:52 UTC (rev 997)
+@@ -170,7 +170,7 @@
+     &quot;st_floppy&quot;,                // OxydMagnum stone 0x2d (in normal Oxyd Magnum Levels unused!)
+     UNUSED,                     // OxydMagnum stone 0x2e
+     &quot;st_fourswitch&quot;,            // OxydMagnum stone 0x2f (Level 89 and 92)
+-    &quot;st-key&quot;,                   // OxydMagnum stone 0x30
++    &quot;st_key&quot;,                   // OxydMagnum stone 0x30
+     &quot;st-floppy&quot;,                // OxydMagnum stone 0x31
+     &quot;st-knight&quot;,                // OxydMagnum stone 0x32
+     &quot;st_fourswitch&quot;,            // OxydMagnum stone 0x33 (Level 51 and 100)
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2008-01-21 00:57:25 UTC (rev 996)
++++ trunk/src/ox_oxyd1.cc	2008-01-21 22:54:52 UTC (rev 997)
+@@ -200,7 +200,7 @@
+     &quot;st_switch_black_instant&quot;,  // Oxyd1 stone 0x2d
+     &quot;st_switch_white_instant&quot;,  // Oxyd1 stone 0x2e
+     &quot;st_fourswitch&quot;,            // Oxyd1 stone 0x2f
+-    &quot;st-key&quot;,                   // Oxyd1 stone 0x30
++    &quot;st_key&quot;,                   // Oxyd1 stone 0x30
+     &quot;st_floppy&quot;,                // Oxyd1 stone 0x31
+     &quot;st-knight&quot;,                // Oxyd1 stone 0x32
+     0,                          // Oxyd1 stone 0x33 oscillator (properties set in oxyd.cc)
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-01-21 00:57:25 UTC (rev 996)
++++ trunk/src/ox_peroxyd.cc	2008-01-21 22:54:52 UTC (rev 997)
+@@ -238,7 +238,7 @@
+     &quot;st_switch_black_instant&quot;,  // PerOxyd stone 0x29
+     &quot;st_switch_white_instant&quot;,  // PerOxyd stone 0x2a
+     &quot;st_fourswitch&quot;,            // PerOxyd stone 0x2b
+-    &quot;st-key&quot;,                   // PerOxyd stone 0x2c
++    &quot;st_key&quot;,                   // PerOxyd stone 0x2c
+     &quot;st_floppy&quot;,                // PerOxyd stone 0x2d
+     &quot;&quot;,                         // PerOxyd stone 0x2e (?)
+     &quot;st-death&quot;,                 // PerOxyd stone 0x2f
+
+Modified: trunk/src/st_switches.cc
+===================================================================
+--- trunk/src/st_switches.cc	2008-01-21 00:57:25 UTC (rev 996)
++++ trunk/src/st_switches.cc	2008-01-21 22:54:52 UTC (rev 997)
+@@ -129,107 +129,6 @@
+     }
+ }
+ 
+-
+-/* -------------------- Key switches -------------------- */
+-
+-// Attributes:
+-//
+-// :keycode         a numerical code; only keys with the same code
+-//                  can activate this switch
+-// :on              1 or 0
+-// :target,action   as usual
+-
+-/** \page st-key Key Switch Stone
+-
+-This stone acts as a lock and can only be activated by
+-using a key item. You can use keycodes to let keys only
+-open specific key stones.
+-
+-\subsection keye Example
+-\verbatim
+-set_stone( &quot;st-key_b&quot;, 14,77, {action=&quot;openclose&quot;, target=&quot;door2&quot;})
+-set_item(&quot;it-key_b&quot;, 12,7)
+-\endverbatim
+-
+-\image html st-key0.png
+-*/
+-namespace
+-{
+-    class KeyStone : public OnOffStone {
+-        CLONEOBJ(KeyStone);
+-
+-        void init_model() {set_model(is_on() ? &quot;st-key1&quot; : &quot;st-key0&quot;);}
+-        void actor_hit(const StoneContact &amp;sc);
+-        const char *collision_sound() { return &quot;metal&quot;; }
+-        bool check_matching_key (enigma::Inventory *inv);
+-    public:
+-        KeyStone(const char *kind=&quot;st-key&quot;, int keycode=0) 
+-        : OnOffStone(kind) 
+-        {
+-            set_attrib(&quot;keycode&quot;, keycode);
+-        }
+-    };
+-
+-    class KeyStone_a : public KeyStone {
+-        CLONEOBJ(KeyStone_a);
+-    public:
+-        KeyStone_a() : KeyStone(&quot;st-key_a&quot;, 1) {}
+-    };
+-    class KeyStone_b : public KeyStone {
+-        CLONEOBJ(KeyStone_b);
+-    public:
+-        KeyStone_b() : KeyStone(&quot;st-key_b&quot;, 2) {}
+-    };
+-    class KeyStone_c : public KeyStone {
+-        CLONEOBJ(KeyStone_c);
+-    public:
+-        KeyStone_c() : KeyStone(&quot;st-key_c&quot;, 3) {}
+-    };
+-}
+-
+-bool KeyStone::check_matching_key (enigma::Inventory *inv)
+-{
+-    Item *it = inv-&gt;get_item(0);
+-    return (it
+-            &amp;&amp; it-&gt;is_kind(&quot;it-key*&quot;)
+-            &amp;&amp; it-&gt;getAttr(&quot;keycode&quot;) == getAttr(&quot;keycode&quot;));
+-}
+-
+-void KeyStone::actor_hit(const StoneContact &amp;sc)
+-{
+-    enigma::Inventory *inv = player::GetInventory(sc.actor);
+-    if (!inv)
+-        return;
+-
+-    bool toggle = false;
+-
+-    if (server::GameCompatibility == enigma::GAMET_ENIGMA) {
+-        if (is_on()) {
+-            if (!inv-&gt;is_full()) {
+-                Item *key = MakeItem(&quot;it-key&quot;);
+-                key-&gt;set_attrib (&quot;keycode&quot;, getAttr(&quot;keycode&quot;));
+-                inv-&gt;add_item(key);
+-                toggle = true;
+-            }
+-        }
+-        else if (check_matching_key (inv)) {
+-            DisposeObject (inv-&gt;yield_first());
+-            toggle = true;
+-        }
+-        player::RedrawInventory (inv);
+-    }
+-    else {
+-        if (check_matching_key (inv))
+-            toggle = true;
+-    }
+-
+-    if (toggle) {
+-        set_on (!is_on());
+-        performAction(is_on());
+-    }
+-}
+-
+-
+ /* -------------------- Laser / Time switches -------------------- */
+ 
+ namespace
+@@ -433,10 +332,6 @@
+ void InitSwitches()
+ {
+     Register (new CoinSlot);
+-    Register (new KeyStone);
+-    Register (new KeyStone_a);
+-    Register (new KeyStone_b);
+-    Register (new KeyStone_c);
+     Register (new LaserSwitch);
+     Register (new LaserTimeSwitch);
+     Register (new TimeSwitch);
+
+Added: trunk/src/stones/KeySwitch.cc
+===================================================================
+--- trunk/src/stones/KeySwitch.cc	2008-01-21 00:57:25 UTC (rev 996)
++++ trunk/src/stones/KeySwitch.cc	2008-01-21 22:54:52 UTC (rev 997)
+@@ -0,0 +1,101 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/KeySwitch.hh&quot;
++#include &quot;server.hh&quot;
++#include &quot;Inventory.hh&quot;
++#include &quot;player.hh&quot;
++
++namespace enigma {
++    KeySwitch::KeySwitch() : Stone () {
++        set_attrib(&quot;keycode&quot;, Value(1));
++    }
++
++    void KeySwitch::setState(int extState) {
++        if (isDisplayable()) {
++            if (state == OFF &amp;&amp; extState != state) {
++                sound_event (&quot;switchon&quot;);
++                state = ON;
++                init_model();
++                performAction(state);
++            } else if (state == ON &amp;&amp; extState != state) {
++                sound_event (&quot;switchon&quot;);
++                state = OFF;
++                init_model();
++                performAction(state);
++            }
++        } else
++            state = extState;
++    }
++
++    void KeySwitch::init_model() {
++        set_model(ecl::strf(&quot;st-key%s&quot;, state == ON ? &quot;1&quot; : &quot;0&quot;));
++    }
++
++    void KeySwitch::actor_hit(const StoneContact &amp;sc) {
++        enigma::Inventory *inv = player::GetInventory(sc.actor);
++        if (!inv)
++            return;
++
++        bool toggle = false;
++
++        if (server::GameCompatibility == enigma::GAMET_ENIGMA) {
++            if (state == ON) {
++                if (!inv-&gt;is_full()) {
++                    Item *key = MakeItem(&quot;it-key&quot;);
++                    key-&gt;set_attrib (&quot;keycode&quot;, getAttr(&quot;keycode&quot;));
++                    inv-&gt;add_item(key);
++                    toggle = true;
++                }
++            }
++            else if (check_matching_key(inv)) {
++                DisposeObject(inv-&gt;yield_first());
++                toggle = true;
++            }
++            player::RedrawInventory (inv);
++        }
++        else {
++            if (check_matching_key(inv))
++                toggle = true;
++        }
++
++        if (toggle)
++            setState(ON - state);
++    }
++
++    const char *KeySwitch::collision_sound() {
++         return &quot;metal&quot;;
++    }
++
++    bool KeySwitch::check_matching_key(enigma::Inventory *inv)
++    {
++        Item *it = inv-&gt;get_item(0);
++        return (it
++             &amp;&amp; it-&gt;is_kind(&quot;it-key*&quot;)
++             &amp;&amp; it-&gt;getAttr(&quot;keycode&quot;) == getAttr(&quot;keycode&quot;));
++    }
++
++    DEF_TRAITS(KeySwitch, &quot;st_key&quot;, st_key);
++
++    BOOT_REGISTER_START
++        BootRegister(new KeySwitch(), &quot;st_key&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/KeySwitch.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/KeySwitch.hh
+===================================================================
+--- trunk/src/stones/KeySwitch.hh	2008-01-21 00:57:25 UTC (rev 996)
++++ trunk/src/stones/KeySwitch.hh	2008-01-21 22:54:52 UTC (rev 997)
+@@ -0,0 +1,62 @@
++/*
++ * Copyright (C) 2007 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef KEYSWITCH_HH
++#define KEYSWITCH_HH
++
++#include &quot;stones.hh&quot;
++#include &quot;stones_internal.hh&quot;
++#include &quot;Inventory.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * This stone acts as a lock and can only be activated by
++     * using a key item. You can use keycodes to let keys only
++     * open specific key stones.&lt;p&gt;
++     * It is a StateObject with 2 internal states as the
++     * state changes are not animated. The messages
++     * &quot;toggle&quot;, &quot;signal&quot;, &quot;on&quot;, &quot;off&quot; and get/set of the state are fully supported.
++     * The keyswitch starts per default in state OFF.&lt;p&gt;
++     * They can
++     * send inverse action values by setting the &quot;inverse&quot; attribute.
++     */
++    class KeySwitch : public Stone {
++        CLONEOBJ(KeySwitch);
++        DECL_TRAITS;
++    private:
++        enum iState { OFF, ON };
++    public:
++        KeySwitch();
++
++        // StateObject interface
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++
++        // Stone interface
++        virtual void actor_hit(const StoneContact &amp;sc);
++        virtual const char *collision_sound();
++    private:
++        bool check_matching_key(enigma::Inventory *inv);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/KeySwitch.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2008-01-21 00:57:25 UTC (rev 996)
++++ trunk/src/stones.hh	2008-01-21 22:54:52 UTC (rev 997)
+@@ -60,6 +60,7 @@
+         st_floppy,
+         st_fourswitch,
+         st_greenbrown_growing,
++        st_key,
+         st_knight,
+         st_laserbreak,
+         st_magic,
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-01-21 00:57:25 UTC (rev 996)
++++ trunk/src/world.cc	2008-01-21 22:54:52 UTC (rev 997)
+@@ -1850,7 +1850,7 @@
+     // activate which key hole
+     if (src-&gt;getObjectType() == Object::ITEM) {
+         ItemID src_id = get_id(dynamic_cast&lt;Item *&gt;(src));
+-        if (src_id &gt;= it_key_a &amp;&amp; src_id &lt;= it_key_c &amp;&amp; dst-&gt;is_kind(&quot;st-key&quot;)) {
++        if (src_id &gt;= it_key_a &amp;&amp; src_id &lt;= it_key_c &amp;&amp; dst-&gt;is_kind(&quot;st_key&quot;)) {
+             dst-&gt;set_attrib(&quot;keycode&quot;, src-&gt;getAttr(&quot;keycode&quot;));
+             return;
+         }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000428.html">[Enigma-game-svn] r996 - in feature_branches/hp_lotm: images/lotm	input input/articles input/lotm
+</A></li>
+	<LI>Next message: <A HREF="000430.html">[Enigma-game-svn] r998 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#429">[ date ]</a>
+              <a href="thread.html#429">[ thread ]</a>
+              <a href="subject.html#429">[ subject ]</a>
+              <a href="author.html#429">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

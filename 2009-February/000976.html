@@ -1,0 +1,373 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1546 - in trunk: data data/schemas src	src/actors src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1546%20-%20in%20trunk%3A%20data%20data/schemas%20src%0A%09src/actors%20src/stones&In-Reply-To=%3C200902192318.n1JNILpm013674%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000975.html">
+   <LINK REL="Next"  HREF="000977.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1546 - in trunk: data data/schemas src	src/actors src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1546%20-%20in%20trunk%3A%20data%20data/schemas%20src%0A%09src/actors%20src/stones&In-Reply-To=%3C200902192318.n1JNILpm013674%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1546 - in trunk: data data/schemas src	src/actors src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Fri Feb 20 00:18:21 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000975.html">[Enigma-game-svn] r1545 - in trunk: attic/images-stones data/gfx16	data/gfx32 data/gfx40 data/gfx48 data/gfx64
+</A></li>
+        <LI>Next message: <A HREF="000977.html">[Enigma-game-svn] r1547 - trunk/doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#976">[ date ]</a>
+              <a href="thread.html#976">[ thread ]</a>
+              <a href="subject.html#976">[ subject ]</a>
+              <a href="author.html#976">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-02-20 00:18:20 +0100 (Fri, 20 Feb 2009)
+New Revision: 1546
+
+Modified:
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Object.cc
+   trunk/src/actors/Balls.cc
+   trunk/src/actors/Balls.hh
+   trunk/src/lua.cc
+   trunk/src/stones.hh
+   trunk/src/stones/DispenserStone.cc
+   trunk/src/stones/SimpleStones.cc
+   trunk/src/stones/SimpleStones.hh
+   trunk/src/world.cc
+Log:
+Trunk 1.1: new API reengineering
+- fix old API arg check on AddScramble() - bug report #9858
+- adjust pearl sink speed to marble sink speed - use common SinkTime variable
+- fix pearls should not sink in modes besides Enigma
+- st_yinyang improvements:
+  - add st_yinyang_inactive - no player switch possible
+  - state = 2 represents an inactive st_yinyang
+  - attribute &quot;loop&quot;, default true for infinite reactivation, false causes
+    yinyang to switch to inactive after activation.
+
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2009-02-19 20:58:11 UTC (rev 1545)
++++ trunk/data/models-2d.lua	2009-02-19 23:18:20 UTC (rev 1546)
+@@ -153,9 +153,9 @@
+     DefAlias (&quot;ac_pearl_white-sink0&quot;, &quot;ac-whiteball-small-fall1&quot;)
+     DefAlias (&quot;ac_pearl_white-sink1&quot;, &quot;ac-whiteball-small-fall2&quot;)
+     DefAlias (&quot;ac_pearl_white-sink2&quot;, &quot;ac-whiteball-small-fall3&quot;)
+-    DefAlias (&quot;ac_pearl_white-sink3&quot;, &quot;ac-whiteball-small-fall4&quot;)
+-    DefAlias (&quot;ac_pearl_white-sink4&quot;, &quot;ac-whiteball-small-fall5&quot;)
+-    DefAlias (&quot;ac_pearl_white-sink5&quot;, &quot;ac-whiteball-small-fall5&quot;)
++    DefAlias (&quot;ac_pearl_white-sink3&quot;, &quot;ac-whiteball-small-fall3&quot;)
++    DefAlias (&quot;ac_pearl_white-sink4&quot;, &quot;ac-whiteball-small-fall4&quot;)
++    DefAlias (&quot;ac_pearl_white-sink5&quot;, &quot;ac-whiteball-small-fall4&quot;)
+     DefAlias (&quot;ac_pearl_white-sink6&quot;, &quot;ac-whiteball-small-fall5&quot;)
+     DefAlias (&quot;ac_pearl_white-sunk&quot;, &quot;invisible&quot;)
+ 
+@@ -818,6 +818,7 @@
+     DefStone(&quot;st_yellow&quot;)
+     DefStone(&quot;st_blur_straight&quot;)
+     DefStone(&quot;st_blur_cross&quot;)
++    DefStone(&quot;st_yinyang_inactive&quot;, &quot;sh-round&quot;)
+ end
+ 
+ ---------------------
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2009-02-19 20:58:11 UTC (rev 1545)
++++ trunk/data/schemas/objects.xml	2009-02-19 23:18:20 UTC (rev 1546)
+@@ -1739,6 +1739,7 @@
+       &lt;attr name=&quot;orientation&quot;/&gt;
+       &lt;attr name=&quot;steady&quot;/&gt;
+       &lt;msg name=&quot;signal&quot;/&gt;
++      &lt;msg name=&quot;ignite&quot;/&gt;
+       &lt;msg name=&quot;_model_reanimated&quot;/&gt;
+       &lt;msg name=&quot;_init&quot;/&gt;
+       &lt;msg name=&quot;_trigger&quot;/&gt;
+@@ -1888,6 +1889,7 @@
+     &lt;object name=&quot;st_yellow&quot;/&gt;
+     &lt;object name=&quot;st_yinyang&quot;&gt;
+       &lt;attr name=&quot;instant&quot;/&gt;
++      &lt;attr name=&quot;loop&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;st_yinyang_instant&quot;&gt;
+       &lt;attr name=&quot;instant&quot; value=&quot;true&quot;/&gt;
+@@ -1896,5 +1898,9 @@
+       &lt;attr name=&quot;state&quot; value=&quot;1&quot;/&gt;
+       &lt;attr name=&quot;instant&quot; value=&quot;false&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_yinyang_inactive&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;2&quot;/&gt;
++      &lt;attr name=&quot;instant&quot; value=&quot;false&quot;/&gt;
++    &lt;/object&gt;
+   &lt;/zoo&gt;
+ &lt;/objects&gt;
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2009-02-19 20:58:11 UTC (rev 1545)
++++ trunk/src/Object.cc	2009-02-19 23:18:20 UTC (rev 1546)
+@@ -116,7 +116,7 @@
+     const char * Object::get_kind() const {      // To be made pure virtual
+         AttribMap::const_iterator i = attribs.find(&quot;kind&quot;);
+         ASSERT(i != attribs.end() &amp;&amp; i-&gt;second.getType() == Value::STRING, XLevelRuntime,
+-                &quot;Object: attribute kind not found&quot;);
++                ecl::strf(&quot;Object: attribute kind not found - class '%s'&quot;, getClass().c_str()).c_str());
+         return i-&gt;second.get_string();
+     }
+     
+
+Modified: trunk/src/actors/Balls.cc
+===================================================================
+--- trunk/src/actors/Balls.cc	2009-02-19 20:58:11 UTC (rev 1545)
++++ trunk/src/actors/Balls.cc	2009-02-19 23:18:20 UTC (rev 1546)
+@@ -29,8 +29,8 @@
+ 
+     const double BasicBall::SHIELD_TIME = 10.0;
+ 
+-    BasicBall::BasicBall(const ActorTraits &amp;tr, int maxSinkDepthValue) : Actor (tr), 
+-            maxSinkDepth (maxSinkDepthValue), sinkDepth (minSinkDepth), sinkModel (-1),
++    BasicBall::BasicBall(const ActorTraits &amp;tr) : Actor (tr), 
++            sinkDepth (minSinkDepth), sinkModel (-1),
+             lastshinep (false), vortex_normal_time (0), m_halosprite (),
+             m_shield_rest_time (0), m_halostate (NOHALO),
+             m_drunk_rest_time (0), m_invisible_rest_time (0) {
+@@ -537,7 +537,7 @@
+     };
+ 
+ /* -------------------- Pearl  -------------------- */
+-    Pearl::Pearl(int color) : BasicBall(traits[color], 4) {
++    Pearl::Pearl(int color) : BasicBall(traits[color]) {
+         setAttr(&quot;adhesion&quot;, 1.0);
+         setAttr(&quot;color&quot;, color);
+         setAttr(&quot;owner&quot;, YIN);
+@@ -551,6 +551,13 @@
+     const char *Pearl::get_kind() const {
+         return &quot;ac_pearl_white&quot;;
+     }
++    
++    void Pearl::sink(double dtime) {
++        if (server::GameCompatibility != GAMET_ENIGMA)
++            return;    // do not sink pearls in oxyd modes
++        else
++            BasicBall::sink(dtime);
++    }
+ 
+     int Pearl::traitsIdx() const {
+         return getAttr(&quot;color&quot;);
+
+Modified: trunk/src/actors/Balls.hh
+===================================================================
+--- trunk/src/actors/Balls.hh	2009-02-19 20:58:11 UTC (rev 1545)
++++ trunk/src/actors/Balls.hh	2009-02-19 23:18:20 UTC (rev 1546)
+@@ -52,7 +52,7 @@
+         };
+ 
+     public:
+-        BasicBall(const ActorTraits &amp;tr, int maxSinkDepthValue = 7);
++        BasicBall(const ActorTraits &amp;tr);
+ 
+         // Object interface.
+         virtual Value message(const Message &amp;m);
+@@ -83,8 +83,10 @@
+         // ModelCallback interface  - Animation callback
+         virtual void animcb();
+ 
++    protected:
++        virtual void sink(double dtime);
++
+     private:
+-        void sink(double dtime);
+         void disable_shield();
+         void change_state_noshield(iState newstate);
+         void change_state(iState newstate);
+@@ -96,7 +98,7 @@
+         void update_halo();
+ 
+         static const int minSinkDepth = 0; // normal level
+-        int maxSinkDepth;       // actor dies at this depth
++        static const int maxSinkDepth = 7; // actor dies at this depth
+         double sinkDepth;       // how deep actor has sunk
+         int    sinkModel;       // current model
+         bool   lastshinep;
+@@ -141,6 +143,8 @@
+         virtual std::string getClass() const;
+         virtual const char *get_kind() const;
+         
++    protected:
++        virtual void sink(double dtime);
+     private:
+         int traitsIdx() const;
+     };
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2009-02-19 20:58:11 UTC (rev 1545)
++++ trunk/src/lua.cc	2009-02-19 23:18:20 UTC (rev 1546)
+@@ -897,6 +897,9 @@
+ {
+     int         x       = round_down&lt;int&gt;(lua_tonumber(L, 1));
+     int         y       = round_down&lt;int&gt;(lua_tonumber(L, 2));
++    if (!lua_isstring(L, 3))
++        throwLuaError(L, &quot;AddScramble: Third argument must be one character of \&quot;wsen\&quot;&quot;);
++
+     const char *dir     = lua_tostring(L,3);
+     const char *allowed = &quot;wsen&quot;;
+     char       *found   = strchr(allowed, dir[0]);
+
+Modified: trunk/src/stones/DispenserStone.cc
+===================================================================
+--- trunk/src/stones/DispenserStone.cc	2009-02-19 20:58:11 UTC (rev 1545)
++++ trunk/src/stones/DispenserStone.cc	2009-02-19 23:18:20 UTC (rev 1546)
+@@ -113,9 +113,9 @@
+     }
+ 
+     StoneTraits DispenserStone::traits[3] = {
+-        {&quot;st_dispenser_bombblack&quot;, st_INVALID, stf_none, material_stone, 1.0, MOVABLE_BREAKABLE},
+-        {&quot;st_dispenser_bombwhite&quot;, st_INVALID, stf_none, material_stone, 1.0, MOVABLE_BREAKABLE},
+-        {&quot;st_dispenser_dynamite&quot;, st_INVALID, stf_none, material_stone, 1.0, MOVABLE_BREAKABLE},
++        {&quot;st_dispenser_bombblack&quot;, st_dispenser, stf_none, material_stone, 1.0, MOVABLE_BREAKABLE},
++        {&quot;st_dispenser_bombwhite&quot;, st_dispenser, stf_none, material_stone, 1.0, MOVABLE_BREAKABLE},
++        {&quot;st_dispenser_dynamite&quot;, st_dispenser, stf_none, material_stone, 1.0, MOVABLE_BREAKABLE},
+     };
+ 
+     BOOT_REGISTER_START
+
+Modified: trunk/src/stones/SimpleStones.cc
+===================================================================
+--- trunk/src/stones/SimpleStones.cc	2009-02-19 20:58:11 UTC (rev 1545)
++++ trunk/src/stones/SimpleStones.cc	2009-02-19 23:18:20 UTC (rev 1546)
+@@ -290,6 +290,16 @@
+         return &quot;st_yinyang&quot;;
+     }
+     
++    int YinyangStone::maxState() const {
++        return 2;
++    }
++    
++    void YinyangStone::toggleState() {
++        // just toggle IDLE states, do not stop ACTIVE, or reactive INACTIVE states
++        if (state == IDLE)
++           setState(ACTIVE);
++    }
++    
+     void YinyangStone::setState(int extState) {
+         if (!isDisplayable())
+            state = extState;
+@@ -302,12 +312,14 @@
+     void YinyangStone::init_model() {
+         if (state == IDLE)
+             set_model(&quot;st_yinyang&quot;);
++        else if (state == INACTIVE)
++            set_model(&quot;st_yinyang_inactive&quot;);
+         else
+             set_anim(&quot;st_yinyang-anim&quot;);
+     }
+     
+     void YinyangStone::animcb() {
+-        state = IDLE;
++        state =  (getAttr(&quot;loop&quot;).to_bool()) ? IDLE : INACTIVE;
+         init_model();
+         if (!getAttr(&quot;instant&quot;).to_bool())
+             switchPlayer();
+@@ -351,6 +363,7 @@
+         BootRegister(new YinyangStone(0), &quot;st_yinyang&quot;);
+         BootRegister(new YinyangStone(0, true), &quot;st_yinyang_instant&quot;);
+         BootRegister(new YinyangStone(1), &quot;st_yinyang_active&quot;);
++        BootRegister(new YinyangStone(2), &quot;st_yinyang_inactive&quot;);
+     BOOT_REGISTER_END
+ 
+ } // namespace enigma
+
+Modified: trunk/src/stones/SimpleStones.hh
+===================================================================
+--- trunk/src/stones/SimpleStones.hh	2009-02-19 20:58:11 UTC (rev 1545)
++++ trunk/src/stones/SimpleStones.hh	2009-02-19 23:18:20 UTC (rev 1546)
+@@ -184,7 +184,8 @@
+     private:
+         enum iState {
+             IDLE,       ///&lt; 
+-            ACTIVE      ///&lt; 
++            ACTIVE,     ///&lt; 
++            INACTIVE    ///&lt; 
+         };
+     public:
+         YinyangStone(int initState, bool isInstant =false);
+@@ -193,6 +194,8 @@
+         virtual std::string getClass() const;        
+         
+         // StateObject interface
++        virtual int maxState() const;
++        virtual void toggleState();
+         virtual void setState(int extState);
+ 
+         // GridObject interface
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2009-02-19 20:58:11 UTC (rev 1545)
++++ trunk/src/stones.hh	2009-02-19 23:18:20 UTC (rev 1546)
+@@ -58,6 +58,7 @@
+         st_death,
+         st_death_invisible,
+         st_disco,
++        st_dispenser,
+         st_door,
+         st_easymode,
+         st_magic_oxyda,
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2009-02-19 20:58:11 UTC (rev 1545)
++++ trunk/src/world.cc	2009-02-19 23:18:20 UTC (rev 1546)
+@@ -2347,7 +2347,7 @@
+             &amp;&amp; (level-&gt;engagedIndispensableHollows + level-&gt;engagedDispensableHollows) == level-&gt;numMeditatists) {
+         server::FinishLevel();
+     }
+-    Log &lt;&lt; &quot;chang meditation:  &quot;&lt;&lt; level-&gt;numMeditatists &lt;&lt; &quot; &quot; &lt;&lt; level-&gt;indispensableHollows &lt;&lt; &quot; &quot;&lt;&lt;level-&gt;engagedIndispensableHollows &lt;&lt; &quot; &quot; &lt;&lt; level-&gt;engagedDispensableHollows &lt;&lt; &quot;\n&quot;;
++//    Log &lt;&lt; &quot;chang meditation:  &quot;&lt;&lt; level-&gt;numMeditatists &lt;&lt; &quot; &quot; &lt;&lt; level-&gt;indispensableHollows &lt;&lt; &quot; &quot;&lt;&lt;level-&gt;engagedIndispensableHollows &lt;&lt; &quot; &quot; &lt;&lt; level-&gt;engagedDispensableHollows &lt;&lt; &quot;\n&quot;;
+ }
+ 
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000975.html">[Enigma-game-svn] r1545 - in trunk: attic/images-stones data/gfx16	data/gfx32 data/gfx40 data/gfx48 data/gfx64
+</A></li>
+	<LI>Next message: <A HREF="000977.html">[Enigma-game-svn] r1547 - trunk/doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#976">[ date ]</a>
+              <a href="thread.html#976">[ thread ]</a>
+              <a href="subject.html#976">[ subject ]</a>
+              <a href="author.html#976">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

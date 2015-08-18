@@ -1,0 +1,468 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1450 - in trunk: data data/schemas src	src/actors src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1450%20-%20in%20trunk%3A%20data%20data/schemas%20src%0A%09src/actors%20src/stones&In-Reply-To=%3C200901122349.n0CNnTQe004090%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000878.html">
+   <LINK REL="Next"  HREF="000880.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1450 - in trunk: data data/schemas src	src/actors src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1450%20-%20in%20trunk%3A%20data%20data/schemas%20src%0A%09src/actors%20src/stones&In-Reply-To=%3C200901122349.n0CNnTQe004090%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1450 - in trunk: data data/schemas src	src/actors src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Jan 13 00:49:29 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000878.html">[Enigma-game-svn] r1449 - homepage/input/articles
+</A></li>
+        <LI>Next message: <A HREF="000880.html">[Enigma-game-svn] r1451 - in trunk/data/levels: enigma_cross	enigma_iv enigma_tutorial enigma_vi enigma_vii enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#879">[ date ]</a>
+              <a href="thread.html#879">[ thread ]</a>
+              <a href="subject.html#879">[ subject ]</a>
+              <a href="author.html#879">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-01-13 00:49:19 +0100 (Tue, 13 Jan 2009)
+New Revision: 1450
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/actors/Balls.cc
+   trunk/src/enigma.hh
+   trunk/src/floors.cc
+   trunk/src/items.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/oxyd.cc
+   trunk/src/player.cc
+   trunk/src/stones/BoulderStone.cc
+   trunk/src/stones/CompatibilityStones.cc
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1: new API reengineering
+- boulder stone: add message &quot;flip&quot; for reversing the orientation
+- fix multiple engine internal missed renamings
+- actor attribute &quot;player&quot; renamed to &quot;owner&quot;
+- actor attribute &quot;color&quot; no write access
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2009-01-12 23:36:56 UTC (rev 1449)
++++ trunk/data/api1init.lua	2009-01-12 23:49:19 UTC (rev 1450)
+@@ -415,7 +415,7 @@
+ function enigma.MakeObject(name)
+     if name == &quot;ac-whiteball-small&quot; then
+         local obj = enigma._MakeObject(&quot;ac_pearl_white&quot;)
+-        enigma._SetAttrib(obj, &quot;player&quot;, nil)
++        enigma._SetAttrib(obj, &quot;owner&quot;, nil)
+         return obj
+     elseif name == &quot;fl-bridge-open&quot; then
+         local obj = enigma._MakeObject(&quot;fl_bridge&quot;)
+@@ -779,6 +779,9 @@
+          end
+          return
+      end
++     if key == &quot;player&quot; then
++         _key = &quot;owner&quot;
++     end
+      enigma._SetAttrib(obj, _key, _val)
+ end
+ 
+@@ -846,6 +849,9 @@
+          if color == 2 then val = 0 else val = 1 end
+          return val
+      end
++     if key == &quot;player&quot; then
++         _key = &quot;owner&quot;
++     end
+ 
+      local val = enigma._GetAttrib(obj, _key)
+ 
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2009-01-12 23:36:56 UTC (rev 1449)
++++ trunk/data/schemas/objects.xml	2009-01-12 23:49:19 UTC (rev 1450)
+@@ -62,8 +62,8 @@
+     &lt;attr name=&quot;nopaction&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;noshuffle&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;orientation&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;3&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;owner&quot; type=&quot;int&quot; default=&quot;nil&quot; min=&quot;0&quot; max=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;oxydcolor&quot; type=&quot;int&quot; default=&quot;-1&quot; min=&quot;-4&quot; max=&quot;7&quot; rw=&quot;rw&quot;/&gt;
+-    &lt;attr name=&quot;player&quot; type=&quot;int&quot; default=&quot;nil&quot; min=&quot;0&quot; max=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;prefercurrent&quot; type=&quot;double&quot; default=&quot;0.0&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;push_directions&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;range&quot; type=&quot;double&quot; default=&quot;1.0&quot; rw=&quot;rw&quot;/&gt;
+@@ -173,9 +173,9 @@
+     &lt;object name=&quot;ac&quot; abstract=&quot;true&quot;&gt;
+       &lt;attr name=&quot;adhesion&quot; default=&quot;1.0&quot;/&gt;
+       &lt;attr name=&quot;controllers&quot;/&gt;
+-      &lt;attr name=&quot;color&quot;/&gt;
++      &lt;attr name=&quot;color&quot; rw=&quot;r&quot;/&gt;
+       &lt;attr name=&quot;fellows&quot;/&gt;
+-      &lt;attr name=&quot;player&quot;/&gt;
++      &lt;attr name=&quot;owner&quot;/&gt;
+       &lt;attr name=&quot;essential&quot;/&gt;
+       &lt;attr name=&quot;essential_id&quot;/&gt;
+       &lt;attr name=&quot;charge&quot;/&gt;
+@@ -754,6 +754,7 @@
+       &lt;msg name=&quot;orientate&quot;/&gt;
+       &lt;msg name=&quot;turn&quot;/&gt;
+       &lt;msg name=&quot;turnback&quot;/&gt;
++      &lt;msg name=&quot;flip&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;st_boulder_w&quot;&gt;
+       &lt;attr name=&quot;orientation&quot; value=&quot;0&quot;/&gt;
+
+Modified: trunk/src/actors/Balls.cc
+===================================================================
+--- trunk/src/actors/Balls.cc	2009-01-12 23:36:56 UTC (rev 1449)
++++ trunk/src/actors/Balls.cc	2009-01-12 23:49:19 UTC (rev 1450)
+@@ -515,7 +515,7 @@
+     Marble::Marble(int color) : BasicBall(traits[color]) {
+         setAttr(&quot;adhesion&quot;, 1.0);
+         setAttr(&quot;color&quot;, color);
+-        setAttr(&quot;player&quot;, color == BLACK ? 0 : 1);
++        setAttr(&quot;owner&quot;, color == BLACK ? YIN : YANG);
+         setAttr(&quot;controllers&quot;, color == BLACK ? 1 : 2);
+     }
+     
+@@ -540,7 +540,7 @@
+     Pearl::Pearl(int color) : BasicBall(traits[color], 4) {
+         setAttr(&quot;adhesion&quot;, 1.0);
+         setAttr(&quot;color&quot;, color);
+-        setAttr(&quot;player&quot;, 0);
++        setAttr(&quot;owner&quot;, YIN);
+         setAttr(&quot;controllers&quot;, 3);
+     }
+ 
+
+Modified: trunk/src/enigma.hh
+===================================================================
+--- trunk/src/enigma.hh	2009-01-12 23:36:56 UTC (rev 1449)
++++ trunk/src/enigma.hh	2009-01-12 23:49:19 UTC (rev 1450)
+@@ -39,6 +39,11 @@
+ 
+ namespace enigma { 
+     
++    enum Player {
++        YIN = 0,
++        YANG = 1
++    };
++    
+     enum Color {
+         BLACK = 0,
+         WHITE = 1,
+
+Modified: trunk/src/floors.cc
+===================================================================
+--- trunk/src/floors.cc	2009-01-12 23:36:56 UTC (rev 1449)
++++ trunk/src/floors.cc	2009-01-12 23:49:19 UTC (rev 1450)
+@@ -663,7 +663,7 @@
+         state = EMERGING;
+         m_affected_actor = a;
+         affected_player = -1;
+-        if (Value v = m_affected_actor-&gt;getAttr(&quot;player&quot;)) affected_player = v;
++        if (Value v = m_affected_actor-&gt;getAttr(&quot;owner&quot;)) affected_player = v;
+     }
+ }
+ 
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2009-01-12 23:36:56 UTC (rev 1449)
++++ trunk/src/items.cc	2009-01-12 23:49:19 UTC (rev 1450)
+@@ -1285,7 +1285,7 @@
+     }
+ 
+     void Cross::actor_enter(Actor *a) {
+-        if ((state == 0) &amp;&amp; a-&gt;getAttr(&quot;player&quot;)) {
++        if ((state == 0) &amp;&amp; a-&gt;getAttr(&quot;owner&quot;)) {
+             state = 1;
+             GameTimer.set_alarm (this, getAttr(&quot;interval&quot;));
+         }
+@@ -1466,7 +1466,7 @@
+                 &quot;it_umbrella&quot;,
+                 &quot;it-spring1&quot;,
+                 &quot;it-dynamite&quot;,
+-                &quot;it-coffee&quot;,
++                &quot;it_coffee&quot;,
+                 &quot;it_hammer&quot;
+             };
+             replace(items[enigma::IntegerRand (0, 4)]);
+@@ -1485,24 +1485,8 @@
+         CLONEOBJ(ChangeFloorItem);
+         DECL_ITEMTRAITS;
+ 
+-        void exchange_floor (const char *a, const char *b) {
+-            GridPos p = get_pos();
+-            if (Floor *fl = GetFloor(p)) {
+-                if (fl-&gt;is_kind(a))
+-                    SetFloor (p, MakeFloor(b));
+-                else if (fl-&gt;is_kind(b))
+-                    SetFloor (p, MakeFloor(a));
+-            }
+-        }
+-
+         void actor_leave (Actor *) {
+-            if (server::TwoPlayerGame) {
+-                // two players: black / white tile
+-                exchange_floor(&quot;fl_yinyang_yang&quot;, &quot;fl_yinyang_yin&quot;);
+-            } else {
+-                // one player: left / right accel
+-//                exchange_floor (&quot;fl-
+-            }
++            SendMessage(GetFloor(get_pos()), &quot;toggle&quot;);
+         }
+ 
+     public:
+@@ -1523,7 +1507,7 @@
+         info-&gt;pos = olda-&gt;get_pos();
+         info-&gt;vel = olda-&gt;get_vel();
+ 
+-        if (Value v = olda-&gt;getAttr(&quot;player&quot;)) {
++        if (Value v = olda-&gt;getAttr(&quot;owner&quot;)) {
+             player::ReplaceActor((int)v, olda, newa);
+         }
+ 
+@@ -1562,17 +1546,17 @@
+         {
+             const double ROTOR_LIFETIME = 5.0;
+ 
+-            int     iplayer = a-&gt;getAttr(&quot;player&quot;);
++            int     iplayer = a-&gt;getAttr(&quot;owner&quot;);
+             ActorID id      = get_id (a);
+ 
+             if (id == ac_marble_black || id == ac_marble_white) {
+                 // Kill ALL rubberbands connected with the actor:
+                 SendMessage(a, &quot;disconnect&quot;);
+                 Actor *rotor = MakeActor(&quot;ac_rotor&quot;);
+-                rotor-&gt;setAttr(&quot;adhesion&quot;, Value (1.0));
+-                rotor-&gt;setAttr(&quot;controllers&quot;, Value (iplayer+1));
+-                rotor-&gt;setAttr(&quot;player&quot;, Value (iplayer));
+-                rotor-&gt;setAttr(&quot;gohome&quot;, Value (false));
++                rotor-&gt;setAttr(&quot;adhesion&quot;, 1.0);
++                rotor-&gt;setAttr(&quot;controllers&quot;, iplayer+1);
++                rotor-&gt;setAttr(&quot;owner&quot;, iplayer);
++                rotor-&gt;setAttr(&quot;gohome&quot;, false);
+                 rotor-&gt;setAttr(&quot;essential&quot;, a-&gt;getAttr(&quot;essential&quot;));
+                 std::string essId;
+                 if (Value v = a-&gt;getAttr(&quot;essential_id&quot;)) {
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2009-01-12 23:36:56 UTC (rev 1449)
++++ trunk/src/ox_peroxyd.cc	2009-01-12 23:49:19 UTC (rev 1450)
+@@ -190,7 +190,7 @@
+     UNUSED,                     // PerOxyd floor 0x54
+     &quot;fl_plank&quot;,                 // PerOxyd floor 0x55
+     UNUSED,                     // PerOxyd floor 0x56
+-    &quot;fl-nomouse&quot;,               // PerOxyd floor 0x57 (only used in Link-Level 91, friction (2.5) questionable!)
++    &quot;fl_adhesionless&quot;,          // PerOxyd floor 0x57 (only used in Link-Level 91, friction (2.5) questionable!)
+     UNUSED,                     // PerOxyd floor 0x58
+     UNUSED,                     // PerOxyd floor 0x59
+     UNUSED,                     // PerOxyd floor 0x5a
+@@ -287,7 +287,7 @@
+     &quot;st_disco_dark&quot;,            // PerOxyd stone 0x60
+     &quot;st_disco_medium&quot;,          // PerOxyd stone 0x61
+     &quot;st-bombs&quot;,                 // PerOxyd stone 0x62
+-    &quot;st-flash&quot;,                 // PerOxyd stone 0x63
++    &quot;st_flash&quot;,                 // PerOxyd stone 0x63
+     &quot;st_coinslot_instant&quot;,      // PerOxyd stone 0x64
+     &quot;st-thief&quot;,                 // PerOxyd stone 0x65
+     &quot;st_shogun_s&quot;,              // PerOxyd stone 0x66
+
+Modified: trunk/src/oxyd.cc
+===================================================================
+--- trunk/src/oxyd.cc	2009-01-12 23:36:56 UTC (rev 1449)
++++ trunk/src/oxyd.cc	2009-01-12 23:49:19 UTC (rev 1450)
+@@ -502,17 +502,16 @@
+         switch (marble.getMarbleType()) {
+         case MarbleType_Black:
+             ac = MakeActor(&quot;ac_marble_black&quot;);
+-            ac-&gt;setAttr(&quot;player&quot;, 0);
++            ac-&gt;setAttr(&quot;owner&quot;, YIN);
+             break;
+         case MarbleType_White:
+             ac = MakeActor(&quot;ac_marble_white&quot;);
+-            ac-&gt;setAttr(&quot;player&quot;, 1);
++            ac-&gt;setAttr(&quot;owner&quot;, YANG);
+             break;
+         case MarbleType_Meditation:
+             if (have_black_marble &amp;&amp; !level.getHarmlessMeditationMarbles()) {
+                 // # example: Oxyd Extra #28
+                 ac = MakeActor (&quot;ac_killer&quot;);
+-//                ac-&gt;setAttr (&quot;player&quot;, Value(0.0));
+                 ac-&gt;setAttr(&quot;adhesion&quot;, 1.0);
+                 ac-&gt;setAttr(&quot;controllers&quot;, 3);
+             }
+@@ -521,9 +520,9 @@
+                 nmeditationmarbles += 1;
+ 
+                 if (config.twoplayers &amp;&amp; (nmeditationmarbles % 2) == 0)
+-                    ac-&gt;setAttr(&quot;player&quot;, 1);
++                    ac-&gt;setAttr(&quot;owner&quot;, YANG);
+                 else
+-                    ac-&gt;setAttr(&quot;player&quot;, 0);
++                    ac-&gt;setAttr(&quot;owner&quot;, YIN);
+             }
+ 
+             if (minfo.is_default(MI_FORCE)) {
+
+Modified: trunk/src/player.cc
+===================================================================
+--- trunk/src/player.cc	2009-01-12 23:36:56 UTC (rev 1449)
++++ trunk/src/player.cc	2009-01-12 23:49:19 UTC (rev 1450)
+@@ -249,7 +249,7 @@
+ 
+ Inventory * player::GetInventory (Actor *a) 
+ {
+-    if (Value v = a-&gt;getAttr(&quot;player&quot;))
++    if (Value v = a-&gt;getAttr(&quot;owner&quot;))
+         return GetInventory((int)v);
+     return 0;
+ }
+@@ -552,7 +552,7 @@
+ Inventory *player::MayPickup(Actor *a, Item *it, bool allowFlying) 
+ {
+     int iplayer=-1;
+-    if (Value v = a-&gt;getAttr(&quot;player&quot;)) iplayer = v;
++    if (Value v = a-&gt;getAttr(&quot;owner&quot;)) iplayer = v;
+     if (iplayer &lt; 0 || (unsigned)iplayer &gt;= players.size()) {
+         //        cerr &lt;&lt; &quot;PickupItem: illegal 'player' entry\n&quot;;
+         return 0;
+
+Modified: trunk/src/stones/BoulderStone.cc
+===================================================================
+--- trunk/src/stones/BoulderStone.cc	2009-01-12 23:36:56 UTC (rev 1449)
++++ trunk/src/stones/BoulderStone.cc	2009-01-12 23:49:19 UTC (rev 1450)
+@@ -51,6 +51,9 @@
+                     m.message == &quot;turnback&quot; &amp;&amp; getAttr(&quot;counterclock&quot;).to_bool())
+                     ? rotate_cw(getDir()) : rotate_ccw(getDir()));
+             return Value();
++        } else if (m.message == &quot;flip&quot; &amp;&amp; state != FALLING &amp;&amp; isDisplayable()) {
++            setDir(reverse(getDir()));
++            return Value();
+         }
+         return Stone::message(m);
+     }
+
+Modified: trunk/src/stones/CompatibilityStones.cc
+===================================================================
+--- trunk/src/stones/CompatibilityStones.cc	2009-01-12 23:36:56 UTC (rev 1449)
++++ trunk/src/stones/CompatibilityStones.cc	2009-01-12 23:49:19 UTC (rev 1450)
+@@ -34,7 +34,7 @@
+     }
+ 
+     void Peroxyd_0xb8::on_creation (GridPos p) {
+-        SetFloor(p, MakeFloor(&quot;fl-normal&quot;));
++        SetFloor(p, MakeFloor(&quot;fl_metal_7n&quot;));
+         KillStone(p);
+     }
+ 
+@@ -45,7 +45,7 @@
+     }
+ 
+     void Peroxyd_0xb9::on_creation (GridPos p) {
+-        SetFloor(p, MakeFloor(&quot;fl-normal&quot;));
++        SetFloor(p, MakeFloor(&quot;fl_metal_7n&quot;));
+         KillStone(p);
+     }
+ 
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2009-01-12 23:36:56 UTC (rev 1449)
++++ trunk/src/stones_simple.cc	2009-01-12 23:49:19 UTC (rev 1450)
+@@ -272,7 +272,7 @@
+         virtual Value message(const Message &amp;m) {
+             if (m.message == &quot;_init&quot;) {
+                 if (server::GetDifficulty() == DIFFICULTY_EASY) {
+-                    SetFloor (get_pos(), MakeFloor (&quot;fl-normal&quot;));
++                    SetFloor (get_pos(), MakeFloor (&quot;fl_metal_7n&quot;));
+                 } else {
+                     KillItem (get_pos());
+                 }
+@@ -903,7 +903,7 @@
+         set_anim(&quot;st-thief-emerge&quot;);
+         state = EMERGING;
+         m_affected_actor = sc.actor;
+-        affected_player = m_affected_actor-&gt;getDefaultedAttr(&quot;player&quot;, -1);
++        affected_player = m_affected_actor-&gt;getDefaultedAttr(&quot;owner&quot;, -1);
+     }
+ }
+ 
+@@ -1112,7 +1112,7 @@
+         CLONEOBJ(MagicStone);
+         DECL_TRAITS;
+         void actor_hit(const StoneContact &amp;sc) {
+-            if (sc.actor-&gt;getAttr(&quot;player&quot;) &amp;&amp; 
++            if (sc.actor-&gt;getAttr(&quot;owner&quot;) &amp;&amp; 
+                 sc.actor-&gt;get_vel() * sc.normal &lt; -4)
+             {
+                 KillStone(get_pos());
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2009-01-12 23:36:56 UTC (rev 1449)
++++ trunk/src/world.cc	2009-01-12 23:49:19 UTC (rev 1450)
+@@ -1667,7 +1667,7 @@
+         a-&gt;on_creation(a-&gt;get_actorinfo()-&gt;pos);
+         SendMessage(a, &quot;_init&quot;, Value());
+ 
+-        if (Value v = a-&gt;getAttr(&quot;player&quot;)) {
++        if (Value v = a-&gt;getAttr(&quot;owner&quot;)) {
+             int iplayer = v;
+             player::AddActor(iplayer, a);
+             if (iplayer == 0) seen_player0 = true;
+@@ -1684,6 +1684,10 @@
+     BroadcastMessage(&quot;_init&quot;, Value(),
+         GridLayerBits(GRID_ITEMS_BIT | GRID_STONES_BIT | GRID_FLOOR_BIT));
+ 
++    for (OtherList::iterator oit = level-&gt;others.begin(); oit != level-&gt;others.end(); ++oit) {
++        SendMessage(*oit, &quot;_init&quot;, Value());
++    }
++        
+     server::InitMoveCounter();
+     STATUSBAR-&gt;show_move_counter (server::ShowMoves);
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000878.html">[Enigma-game-svn] r1449 - homepage/input/articles
+</A></li>
+	<LI>Next message: <A HREF="000880.html">[Enigma-game-svn] r1451 - in trunk/data/levels: enigma_cross	enigma_iv enigma_tutorial enigma_vi enigma_vii enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#879">[ date ]</a>
+              <a href="thread.html#879">[ thread ]</a>
+              <a href="subject.html#879">[ subject ]</a>
+              <a href="author.html#879">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

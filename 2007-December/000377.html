@@ -1,0 +1,983 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r945 - in trunk: data src src/lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-December/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r945%20-%20in%20trunk%3A%20data%20src%20src/lev&In-Reply-To=%3C200712182319.lBINJc2O029398%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000376.html">
+   <LINK REL="Next"  HREF="000378.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r945 - in trunk: data src src/lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r945%20-%20in%20trunk%3A%20data%20src%20src/lev&In-Reply-To=%3C200712182319.lBINJc2O029398%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r945 - in trunk: data src src/lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Dec 19 00:19:38 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000376.html">[Enigma-game-svn] r944 - homepage/input/lotm
+</A></li>
+        <LI>Next message: <A HREF="000378.html">[Enigma-game-svn] r946 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#377">[ date ]</a>
+              <a href="thread.html#377">[ thread ]</a>
+              <a href="subject.html#377">[ subject ]</a>
+              <a href="author.html#377">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-12-19 00:19:35 +0100 (Wed, 19 Dec 2007)
+New Revision: 945
+
+Modified:
+   trunk/data/init.lua
+   trunk/src/enigma.cc
+   trunk/src/items.cc
+   trunk/src/lev/Proxy.cc
+   trunk/src/lua.cc
+   trunk/src/st_switches.cc
+   trunk/src/stones.hh
+   trunk/src/stones_complex.cc
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+   trunk/src/world.hh
+   trunk/src/world_internal.hh
+Log:
+Trunk 1.1: new API - reengineering signals
+- signals eliminated in engine
+- AddSignal and init.lua convert old API requests to new API substitutions
+- engine bool Value made compatible to int Value - this allows 
+  PerformAction bool values to feed as &quot;signal&quot; message int values
+- &quot;destination&quot; attribute (position|tokens) for vortex and wormhole
+  (successor of &quot;targetx&quot;,&quot;targety&quot; and signal coded targets)
+- fix DAT levels did not run in correct compatibility mode
+
+
+Modified: trunk/data/init.lua
+===================================================================
+--- trunk/data/init.lua	2007-12-14 21:44:39 UTC (rev 944)
++++ trunk/data/init.lua	2007-12-18 23:19:35 UTC (rev 945)
+@@ -45,6 +45,24 @@
+ 	     _val = 0 + val   -- convert to int
+ 	 end
+      end
++     if key == &quot;targetx&quot; then
++         local d = enigma._GetAttrib(obj, &quot;destination&quot;)
++         if (en.usertype(d) == &quot;position&quot;) then
++             _val = po(val + 0, d.y)
++         else
++             _val = po(val + 0, 0)
++         end
++         _key = &quot;destination&quot;
++     end
++     if key == &quot;targety&quot; then
++         local d = enigma._GetAttrib(obj, &quot;destination&quot;)
++         if (en.usertype(d) == &quot;position&quot;) then
++             _val = po(d.x, val + 0)
++         else
++             _val = po(0, val + 0)
++         end
++         _key = &quot;destination&quot;
++     end
+      enigma._SetAttrib(obj, _key, _val)
+ end
+ 
+@@ -56,6 +74,18 @@
+ 	     val = &quot;&quot; .. val   -- convert to string
+ 	 end
+      end
++     if key == &quot;targetx&quot; then
++         local d = enigma._GetAttrib(obj, &quot;destination&quot;)
++         if (en.usertype(d) == &quot;position&quot;) then
++             val = d.x
++         end
++     end
++     if key == &quot;targety&quot; then
++         local d = enigma._GetAttrib(obj, &quot;destination&quot;)
++         if (en.usertype(d) == &quot;position&quot;) then
++             val = d.y
++         end
++     end
+      return val
+ end
+ 
+
+Modified: trunk/src/enigma.cc
+===================================================================
+--- trunk/src/enigma.cc	2007-12-14 21:44:39 UTC (rev 944)
++++ trunk/src/enigma.cc	2007-12-18 23:19:35 UTC (rev 945)
+@@ -159,14 +159,14 @@
+     ObjectList::iterator it;
+     for (it = aList.begin(); it != aList.end(); ++it) {
+         if (*it == NULL)
+-            descriptor.append(&quot;$0,&quot;);
++            descriptor.append(&quot;#0,&quot;);
+         else {
+             Value v = (*it)-&gt;getAttr(&quot;name&quot;);
+             if (v &amp;&amp; v.type == STRING &amp;&amp; strcmp(v.val.str, &quot;&quot;) != 0) {
+                 descriptor.append(v);
+                 descriptor.append(&quot;,&quot;);
+             } else {
+-                descriptor.append(ecl::strf(&quot;$%d,&quot;, (*it)-&gt;getId()));
++                descriptor.append(ecl::strf(&quot;#%d,&quot;, (*it)-&gt;getId()));
+             }   
+         }
+     }
+@@ -185,7 +185,7 @@
+                 descriptor.append((*it).val.str);
+                 break;
+             case OBJECT :
+-                descriptor.append(ecl::strf(&quot;$%d&quot;, (int)((*it).val.dval[0])));
++                descriptor.append(ecl::strf(&quot;#%d&quot;, (int)((*it).val.dval[0])));
+                 break;
+             case GROUP :
+                 descriptor.append(&quot;%&quot;);
+@@ -310,8 +310,9 @@
+ Value::operator double() const {
+     switch (type) {
+         case DOUBLE: 
++            return val.dval[0];
+         case BOOL: 
+-            return val.dval[0];
++            return (val.dval[0] != 0) ? 1 : 0;
+         case STRING:
+             return atof(val.str);  // TODO use strtod and eval remaining part of string
+         default:
+@@ -322,8 +323,9 @@
+ Value::operator int() const {
+     switch (type) {
+         case DOUBLE:
++            return round_nearest&lt;int&gt;(val.dval[0]);
+         case BOOL: 
+-            return round_nearest&lt;int&gt;(val.dval[0]);
++            return (val.dval[0] != 0) ? 1 : 0;
+         case STRING: 
+             return atoi(val.str);  //TODO use strtol and eval remaining part of string
+         default: return 0;
+@@ -359,7 +361,7 @@
+             ecl::split_copy(std::string(val.str), ',', back_inserter(vs));
+             for (std::vector&lt;std::string&gt;::iterator it = vs.begin(); it != vs.end(); ++it) {
+                 if (it-&gt;size() &gt; 0) {
+-                    if ((*it)[0] == '$') {
++                    if ((*it)[0] == '#') {
+                         result.push_back(Object::getObject(atoi((*it).c_str() + 1)));
+                     } else {
+                         result.push_back(GetNamedObject(*it));
+@@ -384,7 +386,7 @@
+             ecl::split_copy(std::string(val.str), ';', back_inserter(vs));
+             for (std::vector&lt;std::string&gt;::iterator it = vs.begin(); it != vs.end(); ++it) {
+                 if (it-&gt;size() &gt; 0) {
+-                    if ((*it)[0] == '$') {
++                    if ((*it)[0] == '#') {
+                         // an object id
+                         Value v(OBJECT);
+                         v.val.dval[0] = atoi((*it).c_str() + 1);
+@@ -486,7 +488,8 @@
+ bool Value::to_bool() const {
+     switch (type) {
+         case BOOL :
+-            return val.dval[0];
++        case DOUBLE :
++            return val.dval[0] != 0;
+         case NIL :
+         case DEFAULT :
+             return false;
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2007-12-14 21:44:39 UTC (rev 944)
++++ trunk/src/items.cc	2007-12-18 23:19:35 UTC (rev 945)
+@@ -444,20 +444,6 @@
+         CLONEOBJ(Key);
+         DECL_TRAITS_ARRAY(3, subtype);
+ 
+-        virtual Value message (const string &amp;msg, const Value &amp;) {
+-            if (msg == &quot;init&quot;) {
+-                // Oxyd uses signals from keys to key switches to
+-                // determine which keys activate which key hole.
+-                GridPos keystonepos;
+-                for (int idx=0; GetSignalTargetPos (this, keystonepos, idx); ++idx) {
+-                    Stone *st = GetStone(keystonepos);
+-                    if (st &amp;&amp; st-&gt;is_kind(&quot;st-key&quot;))
+-                        st-&gt;set_attrib(&quot;keycode&quot;, getAttr(&quot;keycode&quot;));
+-                }
+-            }
+-            return Value();
+-        }
+-
+     public:
+         enum SubType { KEY1, KEY2, KEY3 } subtype;
+     	Key(SubType type = KEY1)
+@@ -747,7 +733,7 @@
+         transmute(flippedkind[m_type]);
+     }
+     else if (m == &quot;signal&quot;) {
+-        if (to_double(val) != 0) {
++        if (val != 0) {
+             Type flippedkind[] = {HILL,HILL, TINYHILL,TINYHILL};
+             transmute(flippedkind[m_type]);
+         } else {
+@@ -1737,25 +1723,29 @@
+ }
+ 
+ bool WormHole::get_target(V2 &amp;targetpos) {
+-    Value vx = getAttr(&quot;targetx&quot;);
+-    Value vy = getAttr(&quot;targety&quot;);
+-    if (vx &amp;&amp; vy) {
+-        targetpos[0] = vx;
+-        targetpos[1] = vy;
++    Value dest = getAttr(&quot;destination&quot;);
++    if (dest.getType() == Value::POSITION) {
++        // arbitrary precision position as destination
++        targetpos = dest;
+         return true;
+-    }
+-    else {
+-        // no target attributes -&gt; search for signal
+-        GridPos p;
+-        if (GetSignalTargetPos(this, p)) {
+-            targetpos = p.center();
+-            return true;
+-        }
+-        else {
+-            warning(&quot;no target attributes and no signal found&quot;);
++    } else {
++        // evaluate the first object 
++        TokenList tl = dest;  // convert any object type value to a tokenlist 
++        if (tl.empty())
+             return false;
++        ObjectList ol = tl.front();  // convert first token to a objectlist
++        if (ol.empty())
++            return false;
++        GridObject *go = dynamic_cast&lt;GridObject *&gt;(ol.front());  // get first object
++        if (go != NULL) {   // no actors as destination!
++            GridPos p = go-&gt;get_pos();
++            if (IsInsideLevel(p)) {   // no objects in inventory,...
++                targetpos = p.center();
++                return true;
++            }
+         }
+     }
++    return false;
+ }
+ 
+ bool WormHole::actor_hit(Actor *actor)
+@@ -2005,22 +1995,30 @@
+         open();
+ }
+ 
+-bool Vortex::get_target_by_index (int idx, V2 &amp;target)
+-{
+-    GridPos targetpos;
+-    // signals take precedence over targetx, targety attributes
+-    if (GetSignalTargetPos(this, targetpos, idx)) {
+-        target = targetpos.center();
++bool Vortex::get_target_by_index (int idx, V2 &amp;targetpos) {
++    int i = 0;  // counter for destination candidates
++    Value dest = getAttr(&quot;destination&quot;);
++    if (dest.getType() == Value::POSITION &amp;&amp; idx == 0) {
++        // arbitrary precision position as destination
++        targetpos = dest;
+         return true;
+-    }
+-    // no signal defined
+-    else if (idx == 0) {
+-        Value vx = getAttr(&quot;targetx&quot;);
+-        Value vy = getAttr(&quot;targety&quot;);
+-        if (vx &amp;&amp; vy) {
+-            target[0] = vx;
+-            target[1] = vy;
+-            return true;
++    } else {
++        // evaluate destination objects in sequence up to &quot;idx&quot;
++        TokenList tl = dest;  // convert any object type value to a tokenlist 
++        for (TokenList::iterator tit = tl.begin(); tit != tl.end(); ++tit) {
++            ObjectList ol = *tit;  // convert next token to an objectlist
++            for (ObjectList::iterator oit = ol.begin(); oit != ol.end(); ++oit, i++) {
++                if (i == idx) {
++                    GridObject *go = dynamic_cast&lt;GridObject *&gt;(*oit);  // get the object
++                    if (go != NULL) {   // no actors as destination!
++                        GridPos p = go-&gt;get_pos();
++                        if (IsInsideLevel(p)) {   // no objects in inventory,...
++                            targetpos = p.center();
++                            return true;
++                        }
++                    }
++                }
++            }
+         }
+     }
+     return false;
+@@ -2729,13 +2727,7 @@
+         int open = -1;
+ 
+         if (msg == &quot;signal&quot;) {
+-            if (val.getType() == Value::DOUBLE) {
+-                // val: 1 means &quot;shrink&quot;, 0 means &quot;grow&quot;
+-                open = (int)val;
+-            }
+-            else {
+-                ASSERT(0, XLevelRuntime, &quot;Blocker: message 'signal' with wrong typed value&quot;);
+-            }
++            open = val;
+         }
+         else if (msg == &quot;open&quot;)
+             open = 1;
+
+Modified: trunk/src/lev/Proxy.cc
+===================================================================
+--- trunk/src/lev/Proxy.cc	2007-12-14 21:44:39 UTC (rev 944)
++++ trunk/src/lev/Proxy.cc	2007-12-18 23:19:35 UTC (rev 945)
+@@ -439,6 +439,12 @@
+         if (normPathType == pt_oxyd) {
+             if(onlyMetadata)
+                 return;
++            // set server flags
++            server::SetCompatibility(this);
++            server::EnigmaCompatibility = getEnigmaCompatibility();
++            server::LevelStatus = getLevelStatus();
++            if (server::EnigmaCompatibility &lt; 1.10)
++                server::AllowSingleOxyds = true;
+             // use oxyd loader
+             std::string::size_type posSecondHash = normLevelPath.find('#',1);
+             if (posSecondHash == string::npos)
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2007-12-14 21:44:39 UTC (rev 944)
++++ trunk/src/lua.cc	2007-12-18 23:19:35 UTC (rev 945)
+@@ -854,6 +854,19 @@
+     return 1;
+ }
+ 
++static int userType(lua_State *L) {
++    std::string type;
++    if (is_object(L, 1)) type = &quot;object&quot;;
++    else if (is_position(L, 1)) type = &quot;position&quot;;
++    else if (is_tile(L, 1)) type = &quot;tile&quot;;
++    else if (is_tiles(L, 1)) type = &quot;tiles&quot;;
++    else if (is_group(L, 1)) type = &quot;group&quot;;
++    else if (is_world(L, 1)) type = &quot;world&quot;;
++    
++    lua_pushstring(L, type.c_str());
++    return 1;
++}
++
+ static int newPosition(lua_State *L) {
+     // (pos|obj|table|(num,num))
+     if (is_table(L, 1)) {  // table 
+@@ -2270,6 +2283,7 @@
+ 
+ static CFunction levelFuncs[] = {
+     {mathRandom,                    &quot;random&quot;},
++    {userType,                      &quot;usertype&quot;},
+     {newGroup,                      &quot;grp&quot;},
+     {newPosition,                   &quot;po&quot;},
+     {getFloor,                      &quot;fl&quot;},
+
+Modified: trunk/src/st_switches.cc
+===================================================================
+--- trunk/src/st_switches.cc	2007-12-14 21:44:39 UTC (rev 944)
++++ trunk/src/st_switches.cc	2007-12-18 23:19:35 UTC (rev 945)
+@@ -159,7 +159,7 @@
+ }
+ 
+ 
+-
++
+ /* -------------------- Coin slot -------------------- */
+ 
+ namespace
+@@ -258,7 +258,7 @@
+     }
+ }
+ 
+-
++
+ /* -------------------- Key switches -------------------- */
+ 
+ // Attributes:
+@@ -358,7 +358,7 @@
+     }
+ }
+ 
+-
++
+ /* -------------------- FourSwitch -------------------- */
+ 
+ // Attributes:
+@@ -370,52 +370,56 @@
+ {
+     class FourSwitch : public OnOffStone {
+         CLONEOBJ(FourSwitch);
++        DECL_TRAITS;
+     public:
+         FourSwitch() : OnOffStone(&quot;st-fourswitch&quot;), 
+                        m_direction(NORTH), 
+                        m_inactive_so_far (true)
+         {}
++        
++        Value getAttr(const string &amp;key) const {
++            if (key == &quot;state&quot;)
++                return direction2state(m_direction);
++            return Object::getAttr(key);
++        }
+     private:
++        static int direction2state(Direction dir) {
++            return 3 - dir;
++        };
++        
+         // Variables
+         Direction m_direction;
+         bool m_inactive_so_far;
+ 
+         // Private methods
+-        void turn() 
+-        {
+-            static int direction2idx[] = { 
+-                3, // WEST
+-                2, // SOUTH
+-                1, // EAST
+-                0  // NORTH
+-            };
+-
+-            if (!m_inactive_so_far) {
+-                EmitSignalByIndex(this, direction2idx[m_direction], 0);
++        void turn() {
++            bool isGlobalTarget = getAttr(&quot;target&quot;);
++            
++            if (!m_inactive_so_far &amp;&amp; !isGlobalTarget) {
++                PerformAction(this, false);  // signal off for old direction state
+             } else
+                 m_inactive_so_far = false;
+ 
+-            m_direction = rotate_cw (m_direction);
++            m_direction = rotate_cw(m_direction);
+             init_model();
+             set_on(!is_on());
+-            sound_event (&quot;fourswitch&quot;);
++            sound_event(&quot;fourswitch&quot;);
+ 
+-            if (HaveSignals (this)) {
+-                EmitSignalByIndex(this, direction2idx[m_direction], 1);
++            if (isGlobalTarget) {
++                PerformAction(this, (server::EnigmaCompatibility &lt; 1.10) ? is_on() : 3 - m_direction);
+             } else {
+-                // no signal handler defined
+-                PerformAction(this, is_on());
++                PerformAction(this, true);  // signal on for new direction state
+             }
+         }
+ 
+         void init_model() {
+             switch (m_direction) {
+-            case NORTH: set_model(&quot;st-fourswitch-n&quot;); break;
+-            case EAST:  set_model(&quot;st-fourswitch-e&quot;); break;
+-            case SOUTH: set_model(&quot;st-fourswitch-s&quot;); break;
+-            case WEST:  set_model(&quot;st-fourswitch-w&quot;); break;
+-            case NODIR: ASSERT(0, XLevelRuntime,
+-                &quot;FourSwitch: no direction defined (found in init_model)&quot;);
++                case NORTH: set_model(&quot;st-fourswitch-n&quot;); break;
++                case EAST:  set_model(&quot;st-fourswitch-e&quot;); break;
++                case SOUTH: set_model(&quot;st-fourswitch-s&quot;); break;
++                case WEST:  set_model(&quot;st-fourswitch-w&quot;); break;
++                case NODIR: ASSERT(0, XLevelRuntime,
++                    &quot;FourSwitch: no direction defined (found in init_model)&quot;);
+             }
+         }
+ 
+@@ -423,7 +427,7 @@
+             turn();
+         }
+ 
+-        virtual Value on_message (const Message &amp;m)
++        virtual Value on_message(const Message &amp;m)
+         {
+             if (m.message == &quot;signal&quot; || m.message == &quot;trigger&quot;)
+                 turn();
+@@ -432,9 +436,10 @@
+ 
+         const char *collision_sound() { return &quot;metal&quot;; }
+     };
++    DEF_TRAITS(FourSwitch, &quot;st-fourswitch&quot;, st_fourswitch);
+ }
+ 
+-
++
+ /* -------------------- Laser / Time switches -------------------- */
+ 
+ namespace
+@@ -632,7 +637,7 @@
+ void TimeSwitch::notify_laseron()  {} // ignore laser
+ void TimeSwitch::notify_laseroff() {}
+ 
+-
++
+ /* -------------------- Floppy switch -------------------- */
+ 
+ // Attributes:
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2007-12-14 21:44:39 UTC (rev 944)
++++ trunk/src/stones.hh	2007-12-18 23:19:35 UTC (rev 945)
+@@ -57,6 +57,7 @@
+         st_fart,
+         st_firebreak,
+         st_firebreak_move,
++        st_fourswitch,
+         st_greenbrown_growing,
+         st_knight,
+         st_laserbreak,
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2007-12-14 21:44:39 UTC (rev 944)
++++ trunk/src/stones_complex.cc	2007-12-18 23:19:35 UTC (rev 945)
+@@ -1571,7 +1571,6 @@
+ 
+ Value DoorBase::message(const string &amp;m, const Value &amp;val) {
+     State newstate = state;
+-    int ival = to_int (val);
+ 
+     if (m == &quot;open&quot;)
+         newstate = OPENING;
+@@ -1580,7 +1579,7 @@
+     else if (m == &quot;openclose&quot;)
+         newstate = (state==OPEN || state==OPENING) ? CLOSING : OPENING;
+     else if (m == &quot;signal&quot;)
+-        newstate = ival &gt; 0 ? OPENING : CLOSING;
++        newstate = val.to_bool() ? OPENING : CLOSING;
+ 
+     if (newstate==OPENING &amp;&amp; (state==CLOSED || state==CLOSING))
+         change_state(OPENING);
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2007-12-14 21:44:39 UTC (rev 944)
++++ trunk/src/stones_simple.cc	2007-12-18 23:19:35 UTC (rev 945)
+@@ -22,6 +22,7 @@
+ #include &quot;server.hh&quot;
+ #include &quot;player.hh&quot;
+ #include &quot;client.hh&quot;
++#include &quot;main.hh&quot;
+ #include &quot;Inventory.hh&quot;
+ 
+ #include &quot;stones_internal.hh&quot;
+@@ -1562,25 +1563,41 @@
+     class ActorImpulseStone : public ActorImpulseBase {
+         CLONEOBJ(ActorImpulseStone);
+ 
+-        int m_signalidx;
++        int signalidx;
+ 
+         virtual Value message (const string &amp;msg, const Value &amp;) {
+-            if (msg == &quot;signal&quot;) {
+-                EmitSignalByIndex (this, m_signalidx, 0);
+-                m_signalidx += 1;
+-                if (!EmitSignalByIndex (this, m_signalidx, 1)) {
+-                    m_signalidx = 0;
+-                    EmitSignalByIndex (this, m_signalidx, 1);
++            if(server::GameCompatibility != GAMET_ENIGMA) {
++                // Oxyd* usage of ActorImpulseStone as a signal multiplier
++                ObjectList ol = getAttr(&quot;$!oxyd!destinations&quot;);
++                
++                if (msg == &quot;init&quot; &amp;&amp; ol.size() &gt; 0) {
++                    signalidx = 0;
++                    SendMessage(ol.front(), &quot;signal&quot;, 1);
++                } else if (msg == &quot;signal&quot;) {
++                    int i = 0;
++                    bool didBreak = false;
++                    for (ObjectList::iterator oit = ol.begin(); oit != ol.end(); ++oit, i++) {
++                        if (i == signalidx) {
++                            SendMessage(*oit, &quot;signal&quot;, 0);
++                        } else if (i == signalidx + 1) {
++                            SendMessage(*oit, &quot;signal&quot;, 1);
++                            didBreak = true;
++                            break;
++                        }
++                    }
++                    if (!didBreak &amp;&amp; ol.size() &gt; 0) {
++                        SendMessage(ol.front(), &quot;signal&quot;, 1);
++                        signalidx = 0;                        
++                    } else
++                        signalidx++;
+                 }
+-            } else if (msg == &quot;init&quot;) {
+-                EmitSignalByIndex (this, m_signalidx, 1);
+-            }
++            } // GameCompatibility != GAMET_ENIGMA
+             return Value();
+         }
+ 
+     public:
+         ActorImpulseStone() : ActorImpulseBase(&quot;st-actorimpulse&quot;),
+-                              m_signalidx(0)
++                              signalidx(0)
+         {}
+     };
+ 
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2007-12-14 21:44:39 UTC (rev 944)
++++ trunk/src/world.cc	2007-12-18 23:19:35 UTC (rev 945)
+@@ -98,89 +98,6 @@
+ {
+ }
+ 
+-
+-/* -------------------- Signals -------------------- */
+-
+-namespace
+-{
+-
+-    void emit_signal (const Signal *s, int value)
+-    {
+-        Object *src = s-&gt;source;
+-        Object *dst = GetObject(s-&gt;destloc);
+-
+-#if defined(VERBOSE_MESSAGES)
+-        src-&gt;warning(&quot;emit_from: msg='%s'&quot;, // dest=%i/%i obj=%p&quot;,
+-                     s-&gt;message.c_str()
+-//                      destloc.pos.x, destloc.pos.y,
+-//                      dst);
+-                     );
+-#endif
+-        if (GridObject *go = dynamic_cast&lt;GridObject*&gt;(src))
+-            SendMessage (dst, Message (s-&gt;message, value, go-&gt;get_pos()));
+-        else
+-            SendMessage (dst, Message (s-&gt;message, value));
+-    }
+-
+-    void emit_from (const SignalList &amp;sl, Object *source, int value)
+-    {
+-        size_t size = sl.size();
+-        for (unsigned i=0; i&lt;size; ++i) {
+-            if (sl[i].source == source)
+-                emit_signal (&amp;sl[i], value);
+-        }
+-//         // signals may have side effects. To minimize them
+-//         //   1. collect all targets and then
+-//         //   2. emit signals to targets
+-
+-//         vector&lt;Object*&gt; targets;
+-
+-//         for (unsigned i=0; i&lt;size; ++i) {
+-//             if (m_signals[i].get_source() == source)
+-//                 target.push_back (m_signals[i]);
+-
+-//             for (unsigned i=0; i&lt;size; ++i)
+-//                 if (GetObject(m_signals[i].get_target_loc()) == targets[i])
+-//                     m_signals[i].emit_from (source, value);
+-//         }
+-    }
+-
+-    bool emit_by_index (const SignalList &amp;sl, Object *source, int signalidx, int value) 
+-    {
+-        size_t size      = sl.size();
+-        int    signalcnt = 0;
+-        for (unsigned i=0; i&lt;size; ++i) {
+-            if (sl[i].source == source) {
+-                if (signalcnt == signalidx) {
+-                    emit_signal (&amp;sl[i], value);
+-                    return true;
+-                }
+-                signalcnt += 1;
+-            }
+-        }
+-        return false;
+-    }
+-
+-    Object *find_single_destination (const SignalList &amp;sl, Object *src)
+-    {
+-        Object *found = 0;
+-        size_t  size  = sl.size();
+-
+-        for (unsigned i = 0; i&lt;size; ++i) {
+-            if (sl[i].source == src) {
+-                if (Object *candidate = GetObject(sl[i].destloc)) {
+-                    if (!found)
+-                        found = candidate;
+-                    else if (candidate != found)
+-                        return 0;   // multiple targets
+-                }
+-            }
+-        }
+-        return found;
+-    }
+-}
+-
+-
+ /* -------------------- RubberBandData -------------------- */
+ 
+ RubberBandData::RubberBandData () {
+@@ -1865,57 +1782,112 @@
+ }
+ 
+ 
+-/* -------------------- Signals -------------------- */
++/* -------------------- Signals, Messages, Actions -------------------- */
+ 
+-void AddSignal (const GridLoc &amp;srcloc, 
+-                       const GridLoc &amp;dstloc, 
+-                       const string &amp;msg)
+-{
++void AddSignal (const GridLoc &amp;srcloc, const GridLoc &amp;dstloc, const string &amp;msg) {
++    // this code is for Oxyd and Enigma &lt; 1.1 compatibility only
+ #if defined(VERBOSE_MESSAGES)
+     fprintf(stderr, &quot;AddSignal src=%i/%i dest=%i/%i msg='%s'\n&quot;,
+             srcloc.pos.x, srcloc.pos.y, dstloc.pos.x, dstloc.pos.y, msg.c_str());
+ #endif // VERBOSE_MESSAGES
+ 
+-    if (Object *src = GetObject(srcloc)) {
+-        src-&gt;set_attrib(&quot;action&quot;, &quot;signal&quot;);
+-        level-&gt;m_signals.push_back (Signal (src, dstloc, msg));
++    Object *src = GetObject(srcloc);
++    Object *dst = GetObject(dstloc);
++    
++    if (src == NULL) {
++        Log &lt;&lt; ecl::strf(&quot;AddSignal: Invalid signal source: src=%i/%i-%d dest=%i/%i-%d msg='%s'\n&quot;,
++            srcloc.pos.x, srcloc.pos.y, srcloc.layer, dstloc.pos.x, dstloc.pos.y, dstloc.layer, msg.c_str());
++        return;  // ignore signal
+     }
+-    else {
+-        Log &lt;&lt; &quot;AddSignal: Invalid signal source\n&quot;;
++    
++    // key: Oxyd uses signals to define the destination of wormholes
++    if (src-&gt;getObjectType() == Object::ITEM) {
++        ItemID src_id = get_id(dynamic_cast&lt;Item *&gt;(src));
++        if (src_id &gt;= it_wormhole_off &amp;&amp; src_id &lt;= it_wormhole_on) {
++//            Log &lt;&lt; ecl::strf(&quot;AddSignal: Wormhole signal destination src=%i/%i-%d dest=%i/%i-%d msg='%s'\n&quot;,
++//                srcloc.pos.x, srcloc.pos.y, srcloc.layer, dstloc.pos.x, dstloc.pos.y, dstloc.layer, msg.c_str());
++            src-&gt;set_attrib(&quot;destination&quot;, GetFloor(dstloc.pos));  // use floor to guarantee existence
++            return;
++        }
+     }
+-}
+-
+-bool HaveSignals (Object *src) 
+-{
+-    SignalList::const_iterator i=level-&gt;m_signals.begin(),
+-        end = level-&gt;m_signals.end();
+-    for (; i != end; ++i) 
+-        if (i-&gt;source == src) 
+-            return true;
+-    return false;
+-}
+-
+-
+-bool EmitSignalByIndex (Object *src, int signalidx, int value) 
+-{
+-    return emit_by_index (level-&gt;m_signals, src, signalidx, value);
+-}
+-
+-bool GetSignalTargetPos (Object *src, GridPos &amp;pos, int signalidx) 
+-{
+-    SignalList::const_iterator i = level-&gt;m_signals.begin(),
+-        end = level-&gt;m_signals.end();
+-    int idx = 0;
+-    for (; i != end; ++i) {
+-        if (i-&gt;source == src) {
+-            if (idx == signalidx) {
+-                pos = i-&gt;destloc.pos;
+-                return true;
++    if (src-&gt;getObjectType() == Object::ITEM) {
++        ItemID src_id = get_id(dynamic_cast&lt;Item *&gt;(src));
++        if (src_id &gt;= it_vortex_open &amp;&amp; src_id &lt;= it_vortex_closed) {
++//            Log &lt;&lt; ecl::strf(&quot;AddSignal: Vortex signal destination src=%i/%i-%d dest=%i/%i-%d msg='%s'\n&quot;,
++//                srcloc.pos.x, srcloc.pos.y, srcloc.layer, dstloc.pos.x, dstloc.pos.y, dstloc.layer, msg.c_str());
++            TokenList tl = src-&gt;getAttr(&quot;destination&quot;);  // may be empty or may contain some tokens
++            tl.push_back(GetFloor(dstloc.pos));  // use floor to guarantee existence);
++            src-&gt;set_attrib(&quot;destination&quot;, tl);
++            return;
++        }
++    }
++    
++    
++    if (dst == NULL) {
++        Log &lt;&lt; ecl::strf(&quot;AddSignal: Invalid signal destination src=%i/%i-%d dest=%i/%i-%d msg='%s'\n&quot;,
++            srcloc.pos.x, srcloc.pos.y, srcloc.layer, dstloc.pos.x, dstloc.pos.y, dstloc.layer, msg.c_str());
++        return; // ignore signal
++    }
++//    Log &lt;&lt; ecl::strf(&quot;AddSignal: Valid signal destination src=%i/%i-%d dest=%i/%i-%d msg='%s'\n&quot;,
++//        srcloc.pos.x, srcloc.pos.y, srcloc.layer, dstloc.pos.x, dstloc.pos.y, dstloc.layer, msg.c_str());
++    
++    Value dstValue(dst);
++    
++    if (dst-&gt;is_kind(&quot;st-blocker&quot;) || dst-&gt;is_kind(&quot;st-blocker-growing&quot;) ||
++            dst-&gt;is_kind(&quot;it-blocker&quot;)) {
++        if (!dst-&gt;getAttr(&quot;name&quot;))
++            NameObject(dst, ecl::strf(&quot;$!oxyd!blocker%d&quot;, dst-&gt;getId()));
++        dstValue = dst-&gt;getAttr(&quot;name&quot;);
++    }
++    
++    if (dst-&gt;is_kind(&quot;it-hill&quot;) || dst-&gt;is_kind(&quot;it-tinyhill&quot;) ||
++            dst-&gt;is_kind(&quot;it-hollow&quot;) || dst-&gt;is_kind(&quot;it-tinyhollow&quot;)) {
++        if (!dst-&gt;getAttr(&quot;name&quot;))
++            NameObject(dst, ecl::strf(&quot;$!oxyd!hillhollow%d&quot;, dst-&gt;getId()));
++        dstValue = dst-&gt;getAttr(&quot;name&quot;);
++    }
++    
++    if (src-&gt;is_kind(&quot;st-actorimpulse&quot;)) {
++        Log &lt;&lt; &quot;AddSignal for st-actorimpulse\n&quot;;
++        ObjectList ol = src-&gt;getDefaultedAttr(&quot;$!oxyd!destinations&quot;, Value(Value::GROUP));
++        ol.push_back(dstValue);
++        src-&gt;set_attrib(&quot;$!oxyd!destinations&quot;, ol);
++        return;
++    }
++    
++    std::string target_key = &quot;target&quot;;
++    std::string action_key = &quot;action&quot;;
++    
++    // fourswitch: 4 subsequent AddSignal calls for state specific signals
++    if (src-&gt;getObjectType() == Object::STONE
++            &amp;&amp; get_id(dynamic_cast&lt;Stone *&gt;(src)) == st_fourswitch) {
++        for (int i = 0;; i++) {
++            if (!src-&gt;getAttr(ecl::strf(&quot;target_%d&quot;, i))) {
++                target_key = ecl::strf(&quot;target_%d&quot;, i);
++                action_key = ecl::strf(&quot;action_%d&quot;, i);
++                break;
+             }
+-            idx += 1;
+         }
+     }
+-    return false;
++    
++    // key: Oxyd uses signals from keys to key switches to determine which keys
++    // activate which key hole
++    if (src-&gt;getObjectType() == Object::ITEM) {
++        ItemID src_id = get_id(dynamic_cast&lt;Item *&gt;(src));
++        if (src_id &gt;= it_key_a &amp;&amp; src_id &lt;= it_key_c &amp;&amp; dst-&gt;is_kind(&quot;st-key&quot;)) {
++            dst-&gt;set_attrib(&quot;keycode&quot;, src-&gt;getAttr(&quot;keycode&quot;));
++            return;
++        }
++    }
++    
++    // this function is supported for old API only - we can assume that target, action
++    // are not set by other means than this function:
++    TokenList targets = src-&gt;getDefaultedAttr(target_key, Value(Value::TOKENS));    
++    targets.push_back(dstValue);   // add this target to existing ones
++    src-&gt;set_attrib(target_key, Value(targets));
++    TokenList actions = src-&gt;getDefaultedAttr(action_key, Value(Value::TOKENS));    
++    actions.push_back(Value(&quot;signal&quot;));   // add this target to existing ones
++    src-&gt;set_attrib(action_key, Value(actions));
+ }
+ 
+ 
+@@ -1992,6 +1964,7 @@
+                 }
+             }
+             // else ignore this no longer valid target
++//            Log &lt;&lt; &quot;PerformAction target not valid\n&quot;;
+         } else {
+             // send message to all objects
+             if (action == &quot;&quot;) 
+@@ -2008,11 +1981,6 @@
+         
+         if (ait != actions.end()) ++ait;
+     }
+-    
+-    if ((targets.size() == 0) &amp;&amp; (actions.size() == 1) &amp;&amp; actions.front().to_string() == &quot;signal&quot;) {
+-        // pre 1.10 signal handling
+-        emit_from(level-&gt;m_signals, obj, onoff);
+-    }
+ }
+ 
+ 
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2007-12-14 21:44:39 UTC (rev 944)
++++ trunk/src/world.hh	2007-12-18 23:19:35 UTC (rev 945)
+@@ -244,18 +244,9 @@
+ 
+ /* -------------------- Signals &amp; Messages -------------------- */
+ 
+-    void    AddSignal (const GridLoc &amp;src, 
+-                       const GridLoc &amp;dst, 
+-                       const string &amp;msg);
++    // just for Oxyd and old API compatibility
++    void AddSignal (const GridLoc &amp;src, const GridLoc &amp;dst, const string &amp;msg);
+ 
+-    bool    HaveSignals (Object *src);
+-
+-    /*! Return true if suitable signal was found. */
+-    bool    EmitSignalByIndex (Object *src, int signalidx, int value=0);
+-
+-    /* Signal indices start at 0 */
+-    bool GetSignalTargetPos (Object *src, GridPos &amp;pos, int signalidx = 0);
+-
+     void BroadcastMessage (const std::string&amp; msg, const Value&amp; value, 
+                            GridLayerBits grids);
+ 
+
+Modified: trunk/src/world_internal.hh
+===================================================================
+--- trunk/src/world_internal.hh	2007-12-14 21:44:39 UTC (rev 944)
++++ trunk/src/world_internal.hh	2007-12-18 23:19:35 UTC (rev 945)
+@@ -32,20 +32,6 @@
+     typedef vector&lt;Signal&gt;       SignalList;
+ 
+ 
+-/* -------------------- Signals -------------------- */
+-
+-    struct Signal {
+-        // Variables
+-        Object *source;
+-        GridLoc destloc;
+-        string message;
+-
+-        // Constructor
+-        Signal (Object *src, GridLoc dstloc, const string &amp;msg)
+-        : source (src), destloc(dstloc), message(msg)
+-        {}
+-    };
+-
+ /* -------------------- RubberBand -------------------- */
+     
+     /*! Stores the physical information about a rubber band (to which
+@@ -350,7 +336,7 @@
+         Actor               *leftmost_actor;   // sorted double linked list of actors
+         Actor               *rightmost_actor;  
+         vector&lt;RubberBand *&gt; m_rubberbands;
+-        SignalList           m_signals;
++//        SignalList           m_signals;
+         MouseForce           m_mouseforce;
+         ConstantForce        m_flatforce;
+         int                  scrambleIntensity;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000376.html">[Enigma-game-svn] r944 - homepage/input/lotm
+</A></li>
+	<LI>Next message: <A HREF="000378.html">[Enigma-game-svn] r946 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#377">[ date ]</a>
+              <a href="thread.html#377">[ thread ]</a>
+              <a href="subject.html#377">[ subject ]</a>
+              <a href="author.html#377">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

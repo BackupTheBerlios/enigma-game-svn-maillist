@@ -1,0 +1,329 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1319 - in trunk/data: levels/lib schemas
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1319%20-%20in%20trunk/data%3A%20levels/lib%20schemas&In-Reply-To=%3C200809132212.m8DMCqsO002404%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000748.html">
+   <LINK REL="Next"  HREF="000750.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1319 - in trunk/data: levels/lib schemas</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1319%20-%20in%20trunk/data%3A%20levels/lib%20schemas&In-Reply-To=%3C200809132212.m8DMCqsO002404%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1319 - in trunk/data: levels/lib schemas">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Sep 14 00:12:52 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000748.html">[Enigma-game-svn] r1318 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000750.html">[Enigma-game-svn] r1320 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#749">[ date ]</a>
+              <a href="thread.html#749">[ thread ]</a>
+              <a href="subject.html#749">[ subject ]</a>
+              <a href="author.html#749">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-09-14 00:12:51 +0200 (Sun, 14 Sep 2008)
+New Revision: 1319
+
+Added:
+   trunk/data/levels/lib/libpuzzle_3.xml
+Modified:
+   trunk/data/schemas/objects.xml
+Log:
+Trunk 1.1: new API reengineering
+- puzzle part 2:
+  - rewrite of libpuzzle as a resolver
+  - auto tile generation for puzzles
+  - guaranteed solvable shuffles of hollow crosses
+  - mark of positions from which the user can push
+Note:
+- see upcoming test level and docu
+- resolver still needs some comments and cleanup
+
+
+Added: trunk/data/levels/lib/libpuzzle_3.xml
+===================================================================
+--- trunk/data/levels/lib/libpuzzle_3.xml	2008-09-13 14:57:34 UTC (rev 1318)
++++ trunk/data/levels/lib/libpuzzle_3.xml	2008-09-13 22:12:51 UTC (rev 1319)
+@@ -0,0 +1,181 @@
++&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;no&quot; ?&gt;
++&lt;el:level xmlns:xsi=&quot;<A HREF="http://www.w3.org/2001/XMLSchema-instance">http://www.w3.org/2001/XMLSchema-instance</A>&quot; xsi:schemaLocation=&quot;<A HREF="http://enigma-game.org/schema/level/1">http://enigma-game.org/schema/level/1</A> level.xsd&quot; xmlns:el=&quot;<A HREF="http://enigma-game.org/schema/level/1">http://enigma-game.org/schema/level/1</A>&quot;&gt;
++  &lt;el:protected&gt;
++    &lt;el:info el:type=&quot;library&quot;&gt;
++      &lt;el:identity el:title=&quot;&quot; el:id=&quot;lib/libpuzzle&quot;/&gt;
++      &lt;el:version el:score=&quot;2&quot; el:release=&quot;3&quot; el:revision=&quot;5&quot; el:status=&quot;test&quot;/&gt;
++      &lt;el:author  el:name=&quot;Ronald Lamprecht&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
++      &lt;el:copyright&gt;Copyright &#169; 2008 Ronald Lamprecht&lt;/el:copyright&gt;
++      &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
++      &lt;el:compatibility el:enigma=&quot;1.10&quot;&gt;
++      &lt;/el:compatibility&gt;
++      &lt;el:modes el:easy=&quot;false&quot; el:single=&quot;false&quot; el:network=&quot;false&quot;/&gt;
++      &lt;el:comments&gt;
++      &lt;/el:comments&gt;
++      &lt;el:score el:easy=&quot;-&quot; el:difficult=&quot;-&quot;/&gt;
++    &lt;/el:info&gt;
++    &lt;el:luamain&gt;&lt;![CDATA[
++function res.puzzle_finalization(context)
++    print(&quot;puzzle final - num pos &quot;..#context[5])
++    local stones = {}
++    for i, ppos in ipairs(context[5]) do
++        local stone = st(context[5][i])
++        if -stone and stone:is(&quot;st_puzzle&quot;) then
++            table.insert(stones, stone)
++        end
++    end
++    stones = grp(stones)
++    -- seperate puzzles into huddles
++    local huddles = {}
++    while #stones &gt; 0 do
++        local huddle = stones[1]:get_adjacents()
++        table.insert(huddles, huddle)
++        stones = stones - huddle
++--        print(&quot;puzzle final - huddle of size &quot;..#huddle)
++    end
++--    print(&quot;puzzle final - num huddles &quot;..#huddles)
++    
++    -- shuffle huddles
++    local width = wo[&quot;Width&quot;]
++    local height = wo[&quot;Height&quot;]
++    local offsets = {po(-1,0), po(0,1), po(1,0), po(0,-1)}
++    local dirchars = {&quot;w&quot;,&quot;s&quot;,&quot;e&quot;,&quot;n&quot;}
++    for h, huddle in ipairs(huddles) do
++        print(&quot;puzzle final - shuffle huddle of size &quot;..#huddle)
++        local pfloors = fl(huddle)
++        local pushes = {}
++        local intensity = 0
++        local algorithm = 0   -- std
++        for puz in huddle do
++            local alg = puz[&quot;algorithm&quot;]
++            if alg == &quot;marked&quot; then
++               algorithm = 1
++            end
++            intensity = math.max(intensity, puz[&quot;intensity&quot;])
++        end
++        for puz in huddle do
++            for dir, offset in ipairs(offsets) do
++                local cand = puz - offset
++                if cand.x &gt;= 0 and cand.x &lt; width and cand.y &gt;= 0 and cand.y &lt; height then
++                    local cfloor = fl(cand)
++                    if pfloors[cfloor] == nil then
++                        local may_push = true
++                        if algorithm == 1 then
++                            local pushdirs = cfloor[&quot;push_directions&quot;]
++                            if type(pushdirs) ~= &quot;string&quot; or not pushdirs:find(dirchars[dir]) then
++                                may_push = false
++                            end
++                        end
++                        if may_push then
++                            local length = 1
++                            local lpos = puz + offset
++                            while lpos.x &gt;= 0 and lpos.x &lt; width and lpos.y &gt;= 0 and lpos.y &lt; height
++                                    and pfloors[fl(lpos)] ~= nil do
++                                length = length + 1
++                                lpos = lpos + offset
++                            end
++                            if length &gt; 1 then
++                                table.insert(pushes, {fl(puz), dir - 1, length})
++--                                print(&quot;  push (&quot;..cfloor.x..&quot;,&quot;..cfloor.y..&quot;) dir &quot;..(dir-1)..&quot; length &quot;..length)
++                            end
++                        end
++                    end
++                end
++            end
++        end
++        intensity = intensity * #huddle
++        local maxp = math.floor(math.sqrt(intensity))
++        while intensity &gt; 0 and #pushes &gt; 0 do
++            local pidx = random(#pushes)  -- select a random push pos/dir
++            local nump = random(math.min(pushes[pidx][3],
++                            math.max(maxp, intensity)))  -- number of pushes 
++            
++            intensity = intensity - nump
++            for i = 1, nump do 
++                if not (st(pushes[pidx][1] + offsets[pushes[pidx][2] + 1]))[&quot;hollow&quot;] then
++                    st(pushes[pidx][1]):pull_rotate(pushes[pidx][2])
++                end
++            end
++        end
++    end
++end
++
++function res.puzzle_newtile(key, template, suffix)
++    local decl = template:_declaration()  -- get a deep copy
++    local result
++    for i, tile in ipairs(decl) do
++        if type(tile) == &quot;string&quot; then
++            if result == nil then
++                result = ti[tile]
++            else
++                result = result .. ti[tile]
++            end
++        else
++            if tile[1]:find(&quot;st_puzzle&quot;, 1, true) then
++                local clusteridx = (&quot;01234456789&quot;):find(suffix)
++                local connections = (&quot; abcdefghijklmno&quot;):find(suffix)
++                if  clusteridx ~= nil then
++                    tile[&quot;cluster&quot;] = clusteridx - 1
++                elseif connections ~= nil then
++                    tile[&quot;connections&quot;] = ({&quot;&quot;,&quot;w&quot;,&quot;s&quot;,&quot;sw&quot;,&quot;e&quot;,&quot;ew&quot;,&quot;es&quot;,&quot;esw&quot;,
++                            &quot;n&quot;,&quot;nw&quot;,&quot;ns&quot;,&quot;nsw&quot;,&quot;ne&quot;,&quot;new&quot;,&quot;nes&quot;,&quot;nesw&quot;})[connections]
++                end
++            end
++            
++            if result == nil then
++                result = ti(tile)
++            else
++                result = result .. ti(tile)
++            end
++        end
++    end
++    ti[key] = result
++end
++
++function res.puzzle_implementation(context, evaluator, key, x, y)
++    for i, prefix in ipairs (context[4]) do
++        if key:find(prefix, 1, true) == 1 then
++            -- prefix based substitution
++            if ti[key] == nil then
++                local template = ti[prefix]
++                local suffix = key:sub(#(prefix) + 1)
++                if template == nil then
++                    error(&quot;Resolver puzzle missing template rule '&quot; ..prefix..&quot;'&quot;,2 )
++                elseif #suffix ~= 1 then
++                    error(&quot;Resolver puzzle key '&quot;..key..&quot;' does not match template rule '&quot; ..prefix..&quot;'&quot;,2 )
++                else
++                    res.puzzle_newtile(key, template, suffix)
++                end
++            end
++            table.insert(context[5], po(x,y))
++            return ti[key]
++        end
++    end
++    return evaluator(context[3], key, x, y)
++end
++
++function res.puzzle(subresolver, ...)
++    -- syntax: ... = &lt;prefixkey&gt;
++    -- context: [4] = table with unmodified rule tables
++    local args = {...}
++    local length = 0
++    for i, prefix in ipairs(args) do
++        if type(prefix) ~= &quot;string&quot; then
++            error(&quot;Resolver puzzle prefix &quot; .. i..&quot; is not a string&quot;, 2)
++        else
++           if length == 0 then
++               length = #prefix
++           elseif length ~= #prefix then
++               error(&quot;Resolver puzzle prefix &quot; .. i..&quot; mismatch of length&quot;, 2)
++           end
++        end
++    end
++    local context = {res.puzzle_implementation, res.puzzle_finalization, subresolver, args, {}}
++    return context
++end
++
++    ]]&gt;&lt;/el:luamain&gt;
++    &lt;el:i18n&gt;
++    &lt;/el:i18n&gt;
++  &lt;/el:protected&gt;
++&lt;/el:level&gt;
+
+
+Property changes on: trunk/data/levels/lib/libpuzzle_3.xml
+___________________________________________________________________
+Name: svn:executable
+   + *
+Name: svn:eol-style
+   + native
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-09-13 14:57:34 UTC (rev 1318)
++++ trunk/data/schemas/objects.xml	2008-09-13 22:12:51 UTC (rev 1319)
+@@ -3,6 +3,7 @@
+   &lt;attributes&gt;
+     &lt;attr name=&quot;action&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;adhesion&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;algorithm&quot; type=&quot;string&quot; default=&quot;std&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;anchor1&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;anchor2&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;autoclose&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+@@ -28,6 +29,7 @@
+     &lt;attr name=&quot;hit_distortion_yy&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;hollow&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;instant&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;intensity&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;interval&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;interval_s&quot; type=&quot;double&quot; default=&quot;3&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;interval_m&quot; type=&quot;double&quot; default=&quot;6&quot; rw=&quot;rw&quot;/&gt;
+@@ -46,6 +48,7 @@
+     &lt;attr name=&quot;noshuffle&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;orientation&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;3&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;oxydcolor&quot; type=&quot;int&quot; default=&quot;-1&quot; min=&quot;-4&quot; max=&quot;7&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;push_directions&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;range&quot; type=&quot;double&quot; default=&quot;1.0&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;rubbers&quot; type=&quot;group&quot; default=&quot;nil&quot; rw=&quot;r&quot;/&gt;
+     &lt;attr name=&quot;secure&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+@@ -117,7 +120,9 @@
+       &lt;msg name=&quot;kill&quot;/&gt;
+       &lt;msg name=&quot;toggle&quot;/&gt;
+     &lt;/object&gt;
+-    &lt;object name=&quot;fl&quot; abstract=&quot;true&quot;/&gt;
++    &lt;object name=&quot;fl&quot; abstract=&quot;true&quot;&gt;
++      &lt;attr name=&quot;push_directions&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;fl_bridge&quot;&gt;
+       &lt;attr name=&quot;flavor&quot; default=&quot;gc&quot;/&gt;
+       &lt;msg name=&quot;close&quot;/&gt;
+@@ -825,10 +830,12 @@
+       &lt;msg name=&quot;_revive&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;st_puzzle&quot;&gt;
++      &lt;attr name=&quot;algorithm&quot;/&gt;
+       &lt;attr name=&quot;connections&quot;/&gt;
+       &lt;attr name=&quot;cluster&quot;/&gt;
+       &lt;attr name=&quot;color&quot; min=&quot;2&quot; max=&quot;3&quot;/&gt;
+       &lt;attr name=&quot;hollow&quot;/&gt;
++      &lt;attr name=&quot;intensity&quot; default=&quot;3&quot;/&gt;
+       &lt;attr name=&quot;state&quot; rw=&quot;r&quot;/&gt;
+       &lt;msg name=&quot;get_adjacents&quot;/&gt;
+       &lt;msg name=&quot;pull_rotate&quot;/&gt;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000748.html">[Enigma-game-svn] r1318 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000750.html">[Enigma-game-svn] r1320 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#749">[ date ]</a>
+              <a href="thread.html#749">[ thread ]</a>
+              <a href="subject.html#749">[ subject ]</a>
+              <a href="author.html#749">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

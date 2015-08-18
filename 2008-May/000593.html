@@ -1,0 +1,221 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1159 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1159%20-%20trunk/src&In-Reply-To=%3C200805252144.m4PLiVMH029112%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000591.html">
+   <LINK REL="Next"  HREF="000594.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1159 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1159%20-%20trunk/src&In-Reply-To=%3C200805252144.m4PLiVMH029112%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1159 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun May 25 23:44:31 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000591.html">[Enigma-game-svn] r1158 - in trunk: data/levels/enigma_vii	doc/reference
+</A></li>
+        <LI>Next message: <A HREF="000594.html">[Enigma-game-svn] r1160 - in trunk: data data/schemas src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#593">[ date ]</a>
+              <a href="thread.html#593">[ thread ]</a>
+              <a href="subject.html#593">[ subject ]</a>
+              <a href="author.html#593">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-05-25 23:44:30 +0200 (Sun, 25 May 2008)
+New Revision: 1159
+
+Modified:
+   trunk/src/client.cc
+   trunk/src/d_engine.hh
+   trunk/src/display.cc
+   trunk/src/display.hh
+Log:
+Trunk 1.1: 
+- crash fix: on canon ball creation when too many sparkles are shown.
+  (level Armageddon).
+
+
+Modified: trunk/src/client.cc
+===================================================================
+--- trunk/src/client.cc	2008-05-22 20:08:45 UTC (rev 1158)
++++ trunk/src/client.cc	2008-05-25 21:44:30 UTC (rev 1159)
+@@ -960,7 +960,7 @@
+ }
+ 
+ void client::Msg_Sparkle (const ecl::V2 &amp;pos) {
+-    display::AddEffect (pos, &quot;ring-anim&quot;);
++    display::AddEffect (pos, &quot;ring-anim&quot;, true);
+ }
+ 
+ 
+
+Modified: trunk/src/d_engine.hh
+===================================================================
+--- trunk/src/d_engine.hh	2008-05-22 20:08:45 UTC (rev 1158)
++++ trunk/src/d_engine.hh	2008-05-25 21:44:30 UTC (rev 1159)
+@@ -223,7 +223,7 @@
+         void new_world (int, int);
+ 
+         /* ---------- Member functions ---------- */
+-        SpriteId add_sprite (Sprite *sprite);
++        SpriteId add_sprite (Sprite *sprite, bool isDispensible = false);
+         void kill_sprite (SpriteId id);
+         void move_sprite (SpriteId, const ecl::V2&amp; newpos);
+         void replace_sprite (SpriteId id, Model *m);
+@@ -233,7 +233,7 @@
+ 
+         Model *get_model (SpriteId id) { return sprites[id]-&gt;model; }
+ 
+-        void set_maxsprites (unsigned m) { maxsprites = m; }
++        void set_maxsprites (unsigned m, unsigned c) { maxsprites = m; dispensiblesprites = c;}
+ 
+         Sprite *get_sprite(SpriteId id);
+ 
+@@ -250,6 +250,7 @@
+         // Variables.
+         unsigned numsprites;    // Current number of sprites
+         unsigned maxsprites;    // Maximum number of sprites
++        unsigned dispensiblesprites;    // Threshold above which just critical sprites are accepted
+     };
+ 
+ 
+@@ -347,7 +348,7 @@
+ 
+         DisplayEngine *get_engine() const { return m_engine; }
+ 
+-        SpriteHandle add_effect (const V2&amp; pos, Model *m);
++        SpriteHandle add_effect (const V2&amp; pos, Model *m, bool isDispensible = false);
+         SpriteHandle add_sprite (const V2 &amp;pos, Model *m);
+ 
+         RubberHandle add_line (V2 p1, V2 p2);
+
+Modified: trunk/src/display.cc
+===================================================================
+--- trunk/src/display.cc	2008-05-22 20:08:45 UTC (rev 1158)
++++ trunk/src/display.cc	2008-05-25 21:44:30 UTC (rev 1159)
+@@ -24,6 +24,7 @@
+  */
+ 
+ #include &quot;display_internal.hh&quot;
++#include &quot;errors.hh&quot;
+ #include &quot;video.hh&quot;
+ #include &quot;main.hh&quot;
+ 
+@@ -868,7 +869,7 @@
+ /* -------------------- Sprite layer -------------------- */
+ 
+ DL_Sprites::DL_Sprites()
+-: numsprites(0), maxsprites(1000)
++: numsprites(0), maxsprites(1000), dispensiblesprites(1000)
+ {}
+ 
+ DL_Sprites::~DL_Sprites() {
+@@ -876,7 +877,8 @@
+ }
+ 
+ Sprite *DL_Sprites::get_sprite(SpriteId id) {
+-    return (id == MAGIC_SPRITEID) ? 0 : sprites[id];
++    ASSERT(id != MAGIC_SPRITEID, XLevelRuntime, &quot;Sprite layer fatal error: request of not existing sprite&quot;);
++    return sprites[id];
+ }
+ 
+ void DL_Sprites::new_world (int w, int h) {
+@@ -906,9 +908,9 @@
+     }
+ }
+ 
+-SpriteId DL_Sprites::add_sprite (Sprite *sprite) 
++SpriteId DL_Sprites::add_sprite (Sprite *sprite, bool isDispensible) 
+ {
+-    if (numsprites &gt;= maxsprites) {
++    if (numsprites &gt;= maxsprites || (isDispensible &amp;&amp; numsprites &gt;= dispensiblesprites)) {
+         delete sprite;
+         return MAGIC_SPRITEID;
+     }
+@@ -1807,7 +1809,7 @@
+     shadow_layer  = new DL_Shadows(stone_layer, sprite_layer);
+     line_layer    = new DL_Lines;
+     effects_layer = new DL_Sprites;
+-    effects_layer-&gt;set_maxsprites(50);
++    effects_layer-&gt;set_maxsprites(70, 50);
+ 
+     // Register display layers
+     m_engine-&gt;add_layer (floor_layer);
+@@ -1875,10 +1877,10 @@
+ }
+ 
+ SpriteHandle
+-CommonDisplay::add_effect (const V2&amp; pos, Model *m)
++CommonDisplay::add_effect (const V2&amp; pos, Model *m, bool isDispensible)
+ {
+     Sprite *spr = new Sprite (pos, SPRITE_EFFECT, m);
+-    return SpriteHandle (effects_layer, effects_layer-&gt;add_sprite(spr));
++    return SpriteHandle (effects_layer, effects_layer-&gt;add_sprite(spr, isDispensible));
+ }
+ 
+ SpriteHandle
+@@ -2152,8 +2154,8 @@
+     return gamedpy-&gt;yield_model (l);
+ }
+ 
+-SpriteHandle display::AddEffect (const V2&amp; pos, const char *modelname) {
+-    return gamedpy-&gt;add_effect (pos, MakeModel(modelname));
++SpriteHandle display::AddEffect (const V2&amp; pos, const char *modelname, bool isDispensible) {
++    return gamedpy-&gt;add_effect (pos, MakeModel(modelname), isDispensible);
+ }
+ 
+ SpriteHandle
+
+Modified: trunk/src/display.hh
+===================================================================
+--- trunk/src/display.hh	2008-05-22 20:08:45 UTC (rev 1158)
++++ trunk/src/display.hh	2008-05-25 21:44:30 UTC (rev 1159)
+@@ -154,7 +154,7 @@
+ 
+     /*! Add a new effect sprite.  Sprites of this type are
+       automatically deleted once the animation has finished.  */
+-    SpriteHandle AddEffect (const ecl::V2 &amp;pos, const char *modelname);
++    SpriteHandle AddEffect (const ecl::V2 &amp;pos, const char *modelname, bool isDispensible = false);
+ 
+     /*! Create a new sprite.  If modelname==0, the sprite is
+       considered invisible.  Sprites of this type are _never_
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000591.html">[Enigma-game-svn] r1158 - in trunk: data/levels/enigma_vii	doc/reference
+</A></li>
+	<LI>Next message: <A HREF="000594.html">[Enigma-game-svn] r1160 - in trunk: data data/schemas src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#593">[ date ]</a>
+              <a href="thread.html#593">[ thread ]</a>
+              <a href="subject.html#593">[ subject ]</a>
+              <a href="author.html#593">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

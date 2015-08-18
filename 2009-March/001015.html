@@ -1,0 +1,226 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1585 - in trunk: data data/levels/lib	doc/reference
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1585%20-%20in%20trunk%3A%20data%20data/levels/lib%0A%09doc/reference&In-Reply-To=%3C200903112132.n2BLWXs2032474%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001014.html">
+   <LINK REL="Next"  HREF="001016.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1585 - in trunk: data data/levels/lib	doc/reference</H1>
+    <B>andreasl at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1585%20-%20in%20trunk%3A%20data%20data/levels/lib%0A%09doc/reference&In-Reply-To=%3C200903112132.n2BLWXs2032474%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1585 - in trunk: data data/levels/lib	doc/reference">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Wed Mar 11 22:32:33 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001014.html">[Enigma-game-svn] r1584 - in trunk: data src src/stones
+</A></li>
+        <LI>Next message: <A HREF="001016.html">[Enigma-game-svn] r1586 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1015">[ date ]</a>
+              <a href="thread.html#1015">[ thread ]</a>
+              <a href="subject.html#1015">[ subject ]</a>
+              <a href="author.html#1015">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2009-03-11 22:32:29 +0100 (Wed, 11 Mar 2009)
+New Revision: 1585
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/data/levels/lib/liblua.xml
+   trunk/doc/reference/enigma-ref.texi
+Log:
+Trunk:
+ - resolver res.random:
+   - allow non-integer frequencies
+   - insert checks for correct argument types
+ - liblua:
+   - allow position and userdata as key types in print_table
+   - slight beautification of deep_copy-code
+Note:
+ - Superfluous attributes in res.random-rules are
+   silently ignored.
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2009-03-10 22:58:15 UTC (rev 1584)
++++ trunk/data/api2init.lua	2009-03-11 21:32:29 UTC (rev 1585)
+@@ -374,7 +374,7 @@
+                 super = evaluator(context[3], hit_pair[2], x, y)
+             end
+             local repl_key
+-            local r = math.random(context[6])
++            local r = math.random() * context[6]
+             local i = 1
+             local s = context[5][i][2]
+             while s &lt; r do
+@@ -399,35 +399,54 @@
+ function res.random(subresolver, hits, replacements)
+     -- syntax: hits = key | {key, [key]*, [{key, superkey}]*}
+     --         replacements = {key, [key]*, [{key, frequency}]*}
+-    -- TODO check args!
+-    
+     local hit_table = {}
+     if type(hits) == &quot;string&quot; then
+         hit_table[1] = {hits, nil}
+-    else
++    elseif type(hits) == &quot;table&quot; then
+         for i, v in ipairs(hits) do
+             if type(v) == &quot;string&quot; then
+                 hit_table[i] = {v, nil}
+             elseif type(v) == &quot;table&quot; then
++                if     (type(v[1]) ~= &quot;string&quot;) or (type(v[2]) ~= &quot;string&quot;) then
++                    error(&quot;res.random: Unsupported type or syntax error in second argument.&quot;, 2)
++                end
+                 hit_table[i] = v
++            else
++                error(&quot;res.random: Unsupported type or syntax error in second argument.&quot;, 2)
+             end
+         end
++    else
++        error(&quot;res.random: Unsupported type or syntax error in second argument.&quot;, 2)
+     end
+     
+     local repl_table = {}
+-    for i, v in ipairs(replacements) do
+-        if type(v) == &quot;string&quot; then
+-            repl_table[i] = {v, 1}
+-        elseif type(v) == &quot;table&quot; then
+-            repl_table[i] = v
++    if type(replacements) == &quot;string&quot; then
++        repl_table[1] = {replacements, 1}
++    elseif type(replacements) == &quot;table&quot; then
++        for i, v in ipairs(replacements) do
++            if type(v) == &quot;string&quot; then
++                repl_table[i] = {v, 1}
++            elseif type(v) == &quot;table&quot; then
++                if (type(v[1]) ~= &quot;string&quot;) and (type(v[2]) ~= &quot;number&quot;) then
++                    error(&quot;res.random: Unsupported type or syntax error in third argument.&quot;, 2)
++                end
++                if v[2] &lt; 0 then
++                    error(&quot;res.random: Frequency must be a positive number or zero.&quot;, 2)
++                end
++                repl_table[i] = v
++            else
++                error(&quot;res.random: Unsupported type or syntax error in third argument.&quot;, 2)
++            end
+         end
++    else
++        error(&quot;res.random: Unsupported type or syntax error in third argument.&quot;, 2)
+     end
+     local repl_sum = 0
+     for i, v in ipairs(repl_table) do
+         repl_sum = repl_sum + v[2]
+     end
+     local context = {res.random_implementation, nil, subresolver, hit_table, 
+-                      repl_table, repl_sum}
++                     repl_table, repl_sum}
+     return context
+ end
+ 
+
+Modified: trunk/data/levels/lib/liblua.xml
+===================================================================
+--- trunk/data/levels/lib/liblua.xml	2009-03-10 22:58:15 UTC (rev 1584)
++++ trunk/data/levels/lib/liblua.xml	2009-03-11 21:32:29 UTC (rev 1585)
+@@ -41,21 +41,20 @@
+ -- deep_copy returns a copy of SOURCE, where table entries are
+ -- not copied as memory references, but complete (&quot;deep copy&quot;).
+ -- Metatables are transfered, but not deep-copied.
+--- TODO: use rawset/rawget instead.
+ function lib.lua.deep_copy(source)
+- if type(source) ~= &quot;table&quot; then
+-   return source
+- end
+- local dest = {}
+- for k, v in pairs(source) do
+-   if type(source[k]) == &quot;table&quot; then
+-     dest[k] = lib.lua.deep_copy(source[k])
+-   else
+-     dest[k] = source[k]
+-   end
+- end
+- setmetatable(dest, getmetatable(source))
+- return dest
++  if type(source) ~= &quot;table&quot; then
++    return source
++  end
++  local dest = {}
++  for k, v in pairs(source) do
++    if type(v) == &quot;table&quot; then
++      rawset(dest, k, lib.lua.deep_copy(v))
++    else
++      rawset(dest, k, v)
++    end
++  end
++  setmetatable(dest, getmetatable(source))
++  return dest
+ end 
+ 
+ -- combine_tables returns a table consisting of all entries of the
+@@ -130,6 +129,10 @@
+       key_s = &quot;\&quot;&quot; .. key .. &quot;\&quot;&quot;
+     elseif type(key) == &quot;number&quot; then
+       key_s = key
++    elseif usertype(key) == &quot;position&quot; then
++      key_s = &quot;&lt;&quot; .. key.x .. &quot;/&quot; .. key.y .. &quot;&gt;&quot;
++    elseif type(key) == &quot;userdata&quot; then
++      key_s = &quot;&lt;&quot; .. usertype(key) .. &quot;&gt;&quot;
+     else
+       key_s = &quot;&lt;&quot; .. type(key) .. &quot;&gt;&quot;
+     end
+
+Modified: trunk/doc/reference/enigma-ref.texi
+===================================================================
+--- trunk/doc/reference/enigma-ref.texi	2009-03-10 22:58:15 UTC (rev 1584)
++++ trunk/doc/reference/enigma-ref.texi	2009-03-11 21:32:29 UTC (rev 1585)
+@@ -15045,7 +15045,8 @@
+ should be selected with randomness.
+ @item @i{replacement} = @i{key} | @{@i{key}, @i{frequency}@}
+ Either a single tile key string that should be taken with a frequency of @samp{1},
+-or a pair of a tile key string with a given frequency number.
++or a pair of a tile key string with a given frequency number. The frequency can
++be an integer or non-integer number, but must be positive or zero.
+ @end table
+ 
+ @item @b{Syntax Samples:}
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001014.html">[Enigma-game-svn] r1584 - in trunk: data src src/stones
+</A></li>
+	<LI>Next message: <A HREF="001016.html">[Enigma-game-svn] r1586 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1015">[ date ]</a>
+              <a href="thread.html#1015">[ thread ]</a>
+              <a href="subject.html#1015">[ subject ]</a>
+              <a href="author.html#1015">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

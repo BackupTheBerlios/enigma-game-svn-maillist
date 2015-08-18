@@ -1,0 +1,161 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1126 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1126%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200805052152.m45LqFvl021890%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000558.html">
+   <LINK REL="Next"  HREF="000560.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1126 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1126%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200805052152.m45LqFvl021890%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1126 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon May  5 23:52:15 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000558.html">[Enigma-game-svn] r1125 - in trunk/data/levels: enigma_iii	enigma_iv enigma_oxydmagnum enigma_v enigma_vi enigma_vii
+</A></li>
+        <LI>Next message: <A HREF="000560.html">[Enigma-game-svn] r1127 - in trunk: data data/gfx32 data/gfx40	data/gfx48 src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#559">[ date ]</a>
+              <a href="thread.html#559">[ thread ]</a>
+              <a href="subject.html#559">[ subject ]</a>
+              <a href="author.html#559">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-05-05 23:52:14 +0200 (Mon, 05 May 2008)
+New Revision: 1126
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/items.cc
+   trunk/src/stones/LightPassengerStone.cc
+Log:
+Trunk 1.1: 
+- fix oxyd stone api1 trigger message mapping
+- fix Lightpassenger stone pushing
+- fix Vortex: allow exit if stone is not sticky instead of floating
+- &quot;movable&quot; attribute readable for all stones.
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-05-05 21:41:03 UTC (rev 1125)
++++ trunk/data/api1init.lua	2008-05-05 21:52:14 UTC (rev 1126)
+@@ -495,7 +495,7 @@
+     st_lightpassenger__trigger = &quot;toggle&quot;,
+     st_lightpassenger__onoff = &quot;toggle&quot;,
+     [&quot;st-mirror__trigger&quot;] = &quot;turn&quot;,
+-    [&quot;st-oxyd__trigger&quot;] = &quot;toggle&quot;,
++    st_oxyd__trigger = &quot;open&quot;,
+     [&quot;st-plain__trigger&quot;] = &quot;signal&quot;,
+     [&quot;st-plain_hole__trigger&quot;] = &quot;signal&quot;,
+     st_polarswitch__onoff = &quot;toggle&quot;,
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-05-05 21:41:03 UTC (rev 1125)
++++ trunk/data/schemas/objects.xml	2008-05-05 21:52:14 UTC (rev 1126)
+@@ -179,6 +179,9 @@
+       &lt;attr name=&quot;faces&quot;/&gt;
+       &lt;msg name=&quot;_model_reanimated&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st&quot; abstract=&quot;true&quot;&gt;
++      &lt;attr name=&quot;movable&quot; rw=&quot;r&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_blocker&quot;&gt;
+       &lt;attr name=&quot;autoclose&quot;/&gt;
+       &lt;msg name=&quot;close&quot;/&gt;
+@@ -460,7 +463,7 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;st_rotator&quot;&gt;
+       &lt;attr name=&quot;counterclock&quot;/&gt;
+-      &lt;attr name=&quot;movable&quot;/&gt;
++      &lt;attr name=&quot;movable&quot; rw=&quot;rw&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;st_rotator_cw&quot;&gt;
+       &lt;attr name=&quot;state&quot; value=&quot;0&quot;/&gt;
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-05-05 21:41:03 UTC (rev 1125)
++++ trunk/src/items.cc	2008-05-05 21:52:14 UTC (rev 1126)
+@@ -2310,7 +2310,7 @@
+             if (v) {                // Destination is also a vortex
+                 Stone *st = GetStone(p_target);
+     
+-                if (st &amp;&amp; !st-&gt;is_floating()) {
++                if (st &amp;&amp; st-&gt;is_sticky(actor)) {
+                     // is destination vortex blocked? redirect
+                     setAttr(&quot;$dest_idx&quot;, dest_idx + 1);
+                     client::Msg_Sparkle(v_target);
+
+Modified: trunk/src/stones/LightPassengerStone.cc
+===================================================================
+--- trunk/src/stones/LightPassengerStone.cc	2008-05-05 21:41:03 UTC (rev 1125)
++++ trunk/src/stones/LightPassengerStone.cc	2008-05-05 21:52:14 UTC (rev 1126)
+@@ -153,6 +153,10 @@
+         Direction skateDir = (Direction)((int)((objFlags &amp; OBJBIT_SKATEDIR) &gt;&gt; 24) - 1);
+         if ((objFlags &amp; OBJBIT_LIGHTNEWDIRS) &amp;&amp; (state == ON || state == BLINK)) {
+             GridPos p = get_pos();
++            if (objFlags &amp; OBJBIT_BLOCKED) {
++                send_impulse(move(p, skateDir), skateDir);
++                objFlags &amp;= ~OBJBIT_BLOCKED;
++            }
+             int toSouth = (objFlags &amp; NORTHBIT ? -1 : 0) + (objFlags &amp; SOUTHBIT ? +1 : 0);
+             int toWest =  (objFlags &amp; EASTBIT ? -1 : 0) + (objFlags &amp; WESTBIT ? +1 : 0);
+             if (toSouth * toWest != 0) {
+@@ -187,13 +191,7 @@
+                     // Skipping each second turn makes the passenger stone seem
+                     // slower when pushing another stone. This looks more
+                     // natural. That's why impulse is delayed:
+-                    if (objFlags &amp; OBJBIT_BLOCKED) {
+-                        send_impulse(move(p, skateDir), skateDir);
+-                        objFlags &amp;= ~OBJBIT_BLOCKED;
+-                    } else
+-                        objFlags |= OBJBIT_BLOCKED;
+-                } else {
+-                    objFlags &amp;= ~OBJBIT_BLOCKED;
++                    objFlags |= OBJBIT_BLOCKED;
+                 }
+                 move_stone(skateDir);
+             }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000558.html">[Enigma-game-svn] r1125 - in trunk/data/levels: enigma_iii	enigma_iv enigma_oxydmagnum enigma_v enigma_vi enigma_vii
+</A></li>
+	<LI>Next message: <A HREF="000560.html">[Enigma-game-svn] r1127 - in trunk: data data/gfx32 data/gfx40	data/gfx48 src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#559">[ date ]</a>
+              <a href="thread.html#559">[ thread ]</a>
+              <a href="subject.html#559">[ subject ]</a>
+              <a href="author.html#559">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

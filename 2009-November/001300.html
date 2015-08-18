@@ -1,0 +1,171 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1871 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-November/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1871%20-%20trunk/src&In-Reply-To=%3C200911231708.nANH8TtS008013%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001299.html">
+   <LINK REL="Next"  HREF="001301.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1871 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1871%20-%20trunk/src&In-Reply-To=%3C200911231708.nANH8TtS008013%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1871 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon Nov 23 18:08:29 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001299.html">[Enigma-game-svn] r1870 - trunk/data/levels/enigma_viii
+</A></li>
+        <LI>Next message: <A HREF="001301.html">[Enigma-game-svn] r1873 - trunk/po
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1300">[ date ]</a>
+              <a href="thread.html#1300">[ thread ]</a>
+              <a href="subject.html#1300">[ subject ]</a>
+              <a href="author.html#1300">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-11-23 18:08:29 +0100 (Mon, 23 Nov 2009)
+New Revision: 1871
+
+Modified:
+   trunk/src/main.cc
+Log:
+Trunk 1.1: 
+- add startup option &quot;--redirect&quot; for all OS
+  - redirect stdout/stderr to user path files Output.log/Error.log
+  - Windows defaults redirect to true
+
+
+Modified: trunk/src/main.cc
+===================================================================
+--- trunk/src/main.cc	2009-11-23 14:12:13 UTC (rev 1870)
++++ trunk/src/main.cc	2009-11-23 17:08:29 UTC (rev 1871)
+@@ -130,6 +130,7 @@
+            &quot;    --nomusic      Disable music\n&quot;
+            &quot;    --nosound      Disable music and sound effects\n&quot;
+            &quot;    --pref -p file Use filename or dirname for preferences\n&quot;
++           &quot;    --redirect     Redirect stdout/stderr to files on user path\n&quot;
+            &quot;    --showfps      Show the framerate (FPS) during the Game\n&quot;
+            &quot;    --version      Print the executable's version number\n&quot;
+            &quot;    --window -w    Run in a window; do not enter fullscreen mode\n&quot;
+@@ -147,7 +148,7 @@
+ 
+         // Variables.
+         bool nosound, nomusic, show_help, show_version, do_log, do_assert, force_window;
+-        bool dumpinfo, makepreview, show_fps;
++        bool dumpinfo, makepreview, show_fps, redirect;
+         string gamename;
+         string datapath;
+         string preffilename;
+@@ -173,7 +174,7 @@
+ AP::AP() : ArgParser (app.args.begin(), app.args.end())
+ {
+     nosound  = nomusic = show_help = show_version = do_log = do_assert = force_window = false;
+-    dumpinfo = makepreview = show_fps = false;
++    dumpinfo = makepreview = show_fps = redirect = false;
+     gamename = &quot;&quot;;
+     datapath = &quot;&quot;;
+     preffilename = PREFFILENAME;
+@@ -189,6 +190,7 @@
+     def (&amp;dumpinfo,             &quot;dumpinfo&quot;);
+     def (&amp;makepreview,          &quot;makepreview&quot;);
+     def (&amp;show_fps,             &quot;showfps&quot;);
++    def (&amp;redirect,             &quot;redirect&quot;);
+     def (&amp;force_window,         &quot;window&quot;, 'w');
+     def (OPT_GAME,              &quot;game&quot;, true);
+     def (OPT_DATA,              &quot;data&quot;, 'd', true);
+@@ -286,29 +288,31 @@
+     systemCmdDataPath = ap.datapath;
+     initSysDatapaths(ap.preffilename);
+ 
+-    // redirect stdout, stderr for Windows
++    // redirect stdout, stderr
+ #ifdef WIN32
+-    FILE *newfp;
+-    newfp = std::freopen((userStdPath + &quot;/Output.log&quot;).c_str(), &quot;w&quot;, stdout);
+-    if ( newfp == NULL ) {  // This happens on NT
+-        newfp = fopen((userStdPath + &quot;/Output.log&quot;).c_str(), &quot;w&quot;);
+-        if (newfp) {  // in case stdout is a macro
+-            *stdout = *newfp;
++    ap.redirect = true;
++#endif
++    if (ap.redirect) {
++        FILE *newfp;
++        newfp = std::freopen((userStdPath + &quot;/Output.log&quot;).c_str(), &quot;w&quot;, stdout);
++        if ( newfp == NULL ) {  // This happens on NT
++            newfp = fopen((userStdPath + &quot;/Output.log&quot;).c_str(), &quot;w&quot;);
++            if (newfp) {  // in case stdout is a macro
++                *stdout = *newfp;
++            }
+         }
+-    }
+-    setvbuf(stdout, NULL, _IOLBF, BUFSIZ);   // Line buffered
+-    
+-    newfp = std::freopen((userStdPath + &quot;/Error.log&quot;).c_str(), &quot;w&quot;, stderr);
+-    if ( newfp == NULL ) {  // This happens on NT
+-        newfp = fopen((userStdPath + &quot;/Error.log&quot;).c_str(), &quot;w&quot;);
+-        if (newfp) {  // in case stderr is a macro
+-            *stderr = *newfp;
++        setvbuf(stdout, NULL, _IOLBF, BUFSIZ);   // Line buffered
++        
++        newfp = std::freopen((userStdPath + &quot;/Error.log&quot;).c_str(), &quot;w&quot;, stderr);
++        if ( newfp == NULL ) {  // This happens on NT
++            newfp = fopen((userStdPath + &quot;/Error.log&quot;).c_str(), &quot;w&quot;);
++            if (newfp) {  // in case stderr is a macro
++                *stderr = *newfp;
++            }
+         }
++        setbuf(stderr, NULL);   // No buffering
+     }
+-    setbuf(stderr, NULL);   // No buffering
+-#endif
+ 
+-
+     // initialize logfile -- needs ap
+     if (ap.do_log) 
+         enigma::Log.rdbuf(cout.rdbuf());
+@@ -316,6 +320,7 @@
+         enigma::Log.rdbuf(::nullbuffer);
+     
+     // postponed system datapath logs
++    Log &lt;&lt; &quot;Enigma &quot; &lt;&lt; getVersionInfo() &lt;&lt; &quot;\n&quot;;
+     Log &lt;&lt; &quot;systemFS = \&quot;&quot; &lt;&lt; systemFS-&gt;getDataPath() &lt;&lt; &quot;\&quot;\n&quot;; 
+     Log &lt;&lt; &quot;docPath = \&quot;&quot; &lt;&lt; docPath &lt;&lt; &quot;\&quot;\n&quot;; 
+     Log &lt;&lt; &quot;l10nPath = \&quot;&quot; &lt;&lt; l10nPath &lt;&lt; &quot;\&quot;\n&quot;; 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001299.html">[Enigma-game-svn] r1870 - trunk/data/levels/enigma_viii
+</A></li>
+	<LI>Next message: <A HREF="001301.html">[Enigma-game-svn] r1873 - trunk/po
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1300">[ date ]</a>
+              <a href="thread.html#1300">[ thread ]</a>
+              <a href="subject.html#1300">[ subject ]</a>
+              <a href="author.html#1300">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

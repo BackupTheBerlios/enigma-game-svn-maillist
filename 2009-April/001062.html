@@ -1,0 +1,392 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1632 - in trunk: data src src/floors src/items	src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1632%20-%20in%20trunk%3A%20data%20src%20src/floors%20src/items%0A%09src/stones&In-Reply-To=%3C200904162242.n3GMgUYk021751%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001061.html">
+   <LINK REL="Next"  HREF="001063.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1632 - in trunk: data src src/floors src/items	src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1632%20-%20in%20trunk%3A%20data%20src%20src/floors%20src/items%0A%09src/stones&In-Reply-To=%3C200904162242.n3GMgUYk021751%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1632 - in trunk: data src src/floors src/items	src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Fri Apr 17 00:42:30 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001061.html">[Enigma-game-svn] r1631 - trunk/data
+</A></li>
+        <LI>Next message: <A HREF="001063.html">[Enigma-game-svn] r1633 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1062">[ date ]</a>
+              <a href="thread.html#1062">[ thread ]</a>
+              <a href="subject.html#1062">[ subject ]</a>
+              <a href="author.html#1062">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-04-17 00:42:28 +0200 (Fri, 17 Apr 2009)
+New Revision: 1632
+
+Modified:
+   trunk/data/models-2d.lua
+   trunk/src/floors/FloodStream.cc
+   trunk/src/floors/FloodStream.hh
+   trunk/src/items.cc
+   trunk/src/items.hh
+   trunk/src/items/Crack.cc
+   trunk/src/items/Vortex.cc
+   trunk/src/items/Vortex.hh
+   trunk/src/items/WormHole.cc
+   trunk/src/items/WormHole.hh
+   trunk/src/stones/Door.cc
+   trunk/src/stones/WindowStone.cc
+Log:
+Trunk 1.1:
+- it_vortex: do not sink on a closed vortex
+- fix image model of it_debris
+- floodstream spead via it_vortex/it_wormhole:
+  - wormhole: spread on a given destination
+  - vortex: spead to all destinations when source vortex is open and
+      destination is either an open vortex or no vortex, retry spread
+      whenever a closed vortex opens
+  - stones on destinations do not block any vortex/wormhole spreading
+- Crack: do not spread water cracks onto fl_space
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2009-04-15 14:03:39 UTC (rev 1631)
++++ trunk/data/models-2d.lua	2009-04-16 22:42:28 UTC (rev 1632)
+@@ -647,8 +647,6 @@
+     DefAnim(&quot;it_crack_abyss_anim&quot;, frames)
+     
+     local images = DefSubimages(&quot;it_crack_water&quot;, {h=8})
+-    local frames = BuildFrames(images,50)
+-    DefAnim(&quot;it_debris&quot;, frames)
+ 
+     local frames = BuildFrames({&quot;it_crack_water4&quot;, &quot;it_crack_water5&quot;, &quot;it_crack_water6&quot;, &quot;it_crack_water7&quot;, &quot;it_crack_water8&quot;},120)
+     DefAnim(&quot;it_crack_water_anim&quot;, frames)
+
+Modified: trunk/src/floors/FloodStream.cc
+===================================================================
+--- trunk/src/floors/FloodStream.cc	2009-04-15 14:03:39 UTC (rev 1631)
++++ trunk/src/floors/FloodStream.cc	2009-04-16 22:42:28 UTC (rev 1632)
+@@ -65,7 +65,8 @@
+         
+     Value FloodStream::message(const Message &amp;m) {
+         if (m.message == &quot;_checkflood&quot;) {
+-            if (state == FLOODING)
++            Item *it = GetItem(get_pos());
++            if (state == FLOODING &amp;&amp; (m.value.to_bool() != true || (it != NULL &amp;&amp; it-&gt;isKind(&quot;it_vortex_open&quot;))))
+                 GameTimer.set_alarm(this, (double)getAttr(&quot;interval&quot;), false);
+             return Value();
+         } else
+@@ -127,34 +128,44 @@
+             Stone *thisstone = GetStone(get_pos());
+             for (Direction d = NORTH; d != NODIR; d = previous(d)) {
+                 if (thisstone == NULL || thisstone-&gt;allowsSpreading(d)) {
+-                    GridPos p = move(get_pos(), d);
+-                    Floor *f = GetFloor(p);
+-                    if (f != NULL &amp;&amp; f-&gt;isKind(&quot;fl_floodstream&quot;) &amp;&amp; 
+-                            (f-&gt;getAttr(&quot;faces&quot;).to_string() == &quot;nesw&quot; || f-&gt;isKind(&quot;fl_water&quot;))) {
+-                        if (f-&gt;isKind(&quot;fl_water&quot;) &amp;&amp; f-&gt;getAttr(&quot;state&quot;) == IDLE) {
+-                            init_model();  // make flood visible
+-                            Item *it = GetItem(p);
+-                            if (it != NULL &amp;&amp; (it-&gt;isKind(&quot;it_crack&quot;) || (it-&gt;isKind(&quot;it_burnable&quot;) &amp;&amp; !it-&gt;isKind(&quot;it_burnable_oil&quot;))))
+-                                KillItem(p);
+-                        }
+-                        f-&gt;setAttr(&quot;interval&quot;, getAttr(&quot;interval&quot;));
+-                        f-&gt;setAttr(&quot;state&quot;, FLOODING);
+-                    } else if (f != NULL &amp;&amp; f-&gt;getAttr(&quot;floodable&quot;).to_bool()) {
+-                        Stone *st = GetStone(p);
+-                        if (st == NULL || st-&gt;allowsSpreading(reverse(d), true)) {
+-                            Floor *newfloor = MakeFloor(&quot;fl_water_source&quot;);
+-                            newfloor-&gt;setAttr(&quot;interval&quot;, getAttr(&quot;interval&quot;));
+-                            SetFloor(p, newfloor);
+-                            Item *it = GetItem(p);
+-                            if (it != NULL &amp;&amp; (it-&gt;isKind(&quot;it_crack&quot;) || (it-&gt;isKind(&quot;it_burnable&quot;) &amp;&amp; !it-&gt;isKind(&quot;it_burnable_oil&quot;))))
+-                                KillItem(p);
+-                        }
+-                    }
++                    tryFlood(move(get_pos(), d), reverse(d));
+                 }
+             }
++            if (Item *thisItem = GetItem(get_pos())) {
++                std::list&lt;GridPos&gt; results = thisItem-&gt;warpSpreadPos(true);
++                for (std::list&lt;GridPos&gt;::iterator itr = results.begin(); itr != results.end(); ++itr)
++                    tryFlood(*itr, NODIR);
++            }
+         }
+     }
+-    
++ 
++    void FloodStream::tryFlood(GridPos p, Direction from) {
++        if (IsInsideLevel(p)) {
++            Floor *f = GetFloor(p);
++            if (f != NULL &amp;&amp; f-&gt;isKind(&quot;fl_floodstream&quot;) &amp;&amp; 
++                    (f-&gt;getAttr(&quot;faces&quot;).to_string() == &quot;nesw&quot; || f-&gt;isKind(&quot;fl_water&quot;))) {
++                if (f-&gt;isKind(&quot;fl_water&quot;) &amp;&amp; f-&gt;getAttr(&quot;state&quot;) == IDLE) {
++                    init_model();  // make flood visible
++                    Item *it = GetItem(p);
++                    if (it != NULL &amp;&amp; (it-&gt;isKind(&quot;it_crack&quot;) || (it-&gt;isKind(&quot;it_burnable&quot;) &amp;&amp; !it-&gt;isKind(&quot;it_burnable_oil&quot;))))
++                        KillItem(p);
++                }
++                f-&gt;setAttr(&quot;interval&quot;, getAttr(&quot;interval&quot;));
++                f-&gt;setAttr(&quot;state&quot;, FLOODING);
++            } else if (f != NULL &amp;&amp; f-&gt;getAttr(&quot;floodable&quot;).to_bool()) {
++                Stone *st = GetStone(p);
++                if (st == NULL || from == NODIR || st-&gt;allowsSpreading(from, true)) {
++                    Floor *newfloor = MakeFloor(&quot;fl_water_source&quot;);
++                    newfloor-&gt;setAttr(&quot;interval&quot;, getAttr(&quot;interval&quot;));
++                    SetFloor(p, newfloor);
++                    Item *it = GetItem(p);
++                    if (it != NULL &amp;&amp; (it-&gt;isKind(&quot;it_crack&quot;) || (it-&gt;isKind(&quot;it_burnable&quot;) &amp;&amp; !it-&gt;isKind(&quot;it_burnable_oil&quot;))))
++                        KillItem(p);
++                }
++            }
++        }
++    }
++       
+     FloodStream::FloodStreamTyp FloodStream::getTyp() const {
+         return (FloodStreamTyp)((objFlags &amp; OBJBIT_SUBTYP) &gt;&gt; 24);
+     } 
+
+Modified: trunk/src/floors/FloodStream.hh
+===================================================================
+--- trunk/src/floors/FloodStream.hh	2009-04-15 14:03:39 UTC (rev 1631)
++++ trunk/src/floors/FloodStream.hh	2009-04-16 22:42:28 UTC (rev 1632)
+@@ -73,6 +73,7 @@
+     
+     private:
+         // Private methods.
++        void tryFlood(GridPos p, Direction from =NODIR);
+         FloodStreamTyp getTyp() const;
+     };
+ 
+
+Modified: trunk/src/items/Crack.cc
+===================================================================
+--- trunk/src/items/Crack.cc	2009-04-15 14:03:39 UTC (rev 1631)
++++ trunk/src/items/Crack.cc	2009-04-16 22:42:28 UTC (rev 1632)
+@@ -104,9 +104,11 @@
+                 for (Direction d = NORTH; d != NODIR; d = previous(d)) {
+                     GridPos p = move(get_pos(), d);
+                     if (Floor *fl = GetFloor(p)) {
+-                        if (fl-&gt;is_destructible()) {
++                        if (fl-&gt;is_destructible() &amp;&amp; (!(objFlags &amp; OBJBIT_TYP) || !fl-&gt;isKind(&quot;fl_space&quot;))) {
++                            // crack on every floor besides abyss, water, swamp and no water cracks on space
+                             if (Item *it = GetItem(p)) {
+-                                if (!(objFlags &amp; OBJBIT_TYP))
++                                // crack neighbor floors if already cracked
++                                if (!(objFlags &amp; OBJBIT_TYP))    // no water crack caused neighbor cracking
+                                     SendMessage(it, &quot;crack&quot;);
+                             } else {
+                                 double spreading = getDefaultedAttr(&quot;spreading&quot;, server::CrackSpreading); 
+
+Modified: trunk/src/items/Vortex.cc
+===================================================================
+--- trunk/src/items/Vortex.cc	2009-04-15 14:03:39 UTC (rev 1631)
++++ trunk/src/items/Vortex.cc	2009-04-16 22:42:28 UTC (rev 1632)
+@@ -126,15 +126,41 @@
+         else if (state == OPENING) {
+             state = OPEN;
+             init_model();
++            BroadcastMessage(&quot;_checkflood&quot;, true, GRID_FLOOR_BIT);
+         }
+     }
+     
+-    bool Vortex::actor_hit (Actor *actor) {
++    bool Vortex::covers_floor(ecl::V2 pos, Actor *a) const {
++        if (GridPos(pos) != get_pos())
++            return false;
++        return (length(pos - get_pos().center()) &lt; 0.25);
++    }
++
++    bool Vortex::actor_hit(Actor *actor) {
+         if (state == OPEN &amp;&amp; (length((actor-&gt;get_pos()) - get_pos().center()) &lt; 0.25) &amp;&amp; actor-&gt;can_be_warped())
+-            prepare_for_warp (actor);
++            prepare_for_warp(actor);
+         return false;
+     }
+     
++    std::list&lt;GridPos&gt; Vortex::warpSpreadPos(bool isWater) {
++        std::list&lt;GridPos&gt; results;
++        if (externalState() &gt; 0) { // open -&gt; may spread 
++            ecl::V2 targetpos;
++            int idx = 0;
++            while (getDestinationByIndex(idx++, targetpos)) {
++                GridPos  targetgpos(targetpos);
++                Vortex *v = dynamic_cast&lt;Vortex*&gt;(GetItem(targetgpos));
++                if (v != NULL) {  // Destination is also a vortex
++                    if (v-&gt;externalState() == 1)   // opened
++                        results.push_back(targetgpos);
++                } else {
++                        results.push_back(targetgpos);
++                }
++            }
++        }
++        return results;
++    }
++    
+     void Vortex::alarm() {
+         if (state == WARPING) {
+             perform_warp();
+@@ -181,7 +207,7 @@
+     }
+ 
+     void Vortex::warp_to(const ecl::V2 &amp;target) {
+-        client::Msg_Sparkle (target);
++        client::Msg_Sparkle(target);
+         if (Actor *actor = dynamic_cast&lt;Actor *&gt;((Object *)getAttr(&quot;$grabbed_actor&quot;))) {
+             WarpActor(actor, target[0], target[1], false);
+             SendMessage(actor, &quot;_appear&quot;);
+
+Modified: trunk/src/items/Vortex.hh
+===================================================================
+--- trunk/src/items/Vortex.hh	2009-04-15 14:03:39 UTC (rev 1631)
++++ trunk/src/items/Vortex.hh	2009-04-16 22:42:28 UTC (rev 1632)
+@@ -60,7 +60,9 @@
+         virtual void animcb();
+ 
+         // Item interface
++        virtual bool covers_floor(ecl::V2 pos, Actor *a) const;
+         virtual bool actor_hit(Actor*);
++        virtual std::list&lt;GridPos&gt; warpSpreadPos(bool isWater);
+ 
+         // TimeHandler interface
+         virtual void alarm();
+
+Modified: trunk/src/items/WormHole.cc
+===================================================================
+--- trunk/src/items/WormHole.cc	2009-04-15 14:03:39 UTC (rev 1631)
++++ trunk/src/items/WormHole.cc	2009-04-16 22:42:28 UTC (rev 1632)
+@@ -107,7 +107,7 @@
+         ASSERT((state &amp; 4) == 0, XLevelRuntime, &quot;WormHole:: Recursion detected!&quot;);
+         if ((state &amp; 2) == 0 &amp;&amp; near_center_p(actor)) {   // may teleport
+             client::Msg_Sparkle (get_pos().center());
+-            V2 targetpos;
++            ecl::V2 targetpos;
+             if (getDestinationByIndex(0, targetpos)) {
+                 sound_event (&quot;warp&quot;);
+                 double latency = getAttr(&quot;interval&quot;);
+@@ -127,6 +127,14 @@
+         return false;
+     }
+     
++    std::list&lt;GridPos&gt; WormHole::warpSpreadPos(bool isWater) {
++        std::list&lt;GridPos&gt; results;
++        ecl::V2 targetpos;
++        if (getDestinationByIndex(0, targetpos))
++            results.push_back(GridPos(targetpos));
++        return results;
++    }
++    
+     void WormHole::add_force(Actor *a, V2 &amp;f) {
+         V2 dv = get_pos().center() - a-&gt;get_pos_force();
+         double squareDist = square(dv);
+
+Modified: trunk/src/items/WormHole.hh
+===================================================================
+--- trunk/src/items/WormHole.hh	2009-04-15 14:03:39 UTC (rev 1631)
++++ trunk/src/items/WormHole.hh	2009-04-16 22:42:28 UTC (rev 1632)
+@@ -61,6 +61,7 @@
+         
+         // Item interface
+         virtual bool actor_hit(Actor *a);
++        virtual std::list&lt;GridPos&gt; warpSpreadPos(bool isWater);
+ 
+         // ForceField interface
+         virtual void add_force(Actor *a, V2 &amp;f);
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2009-04-15 14:03:39 UTC (rev 1631)
++++ trunk/src/items.cc	2009-04-16 22:42:28 UTC (rev 1632)
+@@ -148,5 +148,8 @@
+     }
+ }
+ 
+-
++    std::list&lt;GridPos&gt; Item::warpSpreadPos(bool isWater) {
++        std::list&lt;GridPos&gt; results;
++        return results;
++    }
+ } // namespace enigma
+
+Modified: trunk/src/items.hh
+===================================================================
+--- trunk/src/items.hh	2009-04-15 14:03:39 UTC (rev 1631)
++++ trunk/src/items.hh	2009-04-16 22:42:28 UTC (rev 1632)
+@@ -245,6 +245,8 @@
+ 
+         /* Called when item is activated by the owner of `a'. */
+         virtual ItemAction activate(Actor* a, GridPos p);
++        
++        virtual std::list&lt;GridPos&gt; warpSpreadPos(bool isWater);
+     protected:
+         virtual Object::ObjectType getObjectType() const {return Object::ITEM;}
+         
+
+Modified: trunk/src/stones/Door.cc
+===================================================================
+--- trunk/src/stones/Door.cc	2009-04-15 14:03:39 UTC (rev 1631)
++++ trunk/src/stones/Door.cc	2009-04-16 22:42:28 UTC (rev 1632)
+@@ -107,7 +107,7 @@
+     }
+     
+     bool Door::allowsSpreading(Direction dir, bool isFlood) const {
+-        return state != CLOSED || !has_dir(getFaces(), dir);
++        return state != CLOSED || (dir != NODIR ? !has_dir(getFaces(), dir) : (getAttr(&quot;flavor&quot;).to_string() == &quot;d&quot;));
+     }
+     
+     StoneResponse Door::collision_response(const StoneContact &amp;sc) {
+
+Modified: trunk/src/stones/WindowStone.cc
+===================================================================
+--- trunk/src/stones/WindowStone.cc	2009-04-15 14:03:39 UTC (rev 1631)
++++ trunk/src/stones/WindowStone.cc	2009-04-16 22:42:28 UTC (rev 1632)
+@@ -139,7 +139,7 @@
+     }
+     
+     bool WindowStone::allowsSpreading(Direction dir, bool isFlood) const {
+-        return !has_dir(getFaces(), dir);
++        return (dir != NODIR) ? !has_dir(getFaces(), dir) : true;
+     }
+     
+     void WindowStone::actor_hit(const StoneContact &amp;sc) {
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001061.html">[Enigma-game-svn] r1631 - trunk/data
+</A></li>
+	<LI>Next message: <A HREF="001063.html">[Enigma-game-svn] r1633 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1062">[ date ]</a>
+              <a href="thread.html#1062">[ thread ]</a>
+              <a href="subject.html#1062">[ subject ]</a>
+              <a href="author.html#1062">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

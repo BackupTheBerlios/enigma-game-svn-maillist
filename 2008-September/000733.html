@@ -1,0 +1,332 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1303 - in trunk: data/gfx40 src src/items	src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1303%20-%20in%20trunk%3A%20data/gfx40%20src%20src/items%0A%09src/stones&In-Reply-To=%3C200809042125.m84LPxYY005452%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000732.html">
+   <LINK REL="Next"  HREF="000734.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1303 - in trunk: data/gfx40 src src/items	src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1303%20-%20in%20trunk%3A%20data/gfx40%20src%20src/items%0A%09src/stones&In-Reply-To=%3C200809042125.m84LPxYY005452%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1303 - in trunk: data/gfx40 src src/items	src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Sep  4 23:25:59 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000732.html">[Enigma-game-svn] r1302 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000734.html">[Enigma-game-svn] r1304 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#733">[ date ]</a>
+              <a href="thread.html#733">[ thread ]</a>
+              <a href="subject.html#733">[ subject ]</a>
+              <a href="author.html#733">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-09-04 23:25:57 +0200 (Thu, 04 Sep 2008)
+New Revision: 1303
+
+Modified:
+   trunk/data/gfx40/sh_window.png
+   trunk/src/WorldProxy.cc
+   trunk/src/floors.cc
+   trunk/src/items.hh
+   trunk/src/items/Meditation.cc
+   trunk/src/items/Vortex.cc
+   trunk/src/lua.cc
+   trunk/src/stones.hh
+   trunk/src/stones/Door.cc
+   trunk/src/stones/Door.hh
+   trunk/src/stones/WindowStone.cc
+   trunk/src/stones/WindowStone.hh
+Log:
+Trunk 1.1: new API reengineering
+- fix crash on Lua usage of &quot;.&quot; instead of &quot;:&quot; on messages - throw error
+- fix meditation partial misspelled &quot;vulcano&quot; instead of &quot;volcano&quot;
+- adjust global attribute &quot;MeditationForce&quot; to &quot;MeditationStrength&quot;
+- center vortex blocking sparkle on destination vortex given by uncentered
+  position value
+- fire spreading for doors and windows:
+  - fire spreads into open doors
+  - fire spreads onto window grid if no face on initiator side
+  - fire spreads from burning door grid if door is open
+  - fire spreads from window grid to grids not blocked by faces
+  - spreading feature is fire independent and reusable for water floods
+- fix window shadow image gfx40
+
+Modified: trunk/data/gfx40/sh_window.png
+===================================================================
+(Binary files differ)
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2008-09-04 11:54:20 UTC (rev 1302)
++++ trunk/src/WorldProxy.cc	2008-09-04 21:25:57 UTC (rev 1303)
+@@ -86,7 +86,7 @@
+             return server::FlatForce;
+         } else if (key == &quot;FrictionFactor&quot;) {
+             return server::FrictionFactor;
+-        } else if (key == &quot;MeditationForce&quot;) {
++        } else if (key == &quot;MeditationStrength&quot;) {
+             return server::HoleForce;
+         } else if (key == &quot;IceFriction&quot;) {
+             return server::IceFriction;
+@@ -172,7 +172,7 @@
+             server::FlatForce = val;
+         } else if (key == &quot;FrictionFactor&quot;) {
+             server::FrictionFactor = val;
+-        } else if (key == &quot;MeditationForce&quot;) {
++        } else if (key == &quot;MeditationStrength&quot;) {
+             server::HoleForce = val;
+         } else if (key == &quot;IceFriction&quot;) {
+             server::IceFriction = val;
+
+Modified: trunk/src/floors.cc
+===================================================================
+--- trunk/src/floors.cc	2008-09-04 11:54:20 UTC (rev 1302)
++++ trunk/src/floors.cc	2008-09-04 21:25:57 UTC (rev 1303)
+@@ -232,10 +232,9 @@
+     // Special case: &quot;st-flrock&quot;: No fire at all!
+     bool no_closing_stone = true;
+     if (Stone *st = GetStone(p)) {
+-        string model = st-&gt;get_kind();
+         if (st-&gt;is_movable())
+             no_closing_stone = false;
+-        else if(!st-&gt;is_floating())
++        else if(!st-&gt;allowsSpreading(sourcedir))
+             return false;
+     }
+ 
+@@ -380,26 +379,24 @@
+ 
+ void Floor::on_burnable_animcb(bool justIgnited) {
+     GridPos p = get_pos();
+-    // Analyse and maybe kill stone: May the fire spread?
+-    bool spread = true;
+-    if( Stone *st = GetStone(p)) {
+-        // Return true on fire-message to allow fire to spread.
+-        // Floating stones also allow spreading. Don't use an
+-        // OR-statement as the message might kill the stone.
+-        spread = st-&gt;is_floating();
+-        if(to_int(SendMessage(st, &quot;fire&quot;)) != 0.0)
+-            spread = true;
+-    }
++    // 
++    SendMessage(GetStone(p), &quot;fire&quot;);
++
+     // Will we stop this time with burning?
+     bool cont_fire = justIgnited || has_firetype(flft_eternal) || DoubleRand(0,1) &lt; 0.7;
+     FloorHeatFlags flhf = (FloorHeatFlags) (flhf_fire
+         | (justIgnited ? flhf_first : flhf_fire) | (cont_fire ? flhf_fire : flhf_last));
+-    if(spread) {
++
++    Stone *st = GetStone(p);   // stone can be killed due to fire message
++    if (st == NULL || st-&gt;allowsSpreading(NORTH))
+         heat_neighbor(NORTH, flhf);
++    if (st == NULL || st-&gt;allowsSpreading(EAST))
+         heat_neighbor(EAST,  flhf);
++    if (st == NULL || st-&gt;allowsSpreading(SOUTH))
+         heat_neighbor(SOUTH, flhf);
++    if (st == NULL || st-&gt;allowsSpreading(WEST))
+         heat_neighbor(WEST,  flhf);
+-    }
++
+     if(cont_fire)
+         // continue burning
+         //   -&gt; put animation
+
+Modified: trunk/src/items/Meditation.cc
+===================================================================
+--- trunk/src/items/Meditation.cc	2008-09-04 11:54:20 UTC (rev 1302)
++++ trunk/src/items/Meditation.cc	2008-09-04 21:25:57 UTC (rev 1303)
+@@ -240,7 +240,7 @@
+         {&quot;it_meditation_dent&quot;,  it_meditation_dent,  itf_static | itf_fireproof},
+         {&quot;it_meditation_bump&quot;,  it_meditation_bump,  itf_static | itf_fireproof},
+         {&quot;it_meditation_hill&quot;,  it_meditation_hill,  itf_static | itf_fireproof},
+-        {&quot;it_meditation_vulcano&quot;,  it_meditation_vulcano,  itf_static | itf_fireproof},
++        {&quot;it_meditation_volcano&quot;,  it_meditation_volcano,  itf_static | itf_fireproof},
+     };
+ 
+     BOOT_REGISTER_START
+@@ -250,7 +250,7 @@
+         BootRegister(new Meditation(-1), &quot;it_meditation_dent&quot;);
+         BootRegister(new Meditation(1), &quot;it_meditation_bump&quot;);
+         BootRegister(new Meditation(2), &quot;it_meditation_hill&quot;);
+-        BootRegister(new Meditation(3), &quot;it_meditation_vulcano&quot;);
++        BootRegister(new Meditation(3), &quot;it_meditation_volcano&quot;);
+     BOOT_REGISTER_END
+ 
+ } // namespace enigma
+
+Modified: trunk/src/items/Vortex.cc
+===================================================================
+--- trunk/src/items/Vortex.cc	2008-09-04 11:54:20 UTC (rev 1302)
++++ trunk/src/items/Vortex.cc	2008-09-04 21:25:57 UTC (rev 1303)
+@@ -220,7 +220,7 @@
+                 if (st &amp;&amp; st-&gt;is_sticky(actor)) {
+                     // is destination vortex blocked? redirect
+                     setAttr(&quot;$dest_idx&quot;, dest_idx + 1);
+-                    client::Msg_Sparkle(v_target);
++                    client::Msg_Sparkle(p_target.center());
+                     WarpActor(actor, v_target[0], v_target[1], false);
+                     GameTimer.set_alarm(this, 0.4, false);
+                 }
+
+Modified: trunk/src/items.hh
+===================================================================
+--- trunk/src/items.hh	2008-09-04 11:54:20 UTC (rev 1302)
++++ trunk/src/items.hh	2008-09-04 21:25:57 UTC (rev 1303)
+@@ -93,7 +93,7 @@
+         it_meditation_dent,
+         it_meditation_bump,
+         it_meditation_hill,
+-        it_meditation_vulcano,
++        it_meditation_volcano,
+         it_odometer,
+         it_pencil,
+         it_pin,
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-09-04 11:54:20 UTC (rev 1302)
++++ trunk/src/lua.cc	2008-09-04 21:25:57 UTC (rev 1303)
+@@ -1374,16 +1374,26 @@
+ std::vector&lt;std::string&gt; messageLIFO;
+ 
+ static int objectDirectMessage(lua_State *L) {
++    // object, value
+     std::string message = messageLIFO.back();
+     messageLIFO.pop_back();
++    if (lua_gettop(L) &lt; 1 || !is_object(L, 1)) {
++        throwLuaError(L, &quot;Message error: no target object - may be caused by usage of '.' instead of ':'&quot;);
++        return 0;
++    }
+     lua_pushstring(L, message.c_str());
+     lua_insert(L, 2);    // message below optional value
+     return objectMessage(L);
+ }
+ 
+ static int groupDirectMessage(lua_State *L) {
++    // group, value
+     std::string message = messageLIFO.back();
+     messageLIFO.pop_back();
++    if (lua_gettop(L) &lt; 1 || !is_group(L, 1)) {
++        throwLuaError(L, &quot;Message error: no target group - may be caused by usage of '.' instead of ':'&quot;);
++        return 0;
++    }
+     lua_pushstring(L, message.c_str());
+     lua_insert(L, 2);    // message below optional value
+     return groupMessage(L);
+
+Modified: trunk/src/stones/Door.cc
+===================================================================
+--- trunk/src/stones/Door.cc	2008-09-04 11:54:20 UTC (rev 1302)
++++ trunk/src/stones/Door.cc	2008-09-04 21:25:57 UTC (rev 1303)
+@@ -106,6 +106,10 @@
+         }
+     }
+     
++    bool Door::allowsSpreading(Direction dir) const {
++        return state != CLOSED || !has_dir(getFaces(), dir);
++    }
++    
+     StoneResponse Door::collision_response(const StoneContact &amp;sc) {
+         Direction cf = contact_face(sc);
+         if (state == OPEN)
+
+Modified: trunk/src/stones/Door.hh
+===================================================================
+--- trunk/src/stones/Door.hh	2008-09-04 11:54:20 UTC (rev 1302)
++++ trunk/src/stones/Door.hh	2008-09-04 21:25:57 UTC (rev 1303)
+@@ -63,6 +63,7 @@
+         // Stone interface
+         virtual bool is_floating() const;
+         virtual bool is_transparent(Direction d) const;
++        virtual bool allowsSpreading(Direction dir) const;
+         virtual StoneResponse collision_response(const StoneContact &amp;sc);
+         virtual void actor_hit(const StoneContact &amp;sc);
+         virtual const char *collision_sound();
+
+Modified: trunk/src/stones/WindowStone.cc
+===================================================================
+--- trunk/src/stones/WindowStone.cc	2008-09-04 11:54:20 UTC (rev 1302)
++++ trunk/src/stones/WindowStone.cc	2008-09-04 21:25:57 UTC (rev 1303)
+@@ -137,6 +137,10 @@
+         }
+     }
+     
++    bool WindowStone::allowsSpreading(Direction dir) const {
++        return !has_dir(getFaces(), dir);
++    }
++    
+     void WindowStone::actor_hit(const StoneContact &amp;sc) {
+         Actor *a = sc.actor;
+             
+
+Modified: trunk/src/stones/WindowStone.hh
+===================================================================
+--- trunk/src/stones/WindowStone.hh	2008-09-04 11:54:20 UTC (rev 1302)
++++ trunk/src/stones/WindowStone.hh	2008-09-04 21:25:57 UTC (rev 1303)
+@@ -66,6 +66,7 @@
+         virtual void animcb();
+ 
+         // Stone interface
++        virtual bool allowsSpreading(Direction dir) const;
+         virtual void actor_hit(const StoneContact &amp;sc);
+         virtual StoneResponse collision_response(const StoneContact &amp;sc);
+         virtual const char *collision_sound() {return &quot;glass&quot;;}
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2008-09-04 11:54:20 UTC (rev 1302)
++++ trunk/src/stones.hh	2008-09-04 21:25:57 UTC (rev 1303)
+@@ -204,6 +204,11 @@
+         virtual bool is_sticky(const Actor *a) const { 
+             return !is_floating(); 
+         }
++        
++        // Fire and water spreading that is face and state dependent for stones like doors, window
++        virtual bool allowsSpreading(Direction dir) const {
++            return is_floating();
++        }
+ 
+         /* ---------- Stone interface (events) ---------- */
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000732.html">[Enigma-game-svn] r1302 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000734.html">[Enigma-game-svn] r1304 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#733">[ date ]</a>
+              <a href="thread.html#733">[ thread ]</a>
+              <a href="subject.html#733">[ subject ]</a>
+              <a href="author.html#733">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

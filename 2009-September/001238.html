@@ -1,0 +1,477 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1809 - in trunk: data data/levels/lib src	src/actors src/items src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1809%20-%20in%20trunk%3A%20data%20data/levels/lib%20src%0A%09src/actors%20src/items%20src/stones&In-Reply-To=%3C200909162146.n8GLk0d0008008%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001237.html">
+   <LINK REL="Next"  HREF="001239.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1809 - in trunk: data data/levels/lib src	src/actors src/items src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1809%20-%20in%20trunk%3A%20data%20data/levels/lib%20src%0A%09src/actors%20src/items%20src/stones&In-Reply-To=%3C200909162146.n8GLk0d0008008%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1809 - in trunk: data data/levels/lib src	src/actors src/items src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Sep 16 23:46:00 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001237.html">[Enigma-game-svn] r1808 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="001239.html">[Enigma-game-svn] r1810 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1238">[ date ]</a>
+              <a href="thread.html#1238">[ thread ]</a>
+              <a href="subject.html#1238">[ subject ]</a>
+              <a href="author.html#1238">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-09-16 23:45:56 +0200 (Wed, 16 Sep 2009)
+New Revision: 1809
+
+Modified:
+   trunk/data/levels/lib/libpuzzle_3.xml
+   trunk/data/models-2d.lua
+   trunk/src/WorldProxy.cc
+   trunk/src/actors/Balls.cc
+   trunk/src/actors/KillerActor.cc
+   trunk/src/actors/KillerActor.hh
+   trunk/src/items/PullerItem.cc
+   trunk/src/server.cc
+   trunk/src/server.hh
+   trunk/src/stones/PuzzleStone.cc
+   trunk/src/world.hh
+Log:
+Trunk 1.1: 
+- fix it_puller: attribute set of orientation
+- fix ac_killer: report shield like ac_rotor and ac_top
+- fix ac_marble, ac_pearl: do not shield if assigned to owner nil
+- libpuzzle: extention patch by Raoul to allow marked shuffle push positions
+    beneath puzzle stones
+- st_puzzle - allow config of fallen puzzle object kind:
+  - global attribute &quot;FallenPuzzle&quot;, type string, default &quot;fl_gray&quot;
+  - accepts any floor kind
+  - accepts &quot;=key&quot; syntax like st_surprise for tile declaration usage
+      (allows declaration of own friction, adhesion)
+  - accepts items &quot;it_strip&quot;, &quot;it_pipe&quot; with special behaviour:
+    - new items have same connections as the fallen puzzle
+    - existing strips join connections with fallen ones
+    - existing pipes preceed fallen ones
+Note:
+- any object kind besides floors, pipe and strips are depreceated as
+  FallenPuzzle values.
+
+
+Modified: trunk/data/levels/lib/libpuzzle_3.xml
+===================================================================
+--- trunk/data/levels/lib/libpuzzle_3.xml	2009-09-16 18:23:02 UTC (rev 1808)
++++ trunk/data/levels/lib/libpuzzle_3.xml	2009-09-16 21:45:56 UTC (rev 1809)
+@@ -34,11 +34,11 @@
+ --        print(&quot;puzzle final - huddle of size &quot;..#huddle)
+     end
+ --    print(&quot;puzzle final - num huddles &quot;..#huddles)
+-    
++
+     -- shuffle huddles
+     local width = wo[&quot;Width&quot;]
+     local height = wo[&quot;Height&quot;]
+-    local offsets = {po(-1,0), po(0,1), po(1,0), po(0,-1)}
++    local offsets = {W, S, E, N}
+     local dirchars = {&quot;w&quot;,&quot;s&quot;,&quot;e&quot;,&quot;n&quot;}
+     for h, huddle in ipairs(huddles) do
+ --        print(&quot;puzzle final - shuffle huddle of size &quot;..#huddle)
+@@ -53,53 +53,70 @@
+             end
+             intensity = math.max(intensity, puz[&quot;intensity&quot;])
+         end
++
+         for puz in huddle do
+             for dir, offset in ipairs(offsets) do
+                 local cand = puz - offset
+                 if cand:exists() then
+                     local cfloor = fl(cand)
++
++                    local may_push = true
+                     if pfloors[cfloor] == nil then
+-                        local may_push = true
+                         if algorithm == 1 then
+                             local pushdirs = cfloor[&quot;push_directions&quot;]
+                             if type(pushdirs) ~= &quot;string&quot; or not pushdirs:find(dirchars[dir]) then
+                                 may_push = false
+                             end
+                         end
+-                        if may_push then
+-                            local length = 1
+-                            local lpos = puz + offset
+-                            while lpos:exists() and pfloors[fl(lpos)] ~= nil do
+-                                length = length + 1
+-                                lpos = lpos + offset
++                    else  -- floor is under the puzzle but if its marked, the levelautor wants to shuffle from here
++                        may_push = false
++                        if algorithm == 1 then
++                            local pushdirs = cfloor[&quot;push_directions&quot;]
++                            if type(pushdirs) == &quot;string&quot; and pushdirs:find(dirchars[dir]) then
++                                may_push = true
+                             end
+-                            if length &gt; 1 then
+-                                table.insert(pushes, {fl(puz), dir - 1, length})
+---                                print(&quot;  push (&quot;..cfloor.x..&quot;,&quot;..cfloor.y..&quot;) dir &quot;..(dir-1)..&quot; length &quot;..length)
+-                            end
+                         end
+                     end
++
++                    -- Add all possible shuffles from current position to the table
++                    if may_push then
++                        local length = 1
++                        local lpos = puz + offset
++                        while lpos:exists() and pfloors[fl(lpos)] ~= nil do
++                            length = length + 1
++                            lpos = lpos + offset
++                        end
++                        if length &gt; 1 then
++                            table.insert(pushes, {fl(puz), dir - 1, length})
++--                          print(&quot;  push (&quot;..cfloor.x..&quot;,&quot;..cfloor.y..&quot;) dir &quot;..(dir-1)..&quot; length &quot;..length)
++                        end
++                    end
++
+                 end
+             end
+         end
++
++        -- How many pull_rotations we try to do?
+         intensity = intensity * #huddle
+         if intensity &gt; 0 then
+             intensity = intensity + math.random(0, 1)
+         end
++
++        -- and now, let's shuffle!
+         while intensity &gt; 0 and #pushes &gt; 0 do
+             local pidx = random(#pushes)  -- select a random push pos/dir
+             local puzz = st(pushes[pidx][1])
+             local dir = pushes[pidx][2]
+             local length = pushes[pidx][3]
+             local nextpuzz = st(puzz + offsets[dir + 1])
+-            
++
+             -- check for leading sequence of hollow puzzles
+             while length &gt; 2 and puzz[&quot;hollow&quot;] and nextpuzz[&quot;hollow&quot;] do
+                 puzz = nextpuzz
+                 nextpuzz = st(puzz + offsets[dir + 1])
+                 length = length - 1
+             end
+-            
++
+             if not nextpuzz[&quot;hollow&quot;] then
+                 puzz:pull_rotate(dir)
+             end
+@@ -148,7 +165,7 @@
+                             &quot;n&quot;,&quot;nw&quot;,&quot;ns&quot;,&quot;nsw&quot;,&quot;ne&quot;,&quot;new&quot;,&quot;nes&quot;,&quot;nesw&quot;})[connections]
+                 end
+             end
+-            
++
+             if result == nil then
+                 result = ti(tile)
+             else
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2009-09-16 18:23:02 UTC (rev 1808)
++++ trunk/data/models-2d.lua	2009-09-16 21:45:56 UTC (rev 1809)
+@@ -1827,7 +1827,6 @@
+ --------------------------
+ do
+     DefAlias(&quot;st_break_bug-anim&quot;, &quot;st_flat_breaking&quot;)
+-    DefAlias(&quot;st-explosion&quot;, &quot;it_explosion&quot;)
+     DefAlias(&quot;st-glass_move&quot;, &quot;st-glass&quot;);
+     DefAlias(&quot;st_break_laser&quot;, &quot;st_flat&quot;)
+     DefAlias(&quot;st_break_laser-anim&quot;, &quot;st_flat_breaking&quot;)
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2009-09-16 18:23:02 UTC (rev 1808)
++++ trunk/src/WorldProxy.cc	2009-09-16 21:45:56 UTC (rev 1809)
+@@ -94,6 +94,8 @@
+             return server::ElectricForce;
+         } else if (key == &quot;ExtralifeGlasses&quot;) {
+             return server::ExtralifeGlasses;
++        } else if (key == &quot;FallenPuzzle&quot;) {
++            return server::FallenPuzzle;
+         } else if (key == &quot;Fragility&quot;) {
+             return server::Fragility;
+         } else if (key == &quot;FrictionStrength&quot;) {
+@@ -201,6 +203,8 @@
+             server::ElectricForce = val;
+         } else if (key == &quot;ExtralifeGlasses&quot;) {
+             server::ExtralifeGlasses = val;
++        } else if (key == &quot;FallenPuzzle&quot;) {
++            server::FallenPuzzle = val.to_string();
+         } else if (key == &quot;Fragility&quot;) {
+             server::Fragility = val;
+         } else if (key == &quot;FrictionStrength&quot;) {
+
+Modified: trunk/src/actors/Balls.cc
+===================================================================
+--- trunk/src/actors/Balls.cc	2009-09-16 18:23:02 UTC (rev 1808)
++++ trunk/src/actors/Balls.cc	2009-09-16 21:45:56 UTC (rev 1809)
+@@ -119,7 +119,7 @@
+         // Shield, booze and invisibility can be activated in all states except DEAD
+     
+         if (state != DEAD) {
+-            if (m.message == &quot;_shield&quot; &amp;&amp; getAttr(&quot;owner&quot;) ==  (int)m.value) {
++            if (m.message == &quot;_shield&quot; &amp;&amp; getAttr(&quot;owner&quot;).getType() != Value::DEFAULT &amp;&amp;  getAttr(&quot;owner&quot;) ==  (int)m.value) {
+                 m_shield_rest_time += SHIELD_TIME;
+                 update_halo();
+                 return true;
+
+Modified: trunk/src/actors/KillerActor.cc
+===================================================================
+--- trunk/src/actors/KillerActor.cc	2009-09-16 18:23:02 UTC (rev 1808)
++++ trunk/src/actors/KillerActor.cc	2009-09-16 21:45:56 UTC (rev 1809)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2008 Ronald Lamprecht
++ * Copyright (C) 2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -41,10 +41,6 @@
+         return false;
+     }
+     
+-    bool Killer::has_shield() const {
+-        return false;
+-    }
+-
+     bool Killer::on_collision(Actor *a) {
+         if (a-&gt;is_on_floor())
+             SendMessage(a, &quot;_shatter&quot;);
+
+Modified: trunk/src/actors/KillerActor.hh
+===================================================================
+--- trunk/src/actors/KillerActor.hh	2009-09-16 18:23:02 UTC (rev 1808)
++++ trunk/src/actors/KillerActor.hh	2009-09-16 21:45:56 UTC (rev 1809)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2008 Ronald Lamprecht
++ * Copyright (C) 2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -39,7 +39,6 @@
+ 
+         // Actor interface
+         virtual bool is_dead() const;
+-        virtual bool has_shield() const;
+         virtual bool on_collision(Actor *a);
+     };
+ 
+
+Modified: trunk/src/items/PullerItem.cc
+===================================================================
+--- trunk/src/items/PullerItem.cc	2009-09-16 18:23:02 UTC (rev 1808)
++++ trunk/src/items/PullerItem.cc	2009-09-16 21:45:56 UTC (rev 1809)
+@@ -35,7 +35,7 @@
+     
+     void PullerItem::setAttr(const string&amp; key, const Value &amp;val) {
+         if (key == &quot;orientation&quot;) {
+-            objFlags = (objFlags &amp; ~OBJBIT_ORIENTATION) | ((int)(val) &gt;&gt; 24);
++            objFlags = (objFlags &amp; ~OBJBIT_ORIENTATION) | (((int)(val) &lt;&lt; 24) &amp; OBJBIT_ORIENTATION);
+         }
+         Item::setAttr(key, val);
+     }
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2009-09-16 18:23:02 UTC (rev 1808)
++++ trunk/src/server.cc	2009-09-16 21:45:56 UTC (rev 1809)
+@@ -119,6 +119,7 @@
+ double   server::FrictionFactor;
+ int      server::GlassesVisibility;         // no Lua access
+ int      server::ExtralifeGlasses;
++std::string server::FallenPuzzle;
+ double   server::HoleForce;
+ lev::levelStatusType   server::LevelStatus; // no Lua access
+ double   server::MagnetForce;
+@@ -285,27 +286,31 @@
+     server::FollowMethod      = display::FOLLOW_FLIP;      // FLIP
+     server::FollowThreshold   = 0.5;
+     server::ShowMoves         = false;
++
++    server::GlassesVisibility = 0;     // nothing
++    server::FlatForce         = 0.0;
++    server::ConstantForce     = ecl::V2(0, 0);
++    
++    // object class specific with Lua access 
+     server::Brittleness       = 0.5;
++    server::BumperForce       = 200.0;
++    server::CrackSpreading    = 0.5;
++    server::ElectricForce     = 15.0;
++    server::ExtralifeGlasses  = 19;  // death + hollow + lightpassenger
++    server::FallenPuzzle      = &quot;fl_gray&quot;;
+     server::Fragility         = 1.0;
+-    server::CrackSpreading    = 0.5;
+-    server::ConstantForce       = ecl::V2(0, 0);
+-    server::SlopeForce        = 25.0;
+-    server::FlatForce         = 0.0;
+     server::FrictionFactor    = 1.0;
+-    server::GlassesVisibility = 0;     // nothing
+-    server::ExtralifeGlasses  = 19;  // death + hollow + lightpassenger
+-    server::ElectricForce     = 15.0;
+-    server::BumperForce       = 200.0;
+-    server::WaterSinkSpeed    = 10000;
+-    server::SwampSinkSpeed    = 4;
++    server::HoleForce         = 1.0;
+     server::MagnetForce       = 30;
+     server::MagnetRange       = 10;
+     server::MaxOxydColor      = 7;    // for compatibility
++    server::RubberViolationStrength = 50;
++    server::SlopeForce        = 25.0;
+     server::SubSoil           = 0;
+-    server::RubberViolationStrength = 50;
++    server::SwampSinkSpeed    = 4;
++    server::WaterSinkSpeed    = 10000;
+     server::WormholeForce     = 30;
+     server::WormholeRange     = 10;
+-    server::HoleForce         = 1.0;
+ 
+     move_counter = 0;
+ 
+
+Modified: trunk/src/server.hh
+===================================================================
+--- trunk/src/server.hh	2009-09-16 18:23:02 UTC (rev 1808)
++++ trunk/src/server.hh	2009-09-16 21:45:56 UTC (rev 1809)
+@@ -120,6 +120,7 @@
+     
+     extern int      GlassesVisibility;
+     extern int      ExtralifeGlasses;
++    extern std::string FallenPuzzle;
+     
+     extern Value     FollowAction;
+     extern bool      FollowGrid;
+
+Modified: trunk/src/stones/PuzzleStone.cc
+===================================================================
+--- trunk/src/stones/PuzzleStone.cc	2009-09-16 18:23:02 UTC (rev 1808)
++++ trunk/src/stones/PuzzleStone.cc	2009-09-16 21:45:56 UTC (rev 1809)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2008 Ronald Lamprecht
++ * Copyright (C) 2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -20,6 +20,7 @@
+ 
+ #include &quot;stones/PuzzleStone.hh&quot;
+ #include &quot;errors.hh&quot;
++#include &quot;lua.hh&quot;
+ #include &quot;main.hh&quot;
+ #include &quot;player.hh&quot;
+ #include &quot;server.hh&quot;
+@@ -128,7 +129,7 @@
+ 
+     void PuzzleStone::init_model() {
+         if (state == EXPLODING) {
+-            set_anim(&quot;st-explosion&quot;);
++            set_anim(&quot;it_explosion&quot;);
+             return;
+         }
+         int m = getConnections();
+@@ -276,9 +277,29 @@
+ 
+     void PuzzleStone::on_floor_change() {
+         if (state == FALLING) {
++            GridPos p = get_pos();
+             state = FALLEN;   // we need to mark the puzzle as the floor set recalls this methods
+-            SetFloor(get_pos(), MakeFloor(&quot;fl_gray&quot;));
+-            KillStone(get_pos());
++            if (server::FallenPuzzle.find('=') == 0) {
++                if (lua::CallFunc(lua::LevelState(), &quot;enigma.settile&quot;, server::FallenPuzzle.substr(1), this)) {
++                    throw XLevelRuntime(std::string(&quot;fallen puzzle set tile failed:\n&quot;)+lua::LastError(lua::LevelState()));
++                }
++            } else if (server::FallenPuzzle == &quot;it_strip&quot; || server::FallenPuzzle == &quot;it_pipe&quot;) {
++                std::string con = getAttr(&quot;connections&quot;).to_string();
++                if (Item * it = GetItem(p)) {
++                    if (it-&gt;getClass() == server::FallenPuzzle) {
++                        if (server::FallenPuzzle == &quot;it_strip&quot;)
++                            con += it-&gt;getAttr(&quot;connections&quot;).to_string();
++                        else  // pipe - keep old connections
++                            con = it-&gt;getAttr(&quot;connections&quot;).to_string();                        
++                    }
++                }
++                Item *it = MakeItem(server::FallenPuzzle.c_str());
++                it-&gt;setAttr(&quot;connections&quot;, con);
++                SetItem(p, it);
++            } else if (server::FallenPuzzle.find(&quot;fl_&quot;) == 0) {
++                SetFloor(p, MakeFloor(server::FallenPuzzle.c_str()));
++            }
++            KillStone(p);
+         }
+     }
+     
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2009-09-16 18:23:02 UTC (rev 1808)
++++ trunk/src/world.hh	2009-09-16 21:45:56 UTC (rev 1809)
+@@ -337,20 +337,9 @@
+ 
+     void DisposeObject(Object *o);
+ 
+-    void DefineSimpleStone (const string &amp;kind, const string &amp;sound, 
+-                            int hollow, int glass);
+-
+-    void DefineSimpleStoneMovable (const string &amp;kind, const string &amp;sound, 
+-                                   int glass);
+-
+-    void DefineSimpleFloor(const string &amp;kind, double friction,
+-                           double mousefactor, bool burnable,
+-                           const string &amp;firetransform);
+-
+     /* Register a new object. */
+     void BootRegister(Object *obj, const char * kind = NULL, bool isRegistration = true);
+     void Register (const string &amp;kind, Object *obj);
+-//    void RegisterActor (Actor *ac);
+ 
+ 
+     /* Shutdown object repository */
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001237.html">[Enigma-game-svn] r1808 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="001239.html">[Enigma-game-svn] r1810 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1238">[ date ]</a>
+              <a href="thread.html#1238">[ thread ]</a>
+              <a href="subject.html#1238">[ subject ]</a>
+              <a href="author.html#1238">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

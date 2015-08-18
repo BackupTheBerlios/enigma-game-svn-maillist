@@ -1,0 +1,697 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r981 - in trunk: data src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r981%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200801131319.m0DDJVQZ030646%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000412.html">
+   <LINK REL="Next"  HREF="000414.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r981 - in trunk: data src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r981%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200801131319.m0DDJVQZ030646%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r981 - in trunk: data src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Jan 13 14:19:31 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000412.html">[Enigma-game-svn] r980 - in trunk: data src src/stones
+</A></li>
+        <LI>Next message: <A HREF="000414.html">[Enigma-game-svn] r982 - trunk/doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#413">[ date ]</a>
+              <a href="thread.html#413">[ thread ]</a>
+              <a href="subject.html#413">[ subject ]</a>
+              <a href="author.html#413">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-01-13 14:19:30 +0100 (Sun, 13 Jan 2008)
+New Revision: 981
+
+Modified:
+   trunk/data/init.lua
+   trunk/src/Object.cc
+   trunk/src/Object.hh
+   trunk/src/items.cc
+   trunk/src/stones/BlockerStone.cc
+   trunk/src/stones/BlockerStone.hh
+   trunk/src/stones/BoulderStone.hh
+   trunk/src/stones/Switch.hh
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+   trunk/src/world.hh
+Log:
+Trunk 1.1: Reengineering Blocker
+- renaming it-blocker to it_blocker, it-blocker-new to it_blocker_new
+- blocker as StateObject: make use of state default support
+- add Object method &quot;transferIdentity(Object *target)&quot; that transfers name,
+    targets, actions and all user attributes set to this object
+- blocker identity transfer between stone and item
+
+
+Modified: trunk/data/init.lua
+===================================================================
+--- trunk/data/init.lua	2008-01-10 23:51:58 UTC (rev 980)
++++ trunk/data/init.lua	2008-01-13 13:19:30 UTC (rev 981)
+@@ -44,6 +44,8 @@
+ }
+ 
+ RenamingObjectsNew2Old = {
++    it_blocker = &quot;it-blocker&quot;,
++    it_blocker_new = &quot;it-blocker-new&quot;,
+     st_blocker = &quot;st-blocker&quot;,
+     st_blocker_new = &quot;st-blocker-growing&quot;,
+     st_boulder = &quot;st-bolder&quot;,
+@@ -150,7 +152,8 @@
+ end
+ 
+ MessageRenaming = {
+-    [&quot;it-blocker__trigger&quot;] = &quot;toggle&quot;,
++    it_blocker__trigger = &quot;toggle&quot;,
++    it_blocker__openclose = &quot;toggle&quot;,
+     [&quot;it-burnable__trigger&quot;] = &quot;ignite&quot;,
+     [&quot;it-burnable_ignited__trigger&quot;] = &quot;ignite&quot;,
+     [&quot;it-burnable_burning__trigger&quot;] = &quot;ignite&quot;,
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2008-01-10 23:51:58 UTC (rev 980)
++++ trunk/src/Object.cc	2008-01-13 13:19:30 UTC (rev 981)
+@@ -174,6 +174,34 @@
+         return Value(Value::DEFAULT);
+     }
+     
++    void Object::transferName(Object *target) {
++        if (target == NULL)
++            return;
++        if (Value v = getAttr(&quot;name&quot;)) {
++            std::string name(v);
++            UnnameObject(this);
++            if (Value v = target-&gt;getAttr(&quot;name&quot;)) {
++                target-&gt;warning(&quot;name '%s' overwritten by '%s'&quot;,
++                                v.to_string().c_str(), name.c_str());
++                UnnameObject(target);
++            }
++            NameObject(target, name);
++        }
++    }
++    
++    void Object::transferIdentity(Object *target) {
++        if (target == NULL)
++            return;
++        transferName(target);
++        for (AttribMap::iterator it = attribs.begin(); it != attribs.end(); ++it) {
++            // copy user attributes starting with &quot;_&quot; and
++            // target and actions including their stated versions
++            if ( it-&gt;first.find(&quot;_&quot;) == 0 || it-&gt;first.find(&quot;target&quot;) == 0
++                    || it-&gt;first.find(&quot;action&quot;) == 0)
++                target-&gt;set_attrib(it-&gt;first, it-&gt;second);
++        }
++    }
++    
+     void Object::performAction(const Value&amp; val) {
+         Value messageValue = val;
+         if (getDefaultedAttr(&quot;inverse&quot;, false).to_bool())
+
+Modified: trunk/src/Object.hh
+===================================================================
+--- trunk/src/Object.hh	2008-01-10 23:51:58 UTC (rev 980)
++++ trunk/src/Object.hh	2008-01-13 13:19:30 UTC (rev 981)
+@@ -148,6 +148,8 @@
+ 
+         virtual void warning(const char *format, ...) const;
+         virtual ObjectType getObjectType() const;
++        void transferName(Object *target);
++        virtual void transferIdentity(Object *target);
+ 
+     protected:
+         virtual Value getDefaultValue(const string &amp;key) const;
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-01-10 23:51:58 UTC (rev 980)
++++ trunk/src/items.cc	2008-01-13 13:19:30 UTC (rev 981)
+@@ -97,7 +97,7 @@
+ void Item::replace(ItemID id)
+ {
+     Item *newitem = MakeItem (id);
+-    TransferObjectName (this, newitem);
++    transferName(newitem);          // TODO check where transfer of identity is better
+     setup_successor(newitem);           // hook for subclasses
+     SetItem (get_pos(), newitem);
+ }
+@@ -946,6 +946,8 @@
+ /* -------------------- Brake -------------------- */
+ 
+ // Brake is only used to hold st-brake while it is in an inventory
++
++// TODO transfer identity !!
+ namespace
+ {
+     class Brake : public Item {
+@@ -1433,7 +1435,7 @@
+                }
+            }
+            Stone *st = MakeStone (get_stone_name());
+-           TransferObjectName (this, st);
++           transferName(st);
+            SetStone (p, st);
+            kill();
+         }
+@@ -2653,196 +2655,204 @@
+ 
+ /* -------------------- Blocker item -------------------- */
+ 
+-namespace
+-{
+-    /*! If a 'BoulderStone' moves over a 'Blocker' the 'Blocker' starts
+-      growing and replaces itself by a BlockerStone. */
+-    class Blocker : public Item, public TimeHandler {
+-        CLONEOBJ(Blocker);
++
++    /**
++     * A door like object that can be opened and closed by a BoulderStone. This item
++     * represents the open state of the door. The closed state is represented by a
++     * BlockerStone.&lt;p&gt;
++     * If a BoulderStone moves over a BlockerItem the BlockerItem starts growing and
++     * replaces itself by a BlockerStone. But other Stones can be pushed over a
++     * BlockerItem without causing its transformation. &lt;p&gt;
++     * It fully supports the door messages &quot;open&quot;, &quot;close&quot;, &quot;toggle&quot;, &quot;signal&quot; and
++     * attribute &quot;state&quot;. If the item is blocked by a stone the messages will not
++     * cause an instant growing. But the message will be remembered in the internal
++     * state and the item acts as soon as the stone moves away.&lt;p&gt;
++     * An initial BlockerItem with a BoulderStone on top will grow as soon as it moves
++     * away. An initial it_blocker_new with a BloulderStone on top will not grow when
++     * the stone moves away.&lt;p&gt;
++     * Note that this is the only door object that allows a stone to be pushed through.
++     * A BlockerItem can be killed by a BrakeItem being dropped.
++     */
++    class BlockerItem : public Item, public TimeHandler {
++        CLONEOBJ(BlockerItem);
+         DECL_TRAITS;
++    private:
++        enum iState {
++            IDLE,       ///&lt; neutral state
++            NEW,        ///&lt; a new BlockerItem that replaced a recently shrinked BlockerStone -
++                        ///&lt; a BoulderStone is awaited, but it has to arrive in time 
++            LOCKED,     ///&lt; a stone covers the BlockerItem and locked it, so it will not grow
++                        ///&lt; when the stone moves away. This is the state that a BoulderStone causes
++                        ///&lt; on its first visit immediatly after shrinking the BlockerStone
++            UNLOCKED    ///&lt; a stone covers the BlockerItem and unlocked it, so it will grow
++                        ///&lt; when the stone moves away. This is the state that a BoulderStone causes
++                        ///&lt; on its second visit when moving onto an idle BlockerItem. The blocker
++                        ///&lt; will grow when the stones moves away
++        };
+ 
+-        enum State {
+-            IDLE,               // nothing special
+-            SHRINKED,           // recently shrinked by a BolderStone (which has not arrived yet)
+-            BOLDERED,           // BolderStone has arrived (the one that made me shrink)
+-            COVERED             // BolderStone will make me grow (but is on top of me)
+-            // Note: BOLDERED and COVERED are used for all kinds of stones
+-            // (e.g. when a stone is on top and the Blocker receives a &quot;close&quot; message)
+-        } state;
++    public:
++        BlockerItem(bool shrinked_recently);
++        ~BlockerItem();
+ 
+-        static const char * const stateName[];
+-
+-        void change_state(State new_state);
+-        void on_creation (GridPos p);
+-        void on_removal (GridPos p);
++        // Object interface
+         virtual Value message(const Message &amp;m);
+-        void stone_change(Stone *st);
+-        void grow();
+-        void alarm();
+-    public:
+-        Blocker(bool shrinked_recently);
+-        ~Blocker();
+-    };
+-    DEF_TRAITSF(Blocker, &quot;it-blocker&quot;, it_blocker, itf_static);
+-};
+ 
+-const char * const Blocker::stateName[] = { &quot;IDLE&quot;, &quot;SHRINKED&quot;, &quot;BOLDERED&quot;, &quot;COVERED&quot; };
++        // StateObject interface
++        virtual void toggleState();
++        virtual int externalState() const;
++        virtual void setState(int extState);
+ 
++        // GridObject interface
++        virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
++        virtual void init_model();
+ 
+-Blocker::Blocker(bool shrinked_recently)
+-: state(shrinked_recently ? SHRINKED : IDLE)
+-{}
++        // Item interface
++        virtual void stone_change(Stone *st);
+ 
+-Blocker::~Blocker() {
+-    GameTimer.remove_alarm (this);
+-}
++        // TimeHandler interface
++        virtual void alarm();
++    
++    private:
++        void setIState(iState newState);
++        void grow();
++    };
++    
++    DEF_TRAITSF(BlockerItem, &quot;it_blocker&quot;, it_blocker, itf_static);
+ 
+-void Blocker::on_creation (GridPos p)
+-{
+-    if (state == SHRINKED) {
+-        GameTimer.set_alarm(this, 0.5, false);
+-    }
+-    Item::on_creation(p);
+-}
+ 
+-void Blocker::on_removal(GridPos p)
+-{
+-    change_state(IDLE);
+-    Item::on_removal(p);
+-}
+-
+-void Blocker::change_state(State new_state)
+-{
+-    if (state != new_state) {
+-        if (state == SHRINKED)
+-            GameTimer.remove_alarm(this);
+-        else if (new_state == SHRINKED)
+-            GameTimer.set_alarm(this, 0.5, false);
+-        state = new_state;
++    BlockerItem::BlockerItem(bool shrinked_recently) {
++        state = shrinked_recently ? NEW : IDLE;
+     }
+-}
+ 
+-
+-void Blocker::grow()
+-{
+-    Stone *st = MakeStone(&quot;st_blocker_new&quot;);
+-    SetStone(get_pos(), st);
+-    TransferObjectName(this, st);
+-    kill();
+-}
+-
+-void Blocker::alarm()
+-{
+-    if (state == SHRINKED) { // BolderStone did not arrive in time
+-        change_state(IDLE);
++    BlockerItem::~BlockerItem() {
++        GameTimer.remove_alarm (this);
+     }
+-}
+ 
+-
+-Value Blocker::message(const Message &amp;m)
+-{
+-    if (m.message == &quot;init&quot;) { 
+-        if (Stone *st = GetStone(get_pos())) {
+-            if (st-&gt;is_kind(&quot;st_boulder&quot;))
+-                if (state == IDLE)
+-                    change_state(COVERED);
+-                else if (state == SHRINKED)
+-                    change_state(BOLDERED);
++    Value BlockerItem::message(const Message &amp;m) {
++        if (m.message == &quot;init&quot;) { 
++            if (Stone *st = GetStone(get_pos())) {
++                if (st-&gt;is_kind(&quot;st_boulder&quot;))
++                    if (state == IDLE &amp;&amp; server::GameCompatibility != GAMET_PEROXYD)
++                        setIState(UNLOCKED);
++                    else if (state == NEW || server::GameCompatibility != GAMET_PEROXYD)
++                        setIState(LOCKED);
++            }
++            return Item::message(m);    // pass on init message
+         }
+         return Item::message(m);
+-    } else if (m.message == &quot;toggle&quot; || m.message == &quot;openclose&quot;) {
+-        switch (state) {
+-            case IDLE:
+-            case SHRINKED:
+-                grow(); // if no stone on top -&gt; grow
+-                break;
++    }
+     
+-                // if stone on top -&gt; toggle state (has no effect until stone leaves)
+-            case BOLDERED:
+-                change_state(COVERED);
+-                break;
+-            case COVERED:
+-                change_state(BOLDERED);
+-                break;
++    void BlockerItem::toggleState() {
++        if (state == UNLOCKED) {  // revoke pending grow/close
++            setIState(LOCKED);
+         }
+-        return Value();
+-    } else {
+-        int open = -1;
+-
+-        if (m.message == &quot;signal&quot;) {
+-            open = m.value;
++        else {
++            setState(0);  // close
+         }
+-        else if (m.message == &quot;open&quot;)
+-            open = 1;
+-        else if (m.message == &quot;close&quot;)
+-            open = 0;
+-        else
+-            return Item::message(m);
+-
+-        if (open == 1)  { // shrink
+-            if (state == COVERED)
+-                change_state(BOLDERED);
++    }
++    
++    int BlockerItem::externalState() const {
++        return 1;   // always open -- st_blocker is closed
++    }
++    
++    void BlockerItem::setState(int extState) {
++        if (extState == 1) {         // open (shrink)
++            if (state == UNLOCKED)   //   revoke pending grow/close
++                setIState(LOCKED);
+         }
+-        else if (open != -1) { // grow
+-            if (state == BOLDERED)
+-                change_state(COVERED);
+-            else if (state == SHRINKED)
+-                change_state(IDLE); // remove alarm
++        else {                       // close (grow)
++            switch (state) {
++                case LOCKED:
++                    setIState(UNLOCKED);  // close when stone is removed
++                    break;
++                case UNLOCKED:
++                    break;                // will close anyway when stone is removed
++                case IDLE:
++                case NEW:
++                    grow();                    
++                    break;
++            }
++        }
++    }
++    
++    void BlockerItem::on_creation(GridPos p) {
++        if (state == NEW) {
++            GameTimer.set_alarm(this, 0.5, false);
++        }
++        Item::on_creation(p);
++    }
+ 
+-            if (state == IDLE) {
+-                if (Stone *st = GetStone(get_pos())) {
+-                    if (st-&gt;is_kind(&quot;st_boulder&quot;))
+-                        change_state(BOLDERED); // occurs in Per.Oxyd #84
+-                    else
+-                        change_state(COVERED);
++    void BlockerItem::on_removal(GridPos p) {
++        setIState(IDLE);
++        Item::on_removal(p);
++    }
++
++    void BlockerItem::init_model() {
++        set_model(&quot;it-blocker&quot;);
++    }
++    
++    void BlockerItem::stone_change(Stone *st) {
++        if (st != NULL) {
++            if (st-&gt;is_kind(&quot;st_boulder&quot;)) { // boulder arrived
++                switch (state) {
++                    case IDLE:
++                        setIState(UNLOCKED);  // will grow when boulder moves away
++                        break;
++                    case NEW:
++                        setIState(LOCKED);    // will not grow when boulder moves away
++                        break;
++                    case UNLOCKED:
++                    case LOCKED:
++                        // two BoulderStones running directly next to each other
++                        // let second pass as well (correct? siegfried says yes)
++                        // note: all stone moves are handled in a timestep before
++                        //   the world informs the items about stone changes
++                        break;
+                 }
+-                else {
++            }
++            else { // any other stone
++                setIState(LOCKED);
++            }
++        }
++        else {              // stone disappeared
++            switch (state) {
++                case LOCKED:
++                    setIState(IDLE);
++                    break;
++                case UNLOCKED:
+                     grow();
+-                }
++                    break;
++                case IDLE:
++                case NEW:
++                    // no action
++                    break;
+             }
+         }
+-        return Value();
+     }
+-    return Item::message(m);
+-}
+ 
+-void Blocker::stone_change(Stone *st)
+-{
+-    if (st) {
+-        if (st-&gt;is_kind(&quot;st_boulder&quot;)) { // bolder arrived
+-            switch (state) {
+-            case IDLE:
+-                change_state(COVERED);
+-                break;
+-            case SHRINKED:
+-                change_state(BOLDERED);
+-                break;
+-            case COVERED:
+-            case BOLDERED:
+-                // two BolderStones running directly next to each other
+-                // let second pass as well (correct? siegfried says yes)
+-                break;
+-            }
++    void BlockerItem::alarm() {
++        if (state == NEW) { // BoulderStone did not arrive in time
++            setIState(IDLE);
+         }
+-        else { // any other stone
+-            change_state(BOLDERED);
+-        }
+     }
+-    else {              // stone disappeared
+-        switch (state) {
+-        case BOLDERED:
+-            change_state(IDLE);
+-            break;
+-        case COVERED:
+-            grow();
+-            break;
+-        case IDLE:
+-        case SHRINKED:
+-            // no action
+-            break;
++
++    void BlockerItem::setIState(iState newState) {
++        if (state != newState) {
++            if (state == NEW)
++                GameTimer.remove_alarm(this);
++            else if (newState == NEW)
++                GameTimer.set_alarm(this, 0.5, false);
++            state = newState;
+         }
+     }
+-}
++    
++    void BlockerItem::grow() {
++        Stone *st = MakeStone(&quot;st_blocker_new&quot;);
++        SetStone(get_pos(), st);
++        transferIdentity(st);
++        kill();
++    }
+ 
+ 
+ /* -------------------- Ring -------------------- */
+@@ -3677,8 +3687,8 @@
+     RegisterItem (new Banana);
+     RegisterItem (new BlackBomb);
+     RegisterItem (new BlackBombBurning);
+-    Register (&quot;it-blocker-new&quot;, new Blocker(true));
+-    RegisterItem (new Blocker(false));
++    Register (&quot;it_blocker_new&quot;, new BlockerItem(true));
++    RegisterItem (new BlockerItem(false));
+     RegisterItem (new Booze);
+     RegisterItem (new Brake);
+     RegisterItem (new BrokenBooze);
+
+Modified: trunk/src/stones/BlockerStone.cc
+===================================================================
+--- trunk/src/stones/BlockerStone.cc	2008-01-10 23:51:58 UTC (rev 980)
++++ trunk/src/stones/BlockerStone.cc	2008-01-13 13:19:30 UTC (rev 981)
+@@ -77,9 +77,9 @@
+     void BlockerStone::animcb() {
+         switch (state) {
+             case SHRINKING: {
+-                Item *it = MakeItem(&quot;it-blocker-new&quot;);
++                Item *it = MakeItem(&quot;it_blocker_new&quot;);
+                 SetItem(get_pos(), it);
+-                TransferObjectName(this, it);   // TODO transfer user attr., target, action
++                transferIdentity(it);
+                 KillStone(get_pos());
+                 break;
+             }
+
+Modified: trunk/src/stones/BlockerStone.hh
+===================================================================
+--- trunk/src/stones/BlockerStone.hh	2008-01-10 23:51:58 UTC (rev 980)
++++ trunk/src/stones/BlockerStone.hh	2008-01-13 13:19:30 UTC (rev 981)
+@@ -28,7 +28,13 @@
+ namespace enigma {
+ 
+     /** 
++     * A door like object that can be opened and closed by a BoulderStone. This
++     * stone represents the closed state of the door. The open state is represented
++     * by a BlockerItem.
+      * 
++     * TODO autonaming for keeping identity in groups
++     * TODO performAction on opening (as notification of boulder triggering)
++     * TODO animation slowed down by a major factor for PerOxyd compatibility
+      */
+     class BlockerStone : public Stone {
+         CLONEOBJ(BlockerStone);
+
+Modified: trunk/src/stones/BoulderStone.hh
+===================================================================
+--- trunk/src/stones/BoulderStone.hh	2008-01-10 23:51:58 UTC (rev 980)
++++ trunk/src/stones/BoulderStone.hh	2008-01-13 13:19:30 UTC (rev 981)
+@@ -52,7 +52,7 @@
+         virtual void setState(int extState);
+ 
+         // GridObject interface
+-        virtual void on_creation(GridPos);
++        virtual void on_creation(GridPos p);
+         virtual void on_removal(GridPos p);
+         virtual void init_model();
+         
+
+Modified: trunk/src/stones/Switch.hh
+===================================================================
+--- trunk/src/stones/Switch.hh	2008-01-10 23:51:58 UTC (rev 980)
++++ trunk/src/stones/Switch.hh	2008-01-13 13:19:30 UTC (rev 981)
+@@ -26,7 +26,7 @@
+ namespace enigma {
+ 
+     /** 
+-     * A standard colored 2 state on/off switch that can be toggled only actors
++     * A standard colored 2 state on/off switch that can be toggled only by actors
+      * of a compatible color. It is a StateObject with 4 internal states as the
+      * state changes are animated. The external states are mapped. The messages
+      * &quot;toggle&quot;, &quot;signal&quot;, &quot;on&quot;, &quot;off&quot; and get/set of the state are fully supported.
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-01-10 23:51:58 UTC (rev 980)
++++ trunk/src/stones_simple.cc	2008-01-13 13:19:30 UTC (rev 981)
+@@ -1994,7 +1994,7 @@
+             Stone::on_creation(p);
+ 
+             Item    *it = GetItem(p);
+-            if (it &amp;&amp; it-&gt;is_kind(&quot;it-blocker&quot;)) {
++            if (it &amp;&amp; it-&gt;is_kind(&quot;it_blocker&quot;)) {
+                 KillItem(p);
+ //                sound_event (&quot;explosion1&quot;);
+             }
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-01-10 23:51:58 UTC (rev 980)
++++ trunk/src/world.cc	2008-01-13 13:19:30 UTC (rev 981)
+@@ -1627,20 +1627,6 @@
+     level-&gt;unname(obj);
+ }
+ 
+-void TransferObjectName (Object *source, Object *target)
+-{
+-    if (Value v = source-&gt;getAttr(&quot;name&quot;)) {
+-        string name(v);
+-        UnnameObject(source);
+-        if (Value v = target-&gt;getAttr(&quot;name&quot;)) {
+-            target-&gt;warning(&quot;name '%s' overwritten by '%s'&quot;,
+-                            v.to_string().c_str(), name.c_str());
+-            UnnameObject(target);
+-        }
+-        NameObject(target, name);
+-    }
+-}
+-
+ Object * GetNamedObject (const std::string &amp;name)
+ {
+     return level-&gt;get_named (name);
+@@ -2059,7 +2045,7 @@
+ void ReplaceStone (GridPos p, Stone* st) {
+     Stone *old = level-&gt;st_layer.get(p);
+     if (old) {
+-        TransferObjectName(old, st);
++        old-&gt;transferName(st);
+         level-&gt;st_layer.kill(p);
+     }
+     SetStone(p, st);
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2008-01-10 23:51:58 UTC (rev 980)
++++ trunk/src/world.hh	2008-01-13 13:19:30 UTC (rev 981)
+@@ -174,7 +174,6 @@
+ 
+     void    NameObject (Object *obj, const string &amp;name);
+     void    UnnameObject (Object *obj);
+-    void    TransferObjectName(Object *source, Object *target);
+     Object *GetNamedObject (const string &amp;name);
+     std::list&lt;Object *&gt; GetNamedGroup(const std::string &amp;templ);
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000412.html">[Enigma-game-svn] r980 - in trunk: data src src/stones
+</A></li>
+	<LI>Next message: <A HREF="000414.html">[Enigma-game-svn] r982 - trunk/doc/reference
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#413">[ date ]</a>
+              <a href="thread.html#413">[ thread ]</a>
+              <a href="subject.html#413">[ subject ]</a>
+              <a href="author.html#413">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

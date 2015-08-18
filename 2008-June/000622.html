@@ -1,0 +1,621 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1188 - in trunk: data src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1188%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200806221845.m5MIjeKG003121%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000621.html">
+   <LINK REL="Next"  HREF="000623.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1188 - in trunk: data src</H1>
+    <B>ral at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1188%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200806221845.m5MIjeKG003121%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1188 - in trunk: data src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Jun 22 20:45:40 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000621.html">[Enigma-game-svn] r1187 - in trunk: data/levels/enigma_vii	data/levels/enigma_viii doc/manual
+</A></li>
+        <LI>Next message: <A HREF="000623.html">[Enigma-game-svn] r1189 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#622">[ date ]</a>
+              <a href="thread.html#622">[ thread ]</a>
+              <a href="subject.html#622">[ subject ]</a>
+              <a href="author.html#622">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-06-22 20:45:23 +0200 (Sun, 22 Jun 2008)
+New Revision: 1188
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/src/WorldProxy.cc
+   trunk/src/d_engine.hh
+   trunk/src/display.cc
+   trunk/src/display.hh
+   trunk/src/lua.cc
+   trunk/src/lua.hh
+   trunk/src/server.cc
+   trunk/src/server.hh
+Log:
+Trunk 1.1: new API reengineering Follower
+- fix Follower_Scrolling asymmetric scroll behaviour on half screen scrolls
+- fix Follower_Scrolling problems with boundary thresholds
+- fix Follower_Screen problems with boundary thresholds
+- add independent boundaries for x and y
+- fix impossibility to set follower before world creation
+- fix missing screen refresh on follower switch on running level
+- new API config of Follower via world attributes:
+  FollowMethod:   FOLLOW_NO, FOLLOW_SCROLL, FOLLOW_FLIP
+  FollowThreshold: number | position:  as boundary
+  FollowAction:    number | position: scrollamount (currently just halfscreen)
+  FollowGrid:   boolean : true - fixed to grid, false - pixel smooth
+Note:
+- see upcoming testlevel and refman for more details.
+- old display.* Lua functions are no longer accessible from new API
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2008-06-22 11:40:55 UTC (rev 1187)
++++ trunk/data/api2init.lua	2008-06-22 18:45:23 UTC (rev 1188)
+@@ -114,6 +114,11 @@
+ SPOT_SENSOR         =   8
+ SPOT_LIGHTPASSENGER =  16
+ 
++-- Follower
++FOLLOW_NO     = 0
++FOLLOW_SCROLL = 1
++FOLLOW_FLIP   = 2
++
+ ---------------------
+ -- Utility Methods --
+ ---------------------
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2008-06-22 11:40:55 UTC (rev 1187)
++++ trunk/src/WorldProxy.cc	2008-06-22 18:45:23 UTC (rev 1188)
+@@ -51,6 +51,15 @@
+             return server::ConserveLevel;
+         } else if (key == &quot;CreatingPreview&quot;) {
+             return server::CreatingPreview;  // read only
++        } else if (key == &quot;FollowAction&quot;) {
++            return server::FollowAction;
++        } else if (key == &quot;FollowGrid&quot;) {
++            return server::FollowGrid;
++        } else if (key == &quot;FollowMethod&quot;) {
++            return server::FollowMethod;
++//        } else if (key == &quot;FollowRoomSize&quot;) {    // Enigma 1.2 
++        } else if (key == &quot;FollowThreshold&quot;) {
++            return server::FollowThreshold;            
+         } else if (key == &quot;Height&quot;) {
+             return Height();
+         } else if (key == &quot;IsDifficult&quot;) {
+@@ -104,8 +113,38 @@
+             server::AllowTogglePlayer = val;
+         } else if (key == &quot;ConserveLevel&quot;) {
+             server::ConserveLevel = val.to_bool();
+-        } else if (key == &quot;FollowMode&quot;) {
+-            display::SetFollowMode((display::FollowMode)((int)val));
++        } else if (key == &quot;FollowAction&quot;) {
++            server::FollowAction = val;
++            display::UpdateFollowMode();
++        } else if (key == &quot;FollowGrid&quot;) {
++            bool wasGrid = server::FollowGrid;
++            server::FollowGrid = val.to_bool();
++            if (wasGrid &amp;&amp; !server::FollowGrid) {
++                server::FollowMethod = display::FOLLOW_SCROLL;
++                server::FollowThreshold = 0;
++                server::FollowAction = 0;
++            } else if (!wasGrid &amp;&amp; server::FollowGrid) {
++                server::FollowThreshold = 0.5;
++                server::FollowAction = ecl::V2(9.5, 6);
++            }
++            display::UpdateFollowMode();
++        } else if (key == &quot;FollowMethod&quot;) {
++            int oldMethod = server::FollowMethod;
++            server::FollowMethod = val;
++            if ( oldMethod != server::FollowMethod) {
++                if (server::FollowMethod == display::FOLLOW_FLIP) {
++                    server::FollowThreshold = 0.5;
++                    server::FollowAction = ecl::V2(19, 12);
++                } else if (server::FollowMethod == display::FOLLOW_SCROLL &amp;&amp;  server::FollowGrid) {
++                    server::FollowThreshold = 0.5;
++                    server::FollowAction = ecl::V2(9.5, 6);
++                }
++                display::UpdateFollowMode();
++            }
++//        } else if (key == &quot;FollowRoomSize&quot;) {    // Enigma 1.2 
++        } else if (key == &quot;FollowThreshold&quot;) {
++            server::FollowThreshold = val;
++            display::UpdateFollowMode();
+         } else if (key == &quot;ShowMoves&quot;) {
+             server::ShowMoves = val.to_bool();
+             STATUSBAR-&gt;show_move_counter (server::ShowMoves);
+
+Modified: trunk/src/d_engine.hh
+===================================================================
+--- trunk/src/d_engine.hh	2008-06-22 11:40:55 UTC (rev 1187)
++++ trunk/src/d_engine.hh	2008-06-22 18:45:23 UTC (rev 1188)
+@@ -383,7 +383,10 @@
+         virtual void tick(double dtime, const ecl::V2 &amp;point) = 0;
+         virtual void center(const ecl::V2 &amp;point);
+ 
+-        void set_boundary (double b) { m_boundary = b; }
++        void set_boundary (double b) { 
++            m_boundary_x = b;
++            m_boundary_y = b;
++        }
+ 
+     protected:
+         DisplayEngine *get_engine() const { return m_engine; }
+@@ -392,7 +395,8 @@
+         double get_voff() const;
+         ecl::V2 get_scrollpos(const ecl::V2 &amp;point);
+ 
+-        double m_boundary;
++        double m_boundary_x;
++        double m_boundary_y;
+ 
+     private:
+         DisplayEngine *m_engine;
+@@ -402,7 +406,7 @@
+       sprite reaches the border of the current screen. */
+     class Follower_Screen : public Follower {
+     public:
+-        Follower_Screen(DisplayEngine *e);
++        Follower_Screen(DisplayEngine *e, double borderx = 0.5, double bordery = 0.5);
+         void tick(double dtime, const ecl::V2 &amp;point);
+     };
+ 
+@@ -411,7 +415,7 @@
+       screen. */
+     class Follower_Scrolling : public Follower {
+     public:
+-        Follower_Scrolling (DisplayEngine *e, bool screenwise_);
++        Follower_Scrolling (DisplayEngine *e, bool screenwise, double borderx = 0.5, double bordery = 0.5);
+         void tick(double dtime, const ecl::V2 &amp;point);
+         void center(const ecl::V2 &amp;point);
+     private:
+@@ -451,6 +455,7 @@
+ 
+         /* ---------- Scrolling ---------- */
+         void set_follow_mode (FollowMode m);
++        void updateFollowMode();
+         void follow_center();
+         void set_follow_sprite(SpriteId id);
+         void set_reference_point (const ecl::V2 &amp;point);
+
+Modified: trunk/src/display.cc
+===================================================================
+--- trunk/src/display.cc	2008-06-22 11:40:55 UTC (rev 1187)
++++ trunk/src/display.cc	2008-06-22 18:45:23 UTC (rev 1188)
+@@ -1598,32 +1598,30 @@
+     m_cache-&gt;release (sh);
+ }
+ 
+-
++
+ //----------------------------------------------------------------------
+ // Sprite following code
+ //----------------------------------------------------------------------
+ 
+-Follower::Follower (DisplayEngine *e)
+-: m_boundary (0.5),
+-  m_engine(e)
+-{}
++Follower::Follower (DisplayEngine *e) : m_boundary_x (0.5), m_boundary_y (0.5), m_engine(e) {
++}
+ 
+ double Follower::get_hoff() const 
+ { 
+     ScreenArea gamearea = m_engine-&gt;get_area();
+-    return gamearea.w / m_engine-&gt;get_tilew() -m_boundary*2; 
++    return gamearea.w / m_engine-&gt;get_tilew() -m_boundary_x*2; 
+ }
+ 
+ double Follower::get_voff() const 
+ {
+     ScreenArea gamearea = m_engine-&gt;get_area();
+-    return gamearea.h / m_engine-&gt;get_tileh() -m_boundary*2;
++    return gamearea.h / m_engine-&gt;get_tileh() -m_boundary_y*2;
+ }
+ 
+ void Follower::center(const ecl::V2 &amp;point) 
+ {
+-    double borderh = m_boundary; 
+-    double borderv = m_boundary;
++    double borderh = m_boundary_x; 
++    double borderv = m_boundary_y;
+     double hoff = get_hoff();
+     double voff = get_voff();
+ 
+@@ -1639,20 +1637,21 @@
+     DisplayEngine *e = get_engine();
+     offs[0] = max (offs[0], 0.0);
+     offs[1] = max (offs[1], 0.0);
+-    offs[0] = min (offs[0], double(e-&gt;get_width()-get_hoff()-1));
+-    offs[1] = min (offs[1], double(e-&gt;get_height()-get_voff()-1));
++    offs[0] = min (offs[0], double(e-&gt;get_width()-get_hoff()-m_boundary_x*2));
++    offs[1] = min (offs[1], double(e-&gt;get_height()-get_voff()-m_boundary_y*2));
+     if (offs != e-&gt;get_offset()) {
+-	e-&gt;set_offset(offs);
+-	return true;
++        e-&gt;set_offset(offs);
++        return true;
+     }
+     return false;
+ }
+ 
+ /* -------------------- Follower_Screen -------------------- */
+ 
+-Follower_Screen::Follower_Screen(DisplayEngine *e)
+-: Follower(e)
+-{}
++Follower_Screen::Follower_Screen(DisplayEngine *e, double borderx, double bordery) : Follower(e) {
++    m_boundary_x  = borderx;
++    m_boundary_y  = bordery;
++}
+ 
+ 
+ /*! Determine whether the screen must be scrolled or not, and change
+@@ -1666,15 +1665,17 @@
+ }
+ 
+ 
+-
++
+ /* -------------------- Follower_Scrolling -------------------- */
+ 
+-Follower_Scrolling::Follower_Scrolling(DisplayEngine *e, bool screenwise_)
++Follower_Scrolling::Follower_Scrolling(DisplayEngine *e, bool screenwise_, double borderx, double bordery)
+ : Follower (e),
+   currently_scrolling(false),
+   scrollspeed(0), resttime(0),
+-  screenwise (screenwise_)
+-{}
++  screenwise (screenwise_) {
++    m_boundary_x  = borderx;
++    m_boundary_y  = bordery;
++}
+ 
+ void Follower_Scrolling::center(const ecl::V2 &amp;point) 
+ {
+@@ -1690,17 +1691,15 @@
+         ScreenArea gamearea = engine-&gt;get_area();
+         int        tilew    = engine-&gt;get_tilew();
+         int        tileh    = engine-&gt;get_tileh();
+-        int        borderx  = tilew/2;
+-        int        bordery  = tileh/2;
+ 
+         int sx, sy;
+         engine-&gt;world_to_screen(point, &amp;sx, &amp;sy);
+ 
+-        bool scrollx_p = (sx &lt; gamearea.x + borderx)
+-            || (sx &gt;= gamearea.x + gamearea.w - borderx);
++        bool scrollx_p = (sx &lt; gamearea.x + m_boundary_x * tilew)
++            || (sx &gt;= gamearea.x + gamearea.w - m_boundary_x * tilew);
+ 
+-        bool scrolly_p = (sy &lt; gamearea.y + bordery)
+-            || (sy &gt;= gamearea.y + gamearea.h - bordery);
++        bool scrolly_p = (sy &lt; gamearea.y + m_boundary_y * tileh)
++            || (sy &gt;= gamearea.y + gamearea.h - m_boundary_y * tileh);
+ 
+         if (scrollx_p || scrolly_p) {
+             V2 olddest = destpos;
+@@ -1714,20 +1713,26 @@
+             if (screenwise) {
+                 double hoff = get_hoff();
+                 double voff = get_voff();
+-                destpos[0] = floor((point[0]-m_boundary) / hoff) * hoff;
+-                destpos[1] = floor((point[1]-m_boundary) / voff) * voff;
++//                Log &lt;&lt; &quot;scroll screen &quot; &lt;&lt; hoff &lt;&lt; &quot; &quot; &lt;&lt; voff &lt;&lt; &quot; &quot; &lt;&lt; m_boundary_x &lt;&lt; &quot; &quot; &lt;&lt; m_boundary_y &lt;&lt; &quot;\n&quot;;
++                destpos[0] = floor((point[0]-m_boundary_x) / hoff) * hoff;
++                destpos[1] = floor((point[1]-m_boundary_y) / voff) * voff;
+             } else {
+                 destpos = point - V2(gamearea.w/tilew, gamearea.h/tileh)/2;
++                // round to grid - a hack just for 20x13 screen TODO rewrite for Enigma 1.2
++                // x scroll of &quot;alternating&quot; 10 and 9 grids, try to join this grid after warps 
++                double xmod = std::fmod(destpos[0], 19);
++                if (xmod &lt; 5 || (xmod &gt; 10 &amp;&amp; xmod &lt; 14.5))
++                    destpos[0] = std::floor(destpos[0]);
++                else 
++                    destpos[0] = std::ceil(destpos[0]);
++                // y scroll of stable 6 grids
++                destpos[1] = round_nearest&lt;int&gt;(destpos[1]);
+             }
+ 
+-            // Round to integer pixel offset
+-            destpos[0] = round_nearest&lt;int&gt;(destpos[0]*tilew)/tilew;
+-            destpos[1] = round_nearest&lt;int&gt;(destpos[1]*tileh)/tileh;
+-
+             // Don't scroll off the game area
+-            destpos[0] = Clamp (destpos[0], 0.0,
++            destpos[0] = ecl::Clamp&lt;double&gt;(destpos[0], 0.0,
+                                 (double)engine-&gt;get_width()-gamearea.w/tilew);
+-            destpos[1] = Clamp (destpos[1], 0.0, 
++            destpos[1] = ecl::Clamp&lt;double&gt;(destpos[1], 0.0, 
+                                 (double)engine-&gt;get_height()-gamearea.h/tileh);
+             if (!scrollx_p)
+                 destpos[0] = olddest[0];
+@@ -1788,7 +1793,7 @@
+     set_offset(calc_offset (point));
+ }
+ 
+-
++
+ //----------------------------------------------------------------------
+ // Editor / game display engine
+ //----------------------------------------------------------------------
+@@ -1946,7 +1951,7 @@
+     CommonDisplay::new_world (w, h);
+     status_bar-&gt;new_world();
+     resize_game_area (NTILESH, NTILESV);
+-    set_follow_mode (FOLLOW_SCREEN);
++    updateFollowMode();
+     m_reference_point = V2();
+ 
+ //     shadow_layer-&gt;new_world(w,h);
+@@ -1958,28 +1963,56 @@
+     return status_bar;
+ }
+ 
+-
++
+ /* -------------------- Scrolling -------------------- */
+ 
+ void GameDisplay::set_follow_mode (FollowMode m) {
+     switch (m) {
+-    case FOLLOW_NONE: 
+-        set_follower(0); 
+-        break;
+-    case FOLLOW_SCROLLING:
+-	set_follower (new Follower_Scrolling(get_engine(), false)); 
+-        break;
+-    case FOLLOW_SCREEN:
+-	set_follower (new Follower_Screen(get_engine())); 
+-        break;
+-    case FOLLOW_SCREENSCROLLING:
+-	set_follower (new Follower_Scrolling(get_engine(), true)); 
+-        break;
+-    case FOLLOW_SMOOTH:
+-        set_follower (new Follower_Smooth(get_engine()));
++        case FOLLOW_NONEOLD: 
++            set_follower(0); 
++            break;
++        case FOLLOW_SCROLLING:
++       	    set_follower (new Follower_Scrolling(get_engine(), false)); 
++            break;
++        case FOLLOW_SCREEN:
++    	    set_follower (new Follower_Screen(get_engine())); 
++            break;
++        case FOLLOW_SCREENSCROLLING:
++    	    set_follower (new Follower_Scrolling(get_engine(), true, 0.5, 0.5)); 
++            break;
++        case FOLLOW_SMOOTH:
++            set_follower (new Follower_Smooth(get_engine()));
+     };
++    get_engine()-&gt;mark_redraw_screen();
+ }
+ 
++void GameDisplay::updateFollowMode () {
++    if (!server::FollowGrid)
++        set_follower(new Follower_Smooth(get_engine()));
++    else if (server::FollowMethod == FOLLOW_NONE) 
++        set_follower(NULL); 
++    else if (server::FollowMethod == FOLLOW_FLIP) {
++	    if (server::FollowThreshold.getType() == Value::DOUBLE) 
++            set_follower (new Follower_Screen(get_engine(), (double)server::FollowThreshold, 
++                    (double)server::FollowThreshold)); 
++        else
++            set_follower (new Follower_Screen(get_engine(), ecl::V2(server::FollowThreshold)[0], 
++                    ecl::V2(server::FollowThreshold)[1])); 
++    }
++    else if ((server::FollowThreshold.getType() == Value::DOUBLE) &amp;&amp; ((double)server::FollowThreshold == 0.5) 
++            &amp;&amp; (server::FollowAction == Value(ecl::V2(9.5, 6))))
++   	    set_follower(new Follower_Scrolling(get_engine(), false)); 
++    else {
++	    if (server::FollowThreshold.getType() == Value::DOUBLE) 
++            set_follower (new Follower_Scrolling(get_engine(), true, (double)server::FollowThreshold, 
++                    (double)server::FollowThreshold)); 
++        else
++            set_follower (new Follower_Scrolling(get_engine(), true, ecl::V2(server::FollowThreshold)[0], 
++                    ecl::V2(server::FollowThreshold)[1])); 
++    }
++    get_engine()-&gt;mark_redraw_screen();
++}
++
+ void GameDisplay::set_follower (Follower *f) {
+     delete m_follower;
+     if ((m_follower = f))
+@@ -2125,6 +2158,10 @@
+     gamedpy-&gt;set_follow_mode(m);
+ }
+ 
++void display::UpdateFollowMode() {
++    gamedpy-&gt;updateFollowMode();
++}
++
+ void display::SetScrollBoundary (double boundary) {
+     gamedpy-&gt;set_scroll_boundary (boundary);
+ }
+
+Modified: trunk/src/display.hh
+===================================================================
+--- trunk/src/display.hh	2008-06-22 11:40:55 UTC (rev 1187)
++++ trunk/src/display.hh	2008-06-22 18:45:23 UTC (rev 1188)
+@@ -21,6 +21,7 @@
+ 
+ #include &quot;enigma.hh&quot;
+ #include &quot;ecl.hh&quot;
++#include &quot;server.hh&quot;
+ 
+ //----------------------------------------
+ // Definition of models
+@@ -109,15 +110,22 @@
+ namespace display
+ {
+     enum FollowMode {
+-        FOLLOW_NONE            = 0, // Don't follow any sprite
++        FOLLOW_NONEOLD            = 0, // Don't follow any sprite
+         FOLLOW_SCROLLING       = 1, // Scroll the screen
+         FOLLOW_SCREEN          = 2, // Flip the screen region
+         FOLLOW_SCREENSCROLLING = 3, // Scroll to the next screen
+         FOLLOW_SMOOTH          = 4, // Follow pixel by pixel
+     };
++    
++    enum FollowTyp {
++        FOLLOW_NONE            = 0, // Don't follow any sprite
++        FOLLOW_SCROLL          = 1, // Scroll pixelwise
++        FOLLOW_FLIP            = 2, // Flip the display to destination
++    };
+ 
+ 
+     void SetFollowMode (FollowMode m);
++    void UpdateFollowMode();
+     void SetScrollBoundary (double boundary);
+ 
+     void SetReferencePoint (const ecl::V2 &amp;point);
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-06-22 11:40:55 UTC (rev 1187)
++++ trunk/src/lua.cc	2008-06-22 18:45:23 UTC (rev 1188)
+@@ -3043,7 +3043,7 @@
+ 
+ 
+ 
+-lua_State *InitLevel() 
++lua_State *InitLevel(int api) 
+ {
+     char buffer[255];
+ 
+@@ -3057,9 +3057,10 @@
+ 
+     tolua_open(L);
+     tolua_enigma_open(L);
+-    tolua_px_open(L);
+-    tolua_display_open(L);
+-
++    if (api == 1) {
++        tolua_px_open(L);
++        tolua_display_open(L);
++    }
+     
+     RegisterFuncs(L, levelfuncs);
+     RegisterFuncs2(L, levelFuncs);
+
+Modified: trunk/src/lua.hh
+===================================================================
+--- trunk/src/lua.hh	2008-06-22 11:40:55 UTC (rev 1187)
++++ trunk/src/lua.hh	2008-06-22 18:45:23 UTC (rev 1188)
+@@ -64,7 +64,7 @@
+     lua_State *LevelState();
+ 
+     /*! Initialize the ingame Lua state. */
+-    lua_State *InitLevel();
++    lua_State *InitLevel(int api);
+ 
+     /*! Close the ingame Lua state. */
+     void ShutdownLevel();
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2008-06-22 11:40:55 UTC (rev 1187)
++++ trunk/src/server.cc	2008-06-22 18:45:23 UTC (rev 1188)
+@@ -82,6 +82,12 @@
+ bool     server::AllowTogglePlayer;
+ bool     server::CreatingPreview = false;   // read only for Lua
+ bool     server::ConserveLevel;
++
++Value    server::FollowAction;
++bool     server::FollowGrid;
++int      server::FollowMethod;
++Value    server::FollowThreshold;
++
+ double   server::LevelTime;                 // read only for Lua (&gt; 1.10)
+ bool     server::ShowMoves;
+ bool     server::SingleComputerGame;        // no Lua access
+@@ -241,6 +247,10 @@
+     server::SingleComputerGame= true;
+     server::AllowSingleOxyds  = false;
+     server::AllowTogglePlayer = true;
++    server::FollowAction      = GridPos(19, 12);   // inner space of a room
++    server::FollowGrid        = true;
++    server::FollowMethod      = display::FOLLOW_FLIP;      // FLIP
++    server::FollowThreshold   = 0.5;
+     server::ShowMoves         = false;
+     server::Brittleness       = 0.5;
+     server::SlopeForce        = 25.0;
+@@ -273,7 +283,7 @@
+     // different levels do not get in each other's way.
+     int api = (server::EnigmaCompatibility &lt; 1.10) ? 1 : 2;
+     lua::ShutdownLevel();
+-    lua_State *L = lua::InitLevel();
++    lua_State *L = lua::InitLevel(api);
+     if (lua::DoSysFile(L, &quot;compat.lua&quot;) != lua::NO_LUAERROR) {
+         throw XLevelLoading(&quot;While processing 'compat.lua':\n&quot;+lua::LastError(L));
+     }
+
+Modified: trunk/src/server.hh
+===================================================================
+--- trunk/src/server.hh	2008-06-22 11:40:55 UTC (rev 1187)
++++ trunk/src/server.hh	2008-06-22 18:45:23 UTC (rev 1188)
+@@ -24,6 +24,7 @@
+ #define SERVER_HH_INCLUDED
+ 
+ #include &quot;lev/Proxy.hh&quot;
++#include &quot;Value.hh&quot;
+ 
+ #include &lt;stdint.h&gt;
+ 
+@@ -98,6 +99,11 @@
+     
+     extern int      GlassesVisibility;
+     extern int      ExtralifeGlasses;
++    
++    extern Value     FollowAction;
++    extern bool      FollowGrid;
++    extern int       FollowMethod;
++    extern Value     FollowThreshold;
+ 
+ /* --------------------  Force multipliers... -------------------- */
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000621.html">[Enigma-game-svn] r1187 - in trunk: data/levels/enigma_vii	data/levels/enigma_viii doc/manual
+</A></li>
+	<LI>Next message: <A HREF="000623.html">[Enigma-game-svn] r1189 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#622">[ date ]</a>
+              <a href="thread.html#622">[ thread ]</a>
+              <a href="subject.html#622">[ subject ]</a>
+              <a href="author.html#622">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

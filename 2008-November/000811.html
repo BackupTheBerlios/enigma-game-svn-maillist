@@ -1,0 +1,139 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1382 - in trunk: data/schemas src/items	src/others
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-November/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1382%20-%20in%20trunk%3A%20data/schemas%20src/items%0A%09src/others&In-Reply-To=%3C200811291531.mATFVlFD030279%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000810.html">
+   <LINK REL="Next"  HREF="000812.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1382 - in trunk: data/schemas src/items	src/others</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1382%20-%20in%20trunk%3A%20data/schemas%20src/items%0A%09src/others&In-Reply-To=%3C200811291531.mATFVlFD030279%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1382 - in trunk: data/schemas src/items	src/others">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Nov 29 16:31:47 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000810.html">[Enigma-game-svn] svn commit 1381
+</A></li>
+        <LI>Next message: <A HREF="000812.html">[Enigma-game-svn] r1383 - in homepage/input: . news
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#811">[ date ]</a>
+              <a href="thread.html#811">[ thread ]</a>
+              <a href="subject.html#811">[ subject ]</a>
+              <a href="author.html#811">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-11-29 16:31:46 +0100 (Sat, 29 Nov 2008)
+New Revision: 1382
+
+Modified:
+   trunk/data/schemas/objects.xml
+   trunk/src/items/RubberbandItem.cc
+   trunk/src/others/Rubberband.cc
+Log:
+Trunk 1.1:  new API 
+- rubberband item / rubberband:
+    - add missing item action on activation
+    - fix value of violation action to &quot;false&quot;
+    - fix violation action on new activated items
+
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-11-29 00:19:28 UTC (rev 1381)
++++ trunk/data/schemas/objects.xml	2008-11-29 15:31:46 UTC (rev 1382)
+@@ -112,6 +112,7 @@
+     &lt;msg name=&quot;_model_reanimated&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_passed&quot; type=&quot;nil&quot;/&gt;            &lt;!-- check type--&gt;
+     &lt;msg name=&quot;_performaction&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;_recheck&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_revive&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_scramble&quot; type=&quot;int&quot;/&gt;
+     &lt;msg name=&quot;_shogun&quot; type=&quot;int&quot;/&gt;
+@@ -440,6 +441,7 @@
+       &lt;attr name=&quot;max&quot;/&gt;
+       &lt;attr name=&quot;min&quot;/&gt;
+       &lt;msg name=&quot;_performaction&quot;/&gt;
++      &lt;msg name=&quot;_recheck&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;ot_wire&quot;&gt;
+       &lt;attr name=&quot;anchor1&quot;/&gt;
+
+Modified: trunk/src/items/RubberbandItem.cc
+===================================================================
+--- trunk/src/items/RubberbandItem.cc	2008-11-29 00:19:28 UTC (rev 1381)
++++ trunk/src/items/RubberbandItem.cc	2008-11-29 15:31:46 UTC (rev 1382)
+@@ -64,6 +64,7 @@
+         }
+         if (!alreadyConnected &amp;&amp; anchor2 != a) { // It's not allowed to connect a rubberband to self.
+             Object *obj = MakeObject(&quot;ot_rubberband&quot;);
++            int id = obj-&gt;getId();
+             obj-&gt;setAttr(&quot;anchor1&quot;, a);
+             obj-&gt;setAttr(&quot;anchor2&quot;, anchor2);
+             obj-&gt;setAttr(&quot;strength&quot;, getAttr(&quot;strength&quot;));
+@@ -74,6 +75,8 @@
+             AddOther(dynamic_cast&lt;Other *&gt;(obj));
+             transferIdentity(obj);
+             SendMessage(obj, &quot;_performaction&quot;);
++            if (Object::getObject(id) != NULL)   // not killed?
++                SendMessage(obj, &quot;_recheck&quot;);
+             return ITEM_KILL;
+         } else
+             return ITEM_DROP;
+
+Modified: trunk/src/others/Rubberband.cc
+===================================================================
+--- trunk/src/others/Rubberband.cc	2008-11-29 00:19:28 UTC (rev 1381)
++++ trunk/src/others/Rubberband.cc	2008-11-29 15:31:46 UTC (rev 1382)
+@@ -103,9 +103,12 @@
+                 violating = true;
+             }
+             if (violating) {
+-                performAction(0);
++                performAction(false);
+             }
+             return Value(); 
++        } else if (m.message == &quot;_performaction&quot;) {
++            performAction(true);
++            return Value();             
+         }
+         return Other::message(m);
+     }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000810.html">[Enigma-game-svn] svn commit 1381
+</A></li>
+	<LI>Next message: <A HREF="000812.html">[Enigma-game-svn] r1383 - in homepage/input: . news
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#811">[ date ]</a>
+              <a href="thread.html#811">[ thread ]</a>
+              <a href="subject.html#811">[ subject ]</a>
+              <a href="author.html#811">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

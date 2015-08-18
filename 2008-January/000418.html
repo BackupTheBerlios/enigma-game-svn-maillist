@@ -1,0 +1,346 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r986 - in trunk: data src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r986%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200801161958.m0GJw7oA018800%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000417.html">
+   <LINK REL="Next"  HREF="000419.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r986 - in trunk: data src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r986%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200801161958.m0GJw7oA018800%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r986 - in trunk: data src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Jan 16 20:58:07 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000417.html">[Enigma-game-svn] r985 - in trunk: data src
+</A></li>
+        <LI>Next message: <A HREF="000419.html">[Enigma-game-svn] r987 - in trunk: . doc src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#418">[ date ]</a>
+              <a href="thread.html#418">[ thread ]</a>
+              <a href="subject.html#418">[ subject ]</a>
+              <a href="author.html#418">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-01-16 20:58:05 +0100 (Wed, 16 Jan 2008)
+New Revision: 986
+
+Modified:
+   trunk/data/init.lua
+   trunk/src/actors.cc
+   trunk/src/floors.cc
+   trunk/src/game.cc
+   trunk/src/items.cc
+   trunk/src/server.cc
+   trunk/src/stones/OxydStone.cc
+   trunk/src/stones_complex.cc
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1: Reengineering
+- rename system message &quot;init&quot; to &quot;_init&quot;
+- add message &quot;toggle&quot; for doors
+- deny level load on problems with old API horse targets
+- catch errors on prepare level load of init.lua, compat.lua, security.lua
+
+
+Modified: trunk/data/init.lua
+===================================================================
+--- trunk/data/init.lua	2008-01-15 23:57:24 UTC (rev 985)
++++ trunk/data/init.lua	2008-01-16 19:58:05 UTC (rev 986)
+@@ -128,6 +128,9 @@
+             table.insert(c, 0 + str)
+         end
+         d[i] = enigma.GetFloor(c[1], c[2]) -- requires floor to be set first (invalid for Nat method - level Bodyguard)
++        if d[i] == nil then
++             error(&quot;Actor Horse without floor error&quot;)
++        end
+         for j = 1, i do
+            if d[j] == nil then
+               d[j] = d[i]
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2008-01-15 23:57:24 UTC (rev 985)
++++ trunk/src/actors.cc	2008-01-16 19:58:05 UTC (rev 986)
+@@ -265,7 +265,7 @@
+ }
+ 
+ Value Actor::message(const Message &amp;m) {
+-    if (m.message == &quot;init&quot;) {
++    if (m.message == &quot;_init&quot;) {
+         startingpos = get_pos();
+         return Value();
+     }
+@@ -809,7 +809,7 @@
+             break;
+         case APPEARING:
+             // ugly hack
+-            if (m.message == &quot;init&quot;) {
++            if (m.message == &quot;_init&quot;) {
+                 Actor::message (m);
+                 handled = true;
+             } else if (m.message == &quot;shatter&quot;) {
+
+Modified: trunk/src/floors.cc
+===================================================================
+--- trunk/src/floors.cc	2008-01-15 23:57:24 UTC (rev 985)
++++ trunk/src/floors.cc	2008-01-16 19:58:05 UTC (rev 986)
+@@ -57,13 +57,13 @@
+ }
+ 
+ Value Floor::message(const Message &amp;m) {
+-    // &quot;init&quot;     : Start burning, if &quot;initfire&quot; is set.
++    // &quot;_init&quot;     : Start burning, if &quot;initfire&quot; is set.
+     // &quot;heat&quot;     : Heat the item, heat-transform floor
+     //                 or maybe set fire to it (if burnable).
+     // &quot;setfire&quot;  : Just try to make fire (if burnable).
+     // &quot;forcefire&quot;: Force fire, even on unburnable floor.
+     // &quot;stopfire&quot; : Stop fire, put ash but don't transform floor.
+-    if (m.message == &quot;init&quot; &amp;&amp; has_firetype(flft_initfire))
++    if (m.message == &quot;_init&quot; &amp;&amp; has_firetype(flft_initfire))
+         return force_fire();
+     if (m.message == &quot;heat&quot;)
+         return try_heating(NODIR, flhf_message);
+@@ -157,7 +157,7 @@
+  *    - &quot;expl&quot; or &quot;ignite&quot; message if the &quot;ignitable&quot;-attribute is set
+  *        - thereby by it-dynamite or it-*bomb + &quot;ignitable&quot;
+  *    - fire in the neighborhood (see below)
+- *    - on initialisation (&quot;init&quot;-message) when &quot;initfire&quot;-attribute is set
++ *    - on initialisation (&quot;_init&quot;-message) when &quot;initfire&quot;-attribute is set
+  *  On the floor itself it does
+  *    - inform stones on it -&gt; e.g. kill st-wood, st-hay
+  *    - keep on burning by chance or if eternal-attribute set
+
+Modified: trunk/src/game.cc
+===================================================================
+--- trunk/src/game.cc	2008-01-15 23:57:24 UTC (rev 985)
++++ trunk/src/game.cc	2008-01-16 19:58:05 UTC (rev 986)
+@@ -33,7 +33,6 @@
+ using namespace enigma;
+ using namespace std;
+ 
+-
+ /* -------------------- Global variables -------------------- */
+ 
+ namespace
+@@ -41,7 +40,6 @@
+     Uint32      last_tick_time;
+ }
+ 
+-
+ /* -------------------- Level previews -------------------- */
+ 
+ bool game::DrawLevelPreview (ecl::GC &amp;gc, lev::Proxy *levelProxy)
+@@ -65,13 +63,11 @@
+ }
+ 
+ 
+-
+ /* -------------------- Functions -------------------- */
+ 
+ void game::StartGame ()
+ {
+     lev::Index *ind = lev::Index::getCurrentIndex();
+-    server::InitNewGame();
+ 
+     video::HideMouse();
+     sdl::TempInputGrab grab(enigma::Nograb ? SDL_GRAB_OFF : SDL_GRAB_ON);
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-01-15 23:57:24 UTC (rev 985)
++++ trunk/src/items.cc	2008-01-16 19:58:05 UTC (rev 986)
+@@ -1341,7 +1341,7 @@
+             if (m.message == &quot;signal&quot;) {
+                 performAction(m.value.to_bool());  // convert 1/0 values to true/false
+                 return Value();                
+-            } else if (m.message == &quot;init&quot;) {
++            } else if (m.message == &quot;_init&quot;) {
+                 update_state();                
+                 return Value();
+             }
+@@ -2700,7 +2700,7 @@
+     }
+ 
+     Value BlockerItem::message(const Message &amp;m) {
+-        if (m.message == &quot;init&quot;) { 
++        if (m.message == &quot;_init&quot;) { 
+             if (Stone *st = GetStone(get_pos())) {
+                 if (st-&gt;is_kind(&quot;st_boulder&quot;))
+                     if (state == IDLE &amp;&amp; server::GameCompatibility != GAMET_PEROXYD)
+@@ -3014,7 +3014,7 @@
+ 
+ Value EasyKillStone::message(const Message &amp;m)
+ {
+-    if (m.message == &quot;init&quot;) {
++    if (m.message == &quot;_init&quot;) {
+         // does not work in on_creation() because items are created
+         // before stones are created.
+         if (server::GetDifficulty() == DIFFICULTY_EASY) {
+@@ -3043,7 +3043,7 @@
+         DECL_TRAITS;
+ 
+         virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;init&quot;) {
++            if (m.message == &quot;_init&quot;) {
+                 // does not work in on_creation() because items are created
+                 // before stones are created.
+                 if (server::GetDifficulty() == DIFFICULTY_HARD)
+@@ -3068,7 +3068,7 @@
+         DECL_TRAITS;
+ 
+         virtual Value message (const Message &amp;m) {
+-            if (m.message == &quot;init&quot;) {
++            if (m.message == &quot;_init&quot;) {
+                 if (server::SingleComputerGame)
+                     KillStone (get_pos());
+                 kill();
+@@ -3087,7 +3087,7 @@
+         DECL_TRAITS;
+ 
+         virtual Value message (const Message &amp;m) {
+-            if (m.message == &quot;init&quot;) {
++            if (m.message == &quot;_init&quot;) {
+                 if (!server::SingleComputerGame)
+                     KillStone (get_pos());
+                 kill();
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2008-01-15 23:57:24 UTC (rev 985)
++++ trunk/src/server.cc	2008-01-16 19:58:05 UTC (rev 986)
+@@ -124,9 +124,9 @@
+ 
+ void load_level(lev::Proxy *levelProxy, bool isRestart)
+ {
+-    server::PrepareLevel();
++    try {
++        server::PrepareLevel();
+ 
+-    try {
+         // clear inventory before level load and give us 2 extralives
+         player::NewGame(isRestart);
+ 
+
+Modified: trunk/src/stones/OxydStone.cc
+===================================================================
+--- trunk/src/stones/OxydStone.cc	2008-01-15 23:57:24 UTC (rev 985)
++++ trunk/src/stones/OxydStone.cc	2008-01-16 19:58:05 UTC (rev 986)
+@@ -872,7 +872,7 @@
+                 tryOpen();
+             return Value();
+         }
+-        else if (m.message == &quot;init&quot;) {
++        else if (m.message == &quot;_init&quot;) {
+             initColors();
+             return Value();
+         }
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-01-15 23:57:24 UTC (rev 985)
++++ trunk/src/stones_complex.cc	2008-01-16 19:58:05 UTC (rev 986)
+@@ -1307,7 +1307,7 @@
+         newstate = OPENING;
+     } else if (m.message == &quot;close&quot;) {
+         newstate = CLOSING;
+-    } else if (m.message == &quot;openclose&quot;) {
++    } else if (m.message == &quot;openclose&quot; || m.message == &quot;toggle&quot;) {
+         newstate = (state==OPEN || state==OPENING) ? CLOSING : OPENING;
+     } else if (m.message == &quot;signal&quot;) {
+         newstate = m.value.to_bool() ? OPENING : CLOSING;
+@@ -1506,7 +1506,7 @@
+         void notify_item();
+ 
+         virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;init&quot;) { // request from ShogunDot (if set _after_ ShogunStone)
++            if (m.message == &quot;_init&quot;) { // request from ShogunDot (if set _after_ ShogunStone)
+                 notify_item();
+                 return Value();
+             }
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-01-15 23:57:24 UTC (rev 985)
++++ trunk/src/stones_simple.cc	2008-01-16 19:58:05 UTC (rev 986)
+@@ -269,7 +269,7 @@
+         DECL_TRAITS;
+ 
+         virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;init&quot;) {
++            if (m.message == &quot;_init&quot;) {
+                 if (server::GetDifficulty() == DIFFICULTY_EASY) {
+                     SetFloor (get_pos(), MakeFloor (&quot;fl-normal&quot;));
+                 } else {
+@@ -1581,7 +1581,7 @@
+                 // Oxyd* usage of ActorImpulseStone as a signal multiplier
+                 ObjectList ol = getAttr(&quot;$!oxyd!destinations&quot;);
+                 
+-                if (m.message == &quot;init&quot; &amp;&amp; ol.size() &gt; 0) {
++                if (m.message == &quot;_init&quot; &amp;&amp; ol.size() &gt; 0) {
+                     signalidx = 0;
+                     SendMessage(ol.front(), &quot;signal&quot;, 1);
+                     return Value();
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-01-15 23:57:24 UTC (rev 985)
++++ trunk/src/world.cc	2008-01-16 19:58:05 UTC (rev 986)
+@@ -1576,7 +1576,7 @@
+     {
+         Actor *a = *i;
+         a-&gt;on_creation(a-&gt;get_actorinfo()-&gt;pos);
+-        SendMessage(a, &quot;init&quot;, Value());
++        SendMessage(a, &quot;_init&quot;, Value());
+ 
+         if (Value v = a-&gt;getAttr(&quot;player&quot;)) {
+             int iplayer = v;
+@@ -1592,7 +1592,7 @@
+     if (!seen_player0) 
+         throw XLevelLoading(&quot;Error: No player 0 defined!&quot;);
+ 
+-    BroadcastMessage(&quot;init&quot;, Value(),
++    BroadcastMessage(&quot;_init&quot;, Value(),
+         GridLayerBits(GRID_ITEMS_BIT | GRID_STONES_BIT | GRID_FLOOR_BIT));
+ 
+     server::InitMoveCounter();
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000417.html">[Enigma-game-svn] r985 - in trunk: data src
+</A></li>
+	<LI>Next message: <A HREF="000419.html">[Enigma-game-svn] r987 - in trunk: . doc src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#418">[ date ]</a>
+              <a href="thread.html#418">[ thread ]</a>
+              <a href="subject.html#418">[ subject ]</a>
+              <a href="author.html#418">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

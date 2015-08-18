@@ -1,0 +1,427 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1803 - in trunk: data src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1803%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200909092210.n89MAb04014499%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001231.html">
+   <LINK REL="Next"  HREF="001233.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1803 - in trunk: data src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1803%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200909092210.n89MAb04014499%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1803 - in trunk: data src">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Sep 10 00:10:37 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001231.html">[Enigma-game-svn] r1802
+</A></li>
+        <LI>Next message: <A HREF="001233.html">[Enigma-game-svn] r1804 - in trunk/data/levels: enigma_cross	enigma_i enigma_ii enigma_iii enigma_iv enigma_ix enigma_v	enigma_vi enigma_vii enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1232">[ date ]</a>
+              <a href="thread.html#1232">[ thread ]</a>
+              <a href="subject.html#1232">[ subject ]</a>
+              <a href="author.html#1232">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-09-10 00:10:36 +0200 (Thu, 10 Sep 2009)
+New Revision: 1803
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/startup.lua
+   trunk/src/AttributeDescriptor.cc
+   trunk/src/enigma-lua.pkg
+   trunk/src/lua-display.cc
+   trunk/src/lua-display.hh
+   trunk/src/lua-ecl.cc
+   trunk/src/lua-ecl.hh
+   trunk/src/lua-editor.cc
+   trunk/src/lua-editor.hh
+   trunk/src/lua-enigma.cc
+   trunk/src/lua-enigma.hh
+   trunk/src/lua-global.cc
+   trunk/src/lua-global.hh
+   trunk/src/lua.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1: 
+- remove DefineSimpleFloor from Lua API
+- fix attribute &quot;loop&quot; mapping old API to new API
+- fix exception handling on set of new objects
+    - exception on attribute set caused objects to be lost on stack
+    - st_oxyd did not dispose and deregister from instance vector causing
+      strange behaviour on subsequent loaded levels
+- fix support for int type attributes with autotiling string value &quot;%%&quot;
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2009-09-09 00:09:24 UTC (rev 1802)
++++ trunk/data/api1init.lua	2009-09-09 22:10:36 UTC (rev 1803)
+@@ -893,6 +893,9 @@
+      if key == &quot;invisible&quot; then
+          if val == 1 then _val = true else _val = false end
+      end
++     if key == &quot;loop&quot; then
++         if val == 1 then _val = true else _val = false end
++     end
+      if key == &quot;orientation&quot; and _obj_name == &quot;st-mirror&quot; then
+          _val = (6 - val) % 4
+      end
+
+Modified: trunk/data/startup.lua
+===================================================================
+--- trunk/data/startup.lua	2009-09-09 00:09:24 UTC (rev 1802)
++++ trunk/data/startup.lua	2009-09-09 22:10:36 UTC (rev 1803)
+@@ -93,29 +93,4 @@
+     dofile(filename)
+ end
+ 
+-------------------------------
+--- Define the simple stones --
+-------------------------------
+-function def_stone(name, sound)
+-    world.DefineSimpleStone(name,sound or &quot;stone&quot;,0,0)
+-end
+-function def_stone_hollow(name)
+-    world.DefineSimpleStone(name,&quot;&quot;,1,0)
+-end
+-function def_stone_movable(name, sound)
+-    world.DefineSimpleStoneMovable(name,sound or &quot;stone&quot;,0)
+-end
+ 
+-
+-------------------------------
+--- Define the simple floors --
+-------------------------------
+-function def_floor(name, frict, mfactor, burnable, firetransform, frames)
+-    world.DefineSimpleFloor(name, frict, mfactor, burnable, firetransform)
+-    if frames then
+-        world.DefineSimpleFloor(name..&quot;_framed&quot;, frict, mfactor, burnable, firetransform)    
+-    end
+-end
+-
+--- Floor(kind, friction, adhesion, burnable, firetransform, frames)
+-
+
+Modified: trunk/src/AttributeDescriptor.cc
+===================================================================
+--- trunk/src/AttributeDescriptor.cc	2009-09-09 00:09:24 UTC (rev 1802)
++++ trunk/src/AttributeDescriptor.cc	2009-09-09 22:10:36 UTC (rev 1803)
+@@ -65,7 +65,7 @@
+                 if (!isNumber &amp;&amp; vt == Value::STRING) {
+                     if (name == &quot;code&quot; || name == &quot;cluster&quot;)    // these attributes accept all strings
+                         return VALID_OK;
+-                    std::string str = value.to_string();
++                    std::string str = val.to_string();
+                     if (str[0] == '%')
+                         isNumber = true;
+                 }
+
+Modified: trunk/src/enigma-lua.pkg
+===================================================================
+--- trunk/src/enigma-lua.pkg	2009-09-09 00:09:24 UTC (rev 1802)
++++ trunk/src/enigma-lua.pkg	2009-09-09 22:10:36 UTC (rev 1803)
+@@ -92,8 +92,6 @@
+     Object *GetNamedObject(const char *name);
+ 
+     void Resize(int w, int h);
+-    void DefineSimpleFloor(const char *kind, double friction, double mousefactor,
+-                           bool burnable, const char *firetransform);
+ }
+ 
+ /* -------------------- video.cc -------------------- */
+
+Modified: trunk/src/lua-display.cc
+===================================================================
+--- trunk/src/lua-display.cc	2009-09-09 00:09:24 UTC (rev 1802)
++++ trunk/src/lua-display.cc	2009-09-09 22:10:36 UTC (rev 1803)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: display
+-** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
++** Generated automatically by tolua++-1.0.93 on Wed Sep  9 01:10:11 2009.
+ */
+ 
+ #ifndef __cplusplus
+
+Modified: trunk/src/lua-display.hh
+===================================================================
+--- trunk/src/lua-display.hh	2009-09-09 00:09:24 UTC (rev 1802)
++++ trunk/src/lua-display.hh	2009-09-09 22:10:36 UTC (rev 1803)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: display
+-** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
++** Generated automatically by tolua++-1.0.93 on Wed Sep  9 01:10:11 2009.
+ */
+ 
+ /* Exported function */
+
+Modified: trunk/src/lua-ecl.cc
+===================================================================
+--- trunk/src/lua-ecl.cc	2009-09-09 00:09:24 UTC (rev 1802)
++++ trunk/src/lua-ecl.cc	2009-09-09 22:10:36 UTC (rev 1803)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: px
+-** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
++** Generated automatically by tolua++-1.0.93 on Wed Sep  9 01:10:11 2009.
+ */
+ 
+ #ifndef __cplusplus
+
+Modified: trunk/src/lua-ecl.hh
+===================================================================
+--- trunk/src/lua-ecl.hh	2009-09-09 00:09:24 UTC (rev 1802)
++++ trunk/src/lua-ecl.hh	2009-09-09 22:10:36 UTC (rev 1803)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: px
+-** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
++** Generated automatically by tolua++-1.0.93 on Wed Sep  9 01:10:11 2009.
+ */
+ 
+ /* Exported function */
+
+Modified: trunk/src/lua-editor.cc
+===================================================================
+--- trunk/src/lua-editor.cc	2009-09-09 00:09:24 UTC (rev 1802)
++++ trunk/src/lua-editor.cc	2009-09-09 22:10:36 UTC (rev 1803)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: editor
+-** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
++** Generated automatically by tolua++-1.0.93 on Wed Sep  9 01:10:11 2009.
+ */
+ 
+ #ifndef __cplusplus
+
+Modified: trunk/src/lua-editor.hh
+===================================================================
+--- trunk/src/lua-editor.hh	2009-09-09 00:09:24 UTC (rev 1802)
++++ trunk/src/lua-editor.hh	2009-09-09 22:10:36 UTC (rev 1803)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: editor
+-** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
++** Generated automatically by tolua++-1.0.93 on Wed Sep  9 01:10:11 2009.
+ */
+ 
+ /* Exported function */
+
+Modified: trunk/src/lua-enigma.cc
+===================================================================
+--- trunk/src/lua-enigma.cc	2009-09-09 00:09:24 UTC (rev 1802)
++++ trunk/src/lua-enigma.cc	2009-09-09 22:10:36 UTC (rev 1803)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: enigma
+-** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
++** Generated automatically by tolua++-1.0.93 on Wed Sep  9 01:10:11 2009.
+ */
+ 
+ #ifndef __cplusplus
+@@ -930,42 +930,6 @@
+ }
+ #endif //#ifndef TOLUA_DISABLE
+ 
+-/* function: DefineSimpleFloor */
+-#ifndef TOLUA_DISABLE_tolua_enigma_world_DefineSimpleFloor00
+-static int tolua_enigma_world_DefineSimpleFloor00(lua_State* tolua_S)
+-{
+-#ifndef TOLUA_RELEASE
+- tolua_Error tolua_err;
+- if (
+-     !tolua_isstring(tolua_S,1,0,&amp;tolua_err) ||
+-     !tolua_isnumber(tolua_S,2,0,&amp;tolua_err) ||
+-     !tolua_isnumber(tolua_S,3,0,&amp;tolua_err) ||
+-     !tolua_isboolean(tolua_S,4,0,&amp;tolua_err) ||
+-     !tolua_isstring(tolua_S,5,0,&amp;tolua_err) ||
+-     !tolua_isnoobj(tolua_S,6,&amp;tolua_err)
+- )
+-  goto tolua_lerror;
+- else
+-#endif
+- {
+-  const char* kind = ((const char*)  tolua_tostring(tolua_S,1,0));
+-  double friction = ((double)  tolua_tonumber(tolua_S,2,0));
+-  double mousefactor = ((double)  tolua_tonumber(tolua_S,3,0));
+-  bool burnable = ((bool)  tolua_toboolean(tolua_S,4,0));
+-  const char* firetransform = ((const char*)  tolua_tostring(tolua_S,5,0));
+-  {
+-   DefineSimpleFloor(kind,friction,mousefactor,burnable,firetransform);
+-  }
+- }
+- return 0;
+-#ifndef TOLUA_RELEASE
+- tolua_lerror:
+- tolua_error(tolua_S,&quot;#ferror in function 'DefineSimpleFloor'.&quot;,&amp;tolua_err);
+- return 0;
+-#endif
+-}
+-#endif //#ifndef TOLUA_DISABLE
+-
+ /* function: GetScreen */
+ #ifndef TOLUA_DISABLE_tolua_enigma_video_GetScreen00
+ static int tolua_enigma_video_GetScreen00(lua_State* tolua_S)
+@@ -1191,7 +1155,6 @@
+    tolua_function(tolua_S,&quot;MakeStone&quot;,tolua_enigma_world_MakeStone00);
+    tolua_function(tolua_S,&quot;GetNamedObject&quot;,tolua_enigma_world_GetNamedObject00);
+    tolua_function(tolua_S,&quot;Resize&quot;,tolua_enigma_world_Resize00);
+-   tolua_function(tolua_S,&quot;DefineSimpleFloor&quot;,tolua_enigma_world_DefineSimpleFloor00);
+   tolua_endmodule(tolua_S);
+   tolua_module(tolua_S,&quot;video&quot;,0);
+   tolua_beginmodule(tolua_S,&quot;video&quot;);
+
+Modified: trunk/src/lua-enigma.hh
+===================================================================
+--- trunk/src/lua-enigma.hh	2009-09-09 00:09:24 UTC (rev 1802)
++++ trunk/src/lua-enigma.hh	2009-09-09 22:10:36 UTC (rev 1803)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: enigma
+-** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
++** Generated automatically by tolua++-1.0.93 on Wed Sep  9 01:10:11 2009.
+ */
+ 
+ /* Exported function */
+
+Modified: trunk/src/lua-global.cc
+===================================================================
+--- trunk/src/lua-global.cc	2009-09-09 00:09:24 UTC (rev 1802)
++++ trunk/src/lua-global.cc	2009-09-09 22:10:36 UTC (rev 1803)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: global
+-** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
++** Generated automatically by tolua++-1.0.93 on Wed Sep  9 01:10:11 2009.
+ */
+ 
+ #ifndef __cplusplus
+
+Modified: trunk/src/lua-global.hh
+===================================================================
+--- trunk/src/lua-global.hh	2009-09-09 00:09:24 UTC (rev 1802)
++++ trunk/src/lua-global.hh	2009-09-09 22:10:36 UTC (rev 1803)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: global
+-** Generated automatically by tolua++-1.0.92 on Tue Jan 20 20:18:15 2009.
++** Generated automatically by tolua++-1.0.93 on Wed Sep  9 01:10:11 2009.
+ */
+ 
+ /* Exported function */
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2009-09-09 00:09:24 UTC (rev 1802)
++++ trunk/src/lua.cc	2009-09-09 22:10:36 UTC (rev 1803)
+@@ -1318,15 +1318,7 @@
+          lua_pushvalue(L, -2); // a copy of key for work
+          if (!lua_isnumber(L, -1) &amp;&amp; lua_isstring(L, -1)) {
+             std::string key = lua_tostring(L, -1);
+-            try {
+-                obj-&gt;setAttrChecked(key, to_value(L, -2));  // name set gets handeled by Object
+-            }  
+-            catch (const XLevelRuntime &amp;e) {
+-                throwLuaError (L, e.what());
+-            }
+-            catch (...) {
+-                throwLuaError (L, &quot;uncaught exception&quot;);
+-            }
++            obj-&gt;setAttrChecked(key, to_value(L, -2));  // name set gets handeled by Object
+          } else if (lua_tointeger(L, -1) == 2) {  // second entry without a string key is taken as name
+              if (!lua_isnumber(L, -2) &amp;&amp; lua_isstring(L, -2))
+                  obj-&gt;setAttrChecked(&quot;name&quot;, lua_tostring(L, -2));
+@@ -2263,7 +2255,16 @@
+         return 0;
+     }
+     lua_pop(L, 1);   // object type
+-    setObjectAttributes(obj, L);
++    try {
++        setObjectAttributes(obj, L);
++    } catch (const XLevelRuntime &amp;e) {
++        DisposeObject(obj);  // obj not yet part of world - essential for OxydStone
++        throwLuaError (L, e.what());
++    } catch (...) {
++        DisposeObject(obj);
++        throwLuaError (L, &quot;uncaught exception&quot;);
++    }
++    
+     if (itemHolder != NULL) {
+         if (obj-&gt;getObjectType() != Object::ITEM) {
+             DisposeObject(obj);
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2009-09-09 00:09:24 UTC (rev 1802)
++++ trunk/src/world.cc	2009-09-09 22:10:36 UTC (rev 1803)
+@@ -2509,15 +2509,6 @@
+     repos-&gt;add_templ(kind, obj);
+ }
+ 
+-
+-//void RegisterActor (Actor *actor) 
+-//{
+-//    Register(static_cast&lt;Object*&gt;(actor));
+-//    ActorID id = get_id(actor);
+-//    ASSERT (id != ac_INVALID, XLevelRuntime,
+-//        &quot;RegisterActor: trying to register with invalid ID&quot;);
+-//}
+-
+ void Repos_Shutdown() {
+     delete repos;
+ }
+@@ -2570,13 +2561,6 @@
+     }
+ }
+ 
+-void DefineSimpleFloor(const std::string &amp;kind, double friction,
+-                              double mousefactor, bool burnable,
+-                              const std::string &amp;firetransform)
+-{
+-    // TBD
+-}
+-
+ void DumpObjectInfo() {
+     repos-&gt;dump_info();
+ }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001231.html">[Enigma-game-svn] r1802
+</A></li>
+	<LI>Next message: <A HREF="001233.html">[Enigma-game-svn] r1804 - in trunk/data/levels: enigma_cross	enigma_i enigma_ii enigma_iii enigma_iv enigma_ix enigma_v	enigma_vi enigma_vii enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1232">[ date ]</a>
+              <a href="thread.html#1232">[ thread ]</a>
+              <a href="subject.html#1232">[ subject ]</a>
+              <a href="author.html#1232">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

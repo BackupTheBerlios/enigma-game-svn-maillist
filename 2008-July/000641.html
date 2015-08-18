@@ -1,0 +1,1165 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1207 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1207%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200807032139.m63LdKY2007202%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000640.html">
+   <LINK REL="Next"  HREF="000642.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1207 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1207%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200807032139.m63LdKY2007202%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1207 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Jul  3 23:39:20 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000640.html">[Enigma-game-svn] r1206 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000642.html">[Enigma-game-svn] r1208 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#641">[ date ]</a>
+              <a href="thread.html#641">[ thread ]</a>
+              <a href="subject.html#641">[ subject ]</a>
+              <a href="author.html#641">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-07-03 23:39:17 +0200 (Thu, 03 Jul 2008)
+New Revision: 1207
+
+Added:
+   trunk/src/stones/RubberbandStone.cc
+   trunk/src/stones/RubberbandStone.hh
+   trunk/src/stones/ScissorsStone.cc
+   trunk/src/stones/ScissorsStone.hh
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/Object.cc
+   trunk/src/lua.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/stones.cc
+   trunk/src/stones.hh
+   trunk/src/stones/BoulderStone.cc
+   trunk/src/stones/BoulderStone.hh
+   trunk/src/stones/ChessStone.cc
+   trunk/src/stones/ChessStone.hh
+   trunk/src/stones/LightPassengerStone.cc
+   trunk/src/stones/LightPassengerStone.hh
+   trunk/src/stones/RotatorStone.cc
+   trunk/src/stones/RotatorStone.hh
+   trunk/src/stones_complex.cc
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+   trunk/src/world.hh
+Log:
+Trunk 1.1: new API reengineering
+- st(grp), it(grp), fl(grp) allow group as argument, returns the result group 
+- seperate wire impulse handling from stone::on_impulse as propagateImpulse()
+- integrate wire flag into Impulse structure
+- Rotator: if movable then propagate wire impulses
+- RubberbandStone reengineering:
+  - rename to st_rubberband
+  - adjust attribute &quot;minlength&quot; to &quot;threshold&quot;
+  - add attribute &quot;max&quot; (&quot;min&quot; is not supported )
+  - propagate wire impulses if hit with wand
+  - do not accept wire impulses
+- ScissorsStone reengineering
+  - rename to &quot;st_scissors&quot;
+- fix Pull stone crash
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/data/api1init.lua	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -171,6 +171,8 @@
+     st_rotator_ccw = &quot;st-rotator-left&quot;,
+     st_rotator_cw_movable = &quot;st-rotator_move-right&quot;,
+     st_rotator_ccw_movable = &quot;st-rotator_move-left&quot;,
++    st_rubberband = &quot;st-rubberband&quot;,
++    st_scissors = &quot;st-scissors&quot;,
+     st_switch = &quot;st-switch&quot;,
+     st_switch_black = &quot;st-switch_black&quot;,
+     st_switch_white = &quot;st-switch_white&quot;,
+@@ -375,6 +377,9 @@
+      if key == &quot;gradient_factor&quot; then
+          _key = &quot;gradient&quot;
+      end
++     if key == &quot;minlength&quot; and (_obj_name == &quot;st-rubberband&quot;)  then
++         _key = &quot;threshold&quot;
++     end
+      if key == &quot;targetx&quot; then
+          local d = enigma._GetAttrib(obj, &quot;destination&quot;)
+          if (en.usertype(d) == &quot;position&quot;) then
+@@ -454,6 +459,9 @@
+      if key == &quot;gradient_factor&quot; then
+          _key = &quot;gradient&quot;
+      end
++     if key == &quot;minlength&quot; and (_obj_name == &quot;st-rubberband&quot;)  then
++         _key = &quot;threshold&quot;
++     end
+      if key == &quot;blackball&quot; or key == &quot;whiteball&quot; then
+          _key = &quot;color&quot;
+      end
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/data/schemas/objects.xml	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -42,7 +42,7 @@
+     &lt;attr name=&quot;range&quot; type=&quot;double&quot; default=&quot;1.0&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;rubbers&quot; type=&quot;group&quot; default=&quot;nil&quot; rw=&quot;r&quot;/&gt;
+     &lt;attr name=&quot;secure&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+-    &lt;attr name=&quot;scissor&quot; type=&quot;bool&quot; default=&quot;true&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;scissor&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;scratches&quot; type=&quot;string&quot; default=&quot;&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;state&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;static&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+@@ -586,6 +586,14 @@
+     &lt;object name=&quot;st_rotator_ccw&quot;&gt;
+       &lt;attr name=&quot;state&quot; value=&quot;1&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_rubberband&quot;&gt;
++      &lt;attr name=&quot;strength&quot; default=&quot;10&quot;/&gt;
++      &lt;attr name=&quot;length&quot;/&gt;
++      &lt;attr name=&quot;threshold&quot;/&gt;
++      &lt;attr name=&quot;max&quot;/&gt;
++      &lt;attr name=&quot;scissor&quot; default=&quot;true&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_scissors&quot;/&gt;
+     &lt;object name=&quot;st_switch&quot;&gt;
+       &lt;attr name=&quot;color&quot;/&gt;
+       &lt;attr name=&quot;instant&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/Makefile.am	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -241,6 +241,10 @@
+ 	stones/PolarSwitchStone.hh	\
+ 	stones/RotatorStone.cc	\
+ 	stones/RotatorStone.hh	\
++	stones/RubberbandStone.cc	\
++	stones/RubberbandStone.hh	\
++	stones/ScissorsStone.cc	\
++	stones/ScissorsStone.hh	\
+ 	stones/Switch.cc	\
+ 	stones/Switch.hh	\
+ 	stones/TimerStone.cc	\
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/Object.cc	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -162,12 +162,22 @@
+                     KillStone(dynamic_cast&lt;GridObject *&gt;(this)-&gt;get_pos()); break;
+             }
+         } else if (m.message == &quot;disconnect&quot;) {
++            bool wasConnected = false;
+             ObjectList olist = getAttr(&quot;rubbers&quot;);   // a private deletion resistant copy
+             for (ObjectList::iterator it = olist.begin(); it != olist.end(); ++it)
+                 KillOther(dynamic_cast&lt;Other *&gt;(*it));
++            if (olist.size() &gt; 0) {
++                wasConnected = true;
++                setAttr(&quot;rubber&quot;, Value());   // delete attribute
++            }
+             olist = getAttr(&quot;wires&quot;);   // a private deletion resistant copy
+             for (ObjectList::iterator it = olist.begin(); it != olist.end(); ++it)
+                 KillOther(dynamic_cast&lt;Other *&gt;(*it));
++            if (olist.size() &gt; 0) {
++                wasConnected = true;
++                setAttr(&quot;wires&quot;, Value());   // delete attribute
++            }
++            return wasConnected;
+         }
+         return Value();
+     }
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/lua.cc	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -1145,49 +1145,68 @@
+     return 0;
+ }
+ 
+-static int getFloor(lua_State *L) {
+-    // position|table|obj|(num,num)
++static int getStoneItemFloor(lua_State *L, Object::ObjectType ot) {
++    // position|table|obj|(num,num)|group
+     if (is_world(L, 1))      // world method?
+         lua_remove(L, 1);    // no need of context
+-    newPosition(L);          // unify all arg types to a position
+-    lua_getmetatable(L, -1);            
+-    lua_rawgeti(L, -1, 1);
+-    int x = round_down&lt;int&gt;(lua_tonumber(L, -1));
+-    lua_rawgeti(L, -2, 2);
+-    int y = round_down&lt;int&gt;(lua_tonumber(L, -1));
+-    Object *o = GetFloor(GridPos(x, y));
+-    pushobject(L, o);
++    if (is_group(L, 1)) {
++        ObjectList srcList = to_value(L, 1);
++        ObjectList objects;
++        for (ObjectList::iterator itr = srcList.begin(); itr != srcList.end(); ++itr) {
++            GridPos  p;
++            if (GridObject *gobj = dynamic_cast&lt;GridObject*&gt;(*itr)) {
++                p = gobj-&gt;getOwnerPos();
++            } else if (Actor *a = dynamic_cast&lt;Actor*&gt;(*itr)) {
++                p = GridPos(a-&gt;get_pos());
++            } else {
++                continue;  // no valid position
++            }
++            Object *obj = NULL;
++            switch (ot) {
++                case Object::FLOOR :
++                    obj = GetFloor(p); break;
++                case Object::ITEM :
++                    obj = GetItem(p); break;
++                case Object::STONE :
++                    obj = GetStone(p); break;
++            }
++            if (obj != NULL) 
++                objects.push_back(obj);
++        }
++        pushNewGroup(L, objects);
++    } else {
++        newPosition(L);          // unify all arg types to a position
++        lua_getmetatable(L, -1);            
++        lua_rawgeti(L, -1, 1);
++        int x = round_down&lt;int&gt;(lua_tonumber(L, -1));
++        lua_rawgeti(L, -2, 2);
++        int y = round_down&lt;int&gt;(lua_tonumber(L, -1));
++        Object *obj = NULL;
++        switch (ot) {
++            case Object::FLOOR :
++                obj = GetFloor(GridPos(x, y)); break;
++            case Object::ITEM :
++                obj = GetItem(GridPos(x, y)); break;
++            case Object::STONE :
++                obj = GetStone(GridPos(x, y)); break;
++        }
++        pushobject(L, obj);
++    }
+     return 1;
+ }
++static int getFloor(lua_State *L) {
++    // position|table|obj|(num,num)|group
++    return getStoneItemFloor(L, Object::FLOOR);
++}
+ 
+ static int getItem(lua_State *L) {
+-    // position|table|obj|(num,num)
+-    if (is_world(L, 1))      // world method?
+-        lua_remove(L, 1);    // no need of context
+-    newPosition(L);          // unify all arg types to a position
+-    lua_getmetatable(L, -1);            
+-    lua_rawgeti(L, -1, 1);
+-    int x = round_down&lt;int&gt;(lua_tonumber(L, -1));
+-    lua_rawgeti(L, -2, 2);
+-    int y = round_down&lt;int&gt;(lua_tonumber(L, -1));
+-    Object *o = GetItem(GridPos(x, y));
+-    pushobject(L, o);
+-    return 1;
++    // position|table|obj|(num,num)|group
++    return getStoneItemFloor(L, Object::ITEM);
+ }
+ 
+ static int getStone(lua_State *L) {
+-    // position|table|obj|(num,num)
+-    if (is_world(L, 1))      // world method?
+-        lua_remove(L, 1);    // no need of context
+-    newPosition(L);          // unify all arg types to a position
+-    lua_getmetatable(L, -1);            
+-    lua_rawgeti(L, -1, 1);
+-    int x = round_down&lt;int&gt;(lua_tonumber(L, -1));
+-    lua_rawgeti(L, -2, 2);
+-    int y = round_down&lt;int&gt;(lua_tonumber(L, -1));
+-    Object *o = GetStone(GridPos(x, y));
+-    pushobject(L, o);
+-    return 1;
++    // position|table|obj|(num,num)|group
++    return getStoneItemFloor(L, Object::STONE);
+ }
+ 
+ static int killObjectBase(lua_State *L) {  // TODO Itemholder owner objects
+@@ -1341,7 +1360,10 @@
+         lua_rawgeti(L, -1, i);  // the object
+         lua_pushvalue(L, 2);    // copy the message
+         lua_pushvalue(L, 3);    // copy message value
+-        objectMessageBase(L);   // end up with return value on top
++        if (lua_isnil(L, -3)) 
++            lua_pushnil(L);     // do not send messages to nil - nil may occur in groups
++        else
++            objectMessageBase(L);   // end up with return value on top
+     }
+     return numObjects &gt;= 1 ? 1 : 0;  // return last message value if group was not empty
+ }
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/ox_peroxyd.cc	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -344,8 +344,8 @@
+     &quot;st-swap&quot;,                  // PerOxyd stone 0x93
+     &quot;st-spitter&quot;,               // PerOxyd stone 0x94
+     0,                          // PerOxyd stone 0x95 (dynamite holder, will implememnt it)(levels: 41 184 200)
+-    &quot;st-rubberband&quot;,            // PerOxyd stone 0x96
+-    &quot;st-scissors&quot;,              // PerOxyd stone 0x97
++    &quot;st_rubberband&quot;,            // PerOxyd stone 0x96
++    &quot;st_scissors&quot;,              // PerOxyd stone 0x97
+     &quot;st-grate3&quot;,                // PerOxyd stone 0x98
+     &quot;st_blocker&quot;,               // PerOxyd stone 0x99
+     &quot;st-grate1&quot;,                // PerOxyd stone 0x9a
+
+Modified: trunk/src/stones/BoulderStone.cc
+===================================================================
+--- trunk/src/stones/BoulderStone.cc	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/stones/BoulderStone.cc	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -150,7 +150,7 @@
+         Stone::on_move();
+     }
+     
+-    void BoulderStone::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) {
++    void BoulderStone::on_impulse(const Impulse&amp; impulse) {
+         if (state == FALLING)
+             return;
+ 
+
+Modified: trunk/src/stones/BoulderStone.hh
+===================================================================
+--- trunk/src/stones/BoulderStone.hh	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/stones/BoulderStone.hh	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -68,7 +68,7 @@
+         virtual void actor_hit(const StoneContact &amp;sc);
+         virtual void on_floor_change();
+         virtual void on_move();
+-        virtual void on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false);
++        virtual void on_impulse(const Impulse&amp; impulse);
+ //        virtual const char *collision_sound();
+ 
+     private:
+
+Modified: trunk/src/stones/ChessStone.cc
+===================================================================
+--- trunk/src/stones/ChessStone.cc	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/stones/ChessStone.cc	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -141,7 +141,7 @@
+         }
+     }
+ 
+-    void ChessStone::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) {
++    void ChessStone::on_impulse(const Impulse&amp; impulse) {
+     }
+     
+     bool ChessStone::is_removable() const {    // Interface for st-swap and st-pull
+
+Modified: trunk/src/stones/ChessStone.hh
+===================================================================
+--- trunk/src/stones/ChessStone.hh	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/stones/ChessStone.hh	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -86,7 +86,7 @@
+         
+         // Stone interface
+         virtual void actor_hit(const StoneContact &amp;sc);
+-        virtual void on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false);
++        virtual void on_impulse(const Impulse&amp; impulse);
+         virtual bool is_removable() const;
+         virtual void on_floor_change();
+ 
+
+Modified: trunk/src/stones/LightPassengerStone.cc
+===================================================================
+--- trunk/src/stones/LightPassengerStone.cc	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/stones/LightPassengerStone.cc	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -167,7 +167,7 @@
+         }
+     }
+ 
+-    void LightPassengerStone::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) {
++    void LightPassengerStone::on_impulse(const Impulse&amp; impulse) {
+         Actor *a = dynamic_cast&lt;Actor*&gt;(impulse.sender);
+         if (a == NULL &amp;&amp; ((objFlags &amp; OBJBIT_LIGHTNEWDIRS) == NODIRBIT || state == OFF 
+                 || server::GameCompatibility != GAMET_ENIGMA))
+
+Modified: trunk/src/stones/LightPassengerStone.hh
+===================================================================
+--- trunk/src/stones/LightPassengerStone.hh	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/stones/LightPassengerStone.hh	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -68,7 +68,7 @@
+         
+         // Stone interface
+         virtual void actor_hit(const StoneContact &amp;sc);
+-        virtual void on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false);
++        virtual void on_impulse(const Impulse&amp; impulse);
+ 
+         // TimeHandler interface
+         virtual void alarm();
+
+Modified: trunk/src/stones/RotatorStone.cc
+===================================================================
+--- trunk/src/stones/RotatorStone.cc	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/stones/RotatorStone.cc	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -116,9 +116,10 @@
+             maybe_push_stone(sc);
+     }
+ 
+-    void RotatorStone::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) {
++    void RotatorStone::on_impulse(const Impulse&amp; impulse) {
+         if (objFlags &amp; OBJBIT_MOVABLE) {
+             move_stone(impulse.dir);
++            propagateImpulse(impulse);
+         }
+     }
+     
+
+Modified: trunk/src/stones/RotatorStone.hh
+===================================================================
+--- trunk/src/stones/RotatorStone.hh	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/stones/RotatorStone.hh	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -64,7 +64,7 @@
+         
+         // Stone interface
+         virtual void actor_hit(const StoneContact &amp;sc);
+-        virtual void on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false);
++        virtual void on_impulse(const Impulse&amp; impulse);
+         virtual void on_move();
+         virtual FreezeStatusBits get_freeze_bits();
+ 
+
+Added: trunk/src/stones/RubberbandStone.cc
+===================================================================
+--- trunk/src/stones/RubberbandStone.cc	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/stones/RubberbandStone.cc	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -0,0 +1,82 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/RubberbandStone.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;player.hh&quot;
++
++namespace enigma {
++    RubberbandStone::RubberbandStone() : Stone () {
++    }
++
++    std::string RubberbandStone::getClass() const {
++        return &quot;st_rubberband&quot;;
++    }
++        
++    void RubberbandStone::init_model() {
++        set_model(&quot;st-rubberband&quot;);
++    }
++    
++    void RubberbandStone::actor_hit(const StoneContact &amp;sc) {
++        // The mode attribute &quot;scissor&quot; defines, if when touching an st-rubberband,
++        // other rubberbands to the actor will be cut of or not, true means they will. true is default.
++        bool isScissor = to_bool(getAttr(&quot;scissor&quot;));
++
++        bool alreadyConnected = false;
++        ObjectList rubbers = sc.actor-&gt;getAttr(&quot;rubbers&quot;);
++        for (ObjectList::iterator it =  rubbers.begin(); it != rubbers.end(); ++it) {
++            if (((Object *)(*it)-&gt;getAttr(&quot;anchor2&quot;)) == this) {
++                alreadyConnected = true;
++                break;
++            }
++        }
++        if (!alreadyConnected) {
++            sound_event(&quot;rubberband&quot;);
++            if (isScissor) {
++                SendMessage(sc.actor, &quot;disconnect&quot;);
++            }
++            Object *obj = MakeObject(&quot;ot_rubberband&quot;);
++            obj-&gt;setAttr(&quot;anchor1&quot;, sc.actor);
++            obj-&gt;setAttr(&quot;anchor2&quot;, this);
++            obj-&gt;setAttr(&quot;strength&quot;, getAttr(&quot;strength&quot;));
++            obj-&gt;setAttr(&quot;length&quot;, getAttr(&quot;length&quot;));
++            obj-&gt;setAttr(&quot;threshold&quot;, getAttr(&quot;threshold&quot;));
++            obj-&gt;setAttr(&quot;max&quot;, getAttr(&quot;max&quot;));
++            AddOther(dynamic_cast&lt;Other *&gt;(obj));
++        }
++        
++        maybe_push_stone(sc);
++    }
++
++    void RubberbandStone::on_impulse (const Impulse&amp; impulse) {
++        Actor *a = dynamic_cast&lt;Actor *&gt;(impulse.sender);
++        if (a &amp;&amp; player::WieldedItemIs (a, &quot;it-magicwand&quot;)) {
++            move_stone(impulse.dir);
++            propagateImpulse(impulse);
++        }
++    }
++
++    DEF_TRAITSM(RubberbandStone, &quot;st_rubberband&quot;, st_rubberband, MOVABLE_STANDARD);
++        
++    BOOT_REGISTER_START
++        BootRegister(new RubberbandStone(), &quot;st_rubberband&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/RubberbandStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/RubberbandStone.hh
+===================================================================
+--- trunk/src/stones/RubberbandStone.hh	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/stones/RubberbandStone.hh	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -0,0 +1,51 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef RUBBERBANDSTONE_HH
++#define RUBBERBANDSTONE_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class RubberbandStone : public Stone {
++        CLONEOBJ(RubberbandStone);
++        DECL_TRAITS;
++    public:
++        RubberbandStone();
++        
++        // Object interface
++        virtual std::string getClass() const;
++        
++        // GridObject interface
++        virtual void init_model();
++                
++        // Stone interface
++        virtual void actor_hit(const StoneContact &amp;sc);
++        virtual void on_impulse(const Impulse&amp; impulse);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/RubberbandStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/ScissorsStone.cc
+===================================================================
+--- trunk/src/stones/ScissorsStone.cc	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/stones/ScissorsStone.cc	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -0,0 +1,53 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/ScissorsStone.hh&quot;
++//#include &quot;main.hh&quot;
++
++namespace enigma {
++    ScissorsStone::ScissorsStone() : Stone () {
++    }
++
++    std::string ScissorsStone::getClass() const {
++        return &quot;st_scissors&quot;;
++    }
++        
++    void ScissorsStone::init_model() {
++        set_model(&quot;st-scissors&quot;);
++    }
++    
++    void ScissorsStone::animcb() {
++        set_model(&quot;st-scissors&quot;);
++    }
++    
++    void ScissorsStone::actor_hit(const StoneContact &amp;sc) {
++        sound_event(&quot;scissors&quot;);
++        set_anim(&quot;st-scissors-snip&quot;);
++        if (SendMessage(sc.actor, &quot;disconnect&quot;).to_bool())
++            performAction(false);
++    }
++
++    DEF_TRAITS(ScissorsStone, &quot;st_scissors&quot;, st_scissors);
++        
++    BOOT_REGISTER_START
++        BootRegister(new ScissorsStone(), &quot;st_scissors&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/ScissorsStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/ScissorsStone.hh
+===================================================================
+--- trunk/src/stones/ScissorsStone.hh	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/stones/ScissorsStone.hh	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -0,0 +1,53 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef SCISSORSSTONE_HH
++#define SCISSORSSTONE_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class ScissorsStone : public Stone {
++        CLONEOBJ(ScissorsStone);
++        DECL_TRAITS;
++    public:
++        ScissorsStone();
++        
++        // Object interface
++        virtual std::string getClass() const;
++        
++        // GridObject interface
++        virtual void init_model();
++                
++        // ModelCallback interface
++        virtual void animcb();
++        
++        // Stone interface
++        virtual void actor_hit(const StoneContact &amp;sc);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/ScissorsStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/stones.cc	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -58,56 +58,6 @@
+ }
+ 
+ 
+-//======================================================================
+-// STONES
+-//======================================================================
+-
+-/** \page lstones  Available Stones
+-
+-Oxyd Stones:
+-- \ref st-oxyd
+-- \ref st-fakeoxyd
+-- \ref st-fart
+-
+-Movable stones:
+-- \ref st-brownie
+-- \ref st-wood
+-- \ref st-block
+-
+-Stones that can trigger actions:
+-- \ref st-switch
+-- \ref st-fourswitch
+-- \ref st-laserswitch
+-- \ref st-key
+-- \ref st-coinslot
+-- \ref st-timer
+-
+-Stones that can change their behaviour:
+-- \ref st-brick_magic
+-- \ref st-stonebrush
+-- \ref st-invisible_magic
+-- \ref st-break_invisible
+-
+-Lasers and Mirrors:
+-- \ref st-laser
+-- \ref st-pmirror
+-- \ref st-3mirror
+-
+-Other stones:
+-- \ref st-death
+-- \ref st-swap
+-- \ref st-bolder
+-- \ref st-puzzle
+-- \ref st-stone_break
+-- \ref st_window
+-- \ref st-break_acwhite
+-- \ref st-break_acblack
+-- \ref st-oneway
+-- \ref st-oneway_black
+-- \ref st-oneway_white
+-- \ref st-chameleon
+-*/
+-
+ Stone::Stone()
+ : freeze_check_running (false)
+ {}
+@@ -149,17 +99,21 @@
+ void Stone::actor_touch(const StoneContact &amp;sc) {
+ }
+ 
+-void Stone::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) {
++void Stone::on_impulse(const Impulse&amp; impulse) {
+     if (is_movable()) {
+         move_stone(impulse.dir);
+-        if (!isWireImpulse) {
+-            ObjectList olist = getAttr(&quot;fellows&quot;);
+-            for (ObjectList::iterator it = olist.begin(); it != olist.end(); ++it) {
+-                Stone *fellow = dynamic_cast&lt;Stone *&gt;(*it);
+-                if (fellow != NULL) {
+-                    Impulse wireImpulse(this, fellow-&gt;get_pos(), impulse.dir);
+-                    fellow-&gt;on_impulse(wireImpulse, true);
+-                }
++        propagateImpulse(impulse);
++    }
++}
++
++void Stone::propagateImpulse(const Impulse&amp; impulse) {
++    if (!impulse.byWire) {
++        ObjectList olist = getAttr(&quot;fellows&quot;);
++        for (ObjectList::iterator it = olist.begin(); it != olist.end(); ++it) {
++            Stone *fellow = dynamic_cast&lt;Stone *&gt;(*it);
++            if (fellow != NULL) {
++                Impulse wireImpulse(this, fellow-&gt;get_pos(), impulse.dir, true);
++                fellow-&gt;on_impulse(wireImpulse);
+             }
+         }
+     }
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/stones.hh	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -208,16 +208,17 @@
+ 
+         /* ---------- Stone interface (events) ---------- */
+ 
+-        virtual void   actor_hit (const StoneContact &amp;sc);
+-        virtual void   actor_touch (const StoneContact &amp;sc);
+-        virtual void   actor_inside (Actor * /*a*/) {}
+-        virtual void   actor_contact (Actor * /*a*/) {}
++        virtual void actor_hit (const StoneContact &amp;sc);
++        virtual void actor_touch (const StoneContact &amp;sc);
++        virtual void actor_inside (Actor * /*a*/) {}
++        virtual void actor_contact (Actor * /*a*/) {}
+ 
+-        virtual bool   freeze_check();
++        virtual bool freeze_check();
+         
+-        virtual void   on_move();
+-        virtual void   on_floor_change() {}
+-        virtual void   on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false);
++        virtual void on_move();
++        virtual void on_floor_change() {}
++        virtual void on_impulse(const Impulse&amp; impulse);
++        void propagateImpulse(const Impulse&amp; impulse);
+ 
+     protected:
+         virtual Object::ObjectType getObjectType() const {return Object::STONE;}
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/stones_complex.cc	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -101,7 +101,7 @@
+             if (state == IDLE)
+                 maybe_push_stone(sc);
+         }
+-        void on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false);
++        void on_impulse(const Impulse&amp; impulse);
+         bool is_removable() const {
+             return state == IDLE;
+         }
+@@ -189,7 +189,7 @@
+     change_state(IDLE);
+ }
+ 
+-void PullStone::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) 
++void PullStone::on_impulse(const Impulse&amp; impulse) 
+ {
+     if (state != IDLE)
+         return;
+@@ -204,7 +204,7 @@
+         return;                 // avoid unremoveable and border stones
+     }
+ 
+-    PullStone *newStone = this-&gt;clone();
++    PullStone *newStone = this-&gt;clone();    // TODO never ever clone a world's object!! reengineering!
+ 
+     if (other_stone) {
+         // yield other_stone:
+@@ -561,7 +561,7 @@
+         virtual Value message(const Message &amp;m);
+ 
+         void on_creation (GridPos p);
+-        void on_impulse (const Impulse&amp; impulse, bool isWireImpulse=false);
++        void on_impulse (const Impulse&amp; impulse);
+ 
+         bool is_floating() const;
+ 
+@@ -906,7 +906,7 @@
+     return ConnectiveStone::message(m);
+ }
+ 
+-void PuzzleStone::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) 
++void PuzzleStone::on_impulse(const Impulse&amp; impulse) 
+ {
+ //    if (!oxyd1_compatible() &amp;&amp; state == IDLE) {
+     if (state == IDLE) {
+@@ -1362,7 +1362,7 @@
+                 SendMessage(it, &quot;noshogun&quot;);
+         }
+ 
+-        void on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false);
++        void on_impulse(const Impulse&amp; impulse);
+ 
+         void init_model() {
+             set_model(ecl::strf(&quot;st-shogun%d&quot;, int(get_holes())));
+@@ -1408,7 +1408,7 @@
+     }
+ }
+ 
+-void ShogunStone::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) {
++void ShogunStone::on_impulse(const Impulse&amp; impulse) {
+     GridPos destpos     = move(get_pos(), impulse.dir);
+     Holes holes         = get_holes();
+     Holes smallest      = smallest_hole(holes);
+@@ -1487,7 +1487,7 @@
+ 
+         void change_state(State st);
+ 
+-        virtual void on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false) {
++        virtual void on_impulse(const Impulse&amp; impulse) {
+             incoming = impulse.dir;
+             change_state(PULSING);
+         }
+@@ -1698,7 +1698,7 @@
+             }
+         }
+ 
+-        void on_impulse(const Impulse&amp; impulse, bool isWireImpulse) {
++        void on_impulse(const Impulse&amp; impulse) {
+             State oldstate = state;
+ 
+             if (move_stone(impulse.dir)) {
+@@ -1798,7 +1798,7 @@
+         virtual Direction get_dir() const = 0;
+ 
+         void actor_hit(const StoneContact &amp;sc);
+-        void on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false);
++        void on_impulse(const Impulse&amp; impulse);
+ 
+         Turnstile_Pivot_Base *get_pivot() {
+             Stone *st = GetStone (move (get_pos(), reverse(get_dir())));
+@@ -1849,7 +1849,7 @@
+ 
+ /* -------------------- Turnstile_Arm -------------------- */
+ 
+-void Turnstile_Arm::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) {
++void Turnstile_Arm::on_impulse(const Impulse&amp; impulse) {
+     enum Action { ROTL, ROTR, stay };
+     static Action actions[4][4] = {
+         { stay, ROTL, stay, ROTR }, // west arm
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/stones_simple.cc	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -393,7 +393,7 @@
+         void on_removal(GridPos p);
+ 
+         // Stone interface
+-        void on_impulse (const Impulse &amp;impulse, bool isWireImpulse=false);
++        void on_impulse (const Impulse &amp;impulse);
+         bool is_removable() const { return state == IDLE; }
+         void actor_hit (const StoneContact &amp;sc);
+ 
+@@ -460,7 +460,7 @@
+ //    sound_event (&quot;moveslow&quot;);
+ }
+ 
+-void SwapStone::on_impulse(const Impulse&amp; impulse, bool isWireImpulse) 
++void SwapStone::on_impulse(const Impulse&amp; impulse) 
+ {
+     if (state == IDLE) {
+         GridPos oldp = get_pos();
+@@ -728,7 +728,7 @@
+ //             else
+ //                 maybe_push_stone (sc);
+         }
+-        void on_impulse(const Impulse&amp; impulse, bool isWireImpulse=false) {
++        void on_impulse(const Impulse&amp; impulse) {
+             move_stone(impulse.dir);
+         }
+ 
+@@ -1131,106 +1131,7 @@
+ }
+ 
+ 
+-/* -------------------- Scissors stone -------------------- */
+ 
+-/** \page st-scissors Scissors stone
+-
+-This stone cuts \c all rubber bands attached to an actor that touches
+-it.
+-
+-\image html st-scissors
+-*/
+-namespace
+-{
+-    class ScissorsStone : public Stone {
+-        CLONEOBJ(ScissorsStone);
+-        DECL_TRAITS;
+-        void actor_hit(const StoneContact &amp;sc) {
+-            sound_event(&quot;scissors&quot;);
+-            set_anim(&quot;st-scissors-snip&quot;);
+-            if (SendMessage(sc.actor, &quot;disconnect&quot;).to_bool())
+-                performAction(false);
+-        }
+-        void animcb() {
+-            set_model(&quot;st-scissors&quot;);
+-        }
+-    public:
+-        ScissorsStone() 
+-        {}
+-    };
+-    DEF_TRAITS(ScissorsStone, &quot;st-scissors&quot;, st_scissors);
+-}
+-
+-
+-/* -------------------- Rubberband stone -------------------- */
+-
+-/** \page st-rubberband Rubberband stone
+-
+-If hit by a marble, this stone first removes existing connections with
+-other rubberband stones and then attaches a new elastic between the
+-marble and itself.  Nothing happens if the marble was already attached
+-to this particular stone.
+-
+-This stone can be moved if hit with a magic wand.
+-
+-\subsection rubberbanda Attributes
+-
+-- \c length  The natural length of the rubberband (default: 1)
+-- \c strength The strength of the rubberband (default: 10)
+-
+-\image html st-rubberband.png
+-*/
+-namespace
+-{
+-    class RubberBandStone : public Stone {
+-        CLONEOBJ(RubberBandStone);
+-        DECL_TRAITS;
+-
+-        void actor_hit(const StoneContact &amp;sc) {
+-            // The mode attribute &quot;scissor&quot; defines, if when touching an st-rubberband,
+-            // other rubberbands to the actor will be cut of or not, true means they will. true is default.
+-            bool isScissor = to_bool(getDefaultedAttr(&quot;scissor&quot;, true));
+-
+-//            if (!HasRubberBand (sc.actor, this)) {
+-            bool alreadyConnected = false;
+-            ObjectList rubbers = sc.actor-&gt;getAttr(&quot;rubbers&quot;);
+-            for (ObjectList::iterator it =  rubbers.begin(); it != rubbers.end(); ++it) {
+-                if (((Object *)(*it)-&gt;getAttr(&quot;anchor2&quot;)) == this) {
+-                    alreadyConnected = true;
+-                    break;
+-                }
+-            }
+-            if (!alreadyConnected) {
+-                sound_event (&quot;rubberband&quot;);
+-                if (isScissor) {
+-                    SendMessage(sc.actor, &quot;disconnect&quot;);
+-                }
+-                Object *obj = MakeObject(&quot;ot_rubberband&quot;);
+-                obj-&gt;setAttr(&quot;anchor1&quot;, sc.actor);
+-                obj-&gt;setAttr(&quot;anchor2&quot;, this);
+-                obj-&gt;setAttr(&quot;strength&quot;, getDefaultedAttr(&quot;strength&quot;, 10.0));
+-                obj-&gt;setAttr(&quot;length&quot;, getDefaultedAttr(&quot;length&quot;, 1.0));
+-                obj-&gt;setAttr(&quot;threshold&quot;, getAttr(&quot;minlength&quot;));
+-                AddOther(dynamic_cast&lt;Other *&gt;(obj));
+-            }
+-            // if (player::wielded_item_is (sc.actor, &quot;it-magicwand&quot;))
+-            maybe_push_stone (sc);
+-        }
+-
+-        void on_impulse (const Impulse&amp; impulse, bool isWireImpulse=false) {
+-            Actor *a = dynamic_cast&lt;Actor *&gt; (impulse.sender);
+-            if (a &amp;&amp; player::WieldedItemIs (a, &quot;it-magicwand&quot;))
+-                move_stone(impulse.dir);
+-        }
+-    public:
+-        RubberBandStone () {
+-            setAttr(&quot;length&quot;, 1.0);
+-            setAttr(&quot;strength&quot;, 10.0);
+-        }
+-    };
+-    DEF_TRAITSM(RubberBandStone, &quot;st-rubberband&quot;, st_rubberband, MOVABLE_STANDARD);
+-}
+-
+ /* -------------------- FartStone -------------------- */
+ 
+ /** \page st-fart Fart Stone
+@@ -2034,8 +1935,6 @@
+     Register(new Knight);
+     Register(new LaserBreakable);
+     Register(new MagicStone);
+-    Register(new RubberBandStone);
+-    Register(new ScissorsStone);
+     Register(new Stone_break(&quot;st-stone_break&quot;));
+     Register(new Stone_break(&quot;st-rock3_break&quot;));
+     Register(new Stone_break(&quot;st-break_gray&quot;));
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/world.cc	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -1869,6 +1869,9 @@
+ }
+ 
+ void KillOther(Other *o) {
++    if (o == NULL)
++        return;
++    
+     o-&gt;preRemoval();
+     OtherList::iterator i = find(level-&gt;others.begin(), level-&gt;others.end(), o);
+     if (i != level-&gt;others.end()) {
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2008-07-03 17:59:34 UTC (rev 1206)
++++ trunk/src/world.hh	2008-07-03 21:39:17 UTC (rev 1207)
+@@ -49,11 +49,12 @@
+         Object    *sender;
+         GridPos    dest;
+         Direction  dir;
++        bool       byWire;
+ 
+         // Constructors
+-        Impulse(Object *sender_, const GridPos&amp; dest_, Direction dir_)
+-        : sender(sender_), dest(dest_), dir(dir_)
+-        {}
++        Impulse(Object *sender_, const GridPos&amp; dest_, Direction dir_, bool sendByWire = false)
++                : sender (sender_), dest (dest_), dir (dir_), byWire (sendByWire) {
++        }
+     };
+ 
+     struct Message {
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000640.html">[Enigma-game-svn] r1206 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000642.html">[Enigma-game-svn] r1208 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#641">[ date ]</a>
+              <a href="thread.html#641">[ thread ]</a>
+              <a href="subject.html#641">[ subject ]</a>
+              <a href="author.html#641">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

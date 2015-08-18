@@ -1,0 +1,167 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1459 - in trunk: data src src/items
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1459%20-%20in%20trunk%3A%20data%20src%20src/items&In-Reply-To=%3C200901162246.n0GMkx16010700%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000887.html">
+   <LINK REL="Next"  HREF="000889.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1459 - in trunk: data src src/items</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1459%20-%20in%20trunk%3A%20data%20src%20src/items&In-Reply-To=%3C200901162246.n0GMkx16010700%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1459 - in trunk: data src src/items">ral at mail.berlios.de
+       </A><BR>
+    <I>Fri Jan 16 23:46:59 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000887.html">[Enigma-game-svn] r1458 - in trunk/data: . levels/enigma_cross	levels/enigma_ii levels/enigma_iii levels/enigma_iv	levels/enigma_tutorial levels/enigma_v levels/enigma_vi	levels/enigma_vii levels/enigma_viii
+</A></li>
+        <LI>Next message: <A HREF="000889.html">[Enigma-game-svn] r1460 - in trunk/data/levels: enigma_cross	enigma_i enigma_ii enigma_iii enigma_iv enigma_v enigma_vi	enigma_vii enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#888">[ date ]</a>
+              <a href="thread.html#888">[ thread ]</a>
+              <a href="subject.html#888">[ subject ]</a>
+              <a href="author.html#888">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-01-16 23:46:58 +0100 (Fri, 16 Jan 2009)
+New Revision: 1459
+
+Modified:
+   trunk/data/startup.lua
+   trunk/src/items/Crack.cc
+   trunk/src/server.cc
+   trunk/src/stones.cc
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1: new API reengineering
+- fix stone transformations broken due to standard stone renamings
+- fix crack incompatibilities due to last crack fix
+- remove unused st-panel simple stone definition
+
+
+Modified: trunk/data/startup.lua
+===================================================================
+--- trunk/data/startup.lua	2009-01-16 20:07:35 UTC (rev 1458)
++++ trunk/data/startup.lua	2009-01-16 22:46:58 UTC (rev 1459)
+@@ -116,7 +116,6 @@
+ def_stone(&quot;st-greenbrown&quot;)
+ def_stone_movable(&quot;st-greenbrown_move&quot;, &quot;cloth&quot;)
+ def_stone_hollow(&quot;st-greenbrown_hole&quot;)
+-def_stone(&quot;st-panel&quot;)
+ def_stone(&quot;st-rock3&quot;)
+ def_stone_movable(&quot;st-rock3_move&quot;)
+ def_stone_hollow(&quot;st-rock3_hole&quot;)
+
+Modified: trunk/src/items/Crack.cc
+===================================================================
+--- trunk/src/items/Crack.cc	2009-01-16 20:07:35 UTC (rev 1458)
++++ trunk/src/items/Crack.cc	2009-01-16 22:46:58 UTC (rev 1459)
+@@ -91,7 +91,8 @@
+         if (fl != NULL &amp;&amp; fl-&gt;is_destructible()) {
+             Value v = fl-&gt;getAttr(&quot;fragility&quot;);
+             double fragility = getDefaultedAttr(&quot;fragility&quot;, v ? v : Value(server::Fragility));
+-            if (state &lt; DISSOLVING &amp;&amp; (state &gt; INVISIBLE || DoubleRand(0, 0.9999) &lt; fragility)) {
++            double spreading = getDefaultedAttr(&quot;spreading&quot;, server::CrackSpreading); 
++            if (((state == INVISIBLE) &amp;&amp; (DoubleRand(0, 0.9999) &lt; spreading)) || (DoubleRand(0, 0.9999) &lt; fragility)) {
+                 toggleState();
+                 sound_event(&quot;crack&quot;);
+             }
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2009-01-16 20:07:35 UTC (rev 1458)
++++ trunk/src/server.cc	2009-01-16 22:46:58 UTC (rev 1459)
+@@ -263,7 +263,7 @@
+     server::FollowThreshold   = 0.5;
+     server::ShowMoves         = false;
+     server::Brittleness       = 0.5;
+-    server::Fragility         = 0.5;
++    server::Fragility         = 1.0;
+     server::CrackSpreading    = 0.5;
+     server::SlopeForce        = 25.0;
+     server::FlatForce         = 0.0;
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2009-01-16 20:07:35 UTC (rev 1458)
++++ trunk/src/stones.cc	2009-01-16 22:46:58 UTC (rev 1459)
+@@ -413,11 +413,11 @@
+         void actor_hit (const StoneContact &amp;) {
+             static const char *stonename[] = {
+                 &quot;st-grate1&quot;,
+-                &quot;st-death&quot;,
++                &quot;st_death&quot;,
+                 &quot;st-surprise&quot;,
+                 &quot;st-glass1_hole&quot;,
+                 &quot;st-magic&quot;,
+-                &quot;st-knight&quot;,
++                &quot;st_knight&quot;,
+                 &quot;st-thief&quot;,
+                 &quot;st-plain_break&quot;,
+                 &quot;st-plain_breaking&quot;
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2009-01-16 20:07:35 UTC (rev 1458)
++++ trunk/src/stones_simple.cc	2009-01-16 22:46:58 UTC (rev 1459)
+@@ -731,7 +731,7 @@
+                         set_model(&quot;st-likeoxydc-open&quot;);
+                     }
+                     else {
+-                        set_model(&quot;st-rock4&quot;);
++                        set_model(&quot;st_purplemarble&quot;);
+                     }
+                 }
+             }
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2009-01-16 20:07:35 UTC (rev 1458)
++++ trunk/src/world.cc	2009-01-16 22:46:58 UTC (rev 1459)
+@@ -1649,7 +1649,6 @@
+ 
+ bool WorldInitLevel() {
+     if (server::EnigmaCompatibility &lt; 1.10) {
+-        server::Fragility = server::Brittleness;
+         server::CrackSpreading = server::Brittleness;
+     }
+     
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000887.html">[Enigma-game-svn] r1458 - in trunk/data: . levels/enigma_cross	levels/enigma_ii levels/enigma_iii levels/enigma_iv	levels/enigma_tutorial levels/enigma_v levels/enigma_vi	levels/enigma_vii levels/enigma_viii
+</A></li>
+	<LI>Next message: <A HREF="000889.html">[Enigma-game-svn] r1460 - in trunk/data/levels: enigma_cross	enigma_i enigma_ii enigma_iii enigma_iv enigma_v enigma_vi	enigma_vii enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#888">[ date ]</a>
+              <a href="thread.html#888">[ thread ]</a>
+              <a href="subject.html#888">[ subject ]</a>
+              <a href="author.html#888">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

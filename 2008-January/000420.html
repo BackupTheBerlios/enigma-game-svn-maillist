@@ -1,0 +1,932 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r988 - trunk/data/levels/lib
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r988%20-%20trunk/data/levels/lib&In-Reply-To=%3C200801182348.m0INmZME025111%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000419.html">
+   <LINK REL="Next"  HREF="000421.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r988 - trunk/data/levels/lib</H1>
+    <B>andreasl at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r988%20-%20trunk/data/levels/lib&In-Reply-To=%3C200801182348.m0INmZME025111%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r988 - trunk/data/levels/lib">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Sat Jan 19 00:48:35 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000419.html">[Enigma-game-svn] r987 - in trunk: . doc src
+</A></li>
+        <LI>Next message: <A HREF="000421.html">[Enigma-game-svn] r989 - in trunk/src: . stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#420">[ date ]</a>
+              <a href="thread.html#420">[ thread ]</a>
+              <a href="subject.html#420">[ subject ]</a>
+              <a href="author.html#420">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2008-01-19 00:48:34 +0100 (Sat, 19 Jan 2008)
+New Revision: 988
+
+Added:
+   trunk/data/levels/lib/libluatools.xml
+Modified:
+   trunk/data/levels/lib/libsoko-designlist.xml
+   trunk/data/levels/lib/libsoko-endphase.xml
+   trunk/data/levels/lib/libsoko.xml
+Log:
+Trunk:
+ - New library libluatools: Extracted and improved some
+   functions from libsoko, as they are of general
+   applicability:
+    - deep_copy (incl. metatables)
+    - combine_tables (now with vararg-syntax)
+    - shuffle_table (now with standard algorithm)
+    - manhattan_distance (both types of positions as input possible)
+    - conditional (replacement for the &quot;x?y:z&quot;-operator)
+ - Fixes to libsoko:
+    - Used deep_copy for some level-structures.
+    - Prepared knocking for transition to new API
+       (1.0-knocking doesn't work in trunk currently).
+    - All oxyds are being set with set_oxyd now.
+    - Open/close-messages are only send when the target has
+       correct _sokoarea-number.
+    - Deactivated debug-messages.
+    - Added maxdesignnumber as argument for create_sokoball.
+    - Some general beautifications.
+
+
+   
+   
+   
+
+Added: trunk/data/levels/lib/libluatools.xml
+===================================================================
+--- trunk/data/levels/lib/libluatools.xml	2008-01-16 20:52:30 UTC (rev 987)
++++ trunk/data/levels/lib/libluatools.xml	2008-01-18 23:48:34 UTC (rev 988)
+@@ -0,0 +1,128 @@
++&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;no&quot; ?&gt;
++&lt;el:level xmlns:xsi=&quot;<A HREF="http://www.w3.org/2001/XMLSchema-instance">http://www.w3.org/2001/XMLSchema-instance</A>&quot; xsi:schemaLocation=&quot;<A HREF="http://enigma-game.org/schema/level/1">http://enigma-game.org/schema/level/1</A> level.xsd&quot; xmlns:el=&quot;<A HREF="http://enigma-game.org/schema/level/1">http://enigma-game.org/schema/level/1</A>&quot;&gt;
++  &lt;el:protected&gt;
++    &lt;el:info el:type=&quot;library&quot;&gt;
++      &lt;el:identity el:title=&quot;&quot; el:id=&quot;lib/libluatools&quot;/&gt;
++      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;1&quot; el:status=&quot;released&quot;/&gt;
++      &lt;el:author  el:name=&quot;Enigma Team&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
++      &lt;el:copyright&gt;Copyright &#169; 2007 Enigma Team&lt;/el:copyright&gt;
++      &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
++      &lt;el:compatibility el:enigma=&quot;1.00&quot;&gt;
++      &lt;/el:compatibility&gt;
++      &lt;el:modes el:easy=&quot;false&quot; el:single=&quot;false&quot; el:network=&quot;false&quot;/&gt;
++      &lt;el:comments&gt;
++      &lt;/el:comments&gt;
++      &lt;el:score el:easy=&quot;-&quot; el:difficult=&quot;-&quot;/&gt;
++    &lt;/el:info&gt;
++    &lt;el:luamain&gt;&lt;![CDATA[
++
++---------------------------------------------------------------------
++-- libluatools holds some general utilities for working with Lua.
++-- It includes functions for deep-copying tables, combining tables,
++-- and shuffling tables, a function to calculate Manhattan
++-- distances and a wrapper for Lua's modulo-function, which has
++-- been renamed from math.mod to math.fmod.
++---------------------------------------------------------------------
++
++luatools = {}
++
++---------------------------------------------------------------------
++--  TABLE  HANDLING
++---------------------------------------------------------------------
++
++-- deep_copy returns a copy of SOURCE, where table entries are
++-- not copied as memory references, but complete (&quot;deep copy&quot;).
++-- Metatables are transfered, but not deep-copied.
++function luatools.deep_copy(source)
++ if type(source) ~= &quot;table&quot; then
++   return source
++ end
++ local dest = {}
++ for k, v in pairs(source) do
++   if type(source[k]) == &quot;table&quot; then
++     dest[k] = luatools.deep_copy(source[k])
++   else
++     dest[k] = source[k]
++   end
++ end
++ setmetatable(dest, getmetatable(source))
++ return dest
++end 
++
++-- combine_tables returns a table consisting of all entries of the
++-- entries of OVER_TABLE: OVER_TABLE is a table of tables, say
++-- {T1, T2, T3, ...}. The result of combine_tables will be a new
++-- table with all entries of T1, T2, T3 etc., with the first table
++-- having highest priority etc.
++function luatools.combine_tables(arg1, ...)
++  local args = {arg1, ...}
++  if table.getn(args) == 1 then
++    args = arg1
++  end
++  if type(args) ~= &quot;table&quot; then
++    error(&quot;combine_tables: None or only one argument, and it's not a table!&quot;)
++  end
++  local result = {}
++  for j,t in pairs(args) do
++    if type(t) ~= &quot;table&quot; then
++      error(&quot;combine_tables: Main table does not consist of tables alone!&quot;)
++    end
++    for k,v in pairs(t) do
++      result[k] = result[k] or luatools.deep_copy(v)
++    end
++  end
++  return result
++end
++
++-- shuffle_table resorts the table T randomly. Note that only those entries
++-- of T can be sorted, that are indexed with integers from 1 to table.getn(T).
++function luatools.shuffle_table(t)
++  for n = table.getn(t), 1, -1 do
++    local m = math.random(n)
++    t[n], t[m] = t[m], t[n]
++  end
++end
++
++---------------------------------------------------------------------
++--  ADVANCED  POSITION  HANDLING  AND  CALCULATIONS
++---------------------------------------------------------------------
++
++-- manhattan_distance calculates the Manhattan-distance between
++-- (X1,Y1) and (X2, Y2), which is |X1 - X2| + |Y1 - Y2|.
++-- If X2 and Y2 are nil, X1 and Y1 are assumed to be positions
++-- instead of coordinates.
++function luatools.manhattan_distance(x1, y1, x2, y2)
++  if x1 and y1 and x2 and y2 then
++    -- x1, y1, x2, y2 are coordinates
++    return math.abs(x1 - x2) + math.abs(y1 - y2)
++  end
++  if x1 and y1 then
++    -- x1 and y1 are positions
++    return math.abs(x1.x - y1.x) + math.abs(x1.y - y1.y)
++  end
++  error(&quot;manhattan_distance: Too less arguments.&quot;)  
++end
++
++---------------------------------------------------------------------
++--  MATHEMATICAL  FUNCTIONS
++---------------------------------------------------------------------
++
++-- As Lua uses different names for the modulo-function in its
++-- versions, it's sometimes better to wrap them.
++luatools.mod = math.fmod or math.mod
++
++-- A wrapper of if to resemble the ternary ?:-function
++function luatools.conditional(condition, iftrue, iffalse)
++  if condition then
++    return iftrue
++  else
++    return iffalse
++  end
++end
++
++    ]]&gt;&lt;/el:luamain&gt;
++    &lt;el:i18n&gt;
++    &lt;/el:i18n&gt;
++  &lt;/el:protected&gt;
++&lt;/el:level&gt;
++
+
+Modified: trunk/data/levels/lib/libsoko-designlist.xml
+===================================================================
+--- trunk/data/levels/lib/libsoko-designlist.xml	2008-01-16 20:52:30 UTC (rev 987)
++++ trunk/data/levels/lib/libsoko-designlist.xml	2008-01-18 23:48:34 UTC (rev 988)
+@@ -4,7 +4,7 @@
+     &lt;el:info el:type=&quot;library&quot;&gt;
+       &lt;el:identity el:title=&quot;&quot; el:id=&quot;lib/libsoko-designlist&quot;/&gt;
+       &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;1&quot; el:status=&quot;experimental&quot;/&gt;
+-      &lt;el:author  el:name=&quot;Enigma Team&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
++      &lt;el:author el:name=&quot;Enigma Team&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
+       &lt;el:copyright&gt;Copyright &#169; 2007 Enigma Team&lt;/el:copyright&gt;
+       &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
+       &lt;el:compatibility el:enigma=&quot;1.00&quot;&gt;
+
+Modified: trunk/data/levels/lib/libsoko-endphase.xml
+===================================================================
+--- trunk/data/levels/lib/libsoko-endphase.xml	2008-01-16 20:52:30 UTC (rev 987)
++++ trunk/data/levels/lib/libsoko-endphase.xml	2008-01-18 23:48:34 UTC (rev 988)
+@@ -4,7 +4,7 @@
+     &lt;el:info el:type=&quot;library&quot;&gt;
+       &lt;el:identity el:title=&quot;&quot; el:id=&quot;lib/libsoko-endphase&quot;/&gt;
+       &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;1&quot; el:status=&quot;experimental&quot;/&gt;
+-      &lt;el:author  el:name=&quot;Enigma Team&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
++      &lt;el:author el:name=&quot;Enigma Team&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
+       &lt;el:copyright&gt;Copyright &#169; 2007 Enigma Team&lt;/el:copyright&gt;
+       &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
+       &lt;el:compatibility el:enigma=&quot;1.00&quot;&gt;
+@@ -74,8 +74,8 @@
+   -- ensure a correctly set endphase-attribute
+   local endp = sokoarea[nr].design.endp
+   if not endp then
+-    endp = default_design.endp
+-    sokoarea[nr].design.endp = endp
++    sokoarea[nr].design.endp = luatools.deep_copy(default_design.endp)
++    endp = sokoarea[nr].design.endp
+   end
+   if type(endp) ~= &quot;table&quot; then
+     myerror(&quot;This design's endphase is given as &quot;..type(endp)
+@@ -83,8 +83,8 @@
+   end
+   local alg = endp.alg
+   if alg == nil then
+-    alg = default_design.endp.alg
+-    sokoarea[nr].design.endp.alg = alg
++    sokoarea[nr].design.endp.alg = luatools.deep_copy(default_design.endp.alg)
++    alg = endp.alg
+   end
+   if type(alg) ~= &quot;string&quot; then
+     myerror(&quot;This design's endphase algorithm is given as &quot;..type(alg)
+@@ -118,7 +118,7 @@
+     endphase_set_outside_oxyds(nr, param)
+   elseif (alg == &quot;knock&quot;) then
+     endphase_set_block_oxyds(nr, sokoarea[nr].design.door, 3)
+-    endphase_set_knock_items(nr, param)
++    endphase_set_knocking(nr, param)
+   -- &quot;Jumpyoxyds&quot; deactivated for once
+   --elseif (alg == &quot;jumpyoxyds&quot;) then
+   --  endphase_set_block_oxyds(nr, &quot;jumpy&quot;)
+@@ -131,7 +131,7 @@
+ function endphase(sokoarea_number)
+   -- Correct structure of endp-attribute has been checked
+   -- by prepare_endphase, we trust it blindly.
+-  local endp = sokoarea[sokoarea_number].design.endp
++  local endp = luatools.deep_copy(sokoarea[sokoarea_number].design.endp)
+   local alg = endp.alg
+   local param = &quot;&quot;
+   local px, py = enigma.GetPos(enigma.GetNamedObject(&quot;marble_&quot;..sokoarea_number..&quot;_1&quot;))
+@@ -150,7 +150,7 @@
+ 
+   -- redraw level and give items
+   endphase_redraw_level_array(sokoarea_number)
+-  local give = endp.give
++  local give = luatools.deep_copy(endp.give)
+   if type(give) == &quot;string&quot; then
+     give = {give}
+   end
+@@ -210,7 +210,7 @@
+ 
+ function endphase_redraw_level_array(sokoarea_number)
+   local nr = sokoarea_number or 1
+-  local endp = sokoarea[nr].design.endp
++  local endp = luatools.deep_copy(sokoarea[nr].design.endp)
+   local dx = sokoarea[nr].offset.x
+   local dy = sokoarea[nr].offset.y
+ 
+@@ -278,17 +278,17 @@
+     y = y - 2
+   end
+   for j = 0, 2 do
+-    oxyd(x+j, y-1, flavor, 2*j)
+-    oxyd(x-1, y+j, flavor, 2*j)
+-    oxyd(x+j, y+3, flavor, 2*j+1)
+-    oxyd(x+3, y+j, flavor, 2*j+1)
++    set_oxyd(sokoarea_number, {lx = x+j, ly = y-1}, flavor, 2*j)
++    set_oxyd(sokoarea_number, {lx = x-1, ly = y+j}, flavor, 2*j)
++    set_oxyd(sokoarea_number, {lx = x+j, ly = y+3}, flavor, 2*j+1)
++    set_oxyd(sokoarea_number, {lx = x+3, ly = y+j}, flavor, 2*j+1)
+     for k = 0, 2 do
+       kill_stone(x+j, y+k)
+       kill_item(x+j, y+k)
+       set_element(x+j, y+k, sokoarea_number, &quot;inf&quot;)
+     end
+   end
+-  set_stone(&quot;st-fart&quot;, x+1, y+1)
++  set_stone(&quot;st-fart&quot;, x+1, y+1, {_sokoarea = sokoarea_number})
+   oxyd_shuffle()
+ end
+ 
+@@ -305,8 +305,10 @@
+   local my = sokoarea[nr].array_height
+   local flavor = sokoarea[nr].design.oxyd or &quot;b&quot;
+ 
+-  for p, v in pairs(combine_tables({sokoarea[nr].list_outside,
+-                                    sokoarea[nr].list_wall_two})) do
++  -- Select all places outside or in the walls, unreachable
++  -- for the marble.
++  for p, v in pairs(luatools.combine_tables(sokoarea[nr].list_outside,
++                sokoarea[nr].list_wall_two)) do
+     if (mod(v.lx, 2) == 0) and (mod(v.ly, 2) == 0) then
+       table.insert(places, v)
+     end
+@@ -335,11 +337,11 @@
+     end    
+   end
+ 
+-  shuffle_table(places)
++  luatools.shuffle_table(places)
+ 
+   for j = 1, number_pairs do
+-    set_oxyd(sokoarea_number, places[2*j-1], flavor, j - 1)
+-    set_oxyd(sokoarea_number, places[2*j], flavor, j - 1)
++    set_oxyd(sokoarea_number, luatools.deep_copy(places[2*j-1]), flavor, j - 1)
++    set_oxyd(sokoarea_number, luatools.deep_copy(places[2*j]), flavor, j - 1)
+   end
+   oxyd_shuffle()
+ end
+@@ -360,10 +362,10 @@
+       -- and no other oxyd or blocker is near the new oxyd or its
+       -- blocker.
+       for j, w in pairs(oxyds) do
+-        if    (manhattan_distance(w.blocker.lx, w.blocker.ly, x, y) &lt;= 1)
+-           or (manhattan_distance(w.lx, w.ly, x, y) &lt;= 1)
+-           or (manhattan_distance(w.blocker.lx, w.blocker.ly, x-dx, y-dy) &lt;= 1)
+-           or (manhattan_distance(w.lx, w.ly, x-dx, y-dy) &lt;= 1) then
++        if    (luatools.manhattan_distance(w.blocker.lx, w.blocker.ly, x, y) &lt;= 1)
++           or (luatools.manhattan_distance(w.lx, w.ly, x, y) &lt;= 1)
++           or (luatools.manhattan_distance(w.blocker.lx, w.blocker.ly, x-dx, y-dy) &lt;= 1)
++           or (luatools.manhattan_distance(w.lx, w.ly, x-dx, y-dy) &lt;= 1) then
+           return false
+         end
+       end
+@@ -400,11 +402,11 @@
+     end    
+   end
+ 
+-  shuffle_table(oxyds)
++  luatools.shuffle_table(oxyds)
+ 
+   -- set oxyds and blockers
+   local function set_block(w)
+-    local myblocker = blocker
++    local myblocker = luatools.deep_copy(blocker)
+     -- if there's an entry &quot;st-door&quot;, choose between st-door-h and st-door-v.
+     if type(myblocker) == &quot;string&quot; then
+       myblocker = {myblocker}
+@@ -421,11 +423,11 @@
+     -- now set in-floor and blocker, and add to list_blocker.
+     set_element(w.lx, w.ly, nr, &quot;inf&quot;)
+     set_element(w.lx, w.ly, nr, &quot;&quot;, myblocker)
+-    sokoarea[nr].list_blocker[(w.lx)..&quot;/&quot;..(w.ly)] = w
++    sokoarea[nr].list_blocker[(w.lx)..&quot;/&quot;..(w.ly)] = luatools.deep_copy(w)
+   end
+   for j = 1, number_pairs do   -- Testlevel: 14
+-    set_oxyd(nr, oxyds[2*j-1], flavor, j - 1)
+-    set_oxyd(nr, oxyds[2*j], flavor, j - 1)
++    set_oxyd(nr, luatools.deep_copy(oxyds[2*j-1]), flavor, j - 1)
++    set_oxyd(nr, luatools.deep_copy(oxyds[2*j]), flavor, j - 1)
+     set_block(oxyds[2*j-1].blocker)
+     set_block(oxyds[2*j].blocker)
+   end
+@@ -438,7 +440,7 @@
+   for p, v in pairs(sokoarea[nr].list_goal) do
+     table.insert(goal_table, v)
+   end
+-  shuffle_table(goal_table)
++  luatools.shuffle_table(goal_table)
+   for j = 2, math.min(table.getn(goal_table), table.getn(oxyds)) do
+     sokoarea[nr].goal_to_blocker[goal_table[j].goal_number] = oxyds[j].blocker
+   end
+@@ -455,7 +457,7 @@
+     table.insert(places, v)
+   end
+ 
+-  shuffle_table(places)
++  luatools.shuffle_table(places)
+   
+   -- choose number of oxyds
+   local max = table.getn(places)
+@@ -504,7 +506,7 @@
+     end
+   end
+ 
+-  shuffle_table(places)
++  luatools.shuffle_table(places)
+ 
+   -- choose number of magnets
+   local number_magnets = math.floor(table.getn(places)/6)
+@@ -525,83 +527,90 @@
+     table.insert(places, v)
+   end
+ 
+-  shuffle_table(places)
++  luatools.shuffle_table(places)
+ 
+   -- choose number of fourswitchs/oxyds
+   local max = table.getn(places)
+   local number_pairs = 1
+   if max &lt; 2 then
+     -- use circle instead
+-    endphase_circle(sokoarea)
++    endphase_circle(sokoarea_number)
+     return
+   elseif max &lt;  6  then  number_pairs = 2
+   elseif max &lt; 10  then  number_pairs = 3
+   else                   number_pairs = 4 end
+-
+-  function endphase_call_fourswitch(onoff, sender)
+-    local j = enigma.GetAttrib(sender, &quot;_number&quot;)
+-
+-    -- When fourswitch is knocked, count it.
+-    places[j].current = places[j].current + 1
+-    if places[j].current == 5 then
+-      places[j].current = 1
+-    end
+-    
+-    -- When count is correct, make it &quot;st-likeoxyda-open&quot;.
+-    if places[j].current == places[j].solve then
+-      places[j].correct = true
+-      set_stone(&quot;st-likeoxyda-open&quot;, places[j].lx, places[j].ly,
+-          {_number=0})
+-    end
+-
+-    -- Now the difficult part: If it's the first fourswitch (the one
+-    -- fourswitch that doesn't change any other), check all fourswitchs
+-    -- and replace them by oxyds if all are correct. Else, recreate the
+-    -- next fourswitch in hierarchy, set it to the old number, then
+-    -- set the callback function and call it once by triggering another
+-    -- time (making it show the new number). This means: Recursion!
+-    if j ~= 1 then
+-      -- Trigger all lower fourswitchs
+-      local x = places[j-1].lx
+-      local y = places[j-1].ly
+-      if places[j-1].correct then
+-        -- reset the fourswitch
+-        mystone = set_stone(&quot;st-fourswitch&quot;, x, y, {_number = j - 1})
+-        for k = 1, places[j-1].current do
+-          SendMessage(mystone, &quot;trigger&quot;)
+-        end
+-        enigma.SetAttrib(mystone, &quot;action&quot;, &quot;callback&quot;)
+-        enigma.SetAttrib(mystone, &quot;target&quot;, &quot;endphase_call_fourswitch&quot;)
+-        places[j-1].correct = false
+-      end
+-      SendMessage(enigma.GetStone(x, y), &quot;trigger&quot;)
+-    else
+-      -- Check all fourswitchs
+-      local correct = true
+-      for k = 1, 2*number_pairs do
+-        correct = correct and places[k].correct
+-      end
+-      if correct then
+-        -- replace fourswitchs by oxyds
+-        for k = 1, number_pairs do
+-          set_oxyd(sokoarea_number, places[2*k-1], flavor, k - 1)
+-          set_oxyd(sokoarea_number, places[2*k], flavor, k - 1)
+-        end
+-        oxyd_shuffle()
+-      end
+-    end  
+-  end
+   
+   -- set fourswitchs
+   for j = 1, 2*number_pairs do
+     set_stone(&quot;st-fourswitch&quot;, places[j].lx, places[j].ly,
+-        {action=&quot;callback&quot;, target=&quot;endphase_call_fourswitch&quot;, _number=j})
++        {action=&quot;callback&quot;, target=&quot;endphase_call_fourswitch&quot;, _number=j,
++         _sokoarea = sokoarea_number})
+     places[j].current = 4
+     places[j].solve = random(1,4)
+     places[j].correct = false
+   end
++  places.number_pairs = number_pairs
++  sokoarea[sokoarea_number].places = luatools.deep_copy(places)
+ end
+ 
++function endphase_call_fourswitch(onoff, sender)
++  local j = enigma.GetAttrib(sender, &quot;_number&quot;)
++  local nr = enigma.GetAttrib(sender, &quot;_sokoarea&quot;)
++  local places = sokoarea[nr].places
++
++  -- When fourswitch is knocked, count it.
++  places[j].current = places[j].current + 1
++  if places[j].current == 5 then
++    places[j].current = 1
++  end
++  
++  -- When count is correct, make it &quot;st-likeoxyda-open&quot;.
++  if places[j].current == places[j].solve then
++    places[j].correct = true
++    set_stone(&quot;st-likeoxyda-open&quot;, places[j].lx, places[j].ly,
++        {_number = 0, _sokoarea = sokoarea_number})
++  end
++
++  -- Now the difficult part: If it's the first fourswitch (the one
++  -- fourswitch that doesn't change any other), check all fourswitchs
++  -- and replace them by oxyds if all are correct. Else, recreate the
++  -- next fourswitch in hierarchy, set it to the old number, then
++  -- set the callback function and call it once by triggering another
++  -- time (making it show the new number). This means: Recursion!
++  if j ~= 1 then
++    -- Trigger all lower fourswitchs
++    local x = places[j-1].lx
++    local y = places[j-1].ly
++    if places[j-1].correct then
++      -- reset the fourswitch
++      mystone = set_stone(&quot;st-fourswitch&quot;, x, y,
++        {_number = j - 1, _sokoarea = sokoarea_number})
++      for k = 1, places[j-1].current do
++        SendMessage(mystone, &quot;trigger&quot;)
++      end
++      enigma.SetAttrib(mystone, &quot;action&quot;, &quot;callback&quot;)
++      enigma.SetAttrib(mystone, &quot;target&quot;, &quot;endphase_call_fourswitch&quot;)
++      places[j-1].correct = false
++    end
++    SendMessage(enigma.GetStone(x, y), &quot;trigger&quot;)
++  else
++    -- Check all fourswitchs
++    local correct = true
++    for k = 1, 2*places.number_pairs do
++      correct = correct and places[k].correct
++    end
++    if correct then
++      -- replace fourswitchs by oxyds
++      for k = 1, places.number_pairs do
++        set_oxyd(sokoarea_number, places[2*k-1], flavor, k - 1)
++        set_oxyd(sokoarea_number, places[2*k], flavor, k - 1)
++      end
++      oxyd_shuffle()
++    end
++  end  
++end
++
++
+ function endphase_allcrack(sokoarea_number)
+   for p, v in pairs(sokoarea[sokoarea_number].list_way) do
+     if not enigma.GetItem(v.lx, v.ly) then
+@@ -649,33 +658,22 @@
+     local st = enigma.GetStone(x, y)
+     local it = enigma.GetItem(x, y)
+     local fl = enigma.GetFloor(x, y)
+-    if open then
+-      if st then
+-        SendMessage(st, &quot;open&quot;)
+-      end
+-      if it then
+-        SendMessage(it, &quot;open&quot;)
+-      end
+-      if fl then
+-        SendMessage(fl, &quot;close&quot;)
+-      end
+-    else
+-      if st then
+-        SendMessage(st, &quot;close&quot;)
+-      end
+-      if it then
+-        SendMessage(it, &quot;close&quot;)
+-      end
+-      if fl then
+-        SendMessage(fl, &quot;open&quot;)
+-      end
+-    end      
++    if st and enigma.GetAttrib(st, &quot;_sokoarea&quot;) then
++      SendMessage(st, luatools.conditional(open, &quot;open&quot;, &quot;close&quot;))
++    end
++    if it and enigma.GetAttrib(it, &quot;_sokoarea&quot;) then
++      SendMessage(it, luatools.conditional(open, &quot;open&quot;, &quot;close&quot;))
++    end
++    if fl then
++      SendMessage(fl, luatools.conditional(open, &quot;close&quot;, &quot;open&quot;))
++    end
+   end  
+ end
+ 
+ function endphase_vortex(sokoarea_number)
+   local nr = sokoarea_number or 1
+-  local list_way = combine_tables({sokoarea[nr].list_way, sokoarea[nr].list_blocker})
++  local list_way = 
++    luatools.combine_tables(sokoarea[nr].list_way, sokoarea[nr].list_blocker)
+   local components = 0
+   local component = {}
+ 
+@@ -700,7 +698,6 @@
+     end
+   end
+   for p, v in pairs(list_way) do
+-    --mydebug(v.lx..&quot;/&quot;..v.ly..&quot;: &quot;..(list_way[p].component or &quot;nil&quot;))
+     if (not list_way[p].component) and (not sokoarea[nr].list_goal[p]) then
+       components = components + 1
+       component[components] = {}
+@@ -723,7 +720,7 @@
+   for j = 1, components do
+     sequence[j] = {nr = j}
+   end
+-  shuffle_table(sequence)
++  luatools.shuffle_table(sequence)
+   local connect = {}
+   for j = 1, components - 1 do
+     connect[sequence[j].nr] = sequence[j+1].nr
+@@ -742,7 +739,7 @@
+   end  
+ end
+ 
+-function endphase_set_knock_items(sokoarea_number, param)
++function endphase_set_knocking(sokoarea_number, param)
+   local flavor = sokoarea[sokoarea_number].design.oxyd or &quot;b&quot;
+   local places = {}
+   local itemkind = param
+@@ -755,46 +752,52 @@
+     table.insert(places, v)
+   end
+ 
+-  shuffle_table(places)
++  luatools.shuffle_table(places)
+   
+-  function endphase_call_knock_item(onoff, sender)
+-    local j = enigma.GetAttrib(sender, &quot;_number&quot;)
+-    local nr = enigma.GetAttrib(sender, &quot;_sokoarea&quot;)
+-    if (not nr) or (not j) then
+-      myerror(&quot;libsoko: Knock item has no number or no sokoarea.&quot;)
++  -- set items (for Enigma 1.0), set attributes of door (&gt;= 1.1)
++  for j, v in pairs(places) do
++    set_item(itemkind, v.lx, v.ly, {action=&quot;callback&quot;,
++        target=&quot;endphase_call_knocking&quot;, _number=j, _sokoarea=sokoarea_number})
++    local st = enigma.GetStone(v.lx, v.ly)
++    if st then
++      enigma.SetAttrib(st, &quot;action&quot;, &quot;callback&quot;)
++      enigma.SetAttrib(st, &quot;target&quot;, &quot;endphase_call_knocking&quot;)
+     end
+-    mydebug(&quot;Knocked on &quot;..j..&quot;/&quot;..sokoarea[nr].number_oxyds)
+-    -- Deactivate the first door until endphase has started.
+-    if (j == 1) and (not sokoarea[nr].endphase_started) then
+-      return
+-    end
+-    -- Close the next door in the circle ...
+-    j = j + 1
+-    if j &gt; sokoarea[nr].number_oxyds then
+-      j = 1
+-    end
+-    local mydoor = enigma.GetStone(places[j].lx, places[j].ly)
+-    if mydoor then
+-      SendMessage(mydoor, &quot;close&quot;)
+-    end
+-    -- ... and open the door after next.
+-    j = j + 1
+-    if j &gt; sokoarea[nr].number_oxyds then
+-      j = 1
+-    end
+-    mydoor = enigma.GetStone(places[j].lx, places[j].ly)
+-    if mydoor then
+-      SendMessage(mydoor, &quot;open&quot;)
+-    end
+   end
++end
+ 
+-  -- set items
+-  for j, v in pairs(places) do
+-    set_item(itemkind, v.lx, v.ly, {action=&quot;callback&quot;,
+-        target=&quot;endphase_call_knock_item&quot;, _number=j, _sokoarea=sokoarea_number})
++function endphase_call_knocking(onoff, sender)
++  local j = enigma.GetAttrib(sender, &quot;_number&quot;)
++  local nr = enigma.GetAttrib(sender, &quot;_sokoarea&quot;)
++  if (not nr) or (not j) then
++    myerror(&quot;libsoko: Knocking's source has no number or no sokoarea.&quot;)
+   end
++  mydebug(&quot;Knocked on &quot;..j..&quot;/&quot;..sokoarea[nr].number_oxyds)
++  -- Deactivate the first door until endphase has started.
++  if (j == 1) and (not sokoarea[nr].endphase_started) then
++    return
++  end
++  -- Close the next door in the circle ...
++  j = j + 1
++  if j &gt; sokoarea[nr].number_oxyds then
++    j = 1
++  end
++  local mydoor = enigma.GetStone(places[j].lx, places[j].ly)
++  if mydoor then
++    SendMessage(mydoor, &quot;close&quot;)
++  end
++  -- ... and open the door after next.
++  j = j + 1
++  if j &gt; sokoarea[nr].number_oxyds then
++    j = 1
++  end
++  mydoor = enigma.GetStone(places[j].lx, places[j].ly)
++  if mydoor then
++    SendMessage(mydoor, &quot;open&quot;)
++  end
+ end
+ 
++
+     ]]&gt;&lt;/el:luamain&gt;
+     &lt;el:i18n&gt;
+     &lt;/el:i18n&gt;
+
+Modified: trunk/data/levels/lib/libsoko.xml
+===================================================================
+--- trunk/data/levels/lib/libsoko.xml	2008-01-16 20:52:30 UTC (rev 987)
++++ trunk/data/levels/lib/libsoko.xml	2008-01-18 23:48:34 UTC (rev 988)
+@@ -4,10 +4,11 @@
+     &lt;el:info el:type=&quot;library&quot;&gt;
+       &lt;el:identity el:title=&quot;&quot; el:id=&quot;lib/libsoko&quot;/&gt;
+       &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;1&quot; el:status=&quot;experimental&quot;/&gt;
+-      &lt;el:author  el:name=&quot;Enigma Team&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
++      &lt;el:author el:name=&quot;Enigma Team&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
+       &lt;el:copyright&gt;Copyright &#169; 2007 Enigma Team&lt;/el:copyright&gt;
+       &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
+       &lt;el:compatibility el:enigma=&quot;1.00&quot;&gt;
++        &lt;el:dependency el:path=&quot;lib/libluatools&quot; el:id=&quot;lib/libluatools&quot; el:release=&quot;1&quot; el:preload=&quot;true&quot;/&gt;
+         &lt;el:dependency el:path=&quot;lib/libsoko-designlist&quot; el:id=&quot;lib/libsoko-designlist&quot; el:release=&quot;1&quot; el:preload=&quot;true&quot;/&gt;
+         &lt;el:dependency el:path=&quot;lib/libsoko-endphase&quot; el:id=&quot;lib/libsoko-endphase&quot; el:release=&quot;1&quot; el:preload=&quot;true&quot;/&gt;
+       &lt;/el:compatibility&gt;
+@@ -81,7 +82,7 @@
+ ------------------------------------------------------------------------
+ 
+ function mydebug(st)
+-  print(st)
++  --print(st)
+ end
+ function mywarning(st)
+   print(st)
+@@ -105,42 +106,6 @@
+ function char_is_outf(ch)   return string.find(ch, &quot;[ ]&quot;)       == 1  end
+ function char_is_inf(ch)    return not char_is_outf(ch)               end
+ 
+--- combine_tables returns a table consisting of all entries of the
+--- entries of OVER_TABLE: OVER_TABLE is a table of tables, say
+--- {T1, T2, T3, ...}. The result of combine_tables will be a new
+--- table with all entries of T1, T2, T3 etc., with the first table
+--- having highest priority etc.
+-function combine_tables(over_table)
+-  if type(over_table) ~= &quot;table&quot; then
+-    myerror(&quot;libsoko.combine_tables: Argument is no table!&quot;)
+-  end
+-  local result = {}
+-  for j,t in pairs(over_table) do
+-    if type(t) ~= &quot;table&quot; then
+-      myerror(&quot;libsoko.combine_tables: Argument does not consist of tables alone!&quot;)
+-    end
+-    for k,v in pairs(t) do
+-      result[k] = result[k] or v
+-    end
+-  end
+-  return result
+-end
+-
+--- shuffle_table resorts the table T randomly. Note that T has to be
+--- indexed with integers from 1 to table.getn(T). Type is not checked.
+-function shuffle_table(t)
+-  for p, v in pairs(t) do
+-    t[p].sort_field = math.random()
+-  end
+-  table.sort(t, function (a, b) return a.sort_field &lt; b.sort_field end)
+-end
+-
+--- manhattan_distance calculates the Manhattan-distance between
+--- (X1,Y1) and (X2, Y2), which is |X1 - X2| + |Y1 - Y2|
+-function manhattan_distance(x1, y1, x2, y2)
+-  return math.abs(x1 - x2) + math.abs(y1 - y2)
+-end
+-
+ -- choose_among_multiples selects a number between 1 and COUNT
+ -- based on the coordinates X and Y and the algorithm's name ALG.
+ function choose_among_multiples(x, y, count, alg)
+@@ -158,7 +123,6 @@
+ -- check_chess returns a boolean whether a chess stone is used
+ -- in the sokoarea SOKOAREA_NUMBER.
+ function check_chess(sokoarea_number)
+-  mydebug(sokoarea[1].level_array[3][3])
+   for y = 1, sokoarea[sokoarea_number].array_height do
+     for x = 1, sokoarea[sokoarea_number].array_width do
+       local ch = sokoarea[sokoarea_number].level_array[y][x]
+@@ -173,7 +137,7 @@
+ -- set_oxyd sets an oxyd with given flavor and color and adds
+ -- the neccessary entry to list_oxyd.
+ function set_oxyd(sokoarea_number, list_entry, flavor, color)
+-  local entry = list_entry
++  local entry = luatools.deep_copy(list_entry)
+   entry.flavor = flavor
+   entry.color = color
+   oxyd(entry.lx, entry.ly, flavor, color)
+@@ -406,7 +370,7 @@
+       if stkind == &quot;st-none&quot; then
+         kill_stone(x, y)
+       else
+-        created_objects.st = set_stone(stkind, x, y)
++        created_objects.st = set_stone(stkind, x, y, {_sokoarea = sokoarea_number})
+       end
+     end
+   end
+@@ -856,20 +820,20 @@
+ --  - a number specifying the number of the design in the design list
+ --  - &quot;nil&quot; plus a level_array from which a design from the design
+ --    list will be chosen.
+-function design_from_description(design_description, level_array)
++function design_from_description(design_description, level_array, maxdesignnumber)
+   -- choose design
+   local design = {}
+   if type(design_description) == &quot;number&quot; then
+-    design = design_list[design_description]
++    design = luatools.deep_copy(design_list[design_description])
+   elseif type(design_description) == &quot;table&quot; then
+-    design = design_description
++    design = luatools.deep_copy(design_description)
+   elseif (type(design_description) == &quot;nil&quot;) and (type(level_array) == &quot;table&quot;) then
+-    design = design_from_level(level_array)
++    design = luatools.deep_copy(design_from_level(level_array, maxdesignnumber))
+   else
+     myerror(&quot;Can't make sense of design type &quot;..type(design)..&quot;.&quot;)
+   end
+   -- fill chosen design with default values where neccessary
+-  design = combine_tables({design, default_design})
++  design = luatools.combine_tables({design, default_design})
+   -- No stone set for outf, not even &quot;st-none&quot;?
+   -- Use the default outf-stone instead, and remove it on endphase.
+   if type(design.outf) ~= &quot;table&quot; then
+@@ -906,11 +870,12 @@
+ -- design entries. A missing entry will be interpreted as the entry
+ -- from default_design. If the DESIGN variable is omitted, a check-
+ -- number is created from LEVEL which uniquely* determines a design
+--- from the design list. *Uniquely means: The design might change
+--- when the design list is enlarged.
++-- from the design list, with MAXDESIGNNUMBER as highest possible
++-- design number. *Uniquely means: The design might change when the
++-- design list is enlarged.
+ -- Returns width and height of new level.
+ --
+-function create_sokoball(level, sublevel, design)
++function create_sokoball(level, sublevel, design, maxdesignnumber)
+   -- check that this is the first sokoarea, and initialise it.
+   if type(sokoarea) ~= &quot;table&quot; then
+     myerror(&quot;No sense in sokoarea of type &quot;..type(sokoarea)..&quot;.&quot;)
+@@ -928,7 +893,6 @@
+   --                 level_array[y-coordinate][x-coordinate]
+   sokoarea[1].array_width = table.getn(sokoarea[1].level_array[1])
+   sokoarea[1].array_height = table.getn(sokoarea[1].level_array)
+-  mydebug(sokoarea[1].array_height..&quot; : &quot;..sokoarea[1].array_width)
+   sokoarea[1].uses_chess = check_chess(1)
+   local levelw = math.max(sokoarea[1].array_width, 20)
+   local levelh = math.max(sokoarea[1].array_height, 13)
+@@ -948,7 +912,8 @@
+   sokoarea[1].offset = {x = dx, y = dy}
+ 
+   -- calculate design
+-  sokoarea[1].design = design_from_description(design, sokoarea[1].level_array)
++  sokoarea[1].design =
++    design_from_description(design, sokoarea[1].level_array, maxdesignnumber)
+ 
+   -- create special position lists
+   create_lists(nr)
+@@ -978,10 +943,11 @@
+ -- from scratch, but not the world and doesn't add another
+ -- actor.
+ --
+-function recreate_sokoball(design, sokoarea_number)
+-  local nr = sokoarea_number or 1  
++function recreate_sokoball(design, maxdesignnumber, sokoarea_number)
++  local nr = sokoarea_number or 1
++
+   sokoarea[nr].design =
+-      design_from_description(design, sokoarea[nr].level_array)
++      design_from_description(design, sokoarea[nr].level_array, maxdesignnumber)
+ 
+   if sokoarea[nr].level_width and sokoarea[nr].level_height then
+     for x = 0, sokoarea[nr].level_width - 1 do
+@@ -1012,7 +978,15 @@
+   sokoarea[nr].list_oxyd = {}
+   sokoarea[nr].list_blocker = {}
+   sokoarea[nr].number_oxyds = 0
+-    
++  sokoarea[nr].goal_to_blocker = {}
++  sokoarea[nr].endphase_hook = endphase
++
++  --sokoarea[nr].list_outside = {}
++  --sokoarea[nr].list_wall = {}
++  --sokoarea[nr].list_way = {}
++  --sokoarea[nr].list_wall_one = {}
++  --sokoarea[nr].list_wall_two = {}
++
+   draw_level_array(nr, true, false)
+ 
+   -- prepare oxyds for end phase
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000419.html">[Enigma-game-svn] r987 - in trunk: . doc src
+</A></li>
+	<LI>Next message: <A HREF="000421.html">[Enigma-game-svn] r989 - in trunk/src: . stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#420">[ date ]</a>
+              <a href="thread.html#420">[ thread ]</a>
+              <a href="subject.html#420">[ subject ]</a>
+              <a href="author.html#420">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

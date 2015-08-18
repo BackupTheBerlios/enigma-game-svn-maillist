@@ -1,0 +1,534 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r931 - in trunk: data src src/gui src/lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-December/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r931%20-%20in%20trunk%3A%20data%20src%20src/gui%20src/lev&In-Reply-To=%3C200712032159.lB3LxNoa006137%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000362.html">
+   <LINK REL="Next"  HREF="000364.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r931 - in trunk: data src src/gui src/lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r931%20-%20in%20trunk%3A%20data%20src%20src/gui%20src/lev&In-Reply-To=%3C200712032159.lB3LxNoa006137%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r931 - in trunk: data src src/gui src/lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon Dec  3 22:59:23 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000362.html">[Enigma-game-svn] r930 - homepage/input
+</A></li>
+        <LI>Next message: <A HREF="000364.html">[Enigma-game-svn] r932 - in trunk: data src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#363">[ date ]</a>
+              <a href="thread.html#363">[ thread ]</a>
+              <a href="subject.html#363">[ subject ]</a>
+              <a href="author.html#363">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-12-03 22:59:21 +0100 (Mon, 03 Dec 2007)
+New Revision: 931
+
+Modified:
+   trunk/data/init.lua
+   trunk/src/d_models.cc
+   trunk/src/display.cc
+   trunk/src/enigma.cc
+   trunk/src/enigma.hh
+   trunk/src/floors.cc
+   trunk/src/gui/GameMenu.cc
+   trunk/src/items.cc
+   trunk/src/lev/ScoreManager.cc
+   trunk/src/lua.cc
+   trunk/src/main.cc
+   trunk/src/server.cc
+   trunk/src/server.hh
+   trunk/src/stones_simple.cc
+   trunk/src/video.cc
+Log:
+Trunk 1.1: reengineering of random functions
+- replace all access to OS dependent random functions
+- implementation of fast 31 bit BSD rand function for all OS
+- managment of 2 seeds for level logic and other &quot;system&quot; random needs
+- replace LUA random function by a compatible function that is based
+  on Enimgas internal random algorithm.
+
+
+Modified: trunk/data/init.lua
+===================================================================
+--- trunk/data/init.lua	2007-12-01 19:16:02 UTC (rev 930)
++++ trunk/data/init.lua	2007-12-03 21:59:21 UTC (rev 931)
+@@ -17,6 +17,19 @@
+ --
+ ------------------------------------------------------------------------
+ 
++-----------------------------------------------
++-- Use Enigma internal random implementation --
++-----------------------------------------------
++
++if type(en) == &quot;table&quot; then
++    math.random = en.random
++else
++    math.random = enigma.random
++end
++random = math.random
++-- randseed is issued by Enigma application and must not be disturbed
++math.randomseed = function () end
++
+ -------------------------------
+ -- Compatibility for old API --
+ -------------------------------
+@@ -95,8 +108,6 @@
+     enigma.LoadLib(string.sub(filename,8,string.len(filename)-4))
+ end
+ 
+--- randseed is issued by Enigma application and must not be disturbed
+-math.randomseed = function () end
+ 
+ ----------------------------------
+ -- Routines for creating levels --
+
+Modified: trunk/src/d_models.cc
+===================================================================
+--- trunk/src/d_models.cc	2007-12-01 19:16:02 UTC (rev 930)
++++ trunk/src/d_models.cc	2007-12-03 21:59:21 UTC (rev 931)
+@@ -498,11 +498,11 @@
+ 
+ Model * RandomModel::clone() {
+     if (!modelnames.empty()) {
+-	int r = enigma::IntegerRand(0, modelnames.size()-1);
+-	return MakeModel(modelnames[r]);
++        int r = enigma::IntegerRand(0, modelnames.size()-1, false);
++        return MakeModel(modelnames[r]);
+     } else {
+-	fprintf(stderr, &quot;display_2d.cc: empty RandomModel\n&quot;);
+-	return 0;
++        fprintf(stderr, &quot;display_2d.cc: empty RandomModel\n&quot;);
++        return 0;
+     }
+ }
+ 
+
+Modified: trunk/src/display.cc
+===================================================================
+--- trunk/src/display.cc	2007-12-01 19:16:02 UTC (rev 930)
++++ trunk/src/display.cc	2007-12-03 21:59:21 UTC (rev 931)
+@@ -667,7 +667,7 @@
+ {
+     Rect videoarea;
+     if (m-&gt;has_changed(videoarea)) {
+-        int delay = immediately ? 0 : enigma::IntegerRand (0, 2);
++        int delay = immediately ? 0 : enigma::IntegerRand (0, 2, false);
+         WorldArea wa;
+         get_engine()-&gt;video_to_world (videoarea, wa);
+         get_engine()-&gt;mark_redraw_area(wa, delay);
+
+Modified: trunk/src/enigma.cc
+===================================================================
+--- trunk/src/enigma.cc	2007-12-01 19:16:02 UTC (rev 930)
++++ trunk/src/enigma.cc	2007-12-03 21:59:21 UTC (rev 931)
+@@ -23,6 +23,7 @@
+ #include &quot;ecl.hh&quot;
+ #include &quot;main.hh&quot;
+ #include &quot;objects.hh&quot;
++#include &quot;server.hh&quot;
+ #include &quot;world.hh&quot;
+ 
+ #include &lt;iostream&gt;
+@@ -495,25 +496,42 @@
+ 
+ /* -------------------- Random numbers -------------------- */
+ 
+-void  Randomize ()
+-{
+-    srand (time(NULL));
++int32_t  SystemRandomState;
++
++void Randomize(bool isLevel) {
++    time_t seed = time(NULL) &amp; 0x7fffffff;
++    Randomize(seed, isLevel);
+ }
+ 
+-void  Randomize (unsigned seed)
+-{
+-    srand (seed);
++void Randomize(unsigned seed, bool isLevel) {
++    if (isLevel) {
++        server::RandomState = seed;
++    } else {
++        srand (seed);
++        SystemRandomState =  seed;
++    }
+ }
+ 
+-int   IntegerRand (int min, int max)
+-{
+-    int r = round_down&lt;int&gt;((max-min+1) * (rand()/(RAND_MAX+1.0)));
++int Rand(bool isLevel) {
++    int32_t rand = isLevel ? server::RandomState : SystemRandomState;
++    // This is the 31 bit BSD rand generator. Its sequence is  x_{n+1} = (a x_n + c) mod m
++    // with a = 1103515245, c = 12345 and m = 2^31. The seed specifies the initial value, x_1. 
++    // The period of this generator is 2^31, and it uses 1 word of storage per generator. 
++    rand = ((rand * 1103515245) + 12345) &amp; 0x7fffffff;
++    if (isLevel)
++        server::RandomState = rand;
++    else
++        SystemRandomState = rand;
++    return rand;
++}
++
++int IntegerRand(int min, int max, bool isLevel) {
++    int r = round_down&lt;int&gt;((max-min+1) * (Rand(isLevel)/(ENIGMA_RAND_MAX+1.0)));  // 1.0 converts to double to avoid int overflow!
+     return r+min;
+ }
+ 
+-double DoubleRand (double min, double max)
+-{
+-    return min + double(rand())/RAND_MAX * (max-min);
++double DoubleRand(double min, double max, bool isLevel) {
++    return min + double(Rand(isLevel))/ENIGMA_RAND_MAX * (max-min);
+ }
+ 
+ 
+
+Modified: trunk/src/enigma.hh
+===================================================================
+--- trunk/src/enigma.hh	2007-12-01 19:16:02 UTC (rev 930)
++++ trunk/src/enigma.hh	2007-12-03 21:59:21 UTC (rev 931)
+@@ -33,6 +33,7 @@
+ #include &quot;ecl_util.hh&quot;
+ #include &quot;ecl_cache.hh&quot;
+ #include &lt;list&gt;
++#include &lt;stdint.h&gt;
+ 
+ #define NUMENTRIES(array) (sizeof(array)/sizeof(*array))
+ 
+@@ -408,11 +409,66 @@
+ 
+ /* -------------------- Random Numbers -------------------- */
+ 
+-    void   Randomize ();
+-    void   Randomize (unsigned seed);
+-    int    IntegerRand (int min, int max);
+-    double DoubleRand (double min, double max);
++/**
++ * Maximum random number 2^16-1 that is valid for all operating systems
++ * and processor types. 
++ */
++#define ENIGMA_RAND_MAX  2147483647
+ 
++    extern int32_t  SystemRandomState;   ///&lt; the internal seed used for system demands
++    
++    /**
++     * Initialization of the random generator by a random seed.
++     * @arg isLevel   random seed for the calculation of the level itself
++     */
++    void   Randomize(bool isLevel = true);
++    
++    /**
++     * Initialization of the random generator by a given seed. This function
++     * allows a reset of the level random sequence for replay of a level or
++     * calculation of parallel worlds.
++     * @arg isLevel   random seed for the calculation of the level itself
++     */
++    void   Randomize(unsigned seed, bool isLevel = true);
++    
++    /**
++     * Centralized mandatory random function that substitutes any operating
++     * system dependent std::rand() implementation. Enigma needs random
++     * number sequences that are repeatable and identical on all computers
++     * without any special demands on the distribution. This is a fast
++     * implementation of the classical BSD rand function that generates 31 bit
++     * integer random numbers with the number itself being the seed for the
++     * next number. All random functions take a bool argument, that seperates
++     * random requests based on commmon system demands from those based on
++     * the calculation of the level. The related seed for the level random
++     * requests is kept as part of the level thus allowing parallel calculations
++     * of different worlds in different threads. All random numbers, even those
++     * generated in the Lua random functions need to be based on this central function.
++     * @arg isLevel   random request for the calculation of the level itself
++     * @return        random integer in the range 0 - ENIGMA_RAND_MAX
++     */
++    int    Rand(bool isLevel = true);
++    
++    /**
++     * Random integer number that is guaranteed to be in the range [min, max]. See
++     * Rand() for details.
++     * @arg  min      lower included boundary of number range
++     * @arg  max      upper included boundary of number range
++     * @arg  isLevel  random request for the calculation of the level itself
++     * @return        random integer in the range [min, max]
++     */
++    int    IntegerRand(int min, int max, bool isLevel = true);
++    
++    /**
++     * Random integer number that is guaranteed to be in the range [min, max]. See
++     * Rand() for details.
++     * @arg  min      lower included boundary of number range
++     * @arg  max      upper included boundary of number range
++     * @arg  isLevel  random request for the calculation of the level itself
++     * @return        random integer in the range [min, max] 
++     */
++    double DoubleRand(double min, double max, bool isLevel = true);
++
+ /* -------------------- Time &amp; Date -------------------- */
+ 
+     const char *date(const char *format); // format see 'man strftime'
+
+Modified: trunk/src/floors.cc
+===================================================================
+--- trunk/src/floors.cc	2007-12-01 19:16:02 UTC (rev 930)
++++ trunk/src/floors.cc	2007-12-03 21:59:21 UTC (rev 931)
+@@ -878,9 +878,7 @@
+ string Thief::get_modelname() {
+     if(modelname == &quot;&quot;) {
+         // initialize on first call
+-        int r = IntegerRand(1,4);
+-        modelname = string(&quot;fl-thief&quot;)
+-            + ((string) (r==1?&quot;1&quot;:r==2?&quot;2&quot;:r==3?&quot;3&quot;:&quot;4&quot;));
++        modelname = ecl::strf(&quot;fl-thief%d&quot;, IntegerRand(1, 4));
+     }
+     return modelname;
+ }
+
+Modified: trunk/src/gui/GameMenu.cc
+===================================================================
+--- trunk/src/gui/GameMenu.cc	2007-12-01 19:16:02 UTC (rev 930)
++++ trunk/src/gui/GameMenu.cc	2007-12-03 21:59:21 UTC (rev 931)
+@@ -79,8 +79,8 @@
+             // randomly choose ball offset
+             int x, y;
+             for (int trials = 5; trials; --trials) {
+-                x = IntegerRand(0, 5);
+-                y = IntegerRand(0, 3);
++                x = IntegerRand(0, 5, false);
++                y = IntegerRand(0, 3, false);
+     
+                 // try to avoid menu-ball overlap:
+                 if (x&lt;2 || x&gt;3 || y&lt;1 || y&gt;2 || (trials == 1)) {
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2007-12-01 19:16:02 UTC (rev 930)
++++ trunk/src/items.cc	2007-12-03 21:59:21 UTC (rev 931)
+@@ -2497,8 +2497,7 @@
+ void Burnable::init_model() {
+     if(state == OIL) {
+         string mymodel = &quot;it-burnable_oil&quot;;
+-        int r = IntegerRand(1,4);
+-        mymodel = mymodel + ((string) (r==1?&quot;1&quot;:r==2?&quot;2&quot;:r==3?&quot;3&quot;:&quot;4&quot;));
++        mymodel = mymodel + ecl::strf(&quot;%d&quot;, IntegerRand(1, 4));
+         set_model(mymodel.c_str());
+     } else
+         Item::init_model();
+
+Modified: trunk/src/lev/ScoreManager.cc
+===================================================================
+--- trunk/src/lev/ScoreManager.cc	2007-12-01 19:16:02 UTC (rev 930)
++++ trunk/src/lev/ScoreManager.cc	2007-12-03 21:59:21 UTC (rev 931)
+@@ -233,17 +233,7 @@
+                         hasValidUserId = true;
+                     } else {
+                         // create first part of user id based on time stamp
+-                        unsigned id;
+-                        if (RAND_MAX &gt; 0x10000) {
+-                            id = std::rand() &amp; 0xFFFFFFFF;
+-                        } else {
+-                            // MinGW 3.4.2 and maybe other configs
+-                            unsigned t = std::time(NULL);
+-                            std::srand(t &gt;&gt; 15);
+-                            id = (std::rand() &lt;&lt; 16) ^ (t &amp; 0xFFFF);
+-                            enigma::Randomize();
+-                        }
+-                        userId = ecl::strf(&quot;%.8lX&quot;,id);
++                        userId = ecl::strf(&quot;%.8lX&quot;, Rand(false));
+                         // we need a second random part as 2 users may start Enigma
+                         // within the same second - we postpone this part till we save
+                     }
+@@ -362,7 +352,7 @@
+             Log &lt;&lt; &quot;ReId Windows 1.00 User Id: &quot; &lt;&lt; userId &lt;&lt; &quot;\n&quot;;
+             setProperty(&quot;UserId1.00&quot;, userId);
+             app.state-&gt;setProperty(&quot;UserId1.00&quot;, userId);
+-            unsigned id1 = std::rand() &amp; 0xFFFF;
++            unsigned id1 = Rand(false) &amp; 0xFFFF;
+             userId.replace(0, 4, ecl::strf(&quot;%.4lX&quot;,id1));
+             unsigned id2, id3, id4;
+             std::istringstream s2(userId.substr(4, 4));
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2007-12-01 19:16:02 UTC (rev 930)
++++ trunk/src/lua.cc	2007-12-03 21:59:21 UTC (rev 931)
+@@ -801,6 +801,36 @@
+ 
+ /* -------------------- new functions -------------------- */
+ 
++/**
++ * Replacement of Lua's random function based on Enigma's central random
++ * function with support of calculation of parallel worlds in seperated
++ * threads.
++ */
++static int mathRandom (lua_State *L) {
++    lua_Number r = (lua_Number)(Rand()) / (lua_Number)(ENIGMA_RAND_MAX+1.0);
++    switch (lua_gettop(L)) {      // check number of arguments
++        case 0: {                 // no arguments
++            lua_pushnumber(L, r); // Number between 0 and 1 
++            break;
++        }
++        case 1: {  // only upper limit
++            int u = luaL_checkint(L, 1);
++            luaL_argcheck(L, 1&lt;=u, 1, &quot;interval is empty&quot;);
++            lua_pushnumber(L, floor(r*u)+1);  // int between 1 and `u'
++            break;
++        }
++        case 2: {  // lower and upper limits 
++            int l = luaL_checkint(L, 1);
++            int u = luaL_checkint(L, 2);
++            luaL_argcheck(L, l&lt;=u, 2, &quot;interval is empty&quot;);
++            lua_pushnumber(L, floor(r*(u-l+1))+l);  // int between `l' and `u'
++            break;
++        }
++        default: return luaL_error(L, &quot;wrong number of arguments&quot;);
++    }
++    return 1;
++}
++
+ static int newPosition(lua_State *L) {
+     // (pos|obj|table|(num,num))
+     if (is_table(L, 1)) {  // table 
+@@ -2211,10 +2241,12 @@
+     {en_add_scramble,           &quot;AddScramble&quot;},
+     {en_set_scramble_intensity, &quot;SetScrambleIntensity&quot;},
+ 
++    {mathRandom,                    &quot;random&quot;},
+     {0,0}
+ };
+ 
+ static CFunction levelFuncs[] = {
++    {mathRandom,                    &quot;random&quot;},
+     {newGroup,                      &quot;grp&quot;},
+     {newPosition,                   &quot;po&quot;},
+     {getFloor,                      &quot;fl&quot;},
+
+Modified: trunk/src/main.cc
+===================================================================
+--- trunk/src/main.cc	2007-12-01 19:16:02 UTC (rev 930)
++++ trunk/src/main.cc	2007-12-03 21:59:21 UTC (rev 931)
+@@ -377,7 +377,8 @@
+ #endif
+ 
+     // initialize random
+-    enigma::Randomize();
++    enigma::Randomize(false);
++    enigma::Randomize(true);
+     
+     //
+     if (isMakePreviews) {
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2007-12-01 19:16:02 UTC (rev 930)
++++ trunk/src/server.cc	2007-12-03 21:59:21 UTC (rev 931)
+@@ -98,6 +98,7 @@
+ lev::levelStatusType   server::LevelStatus; // no Lua access
+ double   server::MagnetForce;
+ double   server::MagnetRange;
++int32_t  server::RandomState;               // no Lua access
+ double   server::SlopeForce;
+ double   server::SwampSinkSpeed;
+ double   server::WaterSinkSpeed;
+
+Modified: trunk/src/server.hh
+===================================================================
+--- trunk/src/server.hh	2007-12-01 19:16:02 UTC (rev 930)
++++ trunk/src/server.hh	2007-12-03 21:59:21 UTC (rev 931)
+@@ -23,13 +23,13 @@
+ #ifndef SERVER_HH_INCLUDED
+ #define SERVER_HH_INCLUDED
+ 
+-//#include &quot;levels.hh&quot;
+ #include &quot;lev/Proxy.hh&quot;
+ 
++#include &lt;stdint.h&gt;
++
+ namespace enigma_server 
+ {
+     using namespace enigma;
+-//    using levels::LevelPack;
+ 
+ /* -------------------- Global variables -------------------- */
+ 
+@@ -51,6 +51,8 @@
+ 
+     // The number of seconds passed since the level game started.
+     extern double LevelTime;
++    
++    extern int32_t  RandomState;
+ 
+     // True: do not reset level when player dies
+     extern bool     ConserveLevel;
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2007-12-01 19:16:02 UTC (rev 930)
++++ trunk/src/stones_simple.cc	2007-12-03 21:59:21 UTC (rev 931)
+@@ -1033,7 +1033,7 @@
+         RandomWoodenStone() : Stone(&quot;st-wood&quot;) {}
+     private:
+         Stone *clone() {
+-            if(IntegerRand(0,1) == 0)
++            if(IntegerRand(0, 1) == 0)
+                 return new WoodenStone(&quot;st-wood1&quot;, &quot;fl-stwood1&quot;);
+             else
+                 return new WoodenStone(&quot;st-wood2&quot;, &quot;fl-stwood2&quot;);
+
+Modified: trunk/src/video.cc
+===================================================================
+--- trunk/src/video.cc	2007-12-01 19:16:02 UTC (rev 930)
++++ trunk/src/video.cc	2007-12-03 21:59:21 UTC (rev 931)
+@@ -1018,8 +1018,8 @@
+     case TM_PUSH_RANDOM: {
+         int xo=0, yo=0;
+         while (xo==0 &amp;&amp; yo==0) {
+-            xo = enigma::IntegerRand(-1,1)*scrw;
+-            yo = enigma::IntegerRand(-1,1)*scrh;
++            xo = enigma::IntegerRand(-1, 1, false)*scrw;
++            yo = enigma::IntegerRand(-1, 1, false)*scrh;
+         }
+         return new Effect_Push(newscr, xo, yo);
+     }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000362.html">[Enigma-game-svn] r930 - homepage/input
+</A></li>
+	<LI>Next message: <A HREF="000364.html">[Enigma-game-svn] r932 - in trunk: data src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#363">[ date ]</a>
+              <a href="thread.html#363">[ thread ]</a>
+              <a href="subject.html#363">[ subject ]</a>
+              <a href="author.html#363">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

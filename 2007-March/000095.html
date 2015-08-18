@@ -1,0 +1,169 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r657 - branches/1.0/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r657%20-%20branches/1.0/src&In-Reply-To=%3C200703130014.l2D0E3jW020659%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000094.html">
+   <LINK REL="Next"  HREF="000096.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r657 - branches/1.0/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r657%20-%20branches/1.0/src&In-Reply-To=%3C200703130014.l2D0E3jW020659%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r657 - branches/1.0/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Mar 13 01:14:03 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000094.html">[Enigma-game-svn] r656 - in homepage: gfx-templates images input
+</A></li>
+        <LI>Next message: <A HREF="000096.html">[Enigma-game-svn] r658 - branches/1.0/po
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#95">[ date ]</a>
+              <a href="thread.html#95">[ thread ]</a>
+              <a href="subject.html#95">[ subject ]</a>
+              <a href="author.html#95">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-03-13 01:14:02 +0100 (Tue, 13 Mar 2007)
+New Revision: 657
+
+Modified:
+   branches/1.0/src/stones_complex.cc
+   branches/1.0/src/world.cc
+   branches/1.0/src/world_internal.hh
+Log:
+- fix r616 crash on shutdown on repository deletion without existing world
+- backed revokeDelayedImpulses by a World method
+- turnstile code minor clean up
+
+
+Modified: branches/1.0/src/stones_complex.cc
+===================================================================
+--- branches/1.0/src/stones_complex.cc	2007-03-12 22:41:15 UTC (rev 656)
++++ branches/1.0/src/stones_complex.cc	2007-03-13 00:14:02 UTC (rev 657)
+@@ -2766,13 +2766,16 @@
+ 
+         bool compatible = oxyd_compatible();
+         int  idx_target = rot_index[clockwise+2*compatible][idx_source]; // destination index
+-        bool do_warp = arm_seen[idx_source]; // move the actor along with the turnstile?
++        bool do_warp = false; // move the actor along with the turnstile?
+ 
+         if (compatible) {
+             // Move only the actor that hit the turnstile in Oxyd mode
+             do_warp = (ac == dynamic_cast&lt;Actor*&gt;(impulse_sender));
+             if (!do_warp &amp;&amp; arm_seen[idx_source])
+                 SendMessage(ac, &quot;shatter&quot;); // hit by an arm
++        } else { // green turnstile
++            // move all actors only if pushed by an arm
++            do_warp = arm_seen[idx_source];
+         }
+ 
+         if (!do_warp) 
+
+Modified: branches/1.0/src/world.cc
+===================================================================
+--- branches/1.0/src/world.cc	2007-03-12 22:41:15 UTC (rev 656)
++++ branches/1.0/src/world.cc	2007-03-13 00:14:02 UTC (rev 657)
+@@ -1053,6 +1053,19 @@
+     }
+ }
+ 
++void World::revoke_delayed_impulses(const Stone *target) {
++    // Revokes delayed impulses to and from target
++    ImpulseList::iterator i = delayed_impulses.begin(),
++        end = delayed_impulses.end();
++    while (i != end) {
++        if (i-&gt;is_receiver(target) || i-&gt;is_sender(target))
++            i = delayed_impulses.erase(i);
++        else
++            ++i;
++    }
++}
++
++
+ void World::stone_change(GridPos p) 
+ {
+     if (const Field *f = GetField (p)) {
+@@ -1770,17 +1783,12 @@
+     level-&gt;delayed_impulses.push_back(DelayedImpulse(impulse, delay, estimated_receiver));
+ }
+ 
+-void world::revokeDelayedImpulses(const Stone *target)
+-{
+-    // Revokes delayed impulses to and from target
+-    ImpulseList::iterator i = level-&gt;delayed_impulses.begin(),
+-        end = level-&gt;delayed_impulses.end();
+-    while (i != end) {
+-        if (i-&gt;is_receiver(target) || i-&gt;is_sender(target))
+-            i = level-&gt;delayed_impulses.erase(i);
+-        else
+-            ++i;
+-    }
++void world::revokeDelayedImpulses(const Stone *target) {
++    // Any stone may call this function on deletion.
++    // When the repository shuts down no world is existing thus check
++    // world first.
++    if (level.get() != NULL) 
++        level-&gt;revoke_delayed_impulses(target);
+ }
+ 
+ void world::Tick(double dtime) {
+
+Modified: branches/1.0/src/world_internal.hh
+===================================================================
+--- branches/1.0/src/world_internal.hh	2007-03-12 22:41:15 UTC (rev 656)
++++ branches/1.0/src/world_internal.hh	2007-03-13 00:14:02 UTC (rev 657)
+@@ -275,6 +275,8 @@
+ 
+         void tick_actor(Actor *a, double dtime);
+ 
++        void revoke_delayed_impulses(const Stone *target);
++
+     private:
+ 
+         /* ---------- Private methods ---------- */
+@@ -292,7 +294,6 @@
+         void handle_actor_contact (size_t a1, size_t a2);
+         void handle_contacts (unsigned actoridx);
+         void handle_delayed_impulses (double dtime);
+-
+         void stone_change (GridPos p);
+ 
+     public:
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000094.html">[Enigma-game-svn] r656 - in homepage: gfx-templates images input
+</A></li>
+	<LI>Next message: <A HREF="000096.html">[Enigma-game-svn] r658 - branches/1.0/po
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#95">[ date ]</a>
+              <a href="thread.html#95">[ thread ]</a>
+              <a href="subject.html#95">[ subject ]</a>
+              <a href="author.html#95">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

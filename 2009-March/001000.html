@@ -1,0 +1,392 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1570 - in trunk: data/schemas src src/items	src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1570%20-%20in%20trunk%3A%20data/schemas%20src%20src/items%0A%09src/stones&In-Reply-To=%3C200903030031.n230Vbed012080%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000999.html">
+   <LINK REL="Next"  HREF="001001.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1570 - in trunk: data/schemas src src/items	src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1570%20-%20in%20trunk%3A%20data/schemas%20src%20src/items%0A%09src/stones&In-Reply-To=%3C200903030031.n230Vbed012080%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1570 - in trunk: data/schemas src src/items	src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Mar  3 01:31:37 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000999.html">[Enigma-game-svn] r1569 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="001001.html">[Enigma-game-svn] r1571 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1000">[ date ]</a>
+              <a href="thread.html#1000">[ thread ]</a>
+              <a href="subject.html#1000">[ subject ]</a>
+              <a href="author.html#1000">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-03-03 01:31:36 +0100 (Tue, 03 Mar 2009)
+New Revision: 1570
+
+Modified:
+   trunk/data/schemas/objects.xml
+   trunk/src/Object.cc
+   trunk/src/items/SeedItem.cc
+   trunk/src/items/SeedItem.hh
+   trunk/src/items/Vortex.cc
+   trunk/src/stones/BoxStone.cc
+   trunk/src/stones/DispenserStone.cc
+   trunk/src/stones/SimpleStones.cc
+   trunk/src/stones/SurpriseStone.cc
+Log:
+Trunk 1.1: new API reengineering
+- vortex: increase time on blocked vortex position
+- fix st_grate: write of attribute &quot;flavor&quot;
+- add it_seed_hay, flavor &quot;hay&quot; - grows to an st_box_hay
+- st_surprise: add st_puzzle_yellow to standard selection for compatibility
+- st_dispenser: add attribute &quot;max&quot;, default 1000, number of supplied items
+- st_spitter:
+  - add attribute &quot;range&quot;, default 100, do not spit beyond
+  - add attribute &quot;destination&quot;
+  - add message spit(position), spit a cannonball to position, 
+      if position is invalid (nil), take &quot;destination&quot; as position
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2009-03-02 15:25:03 UTC (rev 1569)
++++ trunk/data/schemas/objects.xml	2009-03-03 00:31:36 UTC (rev 1570)
+@@ -125,6 +125,7 @@
+     &lt;msg name=&quot;shuffle&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;shovel&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;signal&quot; type=&quot;int&quot; min=&quot;0&quot; max=&quot;1&quot;/&gt;
++    &lt;msg name=&quot;spit&quot; type=&quot;tokens&quot;/&gt;
+     &lt;msg name=&quot;stopfire&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;toggle&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;turn&quot; type=&quot;nil&quot;/&gt;
+@@ -742,6 +743,9 @@
+     &lt;object name=&quot;it_seed_volcano&quot;&gt;
+       &lt;attr name=&quot;flavor&quot; value=&quot;volcano&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;it_seed_hay&quot;&gt;
++      &lt;attr name=&quot;flavor&quot; value=&quot;hay&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;it_sensor&quot;&gt;
+       &lt;attr name=&quot;invisible&quot;/&gt;
+       &lt;attr name=&quot;exit&quot;/&gt;
+@@ -1031,18 +1035,16 @@
+     &lt;object name=&quot;st_box_hay&quot;&gt;
+       &lt;attr name=&quot;flavor&quot; value=&quot;hay&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_box_hay_growing&quot; init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;st_box_rock&quot;&gt;
+       &lt;attr name=&quot;flavor&quot; value=&quot;rock&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;st_box_wood&quot;&gt;
+       &lt;attr name=&quot;flavor&quot; value=&quot;wood&quot;/&gt;
+     &lt;/object&gt;
+-    &lt;object name=&quot;st_box_wood_growing&quot; init=&quot;true&quot;&gt;
+-    &lt;/object&gt;
+-    &lt;object name=&quot;st_box_wood_h&quot; init=&quot;true&quot;&gt;
+-    &lt;/object&gt;
+-    &lt;object name=&quot;st_box_wood_v&quot; init=&quot;true&quot;&gt;
+-    &lt;/object&gt;
++    &lt;object name=&quot;st_box_wood_growing&quot; init=&quot;true&quot;/&gt;
++    &lt;object name=&quot;st_box_wood_h&quot; init=&quot;true&quot;/&gt;
++    &lt;object name=&quot;st_box_wood_v&quot; init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;st_brake&quot;&gt;
+       &lt;msg name=&quot;_explosion&quot;/&gt;
+     &lt;/object&gt;
+@@ -1210,6 +1212,7 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;st_dispenser&quot;&gt;
+       &lt;attr name=&quot;flavor&quot; default=&quot;bombblack&quot; rw=&quot;r&quot;/&gt;
++      &lt;attr name=&quot;max&quot; default=&quot;1000&quot;/&gt;
+       &lt;msg name=&quot;_explosion&quot;/&gt;
+       &lt;msg name=&quot;_dispenser&quot;/&gt;
+     &lt;/object&gt;
+@@ -1737,8 +1740,11 @@
+       &lt;attr name=&quot;hit_distortion_xy&quot;/&gt;
+       &lt;attr name=&quot;hit_distortion_yx&quot;/&gt;
+       &lt;attr name=&quot;hit_distortion_yy&quot;/&gt;
++      &lt;attr name=&quot;destination&quot;/&gt;
++      &lt;attr name=&quot;range&quot; default=&quot;100&quot;/&gt;
+       &lt;attr name=&quot;secure&quot;/&gt;
+       &lt;msg name=&quot;_cannonball&quot;/&gt;
++      &lt;msg name=&quot;spit&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;st_stoneimpulse&quot;&gt;
+       &lt;attr name=&quot;hollow&quot;/&gt;
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2009-03-02 15:25:03 UTC (rev 1569)
++++ trunk/src/Object.cc	2009-03-03 00:31:36 UTC (rev 1570)
+@@ -370,7 +370,7 @@
+     
+     bool Object::getDestinationByIndex(int idx, ecl::V2 &amp;dstpos) {
+         int i = 0;  // counter for destination candidates
+-        TokenList tl = getAttr(&quot;destination&quot;);  // expand any tokens to a list of values 
++        TokenList tl = getAttr(&quot;destination&quot;);  // expand any tokens to a list of values
+         for (TokenList::iterator tit = tl.begin(); tit != tl.end(); ++tit) {
+             PositionList pl = (*tit).getPositionList(this);  // convert next token to a list of positions
+             for (PositionList::iterator pit = pl.begin(); pit != pl.end(); ++pit) {
+
+Modified: trunk/src/items/SeedItem.cc
+===================================================================
+--- trunk/src/items/SeedItem.cc	2009-03-02 15:25:03 UTC (rev 1569)
++++ trunk/src/items/SeedItem.cc	2009-03-03 00:31:36 UTC (rev 1570)
+@@ -41,6 +41,7 @@
+             if (flavor == &quot;wood&quot;) code = 0;
+             else if (flavor == &quot;fake&quot;) code = 1;
+             else if (flavor == &quot;volcano&quot;) code = 2;
++            else if (flavor == &quot;hay&quot;) code = 3;
+             else
+                 ASSERT(false, XLevelRuntime, ecl::strf(&quot;Seed: illegal flavor value #s&quot;, flavor.c_str()).c_str());
+                 
+@@ -60,6 +61,7 @@
+                 case 0 : return &quot;wood&quot;; break;
+                 case 1 : return &quot;fake&quot;; break;
+                 case 2 : return &quot;volcano&quot;; break;
++                case 3 : return &quot;hay&quot;; break;
+             }
+         } else
+             return Item::getAttr(key);
+@@ -97,14 +99,13 @@
+         int flavor = (objFlags &amp; OBJBIT_FLAVOR) &gt;&gt; 24;
+         if ((server::GameCompatibility == GAMET_OXYDMAGNUM || server::GameCompatibility == GAMET_OXYD1) &amp;&amp;
+             (flavor == 0 &amp;&amp; GetStone(p))) {
+-            std::string model = GetStone(p)-&gt;get_kind();
+-            if (model == &quot;st-grate1&quot;) {
+-                SetFloor(p, MakeFloor(&quot;fl-stwood&quot;));
++            if (GetStone(p)-&gt;getKind() == &quot;st_grate_cross&quot;) {
++                SetFloor(p, MakeFloor(&quot;fl_wood_framed&quot;));
+                 kill();
+                 return;
+            }
+        }
+-       Stone *st = MakeStone(flavor == 0 ? &quot;st_box_wood_growing&quot; : (flavor == 1 ? &quot;st_greenbrown_growing&quot; : &quot;st_volcano_growing&quot;));
++       Stone *st = MakeStone(flavor == 0 ? &quot;st_box_wood_growing&quot; : (flavor == 1 ? &quot;st_greenbrown_growing&quot; :(flavor == 2 ? &quot;st_volcano_growing&quot; : &quot;st_hay_growing&quot;)));
+        transferIdentity(st);
+        if (Value v = getAttr(&quot;secure&quot;))
+            st-&gt;setAttr(&quot;secure&quot;, v);
+@@ -159,6 +160,7 @@
+         BootRegister(new SeedItem(0), &quot;it_seed_wood&quot;);
+         BootRegister(new SeedItem(1), &quot;it_seed_fake&quot;);
+         BootRegister(new SeedItem(2), &quot;it_seed_volcano&quot;);
++        BootRegister(new SeedItem(3), &quot;it_seed_hay&quot;);
+     BOOT_REGISTER_END
+ 
+ } // namespace enigma
+
+Modified: trunk/src/items/SeedItem.hh
+===================================================================
+--- trunk/src/items/SeedItem.hh	2009-03-02 15:25:03 UTC (rev 1569)
++++ trunk/src/items/SeedItem.hh	2009-03-03 00:31:36 UTC (rev 1570)
+@@ -37,7 +37,7 @@
+         };
+         
+         enum ObjectPrivatFlagsBits {
+-            OBJBIT_FLAVOR =   3&lt;&lt;24,   ///&lt; wood, greenbrown, volcano seed
++            OBJBIT_FLAVOR =   3&lt;&lt;24,   ///&lt; wood, greenbrown, volcano, hay seed
+         };
+     public:
+         SeedItem(int flavor);
+
+Modified: trunk/src/items/Vortex.cc
+===================================================================
+--- trunk/src/items/Vortex.cc	2009-03-02 15:25:03 UTC (rev 1569)
++++ trunk/src/items/Vortex.cc	2009-03-03 00:31:36 UTC (rev 1570)
+@@ -222,7 +222,7 @@
+                     setAttr(&quot;$dest_idx&quot;, dest_idx + 1);
+                     client::Msg_Sparkle(p_target.center());
+                     WarpActor(actor, v_target[0], v_target[1], false);
+-                    GameTimer.set_alarm(this, 0.4, false);
++                    GameTimer.set_alarm(this, 0.8, false);
+                 }
+                 else {
+                     switch (v-&gt;state) {
+
+Modified: trunk/src/stones/BoxStone.cc
+===================================================================
+--- trunk/src/stones/BoxStone.cc	2009-03-02 15:25:03 UTC (rev 1569)
++++ trunk/src/stones/BoxStone.cc	2009-03-03 00:31:36 UTC (rev 1570)
+@@ -118,7 +118,10 @@
+                     set_model(&quot;st-wood2&quot;);
+                 break;
+             case HAY:
+-                set_model(&quot;st-flhay&quot;); break;
++                if (state == GROWING)
++                    set_anim(&quot;st-wood-growing&quot;);
++                else
++                    set_model(&quot;st-flhay&quot;); break;
+                 break;
+             case ROCK:
+                 set_model(&quot;st-flrock&quot;); break;
+@@ -207,6 +210,7 @@
+         BootRegister(new BoxStone(1), &quot;st_box_wood_h&quot;);
+         BootRegister(new BoxStone(2), &quot;st_box_wood_v&quot;);
+         BootRegister(new BoxStone(3), &quot;st_box_hay&quot;);
++        BootRegister(new BoxStone(3, 1), &quot;st_box_hay_growing&quot;);
+         BootRegister(new BoxStone(4), &quot;st_box_rock&quot;);
+     BOOT_REGISTER_END
+ 
+
+Modified: trunk/src/stones/DispenserStone.cc
+===================================================================
+--- trunk/src/stones/DispenserStone.cc	2009-03-02 15:25:03 UTC (rev 1569)
++++ trunk/src/stones/DispenserStone.cc	2009-03-03 00:31:36 UTC (rev 1570)
+@@ -80,22 +80,26 @@
+     }
+ 
+     void DispenserStone::actor_hit(const StoneContact &amp;sc) {
+-        if (enigma::Inventory *inv = player::GetInventory(sc.actor)) {
+-            if (!inv-&gt;is_full()) {
+-                DispenserStoneTyp typ = (DispenserStoneTyp)((objFlags &amp; OBJBIT_SUBTYP) &gt;&gt; 24);
+-                std::string itemkind;
+-                switch (typ) {
+-                    case BOMBBLACK:
+-                        itemkind = &quot;it_bomb_black&quot;; break;
+-                    case BOMBWHITE:
+-                        itemkind = &quot;it_bomb_white&quot;; break;
+-                    case DYNAMITE:
+-                        itemkind = &quot;it_dynamite&quot;; break;
+-                    default:
+-                        ASSERT(false, XLevelRuntime, &quot;Dispenser - unexpected subtyp&quot;);
++        int reserve = getAttr(&quot;max&quot;);
++        if (reserve &gt; 0) {
++            if (enigma::Inventory *inv = player::GetInventory(sc.actor)) {
++                if (!inv-&gt;is_full()) {
++                    DispenserStoneTyp typ = (DispenserStoneTyp)((objFlags &amp; OBJBIT_SUBTYP) &gt;&gt; 24);
++                    std::string itemkind;
++                    switch (typ) {
++                        case BOMBBLACK:
++                            itemkind = &quot;it_bomb_black&quot;; break;
++                        case BOMBWHITE:
++                            itemkind = &quot;it_bomb_white&quot;; break;
++                        case DYNAMITE:
++                            itemkind = &quot;it_dynamite&quot;; break;
++                        default:
++                            ASSERT(false, XLevelRuntime, &quot;Dispenser - unexpected subtyp&quot;);
++                    }
++                    inv-&gt;add_item(MakeItem(itemkind.c_str()));
++                    player::RedrawInventory(inv);
++                    setAttr(&quot;max&quot;, reserve - 1);
+                 }
+-                inv-&gt;add_item(MakeItem(itemkind.c_str()));
+-                player::RedrawInventory(inv);
+             }
+         }
+     }
+
+Modified: trunk/src/stones/SimpleStones.cc
+===================================================================
+--- trunk/src/stones/SimpleStones.cc	2009-03-02 15:25:03 UTC (rev 1569)
++++ trunk/src/stones/SimpleStones.cc	2009-03-03 00:31:36 UTC (rev 1570)
+@@ -23,7 +23,7 @@
+ #include &quot;client.hh&quot;
+ #include &quot;errors.hh&quot;
+ #include &quot;Inventory.hh&quot;
+-//#include &quot;main.hh&quot;
++#include &quot;main.hh&quot;
+ #include &quot;player.hh&quot;
+ #include &quot;server.hh&quot;
+ #include &quot;SoundEffectManager.hh&quot;
+@@ -172,11 +172,13 @@
+     }
+ 
+     void GrateStone::setAttr(const string&amp; key, const Value &amp;val) {
+-        if (key == &quot;flavor&quot; &amp;&amp; isDisplayable()) {
++        if (key == &quot;flavor&quot;) {
+             std::string fs = val.to_string();
+             if (fs == &quot;cross&quot;) state = CROSS;
+             else if (fs == &quot;framed&quot;) state = FRAMED;
+             else ASSERT(false, XLevelRuntime, ecl::strf(&quot;Grate stone set known flavor%s&quot;, fs.c_str()).c_str());
++            if (isDisplayable())
++                init_model();
+             return; 
+         } else
+             Stone::setAttr(key, val);
+@@ -253,6 +255,20 @@
+                 init_model();
+             }
+             return Value();
++        } else if (m.message == &quot;spit&quot; &amp;&amp; state == IDLE &amp;&amp; isDisplayable()) {
++            ecl::V2 dest = m.value;
++            if (!IsInsideLevel(dest)) {
++                if (!getDestinationByIndex(0, dest)) {
++                    return Value();
++                }
++                if (!IsInsideLevel(dest))
++                    return Value();
++            }
++            ecl::V2 vel = (GridPos(dest).center() - get_pos().center()) /0.55;
++            setAttr(&quot;$ball_velocity&quot;, vel);
++            state = LOADING;
++            init_model();
++            return Value();
+         }
+         return Stone::message(m);
+     }
+@@ -303,7 +319,11 @@
+             if (lifepos != -1) {
+                 delete inv-&gt;yield_item(lifepos);
+                 player::RedrawInventory (inv);
+-                setAttr(&quot;$ball_velocity&quot;, distortedVelocity(sc.actor-&gt;get_vel(), 1.0));
++                ecl::V2 vel = distortedVelocity(sc.actor-&gt;get_vel(), 1.0);
++                double maxvel = (double)getAttr(&quot;range&quot;)/0.56;
++                if (maxvel * maxvel &lt; square(vel))
++                    vel = maxvel * normalize(vel);
++                setAttr(&quot;$ball_velocity&quot;, vel);
+                 state = LOADING;
+                 init_model();
+             }
+
+Modified: trunk/src/stones/SurpriseStone.cc
+===================================================================
+--- trunk/src/stones/SurpriseStone.cc	2009-03-02 15:25:03 UTC (rev 1569)
++++ trunk/src/stones/SurpriseStone.cc	2009-03-03 00:31:36 UTC (rev 1570)
+@@ -55,6 +55,8 @@
+                     tl.push_back(stonename[i]);
+                 if (server::GameCompatibility != GAMET_ENIGMA)
+                     tl.push_back(&quot;st_dongle&quot;);
++                else
++                    tl.push_back(&quot;st_puzzle_yellow&quot;);
+                return tl;
+             }
+         } else
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000999.html">[Enigma-game-svn] r1569 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="001001.html">[Enigma-game-svn] r1571 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1000">[ date ]</a>
+              <a href="thread.html#1000">[ thread ]</a>
+              <a href="subject.html#1000">[ subject ]</a>
+              <a href="author.html#1000">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

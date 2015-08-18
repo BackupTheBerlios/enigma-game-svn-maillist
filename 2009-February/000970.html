@@ -1,0 +1,192 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1540 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1540%20-%20trunk/src&In-Reply-To=%3C200902172323.n1HNNSnf013178%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000969.html">
+   <LINK REL="Next"  HREF="000971.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1540 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1540%20-%20trunk/src&In-Reply-To=%3C200902172323.n1HNNSnf013178%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1540 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Feb 18 00:23:28 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000969.html">[Enigma-game-svn] r1539 - in trunk/src: . items
+</A></li>
+        <LI>Next message: <A HREF="000971.html">[Enigma-game-svn] r1541 - in branches/1.01: lib-src/enigma-core src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#970">[ date ]</a>
+              <a href="thread.html#970">[ thread ]</a>
+              <a href="subject.html#970">[ subject ]</a>
+              <a href="author.html#970">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-02-18 00:23:27 +0100 (Wed, 18 Feb 2009)
+New Revision: 1540
+
+Modified:
+   trunk/src/WorldProxy.cc
+   trunk/src/lua.cc
+   trunk/src/server.cc
+   trunk/src/server.hh
+   trunk/src/world.cc
+Log:
+Trunk 1.1: new API reengineering
+- fix GlobalForce now can be set prior world creation
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2009-02-15 15:25:45 UTC (rev 1539)
++++ trunk/src/WorldProxy.cc	2009-02-17 23:23:27 UTC (rev 1540)
+@@ -87,7 +87,7 @@
+         } else if (key == &quot;FrictionStrength&quot;) {
+             return server::FrictionFactor;
+         } else if (key == &quot;GlobalForce&quot;) {
+-            return GetGlobalForce();
++            return server::GlobalForce;
+         } else if (key == &quot;MeditationStrength&quot;) {
+             return server::HoleForce;
+         } else if (key == &quot;MagnetStrength&quot;) {
+@@ -187,7 +187,7 @@
+         } else if (key == &quot;FrictionStrength&quot;) {
+             server::FrictionFactor = val;
+         } else if (key == &quot;GlobalForce&quot;) {
+-            SetGlobalForce(val);
++            server::GlobalForce = val;
+         } else if (key == &quot;MeditationStrength&quot;) {
+             server::HoleForce = val;
+         } else if (key == &quot;MagnetStrength&quot;) {
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2009-02-15 15:25:45 UTC (rev 1539)
++++ trunk/src/lua.cc	2009-02-17 23:23:27 UTC (rev 1540)
+@@ -829,7 +829,7 @@
+     ecl::V2 v;
+     v[0] = lua_tonumber(L, 1);
+     v[1] = lua_tonumber(L, 2);
+-    SetGlobalForce(v);
++    server::GlobalForce = v;
+     return 0;
+ }
+ 
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2009-02-15 15:25:45 UTC (rev 1539)
++++ trunk/src/server.cc	2009-02-17 23:23:27 UTC (rev 1540)
+@@ -103,6 +103,7 @@
+ double   server::Brittleness;
+ double   server::Fragility;
+ double   server::CrackSpreading;
++ecl::V2  server::GlobalForce;
+ double   server::BumperForce;
+ double   server::ElectricForce;
+ double   server::EnigmaCompatibility;       // no Lua access
+@@ -266,6 +267,7 @@
+     server::Brittleness       = 0.5;
+     server::Fragility         = 1.0;
+     server::CrackSpreading    = 0.5;
++    server::GlobalForce       = ecl::V2(0, 0);
+     server::SlopeForce        = 25.0;
+     server::FlatForce         = 0.0;
+     server::FrictionFactor    = 1.0;
+
+Modified: trunk/src/server.hh
+===================================================================
+--- trunk/src/server.hh	2009-02-15 15:25:45 UTC (rev 1539)
++++ trunk/src/server.hh	2009-02-17 23:23:27 UTC (rev 1540)
+@@ -25,6 +25,7 @@
+ 
+ #include &quot;lev/Proxy.hh&quot;
+ #include &quot;Value.hh&quot;
++#include &quot;ecl_math.hh&quot;
+ 
+ #include &lt;stdint.h&gt;
+ 
+@@ -97,6 +98,7 @@
+     // 1.10 crack variables
+     extern double   Fragility;
+     extern double   CrackSpreading;
++    extern ecl::V2  GlobalForce;
+     
+     extern int      MaxOxydColor;
+ 
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2009-02-15 15:25:45 UTC (rev 1539)
++++ trunk/src/world.cc	2009-02-17 23:23:27 UTC (rev 1540)
+@@ -226,7 +226,7 @@
+ World::World(int ww, int hh) : fields(ww,hh), preparing_level(true),
+         leftmost_actor (NULL), rightmost_actor (NULL), numMeditatists (0), 
+         indispensableHollows (0), engagedIndispensableHollows(0), engagedDispensableHollows (0),
+-        globalForce (0, 0), registerCriticalPositions (false), scrambleIntensity(10) // difficult default
++        registerCriticalPositions (false), scrambleIntensity(10) // difficult default
+         {
+     w = ww;
+     h = hh;
+@@ -593,7 +593,7 @@
+     if (a-&gt;is_on_floor()) {
+         if (Floor *floor = a-&gt;m_actorinfo.field-&gt;floor) {
+             // Constant force
+-            f += globalForce;
++            f += server::GlobalForce;
+ 
+             // Mouse force
+             if (a-&gt;get_controllers() != 0) {
+@@ -1796,14 +1796,6 @@
+     level-&gt;remove (ff);
+ }
+ 
+-void SetGlobalForce(V2 force) {
+-    level-&gt;globalForce = force;
+-}
+-
+-ecl::V2 GetGlobalForce() {
+-    return level-&gt;globalForce;
+-}
+-
+ /* -------------------- Signals, Messages, Actions -------------------- */
+ 
+ void AddSignal (const GridLoc &amp;srcloc, const GridLoc &amp;dstloc, const string &amp;msg) {
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000969.html">[Enigma-game-svn] r1539 - in trunk/src: . items
+</A></li>
+	<LI>Next message: <A HREF="000971.html">[Enigma-game-svn] r1541 - in branches/1.01: lib-src/enigma-core src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#970">[ date ]</a>
+              <a href="thread.html#970">[ thread ]</a>
+              <a href="subject.html#970">[ subject ]</a>
+              <a href="author.html#970">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

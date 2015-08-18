@@ -1,0 +1,372 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r773 - in branches/eval/java/src/org/enigma_game:	lev util
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r773%20-%20in%20branches/eval/java/src/org/enigma_game%3A%0A%09lev%20util&In-Reply-To=%3C200706022129.l52LT5jj005091%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000209.html">
+   <LINK REL="Next"  HREF="000211.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r773 - in branches/eval/java/src/org/enigma_game:	lev util</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r773%20-%20in%20branches/eval/java/src/org/enigma_game%3A%0A%09lev%20util&In-Reply-To=%3C200706022129.l52LT5jj005091%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r773 - in branches/eval/java/src/org/enigma_game:	lev util">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Jun  2 23:29:05 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000209.html">[Enigma-game-svn] r772 - in homepage: images/lotm input input/lotm	input/news
+</A></li>
+        <LI>Next message: <A HREF="000211.html">[Enigma-game-svn] r774 - in trunk/src: . lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#210">[ date ]</a>
+              <a href="thread.html#210">[ thread ]</a>
+              <a href="subject.html#210">[ subject ]</a>
+              <a href="author.html#210">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-06-02 23:29:04 +0200 (Sat, 02 Jun 2007)
+New Revision: 773
+
+Modified:
+   branches/eval/java/src/org/enigma_game/lev/LevelScore.java
+   branches/eval/java/src/org/enigma_game/lev/RatingManager.java
+   branches/eval/java/src/org/enigma_game/lev/ScoreManager.java
+   branches/eval/java/src/org/enigma_game/lev/UserManager.java
+   branches/eval/java/src/org/enigma_game/util/ScoreEvaluation.java
+   branches/eval/java/src/org/enigma_game/util/ScoreRegistration.java
+   branches/eval/java/src/org/enigma_game/util/UserEvaluation.java
+Log:
+Branches/eval:
+- rating statistics
+- reduce output to stdout
+
+Modified: branches/eval/java/src/org/enigma_game/lev/LevelScore.java
+===================================================================
+--- branches/eval/java/src/org/enigma_game/lev/LevelScore.java	2007-06-01 22:32:32 UTC (rev 772)
++++ branches/eval/java/src/org/enigma_game/lev/LevelScore.java	2007-06-02 21:29:04 UTC (rev 773)
+@@ -26,6 +26,10 @@
+     Element elem;
+     LevelScore parentScore = null;
+     static String currentRel = &quot;1.00&quot;;
++    static int solvedTotal = 0;
++    static int ratingsTotal = 0;
++    static int ratingsTotalSum = 0;
++    static int[] ratingsDist = new int[11];
+     boolean isDiffSolved = false;
+     boolean isEasySolved = false;
+     int bsd = -1;
+@@ -383,6 +387,7 @@
+                 }
+             }
+             solvnd++;
++            solvedTotal++;
+             if (usd == 0)
+                 usd = 1;
+             if (isProfessional) {
+@@ -408,6 +413,7 @@
+                 }
+             }
+             solvne++;
++            solvedTotal++;
+             if (use == 0)
+                 use = 1;
+             if (isProfessional) {
+@@ -418,6 +424,9 @@
+         if (urat &gt;= 0) {
+             avgurNum++;
+             avgurSum += urat;
++            ratingsTotal++;
++            ratingsTotalSum += urat;
++            ratingsDist[urat]++;
+         }
+     }
+     
+
+Modified: branches/eval/java/src/org/enigma_game/lev/RatingManager.java
+===================================================================
+--- branches/eval/java/src/org/enigma_game/lev/RatingManager.java	2007-06-01 22:32:32 UTC (rev 772)
++++ branches/eval/java/src/org/enigma_game/lev/RatingManager.java	2007-06-02 21:29:04 UTC (rev 773)
+@@ -176,7 +176,7 @@
+         }
+     }
+     
+-    public boolean isUserProfessional(UserManager userMgr, String userId) {
++    public boolean isUserProfessional(UserManager userMgr, String userId, boolean print) {
+         boolean isProfessional = false;
+         int userDiffCount = 0;
+         int userEasyCount = 0;
+@@ -199,7 +199,9 @@
+         Formatter formatter = new Formatter(Locale.US);
+         formatter.format(&quot;Solved diff %3d/%3d - easy %3d/%3d = %6.2f%%&quot;, userDiffCount,
+                 numDifficult, userEasyCount, numEasy, solvedPercent);
+-        System.out.println(formatter.toString());
++        if (print) {
++            System.out.println(formatter.toString());
++        }
+         if (solvedPercent &gt; 20.0) {
+             isProfessional = true;
+             numProf++;
+@@ -213,14 +215,14 @@
+         userMgr.setValue(userId, &quot;solvede&quot;, formatterEasy.toString());
+         
+         Formatter formatterDiff = new Formatter(Locale.US);
+-        formatterDiff.format(&quot;%3d/%3d&quot;, userDiffCount, numDifficult);
++        formatterDiff.format(&quot;%4d/%4d&quot;, userDiffCount, numDifficult);
+         userMgr.setValue(userId, &quot;solvedd&quot;, formatterDiff.toString());
+         
+         return isProfessional;
+     }
+     
+     public void evaluateUser(UserManager userMgr, String userId) {
+-        System.out.println(&quot;Par Evalutation&quot;);
++//        System.out.println(&quot;Par Evalutation&quot;);
+         StringBuilder sb = new StringBuilder();
+         Formatter formatter = new Formatter(sb, Locale.US);
+         
+@@ -282,7 +284,7 @@
+         hcpsumsolved = hcpsumsolved  * 100.0 / levelsumsolved;
+         formatter.format(&quot;Enigma Total Hcp = %6.1f, Solved Hcp = %6.1f at %d levels&quot;,
+                 hcpsum, hcpsumsolved, levelsum);
+-        System.out.println(sb.toString());
++//        System.out.println(sb.toString());
+         
+         Formatter formatterHcpTotal = new Formatter(Locale.US);
+         formatterHcpTotal.format(&quot;%6.1f&quot;,  hcpsum);
+@@ -352,6 +354,7 @@
+         System.out.println(&quot;Diff Levels &quot; + numDifficult + &quot; Easy Levels &quot; + numEasy);
+         System.out.println(&quot;Diff Solved &quot; + diffSolved + &quot; / Unsolved &quot; + diffUnsolved);
+         System.out.println(&quot;Easy Solved &quot; + easySolved + &quot; / Unsolved &quot; + easyUnsolved);
++        System.out.println(&quot;Total Solved &quot; + LevelScore.solvedTotal);
+         LevelScore.printWRStatistics(userMgr);
+         
+         
+@@ -373,9 +376,32 @@
+                         break;
+                 }
+             }
++            
++            output = new PrintWriter(new FileWriter(new File(&quot;stat-other.html&quot;)), true);
++            output.println(&quot;  &lt;div class=\&quot;stat-help\&quot;&gt;&quot;);
++            output.println(&quot;    &lt;h3&gt;Other Statistics&lt;/h3&gt;&quot;);
++            output.println(&quot;    &lt;h4&gt;Scores&lt;/h4&gt;&quot;);
++            output.println(&quot;      &quot; + LevelScore.solvedTotal + &quot; single level scores have been registered.&quot;);
++            output.println(&quot;    &lt;h4&gt;Ratings&lt;/h4&gt;&quot;);
++            output.printf(&quot;      %s single level ratings have been registered with an average of &quot;
++                    + &quot;%4.2f and the following distribution: &quot;, LevelScore.ratingsTotal, ((double)LevelScore.ratingsTotalSum)/LevelScore.ratingsTotal);
++            output.println(&quot;      &lt;table&gt;&quot;);
++            output.println(&quot;        &lt;colgroup&gt;&lt;col width=\&quot;80\&quot;&gt;&lt;col width=\&quot;80\&quot;&gt;&lt;/colgroup&gt;&quot;);
++            output.println(&quot;        &lt;tr&gt;&lt;th&gt;rating&lt;/th&gt;&lt;th&gt;count&lt;/th&gt;&lt;/tr&gt;&quot;);
++            for (int i=0; i&lt;=10; i++) {
++                output.println(&quot;        &lt;tr&gt;&lt;td class=\&quot;num\&quot;&gt;&quot; + i + &quot;&lt;/td&gt;&lt;td class=\&quot;num\&quot;&gt;&quot; + LevelScore.ratingsDist[i] + &quot;&lt;/td&gt;&lt;/tr&gt;&quot;);
++            }
++            output.println(&quot;      &lt;/table&gt;&quot;);
++            output.println(&quot;  &lt;/div&gt;&quot;);
++            output.flush();
+         } catch (Exception e) {
+         }
+         
++        System.out.println(&quot;Total Ratings &quot; + LevelScore.ratingsTotal + &quot;  Average &quot; +
++                ((double)LevelScore.ratingsTotalSum)/LevelScore.ratingsTotal);
++        for (int i=0; i&lt;=10; i++) {
++            System.out.println(&quot;   &quot; + i + &quot; - &quot; + LevelScore.ratingsDist[i]);
++        }
+     }
+     
+     public void evaluateLevels() {
+
+Modified: branches/eval/java/src/org/enigma_game/lev/ScoreManager.java
+===================================================================
+--- branches/eval/java/src/org/enigma_game/lev/ScoreManager.java	2007-06-01 22:32:32 UTC (rev 772)
++++ branches/eval/java/src/org/enigma_game/lev/ScoreManager.java	2007-06-02 21:29:04 UTC (rev 773)
+@@ -101,7 +101,7 @@
+         return formatter.toString();
+     }
+     
+-    public boolean checkUser(UserManager userMgr) {
++    public boolean checkUser(UserManager userMgr, boolean printWarnings) {
+         String id = getProperty(&quot;UserId&quot;);
+         String id_1_00 = getProperty(&quot;UserId1.00&quot;);
+         String userName = userMgr.getValue(id, &quot;name&quot;);
+@@ -139,7 +139,9 @@
+                 userMgr.setValue(id, &quot;savecount&quot;, getProperty(&quot;Count&quot;));
+                 result = true;
+             } else {
+-                System.out.println(&quot;Outdated scores not registered!&quot;);
++                if (printWarnings) {
++                    System.out.println(&quot;Outdated scores not registered!&quot;);
++                }
+             }
+         } else if (userName.equals(&quot;&quot;)) {
+             // no user registered with the id
+@@ -172,9 +174,11 @@
+                             + userName + &quot;' to the already used name '&quot;
+                             + getProperty(&quot;UserName&quot;) +&quot;'&quot;);
+                 }
+-            } else {
++            } else if (!getProperty(&quot;UserName&quot;).equals(&quot;&quot;)) {
+                 // must be a second user with the same id
+-                System.out.println(&quot;Id mismatch - id already in use!&quot;);
++                System.out.println(&quot;Id mismatch - id '&quot; + id + &quot;' already in use!&quot;);
++            } else if (printWarnings) {
++                    System.out.println(&quot;Update of score without user name&quot;);
+             }
+         }
+         return result;
+@@ -224,7 +228,9 @@
+             avgRating = ((float)sumRatings)/numRatings;
+         Formatter formatter = new Formatter(Locale.US);
+         formatter.format(&quot;Ratings count %d, avg %5.2f&quot;, numRatings, avgRating);
+-        System.out.println(formatter.toString());
++        if (checkSec) {
++            System.out.println(formatter.toString());
++        }
+         
+         Formatter formatterRatcount = new Formatter(Locale.US);
+         formatterRatcount.format(&quot;%3d&quot;, numRatings);
+@@ -234,7 +240,7 @@
+         formatterRatAvg.format(&quot;%5.2f&quot;,  avgRating);
+         userMgr.setValue(userId, &quot;ratavg&quot;, formatterRatAvg.toString());
+                 
+-        isProfessional = ratingMgr.isUserProfessional(userMgr, getProperty(&quot;UserId&quot;));
++        isProfessional = ratingMgr.isUserProfessional(userMgr, getProperty(&quot;UserId&quot;), checkSec);
+     }
+     
+     public void evaluateScores(RatingManager ratingMgr) {
+
+Modified: branches/eval/java/src/org/enigma_game/lev/UserManager.java
+===================================================================
+--- branches/eval/java/src/org/enigma_game/lev/UserManager.java	2007-06-01 22:32:32 UTC (rev 772)
++++ branches/eval/java/src/org/enigma_game/lev/UserManager.java	2007-06-02 21:29:04 UTC (rev 773)
+@@ -168,4 +168,18 @@
+         }
+     }
+     
++    public class ComparatorRating implements Comparator&lt;String&gt; {
++        public ComparatorRating() {
++        }
++        
++        public int compare(String id1, String id2) {
++            String ratcount1 = getValue(id1, &quot;ratcount&quot;);
++            int ratCount1 = (!ratcount1.equals(&quot;&quot;)) ? Integer.parseInt(ratcount1.trim()) : 0;
++            String ratcount2 = getValue(id2, &quot;ratcount&quot;);
++            int ratCount2 = (!ratcount2.equals(&quot;&quot;)) ? Integer.parseInt(ratcount2.trim()) : 0;
++            int result = ( ratCount1 &lt; ratCount2) ? 1 : ((ratCount1 == ratCount2) ? 0 : -1);
++            return result;
++        }
++    }
++    
+ }
+
+Modified: branches/eval/java/src/org/enigma_game/util/ScoreEvaluation.java
+===================================================================
+--- branches/eval/java/src/org/enigma_game/util/ScoreEvaluation.java	2007-06-01 22:32:32 UTC (rev 772)
++++ branches/eval/java/src/org/enigma_game/util/ScoreEvaluation.java	2007-06-02 21:29:04 UTC (rev 773)
+@@ -42,7 +42,7 @@
+                 ZipInputStream zin = new ZipInputStream(new BufferedInputStream(new FileInputStream(scoreFiles[i])));
+                 zin.getNextEntry();
+                 ScoreManager scm = new ScoreManager(zin);
+-                scm.checkUser(userMgr);
++                scm.checkUser(userMgr, false);
+                 scm.checkScores(ratingMgr, userMgr, false);
+                 scm.evaluateScores(ratingMgr);
+                 numUsers++;
+
+Modified: branches/eval/java/src/org/enigma_game/util/ScoreRegistration.java
+===================================================================
+--- branches/eval/java/src/org/enigma_game/util/ScoreRegistration.java	2007-06-01 22:32:32 UTC (rev 772)
++++ branches/eval/java/src/org/enigma_game/util/ScoreRegistration.java	2007-06-02 21:29:04 UTC (rev 773)
+@@ -90,7 +90,7 @@
+             System.out.println(&quot;Score version = &quot; + scm.getProperty(&quot;Count&quot;)
+                     + &quot;, elements = &quot; + scm.getScoreElemsCount());
+             
+-            if (scm.checkUser(userMgr)) {
++            if (scm.checkUser(userMgr, true)) {
+                 scm.checkScores(ratingMgr, userMgr, true);
+     
+                 ZipOutputStream zout = new ZipOutputStream (new BufferedOutputStream(
+
+Modified: branches/eval/java/src/org/enigma_game/util/UserEvaluation.java
+===================================================================
+--- branches/eval/java/src/org/enigma_game/util/UserEvaluation.java	2007-06-01 22:32:32 UTC (rev 772)
++++ branches/eval/java/src/org/enigma_game/util/UserEvaluation.java	2007-06-02 21:29:04 UTC (rev 773)
+@@ -54,7 +54,7 @@
+                         &quot;' - Id '&quot; + scm.getProperty(&quot;UserId&quot;) + &quot;'&quot;);
+                 scm.checkScores(ratingMgr, userMgr, false);
+                 ratingMgr.evaluateUser(userMgr, scm.getProperty(&quot;UserId&quot;));
+-                System.out.println(&quot;&quot;);
++//                System.out.println(&quot;&quot;);
+                 numUsers++;
+             }
+             userMgr.save(userUrl);
+@@ -168,6 +168,34 @@
+             htmlOut.println(&quot;  &lt;/table&gt;&quot;);
+             htmlOut.flush();
+             
++            htmlOut = new PrintWriter(new FileWriter(new File(&quot;table-rat.html&quot;)), true);
++            System.out.println(&quot;&quot;);
++            System.out.println(&quot;Rating Statistics:&quot;);
++            System.out.println(&quot;count - average - users&quot;);
++            htmlOut.println(&quot;  &lt;table&gt;&quot;);
++            htmlOut.println(&quot;    &lt;caption&gt;Rating Statistics of &quot; + formatter.toString() + &quot;&lt;/caption&gt;&quot;);
++            htmlOut.println(&quot;    &lt;colgroup&gt;&lt;col width=\&quot;80\&quot;&gt;&lt;col width=\&quot;80\&quot;&gt;&lt;col width=\&quot;220\&quot;&gt;&lt;/colgroup&gt;&quot;);
++            htmlOut.print(&quot;    &lt;tr&gt;&lt;th&gt;count&lt;/th&gt;&lt;th&gt;average&lt;/th&gt;&lt;th class=\&quot;left\&quot;&gt;user&lt;/th&gt;&lt;/tr&gt;&quot;);
++            List&lt;String&gt; userByRat = new ArrayList&lt;String&gt;(userMgr.getUserIds());
++            UserManager.ComparatorRating compRating = userMgr.new ComparatorRating();
++            Collections.sort(userByRat, compRating);
++            for (String id : userByRat) {
++                String ratcount = userMgr.getValue(id, &quot;ratcount&quot;);
++                if (!ratcount.endsWith(&quot; 0&quot;) &amp;&amp; !ratcount.equals(&quot;0&quot;)) {
++                    System.out.println(&quot; &quot; + userMgr.getValue(id, &quot;ratcount&quot;) + &quot;  -  &quot;
++                            + userMgr.getValue(id, &quot;ratavg&quot;)
++                            + &quot; -  '&quot; + userMgr.getValue(id, &quot;name&quot;)+ &quot;'&quot;);
++                    htmlOut.println(&quot;    &lt;tr&gt;&lt;td class=\&quot;num\&quot;&gt;&quot; + userMgr.getValue(id, &quot;ratcount&quot;)
++                            + &quot;&lt;/td&gt;&lt;td class=\&quot;num\&quot;&gt;&quot; + userMgr.getValue(id, &quot;ratavg&quot;) 
++                            + &quot;&lt;/td&gt;&lt;td class=\&quot;left\&quot;&gt;'&quot; + userMgr.getValue(id, &quot;name&quot;)
++                            + &quot;'&lt;/td&gt;&lt;/tr&gt;&quot;);
++                }
++            }
++            System.out.println(&quot;&quot;);
++            htmlOut.println(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);
++            htmlOut.println(&quot;  &lt;/table&gt;&quot;);
++            htmlOut.flush();
++
+             System.out.println(&quot;UserEvaluation finished&quot;);
+         } catch ( Exception ex ) {
+             ex.printStackTrace();
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000209.html">[Enigma-game-svn] r772 - in homepage: images/lotm input input/lotm	input/news
+</A></li>
+	<LI>Next message: <A HREF="000211.html">[Enigma-game-svn] r774 - in trunk/src: . lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#210">[ date ]</a>
+              <a href="thread.html#210">[ thread ]</a>
+              <a href="subject.html#210">[ subject ]</a>
+              <a href="author.html#210">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

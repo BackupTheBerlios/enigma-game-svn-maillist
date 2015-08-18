@@ -1,0 +1,403 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1341 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1341%20-%20trunk/src&In-Reply-To=%3C200809262313.m8QNDl5W014372%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000770.html">
+   <LINK REL="Next"  HREF="000772.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1341 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1341%20-%20trunk/src&In-Reply-To=%3C200809262313.m8QNDl5W014372%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1341 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Sep 27 01:13:47 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000770.html">[Enigma-game-svn] r1340 - trunk/doc/reference
+</A></li>
+        <LI>Next message: <A HREF="000772.html">[Enigma-game-svn] r1343 - in homepage/input: . articles
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#771">[ date ]</a>
+              <a href="thread.html#771">[ thread ]</a>
+              <a href="subject.html#771">[ subject ]</a>
+              <a href="author.html#771">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-09-27 01:13:45 +0200 (Sat, 27 Sep 2008)
+New Revision: 1341
+
+Modified:
+   trunk/src/Object.cc
+   trunk/src/lua.cc
+   trunk/src/lua.hh
+   trunk/src/server.cc
+Log:
+Trunk 1.1:  new API 
+- Lua callback: allow functions in '.' separated table-based &quot;subdomains&quot;
+- Lua userdata methods: improve error handling - report errors on incidential
+    usage of '.' instead of ':'
+- remove api1 function Tick()
+
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2008-09-26 17:58:37 UTC (rev 1340)
++++ trunk/src/Object.cc	2008-09-26 23:13:45 UTC (rev 1341)
+@@ -307,10 +307,10 @@
+             
+             ObjectList ol = (*tit).getObjectList(this);  // get all or nearest objects described by target token
+             if (ol.size() == 0 || (ol.size() == 1 &amp;&amp; ol.front() == NULL)) {  // no target object
+-                if ((action == &quot;callback&quot; || action == &quot;&quot;) &amp;&amp; (tit-&gt;getType() == Value::STRING) 
+-                        &amp;&amp; lua::IsFunc(lua::LevelState(), tit-&gt;get_string())) {
++                if ((action == &quot;callback&quot; || action.empty()) &amp;&amp; (tit-&gt;getType() == Value::STRING)) { 
++//                        &amp;&amp; lua::IsFunc(lua::LevelState(), tit-&gt;get_string())) {
+                     // it is an existing callback function
+-                    if (lua::CallFunc(lua::LevelState(), tit-&gt;get_string(), messageValue, this) != lua::NO_LUAERROR) {
++                    if (lua::CallFunc(lua::LevelState(), tit-&gt;get_string(), messageValue, this, !action.empty()) != lua::NO_LUAERROR) {
+                         throw XLevelRuntime(std::string(&quot;callback '&quot;) + tit-&gt;get_string() + &quot;' failed:\n&quot;+lua::LastError(lua::LevelState()));
+                     }
+                 }
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-09-26 17:58:37 UTC (rev 1340)
++++ trunk/src/lua.cc	2008-09-26 23:13:45 UTC (rev 1341)
+@@ -1074,6 +1074,10 @@
+ 
+ static int gridAlignPosition(lua_State *L) {
+     // position guaranteed
++    if (lua_gettop(L) &lt; 1 || !is_position(L, 1)) {
++        throwLuaError(L, &quot;Syntax error - usage of '.' instead of ':'&quot;);
++        return 0;        
++    }
+     lua_getmetatable(L, 1);
+     lua_rawgeti(L, -1, 1);
+     lua_rawgeti(L, -2, 2);
+@@ -1087,6 +1091,10 @@
+ 
+ static int existsPosition(lua_State *L) {
+     // position guaranteed
++    if (lua_gettop(L) &lt; 1 || !is_position(L, 1)) {
++        throwLuaError(L, &quot;Syntax error - usage of '.' instead of ':'&quot;);
++        return 0;        
++    }
+     lua_getmetatable(L, -1);
+     lua_rawgeti(L, -1, 1);
+     lua_rawgeti(L, -2, 2);
+@@ -1158,6 +1166,10 @@
+ 
+ static int setAttributes(lua_State *L) {
+     // 
++    if (lua_gettop(L) &lt; 1 || !is_object(L, 1)) {
++        throwLuaError(L, &quot;Syntax error - usage of '.' instead of ':'&quot;);
++        return 0;        
++    }
+     Object *obj = to_object(L, 1);
+     lua_rawgeti(L, -1, 1);  // check if any unnamed attribute exists
+     if (!lua_isnil(L, -1)) {
+@@ -1219,17 +1231,17 @@
+     return 1;
+ }
+ static int getFloor(lua_State *L) {
+-    // position|table|obj|(num,num)|group
++    // optional world, position|table|obj|(num,num)|group
+     return getStoneItemFloor(L, Object::FLOOR);
+ }
+ 
+ static int getItem(lua_State *L) {
+-    // position|table|obj|(num,num)|group
++    // optional world, position|table|obj|(num,num)|group
+     return getStoneItemFloor(L, Object::ITEM);
+ }
+ 
+ static int getStone(lua_State *L) {
+-    // position|table|obj|(num,num)|group
++    // optional world, position|table|obj|(num,num)|group
+     return getStoneItemFloor(L, Object::STONE);
+ }
+ 
+@@ -1262,6 +1274,10 @@
+ }
+ 
+ static int killObject(lua_State *L) {
++    if (lua_gettop(L) &lt; 1 || !(is_object(L, 1) || is_group(L, 1))) {
++        throwLuaError(L, &quot;Syntax error - usage of '.' instead of ':'&quot;);
++        return 0;        
++    }
+     if (lua_gettop(L) != 1) {
+          throwLuaError(L, &quot;Kill of object allows no arguments&quot;);
+          return 0;
+@@ -1282,6 +1298,10 @@
+ 
+ static int xyObject(lua_State *L) {
+     // object guaranteed
++    if (lua_gettop(L) &lt; 1 || !is_object(L, 1)) {
++        throwLuaError(L, &quot;Syntax error - usage of '.' instead of ':'&quot;);
++        return 0;        
++    }
+     Object *obj = to_object(L,1);
+     GridPos  p;
+     if (GridObject *gobj = dynamic_cast&lt;GridObject*&gt;(obj)) {
+@@ -1307,6 +1327,10 @@
+ 
+ static int objectExistance(lua_State *L) { 
+     // object type is guaranteed
++    if (lua_gettop(L) &lt; 1 || !is_object(L, 1)) {
++        throwLuaError(L, &quot;Syntax error - usage of '.' instead of ':'&quot;);
++        return 0;        
++    }
+     Object * obj = to_object(L, 1);
+     lua_pushboolean(L, (obj != NULL));
+     return 1;
+@@ -1314,6 +1338,10 @@
+ 
+ static int objectGetKind(lua_State *L) { 
+     // object type is guaranteed
++    if (lua_gettop(L) &lt; 1 || !is_object(L, 1)) {
++        throwLuaError(L, &quot;Syntax error - usage of '.' instead of ':'&quot;);
++        return 0;        
++    }
+     Object * obj = to_object(L, 1);
+     lua_pushstring(L, (obj != NULL) ? obj-&gt;getKind().c_str() : &quot;&quot;);
+     return 1;
+@@ -1321,6 +1349,10 @@
+ 
+ static int objectIsKind(lua_State *L) { 
+     // object type is guaranteed
++    if (lua_gettop(L) &lt; 1 || !is_object(L, 1)) {
++        throwLuaError(L, &quot;Syntax error - usage of '.' instead of ':'&quot;);
++        return 0;        
++    }
+     Object * obj = to_object(L, 1);
+     if (!lua_isstring(L, 2)) {
+         throwLuaError(L,&quot;Illegal kind - no string&quot;);
+@@ -1362,6 +1394,10 @@
+ }
+ 
+ static int objectMessage(lua_State *L) {
++    if (lua_gettop(L) &lt; 1 || !is_object(L, 1)) {
++        throwLuaError(L, &quot;Syntax error - usage of '.' instead of ':'&quot;);
++        return 0;        
++    }
+     if (lua_gettop(L) &lt; 2) {
+         throwLuaError (L, &quot;Message missing&quot;);
+         return 0;
+@@ -1372,6 +1408,10 @@
+ }
+ 
+ static int groupMessage(lua_State *L) {
++    if (lua_gettop(L) &lt; 1 || !is_group(L, 1)) {
++        throwLuaError(L, &quot;Syntax error - usage of '.' instead of ':'&quot;);
++        return 0;        
++    }
+     if (lua_gettop(L) &lt; 2) {
+         throwLuaError (L, &quot;Message missing&quot;);
+         return 0;
+@@ -1611,6 +1651,10 @@
+ 
+ static int xyPosition(lua_State *L) {
+     // position guaranteed
++    if (lua_gettop(L) &lt; 1 || !is_position(L, 1)) {
++        throwLuaError(L, &quot;Syntax error - usage of '.' instead of ':'&quot;);
++        return 0;        
++    }
+     lua_getmetatable(L, 1);            
+     lua_rawgeti(L, -1, 1);
+     lua_rawgeti(L, -2, 2);
+@@ -2297,6 +2341,10 @@
+ 
+ static int addOther(lua_State *L) {
+     // world, table | tile
++    if (lua_gettop(L) &lt; 1 || !is_world(L, 1)) {
++        throwLuaError(L, &quot;Syntax error - usage of '.' instead of ':'&quot;);
++        return 0;        
++    }
+     if (is_tile(L, 2)  || is_table(L, 2)) {
+         if (is_table(L, -1))
+             setObjectByTable(L, -1, -1);
+@@ -2310,6 +2358,10 @@
+     // world, {table}  -- table with 1=(group|obj|name), [2=(group|obj|name], 
+     //                               min=[number], max=[number], circular=true, linear=true
+     //                               log=(&quot;solution&quot;|&quot;count&quot;|&quot;all&quot;) 
++    if (lua_gettop(L) &lt; 1 || !is_world(L, 1)) {
++        throwLuaError(L, &quot;Syntax error - usage of '.' instead of ':'&quot;);
++        return 0;        
++    }
+     OxydStone::LogType logFlag = OxydStone::NOTHING;
+     for (int i = 2; i &lt;= lua_gettop(L); i++) {
+         if (!is_table(L, i)) {
+@@ -2501,9 +2553,9 @@
+ 
+ static int tileDeclaration(lua_State *L) {
+     // tile
+-    if (lua_gettop(L) != 1) {
+-        throwLuaError(L, &quot;Tile declaration with illegal arguments&quot;);
+-        return 0;
++    if (lua_gettop(L) != 1 || !is_tile(L, 1)) {
++        throwLuaError(L, &quot;Tile declaration with illegal arguments: possible syntax error - usage of '.' instead of ':'&quot;);
++        return 0;        
+     }
+     lua_newtable(L); // the result
+     tileDeclForTile(L, true);
+@@ -2706,6 +2758,10 @@
+ 
+ static int shuffleGroup(lua_State *L) {
+     // group
++    if (lua_gettop(L) &lt; 1 || !is_group(L, 1)) {
++        throwLuaError(L, &quot;Syntax error - usage of '.' instead of ':'&quot;);
++        return 0;        
++    }
+     ObjectList oldSort = toObjectList(L, 1);
+     ObjectList newSort;
+     std::vector&lt;Object *&gt; shuffleVector;
+@@ -3019,29 +3075,54 @@
+     return result;
+ }
+ 
+-Error CallFunc(lua_State *L, const char *funcname, const Value&amp; arg, Object *obj) {
++Error CallFunc(lua_State *L, const std::string funcpath, const Value&amp; arg, Object *obj, bool expectFunction) {
+     int retval;
+-    lua_getglobal(L, funcname);
+-    push_value(L, arg);
+-    pushobject(L, obj);
+-    retval=lua_pcall(L,2,0,0);
+-    if (retval!=0) // error
+-    {
+-        lua_setglobal (L, &quot;_LASTERROR&quot;) ; //Set _LASTERROR to returned error message
++    const char *funcname = funcpath.c_str();
++    
++    if (funcpath.find('.')) {
++        std::list&lt;std::string&gt; nodes;
++        ecl::split_copy(funcpath, '.', std::back_inserter(nodes));
++        for (std::list&lt;std::string&gt;::iterator itr = nodes.begin(); itr != nodes.end();) {
++            if (itr == nodes.begin()) {
++                lua_getglobal(L, (*itr).c_str());
++            } else {
++                lua_getfield(L, -1, (*itr).c_str());
++                lua_remove(L, -2);
++            }
++            ++itr;
++            if (itr != nodes.end() &amp;&amp; !lua_istable(L, -1)) {
++                if (expectFunction) {
++                    lua_pushstring(L, ecl::strf(&quot;Super domain of '%s' is not a table!&quot;, (*itr).c_str()).c_str());
++                    lua_setglobal(L, &quot;_LASTERROR&quot;);
++                    return ERRRUN;
++                } else {
++                    lua_pop(L, 1);
++                    return NO_LUAERROR;
++                }
++            }
++        }
++    } else {
++        lua_getglobal(L, funcname);
+     }
+-    return _lua_err_code(retval);
+-}
+-
+-Error CallFunc(lua_State *L, const char *funcname, const ByteVec&amp; arg) {
+-  int retval;
+-    lua_getglobal(L, funcname);
+-    lua_pushlstring (L, &amp;arg[0], arg.size());
+-    retval=lua_pcall(L,1,0,0);
+-    if (retval!=0) // error
+-    {
+-        lua_setglobal (L, &quot;_LASTERROR&quot;) ; //Set _LASTERROR to returned error message
++    
++    if (lua_isfunction(L, -1)) {
++        push_value(L, arg);
++        pushobject(L, obj);
++        retval = lua_pcall(L, 2, 0, 0);
++        if (retval != 0)  {  // error
++            lua_setglobal(L, &quot;_LASTERROR&quot;) ; //Set _LASTERROR to returned error message
++        }
++        return _lua_err_code(retval);
++    } else {
++        if (expectFunction) {
++            lua_pushstring(L, &quot;No function of given name exists.&quot;);
++            lua_setglobal(L, &quot;_LASTERROR&quot;);
++            return ERRRUN;
++        } else {
++            lua_pop(L, 1);
++            return NO_LUAERROR;
++        }
+     }
+-    return _lua_err_code(retval);
+ }
+ 
+ std::string NewMessageName(lua_State *L, const Object *obj, const std::string &amp;message) {
+
+Modified: trunk/src/lua.hh
+===================================================================
+--- trunk/src/lua.hh	2008-09-26 17:58:37 UTC (rev 1340)
++++ trunk/src/lua.hh	2008-09-26 23:13:45 UTC (rev 1341)
+@@ -91,11 +91,7 @@
+     
+     /*! Call a Lua function with one argument.  This is mainly used
+       for callbacks during the game. */
+-    Error CallFunc(lua_State *L, const char *funcname, const enigma::Value&amp; arg, Object *obj);
+-
+-    /*! Call a Lua function with a (large) byte vector as the sole
+-      argument.  Currently only used for loading XML levels. */
+-    Error CallFunc (lua_State *L, const char *funcname, const ByteVec &amp;arg);
++    Error CallFunc(lua_State *L, std::string funcpath, const enigma::Value&amp; arg, Object *obj, bool expectFunction = true);
+     
+     std::string NewMessageName(lua_State *L, const Object *obj, const std::string &amp;message);
+     
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2008-09-26 17:58:37 UTC (rev 1340)
++++ trunk/src/server.cc	2008-09-26 23:13:45 UTC (rev 1341)
+@@ -205,10 +205,10 @@
+     player::Tick (time_accu);
+     for (;time_accu &gt;= timestep; time_accu -= timestep) {
+         WorldTick (timestep);
+-        if (lua::CallFunc (lua::LevelState(), &quot;Tick&quot;, timestep, NULL) != 0) {
+-            throw XLevelRuntime (string(&quot;Calling 'Tick' failed:\n&quot;)
+-                                                + lua::LastError(lua::LevelState()));
+-        }
++//        if (lua::CallFunc (lua::LevelState(), &quot;Tick&quot;, timestep, NULL) != 0) {
++//            throw XLevelRuntime (string(&quot;Calling 'Tick' failed:\n&quot;)
++//                                                + lua::LastError(lua::LevelState()));
++//        }
+     }
+     TickFinished ();
+ }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000770.html">[Enigma-game-svn] r1340 - trunk/doc/reference
+</A></li>
+	<LI>Next message: <A HREF="000772.html">[Enigma-game-svn] r1343 - in homepage/input: . articles
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#771">[ date ]</a>
+              <a href="thread.html#771">[ thread ]</a>
+              <a href="subject.html#771">[ subject ]</a>
+              <a href="author.html#771">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

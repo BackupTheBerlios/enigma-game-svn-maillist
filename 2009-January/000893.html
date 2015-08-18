@@ -1,0 +1,519 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1464 - in trunk: data data/gfx32 data/gfx40	data/gfx48 data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1464%20-%20in%20trunk%3A%20data%20data/gfx32%20data/gfx40%0A%09data/gfx48%20data/schemas%20src%20src/stones&In-Reply-To=%3C200901181355.n0IDtB01008822%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000892.html">
+   <LINK REL="Next"  HREF="000894.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1464 - in trunk: data data/gfx32 data/gfx40	data/gfx48 data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1464%20-%20in%20trunk%3A%20data%20data/gfx32%20data/gfx40%0A%09data/gfx48%20data/schemas%20src%20src/stones&In-Reply-To=%3C200901181355.n0IDtB01008822%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1464 - in trunk: data data/gfx32 data/gfx40	data/gfx48 data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Jan 18 14:55:11 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000892.html">[Enigma-game-svn] rev 1463
+</A></li>
+        <LI>Next message: <A HREF="000894.html">[Enigma-game-svn] r1465 - in trunk/data/levels: enigma_cross	enigma_ii enigma_iii enigma_iv enigma_vi enigma_vii enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#893">[ date ]</a>
+              <a href="thread.html#893">[ thread ]</a>
+              <a href="subject.html#893">[ subject ]</a>
+              <a href="author.html#893">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-01-18 14:55:09 +0100 (Sun, 18 Jan 2009)
+New Revision: 1464
+
+Added:
+   trunk/data/gfx32/st_plaster.png
+   trunk/data/gfx40/st_plaster.png
+   trunk/data/gfx48/st_plaster.png
+   trunk/src/stones/PlasterStone.cc
+   trunk/src/stones/PlasterStone.hh
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/api2init.lua
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/data/startup.lua
+   trunk/src/Makefile.am
+   trunk/src/ox_magnum.cc
+Log:
+Trunk 1.1: new API reengineering
+- fix broken lightpassenger image
+- reengineering rock3:
+  - st-rock3 -&gt; st_plaster
+  - st-rock3_hole -&gt; st_plaster_hollow
+  - st-rock3_move -&gt; st_plaster_movable
+  - st-rock3_break -&gt; st_plaster_breakable
+  - st-rock3_movebreak -&gt; st_plaster_movebreakable
+  - unify in a single class
+  - new image to seperate from &quot;st-plain&quot;
+  - make movebreak movable (has not yet been movable)
+- fix drawMap() problems with overwritten anchor
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2009-01-17 23:51:32 UTC (rev 1463)
++++ trunk/data/api1init.lua	2009-01-18 13:55:09 UTC (rev 1464)
+@@ -370,6 +370,12 @@
+     st_passage_white_cross = &quot;st-white3&quot;,
+     st_passage_white_frame = &quot;st-white4&quot;,
+     st_pinkbumps = &quot;st-bumps&quot;,
++    st_plaster = &quot;st-rock3&quot;,
++    st_plaster_hollow = &quot;st-rock3_hole&quot;,
++    st_plaster_movable = &quot;st-rock3_move&quot;,
++    st_plaster_breakable = &quot;st-rock3_break&quot;,
++    st_plaster_movebreakable = &quot;st-rock3_movebreak&quot;,
++    
+     st_pull = &quot;st-pull&quot;,
+     st_purplegray = &quot;st-rock6&quot;,
+     st_purplemarble = &quot;st-rock4&quot;,
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2009-01-17 23:51:32 UTC (rev 1463)
++++ trunk/data/api2init.lua	2009-01-18 13:55:09 UTC (rev 1464)
+@@ -191,10 +191,7 @@
+         -- world, resolver, (position|object|table), string, (table|map), [int]
+         -- world, resolver, (position|object|table), map, [int]
+         -- Analyse arguments 3 to 6
+-        local origin = anchor
+-        if type(origin) == &quot;table&quot; then
+-            origin = po(origin)
+-        end
++        local origin = po(anchor)   -- either convert or make a working position copy
+         local ignore = ignorearg
+         local map = maparg
+         local readdir = readarg or MAP_IDENT
+
+Added: trunk/data/gfx32/st_plaster.png
+===================================================================
+(Binary files differ)
+
+
+Property changes on: trunk/data/gfx32/st_plaster.png
+___________________________________________________________________
+Name: svn:mime-type
+   + image/png
+
+Added: trunk/data/gfx40/st_plaster.png
+===================================================================
+(Binary files differ)
+
+
+Property changes on: trunk/data/gfx40/st_plaster.png
+___________________________________________________________________
+Name: svn:mime-type
+   + image/png
+
+Added: trunk/data/gfx48/st_plaster.png
+===================================================================
+(Binary files differ)
+
+
+Property changes on: trunk/data/gfx48/st_plaster.png
+___________________________________________________________________
+Name: svn:mime-type
+   + image/png
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2009-01-17 23:51:32 UTC (rev 1463)
++++ trunk/data/models-2d.lua	2009-01-18 13:55:09 UTC (rev 1464)
+@@ -775,6 +775,7 @@
+     DefStone(&quot;st_redrock&quot;)
+     DefStone(&quot;st_granite&quot;, &quot;sh-round&quot;)
+     DefStone(&quot;st_darkgray&quot;)
++    DefStone(&quot;st_plaster&quot;)
+     DefStone(&quot;st-rock3&quot;)
+     DefStone(&quot;st-rock3_cracked&quot;)
+     DefStone(&quot;st_purplemarble&quot;)
+@@ -1020,7 +1021,7 @@
+     DefShModel(&quot;st-lightpassenger&quot;, img[1], &quot;sh-glass&quot;)
+     DefImage(&quot;st-lightpassenger_offx&quot;, {filename = &quot;st-lightpassenger_off&quot;})
+     DefShModel(&quot;st-lightpassenger_off&quot;, &quot;st-lightpassenger_offx&quot;, &quot;sh-glass&quot;)
+-    DefAlias(&quot;st-lightpassenger_hidden&quot;, &quot;st-glass2&quot;)
++    DefAlias(&quot;st-lightpassenger_hidden&quot;, &quot;st_darkglass&quot;)
+     -- Blink animation
+     local frames = {img[2], img[3], img[4], img[5], img[6], img[7]}
+     DefAnim(&quot;st-lightpassenger-blink1&quot;, PingPong(BuildFrames(frames, 75)), true)
+@@ -1106,6 +1107,7 @@
+     DefAnim(&quot;rock3_break-anim&quot;,BuildFrames(images,50))
+     DefSolidStone(&quot;st-rock3_break-anim&quot;, &quot;rock3_break-anim&quot;)
+     DefAlias(&quot;st-rock3_movebreak&quot;, &quot;st-rock3&quot;)
++    DefAlias(&quot;st_plaster_breaking&quot;, &quot;st-rock3_break-anim&quot;)
+ end
+ 
+ -- st-rock3-falling --
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2009-01-17 23:51:32 UTC (rev 1463)
++++ trunk/data/schemas/objects.xml	2009-01-18 13:55:09 UTC (rev 1464)
+@@ -8,6 +8,7 @@
+     &lt;attr name=&quot;anchor2&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;attacknearest&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;autoclose&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;breakable&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;burnable&quot; type=&quot;bool&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;charge&quot; type=&quot;double&quot; default=&quot;0&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;cluster&quot; type=&quot;int&quot; default=&quot;nil&quot; min=&quot;0&quot; max=&quot;9&quot; rw=&quot;rw&quot;/&gt;
+@@ -1230,6 +1231,25 @@
+       &lt;attr name=&quot;color&quot; value=&quot;1&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;st_pinkbumps&quot;/&gt;
++    &lt;object name=&quot;st_plaster&quot;&gt;
++      &lt;attr name=&quot;hollow&quot; rw=&quot;r&quot;/&gt;
++      &lt;attr name=&quot;breakable&quot; rw=&quot;r&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_plaster_hollow&quot;&gt;
++      &lt;attr name=&quot;hollow&quot; value=&quot;true&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_plaster_movable&quot;&gt;
++      &lt;attr name=&quot;movable&quot; value=&quot;true&quot;/&gt;
++      &lt;attr name=&quot;breakable&quot; value=&quot;false&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_plaster_breakable&quot;&gt;
++      &lt;attr name=&quot;breakable&quot; value=&quot;true&quot;/&gt;
++      &lt;attr name=&quot;movable&quot; value=&quot;false&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_plaster_movebreakable&quot;&gt;
++      &lt;attr name=&quot;movable&quot; value=&quot;true&quot;/&gt;
++      &lt;attr name=&quot;breakable&quot; value=&quot;true&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_polarswitch&quot;&gt;
+       &lt;msg name=&quot;on&quot;/&gt;
+       &lt;msg name=&quot;off&quot;/&gt;
+
+Modified: trunk/data/startup.lua
+===================================================================
+--- trunk/data/startup.lua	2009-01-17 23:51:32 UTC (rev 1463)
++++ trunk/data/startup.lua	2009-01-18 13:55:09 UTC (rev 1464)
+@@ -106,12 +106,7 @@
+     world.DefineSimpleStoneMovable(name,sound or &quot;stone&quot;,0)
+ end
+ 
+-def_stone(&quot;st-rock3&quot;)
+-def_stone_movable(&quot;st-rock3_move&quot;)
+-def_stone_hollow(&quot;st-rock3_hole&quot;)
+ 
+-
+-
+ ------------------------------
+ -- Define the simple floors --
+ ------------------------------
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2009-01-17 23:51:32 UTC (rev 1463)
++++ trunk/src/Makefile.am	2009-01-18 13:55:09 UTC (rev 1464)
+@@ -316,6 +316,8 @@
+ 	stones/OxydStone.hh	\
+ 	stones/PassageStone.cc	\
+ 	stones/PassageStone.hh	\
++	stones/PlasterStone.cc	\
++	stones/PlasterStone.hh	\
+ 	stones/PolarSwitchStone.cc	\
+ 	stones/PolarSwitchStone.hh	\
+ 	stones/PullStone.cc	\
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2009-01-17 23:51:32 UTC (rev 1463)
++++ trunk/src/ox_magnum.cc	2009-01-18 13:55:09 UTC (rev 1464)
+@@ -250,7 +250,7 @@
+     UNUSED,                     // OxydMagnum stone 0x83
+     UNUSED,                     // OxydMagnum stone 0x84
+     UNUSED,                     // OxydMagnum stone 0x85
+-    &quot;st-rock3_hole&quot;,            // OxydMagnum stone 0x86
++    &quot;st_plaster_hollow&quot;,        // OxydMagnum stone 0x86
+     &quot;st_purplemarble&quot;,          // OxydMagnum stone 0x87 (was st-rock1, but the pic has straight edges and surfaces)
+     0,                          // OxydMagnum stone 0x88 (Level 121 ?)(in normal Oxyd Magnum Levels unused!)
+     0,                          // OxydMagnum stone 0x89 (Level 121 ?)(in normal Oxyd Magnum Levels unused!)
+
+Added: trunk/src/stones/PlasterStone.cc
+===================================================================
+--- trunk/src/stones/PlasterStone.cc	2009-01-17 23:51:32 UTC (rev 1463)
++++ trunk/src/stones/PlasterStone.cc	2009-01-18 13:55:09 UTC (rev 1464)
+@@ -0,0 +1,145 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2009 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/PlasterStone.hh&quot;
++#include &quot;items/GlassesItem.hh&quot;
++#include &quot;player.hh&quot;
++//#include &quot;world.hh&quot;
++//#include &quot;main.hh&quot;
++
++namespace enigma {
++    PlasterStone::PlasterStone(bool hollow, bool movable, bool breakable) {
++        if (hollow)
++            objFlags |= OBJBIT_HOLLOW;
++        if (movable)
++            objFlags |= OBJBIT_MOVABLE;
++        if (breakable)
++            objFlags |= OBJBIT_BREAKABLE;
++    }
++    
++    std::string PlasterStone::getClass() const {
++        return get_traits().name;
++    }
++    
++    Value PlasterStone::getAttr(const std::string &amp;key) const {
++        if (key == &quot;movable&quot;) {
++            return (bool)(objFlags &amp; OBJBIT_MOVABLE);
++        } else if (key == &quot;hollow&quot;) {
++            return (bool)(objFlags &amp; OBJBIT_HOLLOW);
++        } else if (key == &quot;breakable&quot;) {
++            return (bool)(objFlags &amp; OBJBIT_BREAKABLE);
++        }
++        return Stone::getAttr(key);
++    }
++    
++    Value PlasterStone::message(const Message &amp;m) {
++        if ((objFlags &amp; OBJBIT_HOLLOW) &amp;&amp; m.message == &quot;_glasses&quot;) {
++            if ((to_int(m.value) &amp; Glasses::HOLLOW) &amp;&amp; !(objFlags &amp; OBJBIT_GLASSES)) {  // hollow
++                objFlags |= OBJBIT_GLASSES;
++                if (isDisplayable())
++                    init_model();
++            } else if (objFlags &amp; OBJBIT_GLASSES) {
++                objFlags &amp;= ~OBJBIT_GLASSES;
++                if (isDisplayable())
++                    init_model();
++            }
++            return Value();
++        } else if ((objFlags &amp; OBJBIT_BREAKABLE) &amp;&amp; 
++                (m.message ==&quot;ignite&quot; || m.message == &quot;_explosion&quot; || m.message == &quot;_bombstone&quot;)) {
++            doBreak();
++            return Value();
++        }
++        return Stone::message(m);
++    }
++   
++    void PlasterStone::setState(int extState) {
++        // block all state writes
++    }
++    
++    void PlasterStone::init_model() {
++        if (objFlags &amp; OBJBIT_GLASSES)
++            set_model(&quot;invisible&quot;);
++        else if (state == BREAKING)
++            set_anim(&quot;st_plaster_breaking&quot;);
++        else
++            set_model(getClass());
++    }
++    
++    void PlasterStone::processLight(Direction d) {
++        if (objFlags &amp; OBJBIT_BREAKABLE)
++            doBreak();
++        else
++            Stone::processLight(d);
++    }
++    
++    void PlasterStone::animcb() {
++        KillStone(get_pos());
++    }
++    
++    bool PlasterStone::is_floating() const {
++        return objFlags &amp; OBJBIT_HOLLOW;
++    }
++
++    StoneResponse PlasterStone::collision_response(const StoneContact &amp;sc) {
++        if (objFlags &amp; OBJBIT_HOLLOW)
++            return STONE_PASS;
++        return Stone::collision_response(sc);
++    }
++
++    const char *PlasterStone::collision_sound() {
++        return &quot;stone&quot;;
++    }
++    
++    void PlasterStone::actor_hit(const StoneContact &amp;sc) {
++        if ((objFlags &amp; OBJBIT_BREAKABLE) &amp;&amp; player::WieldedItemIs(sc.actor, &quot;it_hammer&quot;))
++            doBreak();
++        else
++            Stone::actor_hit(sc);
++    }
++    
++    void PlasterStone::doBreak() {
++        if (state == IDLE) {
++            state = BREAKING;
++            sound_event(&quot;stonedestroy&quot;);
++            if (isDisplayable())
++                init_model();
++        }
++    }
++        
++    int PlasterStone::traitsIdx() const {
++        return ((objFlags &amp; OBJBIT_BREAKABLE) ? 1 : 0) + ((objFlags &amp; OBJBIT_MOVABLE) ? 2 : 0);
++    }
++    
++    StoneTraits PlasterStone::traits[4] = {
++        {&quot;st_plaster&quot;, st_standard, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++        {&quot;st_plaster&quot;, st_standard, stf_none, material_stone, 1.0, MOVABLE_BREAKABLE},
++        {&quot;st_plaster&quot;, st_standard, stf_none, material_stone, 1.0, MOVABLE_STANDARD},
++        {&quot;st_plaster&quot;, st_standard, stf_none, material_stone, 1.0, MOVABLE_IRREGULAR},
++    };
++    
++    BOOT_REGISTER_START
++        BootRegister(new PlasterStone(false, false), &quot;st_plaster&quot;);
++        BootRegister(new PlasterStone(true, false),  &quot;st_plaster_hollow&quot;);
++        BootRegister(new PlasterStone(false, true),  &quot;st_plaster_movable&quot;);
++        BootRegister(new PlasterStone(false, false, true), &quot;st_plaster_breakable&quot;);
++        BootRegister(new PlasterStone(false, true, true),  &quot;st_plaster_movebreakable&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/PlasterStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/PlasterStone.hh
+===================================================================
+--- trunk/src/stones/PlasterStone.hh	2009-01-17 23:51:32 UTC (rev 1463)
++++ trunk/src/stones/PlasterStone.hh	2009-01-18 13:55:09 UTC (rev 1464)
+@@ -0,0 +1,77 @@
++/*
++ * Copyright (C) 2009 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef PLASTERSTONE_HH
++#define PLASTERSTONE_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class PlasterStone : public Stone {
++        CLONEOBJ(PlasterStone);
++        DECL_TRAITS_ARRAY(4, traitsIdx());
++    private:
++        enum iState {
++            IDLE,         ///&lt; 
++            BREAKING      ///&lt; 
++        };
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_MOVABLE   =   1&lt;&lt;24,    ///&lt;  
++            OBJBIT_HOLLOW    =   1&lt;&lt;25,    ///&lt; 
++            OBJBIT_GLASSES   =   1&lt;&lt;26,    ///&lt; invisible due to glasses
++            OBJBIT_BREAKABLE =   1&lt;&lt;27     ///&lt; breakable
++        };
++        
++    public:
++        PlasterStone(bool hollow, bool movable, bool breakable = false);
++        
++        // Object interface
++        virtual std::string getClass() const;        
++        virtual Value getAttr(const std::string &amp;key) const;
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        virtual void processLight(Direction d);   // direction of laserbeam
++        
++        // ModelCallback interface
++        virtual void animcb();
++        
++        // Stone interface
++        virtual bool is_floating() const;
++        virtual StoneResponse collision_response(const StoneContact &amp;sc);
++        virtual const char *collision_sound();
++        virtual void actor_hit(const StoneContact &amp;sc);
++
++    private:
++        void doBreak();
++        int traitsIdx() const;
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/PlasterStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000892.html">[Enigma-game-svn] rev 1463
+</A></li>
+	<LI>Next message: <A HREF="000894.html">[Enigma-game-svn] r1465 - in trunk/data/levels: enigma_cross	enigma_ii enigma_iii enigma_iv enigma_vi enigma_vii enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#893">[ date ]</a>
+              <a href="thread.html#893">[ thread ]</a>
+              <a href="subject.html#893">[ subject ]</a>
+              <a href="author.html#893">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

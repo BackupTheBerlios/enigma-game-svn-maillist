@@ -1,0 +1,250 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r791 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r791%20-%20trunk/src&In-Reply-To=%3C200706192114.l5JLEfHv005750%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000225.html">
+   <LINK REL="Next"  HREF="000227.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r791 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r791%20-%20trunk/src&In-Reply-To=%3C200706192114.l5JLEfHv005750%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r791 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Jun 19 23:14:41 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000225.html">[Enigma-game-svn] r788 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="000227.html">[Enigma-game-svn] r792 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#226">[ date ]</a>
+              <a href="thread.html#226">[ thread ]</a>
+              <a href="subject.html#226">[ subject ]</a>
+              <a href="author.html#226">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-06-19 23:14:41 +0200 (Tue, 19 Jun 2007)
+New Revision: 791
+
+Modified:
+   trunk/src/world.cc
+Log:
+Trunk 1.1: 
+- fix inner window collisions to avoid contacts to adjacent stones
+- fix speed limit on actors - apply it directly
+- fix crashes due to actors moving outside of world
+
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2007-06-16 19:22:50 UTC (rev 790)
++++ trunk/src/world.cc	2007-06-19 21:14:41 UTC (rev 791)
+@@ -732,7 +732,7 @@
+             if ((winFacesActorStone&amp;face) &amp;&amp; !(face_neighbour&amp;face)) {
+                 // contact to a inner corner of a window stone
+                 // same code as external corner below
+-                Log &lt;&lt; &quot;inner corner\n&quot;;
++//                Log &lt;&lt; &quot;inner corner\n&quot;;
+                 double cx[2] = {cdist, -cdist};
+         
+                 V2 corner(x+xcorner+cx[xcorner], y+ycorner+cx[ycorner]);
+@@ -900,8 +900,8 @@
+  * actor.
+  * @arg a   the actor that causes contacts
+  * @arg p   the grid position of the actor and the Window stone
+- * @arg c0  a contact info for a contact. The normal has no need of being intialized
+- * @arg c1  a contact info for a contact. The normal has no need of being intialized
++ * @arg c0  a contact info for a east or west contact. The normal has no need of being intialized
++ * @arg c1  a contact info for a noth or south contact. The normal has no need of being intialized
+  * @arg winFacesActorStone  the faces of a Window stone on the actors grid position
+  */
+ void World::find_contact_with_window(Actor *a, GridPos p, StoneContact &amp;c0, StoneContact &amp;c1,
+@@ -961,58 +961,99 @@
+         // upper grid part
+         if (x - g.x &lt; re) {
+             // upper left edge
+-            c0.normal = V2(+1, +1);  // no need of normalization - just direction
+-            c1.normal = V2(0, +1);
+-            c2.normal = V2(+1, 0);
+-            c0.contact_point = c1.contact_point = c2.contact_point = V2(g.x, g.y);
+-            find_contact_with_edge(a, GridPos(g.x - 1, g.y - 1), GridPos(g.x, g.y - 1),
+-                    GridPos(g.x - 1, g.y), c0, c1, c2, winFacesActorStone);
++            if (c1.is_contact)
++                // inner west window contact - just look for north adjacent stone contact 
++                find_contact_with_stone(a, GridPos(g.x, g.y - 1), c0, winFacesActorStone);
++            else if (c2.is_contact)
++                // inner north window contact - just look for west adjacent stone contact 
++                find_contact_with_stone(a, GridPos(g.x - 1, g.y), c0, winFacesActorStone);
++            else {
++                c0.normal = V2(+1, +1);  // no need of normalization - just direction
++                c1.normal = V2(0, +1);
++                c2.normal = V2(+1, 0);
++                c0.contact_point = c1.contact_point = c2.contact_point = V2(g.x, g.y);
++                find_contact_with_edge(a, GridPos(g.x - 1, g.y - 1), GridPos(g.x, g.y - 1),
++                        GridPos(g.x - 1, g.y), c0, c1, c2, winFacesActorStone);
++            }
+         } else if (-x + (g.x + 1) &lt; re) {
+             // upper right edge
+-            c0.normal = V2(-1, +1);  // no need of normalization - just direction
+-            c1.normal = V2(0, +1);
+-            c2.normal = V2(-1, 0);
+-            c0.contact_point = c1.contact_point = c2.contact_point = V2(g.x+1, g.y);
+-            find_contact_with_edge(a, GridPos(g.x + 1, g.y -1), GridPos(g.x, g.y - 1),
+-                    GridPos(g.x + 1, g.y), c0, c1, c2, winFacesActorStone);
++            find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
++            if (c1.is_contact)
++                // inner east window contact - just look for north adjacent stone contact 
++                find_contact_with_stone(a, GridPos(g.x, g.y - 1), c0, winFacesActorStone);
++            else if (c2.is_contact)
++                // inner north window contact - just look for east adjacent stone contact 
++                find_contact_with_stone(a, GridPos(g.x + 1, g.y), c0, winFacesActorStone);
++            else {
++                c0.normal = V2(-1, +1);  // no need of normalization - just direction
++                c1.normal = V2(0, +1);
++                c2.normal = V2(-1, 0);
++                c0.contact_point = c1.contact_point = c2.contact_point = V2(g.x+1, g.y);
++                find_contact_with_edge(a, GridPos(g.x + 1, g.y -1), GridPos(g.x, g.y - 1),
++                        GridPos(g.x + 1, g.y), c0, c1, c2, winFacesActorStone);
++            }
+         } else {
+             // upper middle part
+-            find_contact_with_stone(a, GridPos(g.x, g.y - 1), c0, winFacesActorStone);
+             find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
++            if (!c2.is_contact)
++                // only hit adjacent stone if no inner window is in front
++                find_contact_with_stone(a, GridPos(g.x, g.y - 1), c0, winFacesActorStone);
+         }
+     } else if (-y + (g.y +1) &lt; re) {
+         // lower grid part
+         if (x - g.x &lt; re) {
+             // lower left edge
+-            c0.normal = V2(+1, -1);  // no need of normalization - just direction
+-            c1.normal = V2(0, -1);
+-            c2.normal = V2(+1, 0);
+-            c0.contact_point = c1.contact_point = c2.contact_point = V2(g.x, g.y+1);
+-            find_contact_with_edge(a, GridPos(g.x - 1, g.y + 1), GridPos(g.x, g.y + 1),
+-                    GridPos(g.x - 1, g.y), c0, c1, c2, winFacesActorStone);
++            if (c1.is_contact)
++                // inner west window contact - just look for south adjacent stone contact 
++                find_contact_with_stone(a, GridPos(g.x, g.y + 1), c0, winFacesActorStone);
++            else if (c2.is_contact)
++                // inner south window contact - just look for west adjacent stone contact 
++                find_contact_with_stone(a, GridPos(g.x - 1, g.y), c0, winFacesActorStone);
++            else {
++                c0.normal = V2(+1, -1);  // no need of normalization - just direction
++                c1.normal = V2(0, -1);
++                c2.normal = V2(+1, 0);
++                c0.contact_point = c1.contact_point = c2.contact_point = V2(g.x, g.y+1);
++                find_contact_with_edge(a, GridPos(g.x - 1, g.y + 1), GridPos(g.x, g.y + 1),
++                        GridPos(g.x - 1, g.y), c0, c1, c2, winFacesActorStone);
++            }
+         } else if (-x + (g.x + 1) &lt; re) {
+             // lower right edge
+-            c0.normal = V2(-1, -1);  // no need of normalization - just direction
+-            c1.normal = V2(0, -1);
+-            c2.normal = V2(-1, 0);
+-            c0.contact_point = c1.contact_point = c2.contact_point = V2(g.x+1, g.y+1);
+-            find_contact_with_edge(a, GridPos(g.x + 1, g.y + 1), GridPos(g.x, g.y +1),
+-                    GridPos(g.x + 1, g.y), c0, c1, c2, winFacesActorStone);
++            if (c1.is_contact)
++                // inner east window contact - just look for south adjacent stone contact 
++                find_contact_with_stone(a, GridPos(g.x, g.y + 1), c0, winFacesActorStone);
++            else if (c2.is_contact)
++                // inner south window contact - just look for east adjacent stone contact 
++                find_contact_with_stone(a, GridPos(g.x + 1, g.y), c0, winFacesActorStone);
++            else {
++                c0.normal = V2(-1, -1);  // no need of normalization - just direction
++                c1.normal = V2(0, -1);
++                c2.normal = V2(-1, 0);
++                c0.contact_point = c1.contact_point = c2.contact_point = V2(g.x+1, g.y+1);
++                find_contact_with_edge(a, GridPos(g.x + 1, g.y + 1), GridPos(g.x, g.y +1),
++                        GridPos(g.x + 1, g.y), c0, c1, c2, winFacesActorStone);
++            }
+         } else {
+             // lower middle part
+-            find_contact_with_stone(a, GridPos(g.x, g.y + 1), c0, winFacesActorStone);
+             find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
++            if (!c2.is_contact)
++                // only hit adjacent stone if no inner window is in front
++                find_contact_with_stone(a, GridPos(g.x, g.y + 1), c0, winFacesActorStone);
+         }
+     } else {
+         // middle grid part
+         if (x - g.x &lt; re) {
+             // left middle part
+-            find_contact_with_stone(a, GridPos(g.x - 1, g.y), c0, winFacesActorStone);
+             find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
++            if (!c1.is_contact)
++                // only hit adjacent stone if no inner window is in front
++                find_contact_with_stone(a, GridPos(g.x - 1, g.y), c0, winFacesActorStone);
+         } else if (-x + (g.x + 1) &lt; re) {
+             // right middle part
+-            find_contact_with_stone(a, GridPos(g.x + 1, g.y), c0, winFacesActorStone);
+             find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
++            if (!c1.is_contact)
++                // only hit adjacent stone if no inner window is in front
++                find_contact_with_stone(a, GridPos(g.x + 1, g.y), c0, winFacesActorStone);
+         } else {
+             // actor in center of grid - just inner window contacts
+             find_contact_with_window(a, GridPos(g.x, g.y), c0, c1, winFacesActorStone);
+@@ -1298,13 +1339,19 @@
+     force += ai.collforce;
+ 
+     ai.vel += dtime * force / ai.mass;
+-    ai.pos += dtime * ai.vel;
+-    did_move_actor(a);
+-
+     // Limit maximum velocity
+     double q = length(ai.vel) / MAXVEL;
+     if (q &gt; 1)
+         ai.vel /= q;
++
++    ai.pos += dtime * ai.vel;
++    // avoid actors outside of world
++    if (ai.pos[0] &lt; 0) ai.pos[0] = 0.0;
++    if (ai.pos[0] &gt;= w) ai.pos[0] = w - 1e-12;
++    if (ai.pos[1] &lt; 0) ai.pos[1] = 0.0;
++    if (ai.pos[1] &gt;= h) ai.pos[1] = h - 1e-12;
++
++    did_move_actor(a);
+ }
+ 
+ void World::did_move_actor(Actor *a) {
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000225.html">[Enigma-game-svn] r788 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="000227.html">[Enigma-game-svn] r792 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#226">[ date ]</a>
+              <a href="thread.html#226">[ thread ]</a>
+              <a href="subject.html#226">[ subject ]</a>
+              <a href="author.html#226">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

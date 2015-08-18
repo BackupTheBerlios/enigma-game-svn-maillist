@@ -1,0 +1,450 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1730 - in trunk/src: gui lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1730%20-%20in%20trunk/src%3A%20gui%20lev&In-Reply-To=%3C200906192228.n5JMSUAv023770%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001158.html">
+   <LINK REL="Next"  HREF="001160.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1730 - in trunk/src: gui lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1730%20-%20in%20trunk/src%3A%20gui%20lev&In-Reply-To=%3C200906192228.n5JMSUAv023770%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1730 - in trunk/src: gui lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Jun 20 00:28:30 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001158.html">[Enigma-game-svn] r1729 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="001160.html">[Enigma-game-svn] r1731 - in trunk: data data/gfx32 data/gfx40	data/gfx48 src src/items src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1159">[ date ]</a>
+              <a href="thread.html#1159">[ thread ]</a>
+              <a href="subject.html#1159">[ subject ]</a>
+              <a href="author.html#1159">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-06-20 00:28:29 +0200 (Sat, 20 Jun 2009)
+New Revision: 1730
+
+Modified:
+   trunk/src/gui/LevelMenu.cc
+   trunk/src/gui/LevelPackConfig.cc
+   trunk/src/lev/Index.hh
+   trunk/src/lev/PersistentIndex.cc
+   trunk/src/lev/PersistentIndex.hh
+Log:
+Trunk 1.1: 
+- index update for auto generated levelpacks: press F7 in Levelmenu to
+    detect new levels, remove deleted levels and update from level metadata.
+
+
+Modified: trunk/src/gui/LevelMenu.cc
+===================================================================
+--- trunk/src/gui/LevelMenu.cc	2009-06-19 15:54:18 UTC (rev 1729)
++++ trunk/src/gui/LevelMenu.cc	2009-06-19 22:28:29 UTC (rev 1730)
+@@ -193,10 +193,11 @@
+         N_(&quot;Escape:&quot;),              N_(&quot;Skip to main menu&quot;),
+         &quot;F1:&quot;,                      N_(&quot;Show this help&quot;),
+         &quot;F5:&quot;,                      0, // see below
++        &quot;F7:&quot;,                      N_(&quot;Update levelpack&quot;),
+         N_(&quot;Arrows:&quot;),              N_(&quot;Select level&quot;),
+         N_(&quot;Return:&quot;),              N_(&quot;Play selected level&quot;),
+         N_(&quot;Back/Space:&quot;),          N_(&quot;Previous/next levelpack&quot;),
+-        &quot;u&quot;,                        N_(&quot;Mark current level as Unsolved&quot;),
++        &quot;u&quot;,                        N_(&quot;Mark current level as unsolved&quot;),
+     //    &quot;s&quot;,                        N_(&quot;Mark current level as Solved&quot;),
+         N_(&quot;Alt+Return:&quot;),          N_(&quot;Switch between fullscreen and window&quot;),
+         N_(&quot;Left click:&quot;),               N_(&quot;Play selected level&quot;),
+@@ -227,6 +228,10 @@
+                 case SDLK_F5:
+                     next_unsolved();
+                     break;
++                case SDLK_F7:
++                    lev::Index::getCurrentIndex()-&gt;updateFromProxies();
++                    draw_all();
++                    break;
+                 case SDLK_u: {
+                     lev::ScoreManager::instance()-&gt;markUnsolved(lev::Index::getCurrentProxy(), 
+                             app.state-&gt;getInt(&quot;Difficulty&quot;));
+
+Modified: trunk/src/gui/LevelPackConfig.cc
+===================================================================
+--- trunk/src/gui/LevelPackConfig.cc	2009-06-19 15:54:18 UTC (rev 1729)
++++ trunk/src/gui/LevelPackConfig.cc	2009-06-19 22:28:29 UTC (rev 1730)
+@@ -89,7 +89,7 @@
+         
+         if (indexName.empty())
+             // new levelpack
+-            packIndex = new lev::PersistentIndex(&quot; &quot;, false,
++            packIndex = new lev::PersistentIndex(&quot; &quot;, false, false,
+                     INDEX_DEFAULT_PACK_LOCATION,  &quot;&quot;, 
+                     INDEX_STD_FILENAME, lev::Index::getCurrentGroup()); // mark as incomplete
+         else
+
+Modified: trunk/src/lev/Index.hh
+===================================================================
+--- trunk/src/lev/Index.hh	2009-06-19 15:54:18 UTC (rev 1729)
++++ trunk/src/lev/Index.hh	2009-06-19 22:28:29 UTC (rev 1730)
+@@ -126,7 +126,7 @@
+                 scoreUnitType varUnit = duration, std::string varTarget = &quot;time&quot;,
+                 std::map&lt;std::string, std::string&gt; varExtensions = nullExtensions);
+         virtual void clear();
+-        void updateFromProxies();
++        virtual void updateFromProxies();
+ 
+         // ---------- LevelPack legacy methods ---to be renamed ------- */
+         /*! Return the default SoundSet (see options::SoundSet for meaning) */
+
+Modified: trunk/src/lev/PersistentIndex.cc
+===================================================================
+--- trunk/src/lev/PersistentIndex.cc	2009-06-19 15:54:18 UTC (rev 1729)
++++ trunk/src/lev/PersistentIndex.cc	2009-06-19 22:28:29 UTC (rev 1730)
+@@ -66,27 +66,27 @@
+     std::vector&lt;PersistentIndex *&gt; PersistentIndex::indexCandidates;
+     
+     void PersistentIndex::checkCandidate(PersistentIndex * candidate) {
+-	if (candidate-&gt;getName().empty() ||
+-		candidate-&gt;getCompatibility() &gt; ENIGMACOMPATIBITLITY) {
+-	    delete candidate;
+-	} else {
+-	    // check if new Index is an update of another
+-	    for (int i = 0; i &lt; indexCandidates.size(); i++) {
+-		if (indexCandidates[i]-&gt;getName() != candidate-&gt;getName()) {
+-		    continue;
+-		} else if (indexCandidates[i]-&gt;getRelease() != candidate-&gt;getRelease() ||
+-			indexCandidates[i]-&gt;getRevision() &gt;= candidate-&gt;getRevision()) {
+-		    delete candidate;
+-		    return;
+-		} else {
+-		    // it is an update
+-		    delete indexCandidates[i];
+-		    indexCandidates[i] = candidate;
+-		    return;
+-		}
+-	    }
+-	    indexCandidates.push_back(candidate);
+-	}
++        if (candidate-&gt;getName().empty() ||
++        	candidate-&gt;getCompatibility() &gt; ENIGMACOMPATIBITLITY) {
++            delete candidate;
++        } else {
++            // check if new Index is an update of another
++            for (int i = 0; i &lt; indexCandidates.size(); i++) {
++                if (indexCandidates[i]-&gt;getName() != candidate-&gt;getName()) {
++                    continue;
++                } else if (indexCandidates[i]-&gt;getRelease() != candidate-&gt;getRelease() ||
++                	indexCandidates[i]-&gt;getRevision() &gt;= candidate-&gt;getRevision()) {
++                    delete candidate;
++                    return;
++                } else {
++                    // it is an update
++                    delete indexCandidates[i];
++                    indexCandidates[i] = candidate;
++                    return;
++                }
++            }
++            indexCandidates.push_back(candidate);
++        }
+     }
+     
+     void PersistentIndex::registerPersistentIndices(bool onlySystemIndices) {
+@@ -117,12 +117,12 @@
+         for (std::set&lt;std::string&gt;::iterator i = candidates.begin(); 
+                 i != candidates.end(); i++) {
+             // register the index just on the system path even if the
+-	    // user has an update on his path. We need to know the release to
+-	    // decide if a user copy is an update
+-	    PersistentIndex * anIndex = new PersistentIndex(*i, true);
++            // user has an update on his path. We need to know the release to
++            // decide if a user copy is an update
++            PersistentIndex * anIndex = new PersistentIndex(*i, true);
+             anIndex-&gt;isUserOwned = false;
+-	    Log &lt;&lt; &quot;precheck: &quot; &lt;&lt; *i &lt;&lt; &quot;\n&quot;;
+-	    checkCandidate(anIndex);
++            Log &lt;&lt; &quot;precheck: &quot; &lt;&lt; *i &lt;&lt; &quot;\n&quot;;
++            checkCandidate(anIndex);
+         }
+ 
+         //add system cross indices
+@@ -131,10 +131,10 @@
+             while (dirIter-&gt;get_next(dirEntry)) {
+                 if (!dirEntry.is_dir &amp;&amp; dirEntry.name.size() &gt; 4 &amp;&amp; 
+                         (dirEntry.name.rfind(&quot;.xml&quot;) == dirEntry.name.size() - 4)) {
+-                    PersistentIndex * anIndex = new PersistentIndex(&quot;enigma_cross&quot;, true,
++                    PersistentIndex * anIndex = new PersistentIndex(&quot;enigma_cross&quot;, true, false,
+                             INDEX_DEFAULT_PACK_LOCATION, &quot;&quot;, dirEntry.name);
+                     anIndex-&gt;isUserOwned = false;
+-		    checkCandidate(anIndex);
++                    checkCandidate(anIndex);
+                 }
+             }
+         }
+@@ -171,7 +171,7 @@
+         for (std::set&lt;std::string&gt;::iterator i = candidates2.begin(); 
+                 i != candidates2.end(); i++) {
+             PersistentIndex * anIndex = new PersistentIndex(*i, false);
+-	    checkCandidate(anIndex);
++            checkCandidate(anIndex);
+         }
+        
+         //add user cross indices
+@@ -179,79 +179,39 @@
+         while (dirIter-&gt;get_next(dirEntry)) {
+             if (!dirEntry.is_dir &amp;&amp; dirEntry.name.size() &gt; 4 &amp;&amp; 
+                     (dirEntry.name.rfind(&quot;.xml&quot;) == dirEntry.name.size() - 4)) {
+-                PersistentIndex * anIndex = new PersistentIndex(&quot;cross&quot;, false, 
++                PersistentIndex * anIndex = new PersistentIndex(&quot;cross&quot;, false, false,
+                         INDEX_DEFAULT_PACK_LOCATION, &quot;&quot;, dirEntry.name);
+                 checkCandidate(anIndex);
+             }
+         }
+         delete dirIter;
+         
+-	for (int i = 0; i &lt; indexCandidates.size(); i++) {
+-	    Index::registerIndex(indexCandidates[i]);
+-	}
++        for (int i = 0; i &lt; indexCandidates.size(); i++) {
++            Index::registerIndex(indexCandidates[i]);
++        }
+ 	
+         // register auto not yet registered new files
+-        PersistentIndex * autoIndex = new PersistentIndex(&quot;auto&quot;, false, 
++        PersistentIndex * autoIndex = new PersistentIndex(&quot;auto&quot;, false, true,
+                 INDEX_AUTO_PACK_LOCATION, INDEX_AUTO_PACK_NAME);
+         autoIndex-&gt;isEditable = false;
+-        dirIter = DirIter::instance(app.userPath + &quot;/levels/auto&quot;);
+-        while (dirIter-&gt;get_next(dirEntry)) { 
+-            if( !dirEntry.is_dir) {
+-                if (dirEntry.name.size() &gt; 4 &amp;&amp; (
+-                        (dirEntry.name.rfind(&quot;.xml&quot;) == dirEntry.name.size() - 4) ||
+-                        (dirEntry.name.rfind(&quot;.lua&quot;) == dirEntry.name.size() - 4))) {
+-                    Proxy * newProxy = Proxy::autoRegisterLevel(&quot;auto&quot;, 
+-                            dirEntry.name.substr(0, dirEntry.name.size() - 4));
+-                    if (newProxy != NULL) {
+-                        // first check that the proxy is not in the index
+-                        //  - may occur if the level is stored as .xml and .lua in the folder
+-                        if (!autoIndex-&gt;containsProxy(newProxy)) {
+-                            // it is new, add it
+-                            autoIndex-&gt;appendProxy(newProxy);
+-                        }
+-                    }
+-                }
+-            }
+-        }
+-        delete dirIter;
+         Index::registerIndex(autoIndex);
+         
+         // register team auto not yet registered new files
+-        PersistentIndex * teamautoIndex = NULL;
+-        dirIter = DirIter::instance(app.userPath + &quot;/levels/team_test_new_api&quot;);
+-        while (dirIter-&gt;get_next(dirEntry)) { 
+-            if( !dirEntry.is_dir) {
+-                if (dirEntry.name.size() &gt; 4 &amp;&amp; (
+-                        (dirEntry.name.rfind(&quot;.xml&quot;) == dirEntry.name.size() - 4) ||
+-                        (dirEntry.name.rfind(&quot;.lua&quot;) == dirEntry.name.size() - 4))) {
+-                    if (teamautoIndex == NULL) {
+-                        teamautoIndex = new PersistentIndex(&quot;team_test_new_api&quot;, false, 
+-                                75000, &quot;test_new_api&quot;);
+-                        teamautoIndex-&gt;isEditable = false;
+-                    }
+-                    Proxy * newProxy = Proxy::autoRegisterLevel(&quot;team_test_new_api&quot;, 
+-                            dirEntry.name.substr(0, dirEntry.name.size() - 4));
+-                    if (newProxy != NULL) {
+-                        // first check that the proxy is not in the index
+-                        //  - may occur if the level is stored as .xml and .lua in the folder
+-                        if (!teamautoIndex-&gt;containsProxy(newProxy)) {
+-                            // it is new, add it
+-                            teamautoIndex-&gt;appendProxy(newProxy);
+-                        }
+-                    }
+-                }
+-            }
+-        }
+-        delete dirIter;
+-        if (teamautoIndex != NULL)
++        PersistentIndex * teamautoIndex = new PersistentIndex(&quot;team_test_new_api&quot;, false, true,
++                75000, &quot;test_new_api&quot;);
++        if (teamautoIndex-&gt;size() &gt; 0) {
++            teamautoIndex-&gt;isEditable = false;
+             Index::registerIndex(teamautoIndex);
++        } else {
++            delete teamautoIndex;
++        }
+         
+         // check if history is available - else generate a new index
+         Index * foundHistory = Index::findIndex(&quot;History&quot;);
+         if ( foundHistory != NULL) {
+             historyIndex = dynamic_cast&lt;PersistentIndex *&gt;(foundHistory);
+         } else {
+-            historyIndex = new PersistentIndex(&quot;cross&quot;, false, INDEX_HISTORY_PACK_LOCATION, 
++            historyIndex = new PersistentIndex(&quot;cross&quot;, false, false, INDEX_HISTORY_PACK_LOCATION, 
+                     INDEX_HISTORY_PACK_NAME, &quot;history.xml&quot;);
+             Index::registerIndex(historyIndex);
+         }
+@@ -274,10 +234,10 @@
+         }
+     }
+ 
+-    PersistentIndex::PersistentIndex(std::string thePackPath, bool systemOnly, 
++    PersistentIndex::PersistentIndex(std::string thePackPath, bool systemOnly, bool autoLoading,
+             double defaultLocation, std::string anIndexName, 
+             std::string theIndexFilename, std::string aGroupName) : 
+-            Index(anIndexName, aGroupName, defaultLocation), packPath (thePackPath), 
++            Index(anIndexName, aGroupName, defaultLocation), packPath (thePackPath), isAuto (autoLoading),
+             indexFilename(theIndexFilename), isModified (false),
+             isUserOwned (true), isEditable (true), release (1), revision (1),
+             compatibility (1.00), doc(NULL) {
+@@ -290,9 +250,36 @@
+             doc-&gt;release();
+             doc = NULL;
+         }
+-        // auto and new levelpacks are not loadable
+-        if (packPath == &quot; &quot; || packPath == &quot;auto&quot;)
+-            return;    // as long as Auto is not editable
++        // new levelpacks are not loadable
++        if (packPath == &quot; &quot;)
++            return;
++        
++        if (isAuto) {
++            DirIter * dirIter;
++            DirEntry dirEntry;
++            dirIter = DirIter::instance(app.userPath + &quot;/levels/&quot; + packPath);
++            while (dirIter-&gt;get_next(dirEntry)) { 
++                if( !dirEntry.is_dir) {
++                    if (dirEntry.name.size() &gt; 4 &amp;&amp; (
++                            (dirEntry.name.rfind(&quot;.xml&quot;) == dirEntry.name.size() - 4) ||
++                            (dirEntry.name.rfind(&quot;.lua&quot;) == dirEntry.name.size() - 4))) {
++                        Proxy * newProxy = Proxy::autoRegisterLevel(packPath, 
++                                dirEntry.name.substr(0, dirEntry.name.size() - 4));
++                        if (newProxy != NULL) {
++                            // first check that the proxy is not in the index
++                            //  - may occur if the level is stored as .xml and .lua in the folder
++                            if (!containsProxy(newProxy)) {
++                                // it is new, add it
++                                appendProxy(newProxy);
++                            }
++                            // do not delete Proxy if not used - we are not the owner!
++                        }
++                    }
++                }
++            }
++            delete dirIter;
++            return;
++        }
+ 
+         std::auto_ptr&lt;std::istream&gt; isptr;
+         ByteVec indexCode;
+@@ -325,7 +312,7 @@
+                     std::auto_ptr&lt;DOMLSInput&gt; domInputIndexSource ( new Wrapper4InputSource(
+                             new MemBufInputSource(reinterpret_cast&lt;const XMLByte *&gt;(&amp;(indexCode[0])),
+                             indexCode.size(), absIndexPath.c_str(), false)));
+-                 doc = app.domParser-&gt;parse(domInputIndexSource.get());
++                    doc = app.domParser-&gt;parse(domInputIndexSource.get());
+ #else    
+                     std::auto_ptr&lt;Wrapper4InputSource&gt; domInputIndexSource ( new Wrapper4InputSource(
+                             new MemBufInputSource(reinterpret_cast&lt;const XMLByte *&gt;(&amp;(indexCode[0])),
+@@ -675,6 +662,15 @@
+         }
+     }
+     
++    void PersistentIndex::updateFromProxies() {
++        if (!isAuto)
++            return;
++        
++        clear();
++        load(false);
++        Index::updateFromProxies();
++    }
++    
+     bool PersistentIndex::save(bool allowOverwrite) {
+         bool result = true;
+         
+@@ -864,7 +860,7 @@
+             std::string thePackPath, bool isZip, std::string anIndexName, 
+             std::string theIndexFilename) : 
+             Index(anIndexName, INDEX_DEFAULT_GROUP, Index::getNextUserLocation()), 
+-            indexFilename(theIndexFilename), isModified (false), 
++            indexFilename(theIndexFilename), isAuto (false), isModified (false), 
+             isUserOwned (true), isEditable (true), release (1), revision (1),
+             compatibility (1.00), doc(NULL) {
+         Log &lt;&lt; &quot;PersistentIndex convert 0.92 index &quot; &lt;&lt; thePackPath &lt;&lt; &quot; - &quot; &lt;&lt; anIndexName &lt;&lt;&quot;\n&quot;;
+
+Modified: trunk/src/lev/PersistentIndex.hh
+===================================================================
+--- trunk/src/lev/PersistentIndex.hh	2009-06-19 15:54:18 UTC (rev 1729)
++++ trunk/src/lev/PersistentIndex.hh	2009-06-19 22:28:29 UTC (rev 1730)
+@@ -60,7 +60,7 @@
+          * 
+          * thePackPath &quot; &quot; for a new not yet defined path
+          */
+-        PersistentIndex(std::string thePackPath, bool systemOnly, 
++        PersistentIndex(std::string thePackPath, bool systemOnly, bool isAuto =false,
+                 double defaultLocation = INDEX_DEFAULT_PACK_LOCATION,
+                 std::string anIndexName = &quot;&quot;,
+                 std::string theIndexFilename = INDEX_STD_FILENAME, 
+@@ -101,6 +101,7 @@
+         void erase(int pos);
+         void exchange(int pos1, int pos2);
+         virtual bool isSource(Proxy * aProxy);
++        virtual void updateFromProxies();
+         bool save(bool allowOverwrite = true);
+     protected:
+         std::string packPath;  // &quot;auto&quot;, &quot;&quot;,...
+@@ -113,16 +114,17 @@
+         bool isModified;
+         bool isUserOwned;
+         bool isEditable;
++        bool isAuto;
+         std::string indexUrl;
+     private:
+-	static std::vector&lt;PersistentIndex *&gt; indexCandidates;
++        static std::vector&lt;PersistentIndex *&gt; indexCandidates;
+         std::string absIndexPath;
+         XERCES_CPP_NAMESPACE_QUALIFIER DOMDocument *doc;
+         XERCES_CPP_NAMESPACE_QUALIFIER DOMElement *infoElem;
+         XERCES_CPP_NAMESPACE_QUALIFIER DOMElement *updateElem;
+         XERCES_CPP_NAMESPACE_QUALIFIER DOMElement *levelsElem;
+         
+-	static void checkCandidate(PersistentIndex * candidate);
++        static void checkCandidate(PersistentIndex * candidate);
+         // legacy 0.92
+         void parsePar(const string&amp; par, int&amp; par_value, std::string&amp; par_text);
+     };
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001158.html">[Enigma-game-svn] r1729 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="001160.html">[Enigma-game-svn] r1731 - in trunk: data data/gfx32 data/gfx40	data/gfx48 src src/items src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1159">[ date ]</a>
+              <a href="thread.html#1159">[ thread ]</a>
+              <a href="subject.html#1159">[ subject ]</a>
+              <a href="author.html#1159">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

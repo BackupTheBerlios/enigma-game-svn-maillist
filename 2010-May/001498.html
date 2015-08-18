@@ -1,0 +1,362 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r2074 - in trunk: data/schemas src src/lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2010-May/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2074%20-%20in%20trunk%3A%20data/schemas%20src%20src/lev&In-Reply-To=%3C201005082216.o48MGJX3015467%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001497.html">
+   <LINK REL="Next"  HREF="001499.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r2074 - in trunk: data/schemas src src/lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2074%20-%20in%20trunk%3A%20data/schemas%20src%20src/lev&In-Reply-To=%3C201005082216.o48MGJX3015467%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r2074 - in trunk: data/schemas src src/lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun May  9 00:16:19 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001497.html">[Enigma-game-svn] r2073 - in trunk: data/gfx src/gui src/lev
+</A></li>
+        <LI>Next message: <A HREF="001499.html">[Enigma-game-svn] r2075 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1498">[ date ]</a>
+              <a href="thread.html#1498">[ thread ]</a>
+              <a href="subject.html#1498">[ subject ]</a>
+              <a href="author.html#1498">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2010-05-09 00:16:18 +0200 (Sun, 09 May 2010)
+New Revision: 2074
+
+Modified:
+   trunk/data/schemas/score.xsd
+   trunk/src/lev/ScoreManager.cc
+   trunk/src/lev/ScoreManager.hh
+   trunk/src/main.hh
+Log:
+mark scores imported from 0.92 as out dated, fix score2 handling
+
+- introduce TRUSTED_RELEASE limit determining lowest Enigma release
+  that scores must derive from to be accepted
+- introduce ASSURED_RELEASE limit, that guarantees valid scores for
+  next release
+- score2 now stores best score besides score1 that has been played
+  with a trusted release
+
+Modified: trunk/data/schemas/score.xsd
+===================================================================
+--- trunk/data/schemas/score.xsd	2010-05-08 15:58:33 UTC (rev 2073)
++++ trunk/data/schemas/score.xsd	2010-05-08 22:16:18 UTC (rev 2074)
+@@ -3,8 +3,21 @@
+   &lt;xs:annotation&gt;
+     &lt;xs:documentation&gt;
+       XML schema definitions for Enigma score
+-      Copyright &#169; 2006 Ronald Lamprecht
+-      GPL2
++      Copyright &#169; 2006,2007,2008,2009,2010 Ronald Lamprecht
++      
++      This program is free software; you can redistribute it and/or
++      modify it under the terms of the GNU General Public License
++      as published by the Free Software Foundation; either version 2
++      of the License, or (at your option) any later version.
++
++      This program is distributed in the hope that it will be useful,
++      but WITHOUT ANY WARRANTY; without even the implied warranty of
++      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++      GNU General Public License for more details.
++
++      You should have received a copy of the GNU General Public License along
++      with this program; if not, write to the Free Software Foundation, Inc.,
++      51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+     &lt;/xs:documentation&gt;
+   &lt;/xs:annotation&gt;
+   &lt;xs:element name=&quot;score&quot;&gt;
+@@ -34,17 +47,17 @@
+             &lt;xs:documentation&gt;
+               Users level state:
+               id         - level id
+-              version    - score version
+-              easy1      -
+-              easy1rel   -
+-              diff1      -
+-              diff1rel   -
+-              easy2      -
+-              easy2rel   -
+-              diff2      -
+-              diff2rel   -
+-              rating     -
+-              sec      -
++              version    - level score version
++              easy1      - best ever score in easy mode independent of used Enigma release
++              easy1rel   - Enigma release with which the score was achieved
++              diff1      - best ever score in normal mode independent of used Enigma release
++              diff1rel   - Enigma release with which the score was achieved
++              easy2      - best score in easy mode played with a recent Enigma release
++              easy2rel   - Enigma release with which the score was achieved
++              diff2      - best score in normal mode played with a recent Enigma release
++              diff2rel   - Enigma release with which the score was achieved
++              rating     - user rating for the level in the given score version
++              sec        - security sum
+             &lt;/xs:documentation&gt;
+           &lt;/xs:annotation&gt;
+           &lt;xs:complexType&gt;
+
+Modified: trunk/src/lev/ScoreManager.cc
+===================================================================
+--- trunk/src/lev/ScoreManager.cc	2010-05-08 15:58:33 UTC (rev 2073)
++++ trunk/src/lev/ScoreManager.cc	2010-05-08 22:16:18 UTC (rev 2074)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2006 Ronald Lamprecht
++ * Copyright (C) 2006,2007,2008,2009,2010 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -559,7 +559,33 @@
+     }
+ 
+     bool ScoreManager::isOutdated(lev::Proxy *levelProxy, int difficulty) {
+-        return false;
++        DOMElement * level = getCreateLevel(levelProxy);
++        if (level == NULL || XMLString::parseInt(level-&gt;getAttribute(
++                Utf8ToXML(&quot;version&quot;).x_str())) != levelProxy-&gt;getScoreVersion()) {
++            return false;  // unsolved, thus not outdated
++        }
++        const XMLCh *attr = level-&gt;getAttribute(Utf8ToXML((difficulty == DIFFICULTY_HARD) ? &quot;diff1&quot; : &quot;easy1&quot;).x_str());
++        int score1 = (XMLString::stringLen(attr) &gt; 0) ? XMLString::parseInt(attr) : -1;
++        if (score1 &lt; 0) return false;
++        attr = level-&gt;getAttribute(Utf8ToXML((difficulty == DIFFICULTY_HARD) ? &quot;diff1rel&quot; : &quot;easy1rel&quot;).x_str());
++        double rel1 = 0.92; // default
++        if (XMLString::stringLen(attr) &gt; 0) {
++            XMLDouble * result = new XMLDouble(attr);
++            rel1 = result-&gt;getValue();
++            delete result;
++        }
++        if (rel1 &gt;= ASSURED_RELEASE) return false;
++
++        attr = level-&gt;getAttribute(Utf8ToXML((difficulty == DIFFICULTY_HARD) ? &quot;diff2&quot; : &quot;easy2&quot;).x_str());
++        int score2 = (XMLString::stringLen(attr) &gt; 0) ? XMLString::parseInt(attr) : -1;
++        attr = level-&gt;getAttribute(Utf8ToXML((difficulty == DIFFICULTY_HARD) ? &quot;diff2rel&quot; : &quot;easy2rel&quot;).x_str());
++        double rel2 = 0.92; // default
++        if (XMLString::stringLen(attr) &gt; 0) {
++            XMLDouble * result = new XMLDouble(attr);
++            rel2 = result-&gt;getValue();
++            delete result;
++        }
++        return (score2 &gt;= 0 &amp;&amp; rel2 &gt;= ASSURED_RELEASE) ? false : true;
+     }
+ 
+     int ScoreManager::getBestUserScore(lev::Proxy *levelProxy, int difficulty) {
+@@ -575,7 +601,28 @@
+         }
+         const XMLCh *attr = level-&gt;getAttribute(Utf8ToXML((difficulty == DIFFICULTY_HARD) ? &quot;diff1&quot; : &quot;easy1&quot;).x_str());
+         int score = (XMLString::stringLen(attr) &gt; 0) ? XMLString::parseInt(attr) : -1;
+-        return (score &lt; 0) ? SCORE_UNSOLVED : score;
++        if (score &lt; 0) return SCORE_UNSOLVED;
++
++        attr = level-&gt;getAttribute(Utf8ToXML((difficulty == DIFFICULTY_HARD) ? &quot;diff1rel&quot; : &quot;easy1rel&quot;).x_str());
++        double rel1 = 0.92; // default
++        if (XMLString::stringLen(attr) &gt; 0) {
++            XMLDouble * result = new XMLDouble(attr);
++            rel1 = result-&gt;getValue();
++            delete result;
++        }
++        if (rel1 &gt;= TRUSTED_RELEASE) return score;
++
++        attr = level-&gt;getAttribute(Utf8ToXML((difficulty == DIFFICULTY_HARD) ? &quot;diff2&quot; : &quot;easy2&quot;).x_str());
++        int score2 = (XMLString::stringLen(attr) &gt; 0) ? XMLString::parseInt(attr) : -1;
++        if (score2 &lt; 0) return SCORE_UNSOLVED;
++        attr = level-&gt;getAttribute(Utf8ToXML((difficulty == DIFFICULTY_HARD) ? &quot;diff2rel&quot; : &quot;easy2rel&quot;).x_str());
++        double rel2 = 0.92; // default
++        if (XMLString::stringLen(attr) &gt; 0) {
++            XMLDouble * result = new XMLDouble(attr);
++            rel2 = result-&gt;getValue();
++            delete result;
++        }
++        return (rel1 &gt;= TRUSTED_RELEASE) ? score2 : SCORE_UNSOLVED;
+     }
+ 
+     void ScoreManager::updateUserScore(lev::Proxy *levelProxy, int difficulty, 
+@@ -598,7 +645,7 @@
+         if (!hasValidUserId) {
+             finishUserId(std::time(NULL) &amp; 0xFFFF);
+         }
+-        
++
+         DOMElement * level = getCreateLevel(levelProxy);
+         
+         // get the current newest scoreversion of the level - it exists now
+@@ -673,13 +720,13 @@
+             } else if (score &lt; score2) {
+                 // score better than previous second best score
+                 if (rel2 &lt;= enigmaRelease) {
++                    // limit score hunt to newest enigma release
+                     score2 = score;
+                     rel2 = enigmaRelease;
+                     score2mod = true;
+                 }
+-            } else if (rel2 &lt; enigmaRelease) {
+-                // we remember the second best score played with the most recent 
+-                // Enigma version
++            } else if (rel2 &lt; TRUSTED_RELEASE) {
++                // we remember the second best score played with a trusted release
+                 score2 = score;
+                 rel2 = enigmaRelease;
+                 score2mod = true;
+@@ -752,7 +799,7 @@
+                     return;  // avoid deleting existing scores
+             }
+             // reset the score to solved but no score value
+-            updateUserScore(levelProxy, difficulty, 99*60+59); // store max possible score
++            updateUserScore(levelProxy, difficulty, SCORE_MAX2); // store max possible score
+             level = getLevel(levelProxy);
+             // check if score is created - it may be NULL if level is not released
+             if (level != NULL &amp;&amp; XMLString::parseInt(level-&gt;getAttribute(
+@@ -769,7 +816,7 @@
+         int size = ind-&gt;size();
+         int num = 0;
+         for (i=0 ; i &lt; size; i++) {
+-            if (isSolved(ind-&gt;getProxy(i),difficulty))
++            if (isSolved(ind-&gt;getProxy(i), difficulty))
+                 num++;
+         }
+         return num;
+@@ -780,7 +827,7 @@
+         int size = ind-&gt;size();
+         int num = 0;
+         for (i=0 ; i &lt; size; i++) {
+-            if (bestScoreReached(ind-&gt;getProxy(i),difficulty))
++            if (bestScoreReached(ind-&gt;getProxy(i), difficulty))
+                 num++;
+         }
+         return num;
+@@ -791,7 +838,7 @@
+         int size = ind-&gt;size();
+         int num = 0;
+         for (i=0 ; i &lt; size; i++) {
+-            if (parScoreReached(ind-&gt;getProxy(i),difficulty))
++            if (parScoreReached(ind-&gt;getProxy(i), difficulty))
+                 num++;
+         }
+         return num;
+
+Modified: trunk/src/lev/ScoreManager.hh
+===================================================================
+--- trunk/src/lev/ScoreManager.hh	2010-05-08 15:58:33 UTC (rev 2073)
++++ trunk/src/lev/ScoreManager.hh	2010-05-08 22:16:18 UTC (rev 2074)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2006 Ronald Lamprecht
++ * Copyright (C) 2006,2007,2008,2009,2010 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -35,11 +35,11 @@
+         SCORE_MAX1 = 99*60+59,
+         SCORE_MAX2 = 32767,   // 9:06'07&quot; (xs:short)
+         SCORE_UNSOLVED  = -1,
+-        SCORE_SOLVED   = -2 
++        SCORE_SOLVED   = -2
+     };
+ 
+     /**
+-     * A singelton manager for user scores.
++     * A singleton manager for user scores.
+      * 
+      * There are 2 small paradigm shifts in 0.92 scores and 1.00 scores:&lt;p&gt;
+      * There is no longer a separate &quot;finished&quot; flag but levels that have
+@@ -61,24 +61,40 @@
+          * in any score version.
+          * @arg difficulty  DIFFICULTY_EASY, DIFFICULTY_HARD, DIFFICULTY_ANY
+          */
+-        bool isSolved(lev::Proxy *levelProxy, int difficulty); 
++        bool isSolved(lev::Proxy *levelProxy, int difficulty);
++
+         /**
+-         * Returns true if the level has only been solved for the given difficulty
+-         * in an outdated score version.
++         * Returns true when the level has only been solved for the given difficulty
++         * in an obsolete level score version.
+          * @arg difficulty  DIFFICULTY_EASY, DIFFICULTY_HARD
+          */
+         bool isObsolete(lev::Proxy *levelProxy, int difficulty);
++
+         /**
++         * Reports whether the score played for this level is out dated.
++         * The score is out dated, when the level has not been solved with
++         * an Enigma release, that is assured to be trusted by the upcoming
++         * next release. In other words the user should replay this level
++         * to avoid this level no longer being counted solved with the next
++         * Enigma release.
++         * @arg difficulty  DIFFICULTY_EASY, DIFFICULTY_HARD
+          */
+         bool isOutdated(lev::Proxy *levelProxy, int difficulty);
++
+         /**
++         * Reports the best trusted score that the user played for the given
++         * level in its score release.
+          */
+         int getBestUserScore(lev::Proxy *levelProxy, int difficulty);
++
+         /**
+-         * 
++         * Update the saved score of the given level with a new value. The score may
++         * either be stored as best ever score or as best score with recent Enigma version
++         * depending on prior values.
+          */
+         void updateUserScore(lev::Proxy *levelProxy, int difficulty, int score,
+                 double enigmaRelease = app.getEnigmaVersion());
++
+         /**
+          * Returns true if the users best score is equal or better than the
+          * official best score for the given difficulty
+
+Modified: trunk/src/main.hh
+===================================================================
+--- trunk/src/main.hh	2010-05-08 15:58:33 UTC (rev 2073)
++++ trunk/src/main.hh	2010-05-08 22:16:18 UTC (rev 2074)
+@@ -23,6 +23,8 @@
+ #define ENIGMACOMPATIBITLITY 1.10
+ #define PREFFILENAME &quot;enigmarc.xml&quot;
+ #define RATINGSFILENAME &quot;ratings.xml&quot;
++#define TRUSTED_RELEASE 0.92
++#define ASSURED_RELEASE 1.00
+ 
+ #include &quot;file.hh&quot;
+ #include &quot;PreferenceManager.hh&quot;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001497.html">[Enigma-game-svn] r2073 - in trunk: data/gfx src/gui src/lev
+</A></li>
+	<LI>Next message: <A HREF="001499.html">[Enigma-game-svn] r2075 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1498">[ date ]</a>
+              <a href="thread.html#1498">[ thread ]</a>
+              <a href="subject.html#1498">[ subject ]</a>
+              <a href="author.html#1498">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

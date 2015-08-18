@@ -1,0 +1,427 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1315 - in trunk: data data/schemas src/items	src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1315%20-%20in%20trunk%3A%20data%20data/schemas%20src/items%0A%09src/stones&In-Reply-To=%3C200809102143.m8ALh1xY003946%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000744.html">
+   <LINK REL="Next"  HREF="000746.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1315 - in trunk: data data/schemas src/items	src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1315%20-%20in%20trunk%3A%20data%20data/schemas%20src/items%0A%09src/stones&In-Reply-To=%3C200809102143.m8ALh1xY003946%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1315 - in trunk: data data/schemas src/items	src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Sep 10 23:43:01 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000744.html">[Enigma-game-svn] r1314 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000746.html">[Enigma-game-svn] r1316 - in trunk: doc src src/floors src/items
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#745">[ date ]</a>
+              <a href="thread.html#745">[ thread ]</a>
+              <a href="subject.html#745">[ subject ]</a>
+              <a href="author.html#745">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-09-10 23:43:00 +0200 (Wed, 10 Sep 2008)
+New Revision: 1315
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/items/Meditation.cc
+   trunk/src/items/RubberbandItem.cc
+   trunk/src/items/ShogunDot.cc
+   trunk/src/items/ShogunDot.hh
+   trunk/src/stones/ShogunStone.cc
+Log:
+Trunk 1.1: 
+- fix rubberband item: drop item on attempt to connect to activating actor
+- old api bridge: map old signal to toggle
+- meditation:
+  - fix old API message &quot;trigger&quot; mapping
+  - make hill and bump areas of meditation, too
+  - message &quot;toggle&quot; transforms CALDERA&lt;-&gt;HILL, HOLLOW&lt;-&gt;VOLCANO
+- shogun: switch from message based stone to dot notification to stone_change
+  based like trigger to decouple dot action from stone impulse event
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-09-08 23:07:19 UTC (rev 1314)
++++ trunk/data/api1init.lua	2008-09-10 21:43:00 UTC (rev 1315)
+@@ -684,6 +684,7 @@
+ 
+ MessageRenaming = {
+     fl_bridge__openclose = &quot;toggle&quot;,
++    fl_bridge__signal = &quot;toggle&quot;,
+     it_blocker__trigger = &quot;toggle&quot;,
+     it_blocker__openclose = &quot;toggle&quot;,
+     [&quot;it-burnable__trigger&quot;] = &quot;ignite&quot;,
+@@ -692,11 +693,8 @@
+     [&quot;it-burnable_fireproof__trigger&quot;] = &quot;ignite&quot;,
+     [&quot;it-burnable_ash__trigger&quot;] = &quot;ignite&quot;,
+     [&quot;it-burnable_oil__trigger&quot;] = &quot;ignite&quot;,
+-    [&quot;it-hill__trigger&quot;] = &quot;flip&quot;,
+-    [&quot;it-hollow__trigger&quot;] = &quot;flip&quot;,
+     it_magnet__onoff = &quot;toggle&quot;,
+-    [&quot;it-tinyhill__trigger&quot;] = &quot;flip&quot;,
+-    [&quot;it-tinyhollow__trigger&quot;] = &quot;flip&quot;,
++    it_medidation__trigger = &quot;flip&quot;,
+     it_vortex__openclose = &quot;toggle&quot;,
+     it_vortex__trigger = &quot;toggle&quot;,
+     it_wormhole__onoff = &quot;toggle&quot;,
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-09-08 23:07:19 UTC (rev 1314)
++++ trunk/data/schemas/objects.xml	2008-09-10 21:43:00 UTC (rev 1315)
+@@ -281,7 +281,6 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;it_shogun&quot;&gt;
+       &lt;attr name=&quot;flavor&quot;/&gt;
+-      &lt;msg name=&quot;_shogun&quot;/&gt;
+       &lt;msg name=&quot;_init&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;it_shogun_s&quot;&gt;
+
+Modified: trunk/src/items/Meditation.cc
+===================================================================
+--- trunk/src/items/Meditation.cc	2008-09-08 23:07:19 UTC (rev 1314)
++++ trunk/src/items/Meditation.cc	2008-09-10 21:43:00 UTC (rev 1315)
+@@ -37,7 +37,7 @@
+         if (key == &quot;essential&quot;) {
+             bool essential = (val == 1);
+             if (essential != (bool)(objFlags &amp; OBJBIT_INDISPENSIBLE)) {
+-                if (isDisplayable() /* &amp;&amp; state != HILL &amp;&amp; state != BUMP */) {
++                if (isDisplayable()) {
+                     if (whiteball != NULL &amp;&amp; enter_time == -1) {   // meditatist is registered
+                         bool indispensable = objFlags &amp; OBJBIT_INDISPENSIBLE;
+                         ChangeMeditation(0, 0, indispensable ? -1 : +1, indispensable ? +1 : -1);
+@@ -83,35 +83,29 @@
+     }
+     
+     void Meditation::toggleState() {
+-        setState(-state);
++        int newState;
++        switch (state) {
++            case CALDERA: newState = HILL; break;
++            case HOLLOW:  newState = VOLCANO; break;
++            case DENT:    newState = BUMP; break;
++            case BUMP:    newState = DENT; break;
++            case HILL:    newState = CALDERA; break;
++            case VOLCANO: newState = HOLLOW; break;
++        }
++        setState(newState);
+     }
+     
+     void Meditation::setState(int extState) {
+         if (extState != state &amp;&amp; extState != 0) {
+-            if (isDisplayable()) {
+-                if (state != HILL &amp;&amp; state != BUMP &amp;&amp; (extState == HILL || extState == BUMP)) {
+-                    // a meditation hole is changed to a hill or bump
+-                    if (whiteball != NULL)
+-                        deregisterWhiteball();
+-//                    if (objFlags &amp; OBJBIT_INDISPENSIBLE)
+-//                        ChangeMeditation(0, -1, 0, 0);
+-                } else if ((state == HILL || state == BUMP) &amp;&amp; extState != HILL &amp;&amp; extState != BUMP) {
+-                    // hill or bump is made a meditation hole
+-                    if (server::WorldInitialized)
+-                        checkActors();
+-//                    if (objFlags &amp; OBJBIT_INDISPENSIBLE)
+-//                        ChangeMeditation(0, +1, 0, 0);
+-                }
+-                
+-                state = extState;
++            state = extState;
++            if (isDisplayable()) {                
+                 init_model();
+-            } else
+-                state = extState;
++            }
+         }
+     }
+         
+     void Meditation::on_creation(GridPos p) {
+-        if (/* state != HILL &amp;&amp; state != BUMP &amp;&amp; */ (objFlags &amp; OBJBIT_INDISPENSIBLE))
++        if (objFlags &amp; OBJBIT_INDISPENSIBLE)
+             ChangeMeditation(0, +1, 0, 0);
+         if (server::WorldInitialized)
+             checkActors();
+@@ -119,7 +113,7 @@
+     }
+     
+     void Meditation::on_removal(GridPos p) {
+-        if (/* state != HILL &amp;&amp; state != BUMP &amp;&amp; */ (objFlags &amp; OBJBIT_INDISPENSIBLE))
++        if (objFlags &amp; OBJBIT_INDISPENSIBLE)
+             ChangeMeditation(0, -1, 0, 0);
+         if (whiteball != NULL)
+             deregisterWhiteball();
+@@ -140,27 +134,26 @@
+         static const double MINTIME = 1.0;
+         ItemID id = get_id(this);
+     
+-        if (state != HILL &amp;&amp; state != BUMP) {
+-            if (whiteball == NULL &amp;&amp; !a-&gt;is_flying() &amp;&amp; get_id(a) == ac_meditation &amp;&amp; isMeditating(a)) {
+-                // meditatist entered a free hollow
+-                whiteball  = a;
+-                enter_time = server::LevelTime;
+-            } else if (whiteball == a) {
+-                if (a-&gt;is_flying() || !isMeditating(a)) {
+-                    // meditatist left hollow
+-                    whiteball = NULL;
+-                    if (enter_time == -1) {   // meditatist is registered
+-                        bool indispensable = objFlags &amp; OBJBIT_INDISPENSIBLE;
+-                        ChangeMeditation(0, 0, indispensable ? -1 : 0, indispensable ? 0 : -1);
+-                    }
+-                } else  if (enter_time != -1 &amp;&amp; (server::LevelTime - enter_time) &gt;= MINTIME) {
+-                        // just meditated enough to mark hollow as engaged
+-                        bool indispensable = objFlags &amp; OBJBIT_INDISPENSIBLE;
+-                        ChangeMeditation(0, 0, indispensable ? +1 : 0, indispensable ? 0 : +1);
+-                        enter_time = -1;  // mark as registered
++        if (whiteball == NULL &amp;&amp; !a-&gt;is_flying() &amp;&amp; get_id(a) == ac_meditation &amp;&amp; isMeditating(a)) {
++            // meditatist entered a free hollow
++            whiteball  = a;
++            enter_time = server::LevelTime;
++        } else if (whiteball == a) {
++            if (a-&gt;is_flying() || !isMeditating(a)) {
++                // meditatist left hollow
++                whiteball = NULL;
++                if (enter_time == -1) {   // meditatist is registered
++                    bool indispensable = objFlags &amp; OBJBIT_INDISPENSIBLE;
++                    ChangeMeditation(0, 0, indispensable ? -1 : 0, indispensable ? 0 : -1);
+                 }
++            } else  if (enter_time != -1 &amp;&amp; (server::LevelTime - enter_time) &gt;= MINTIME) {
++                    // just meditated enough to mark hollow as engaged
++                    bool indispensable = objFlags &amp; OBJBIT_INDISPENSIBLE;
++                    ChangeMeditation(0, 0, indispensable ? +1 : 0, indispensable ? 0 : +1);
++                    enter_time = -1;  // mark as registered
+             }
+         }
++
+         return false;  // do not pick up
+     }
+     
+@@ -189,7 +182,7 @@
+     
+     bool Meditation::isMeditating(Actor *a) {
+         double dist = ecl::length(a-&gt;get_pos() - get_pos().center());
+-        return (state &lt;= HOLLOW) &amp;&amp; dist &lt; 0.4 || (state == DENT || state == VOLCANO) &amp;&amp; dist &lt; 0.24;
++        return dist &lt; 0.24 || ((state &lt;= HOLLOW || state &gt;= HILL) &amp;&amp; dist &lt; 0.4) ;
+     }
+      
+     void Meditation::shovel() {
+@@ -206,18 +199,14 @@
+     
+     void Meditation::checkActors() {
+         ItemID id = get_id(this);
+-        if (state != HILL &amp;&amp; state != BUMP) {
+-            std::vector&lt;Actor*&gt; actors;
+-            GetActorsInsideField(get_pos(), actors);
+-            for (std::vector&lt;Actor*&gt;::iterator itr = actors.begin(); itr != actors.end(); ++itr) {
+-//                Log &lt;&lt; &quot;Hollow - initial meditatist  typ &quot; &lt;&lt; get_id(*itr) &lt;&lt; &quot;\n&quot;;
+-                if (!(*itr)-&gt;is_flying() &amp;&amp;  whiteball==NULL &amp;&amp; get_id(*itr)==ac_meditation &amp;&amp; isMeditating(*itr)) {
+-                     // meditatist entered a free hollow
+-                    whiteball  = *itr;
+-                    enter_time = server::LevelTime;
+-//                    Log &lt;&lt; &quot;Hollow - initial meditatist time &quot; &lt;&lt; enter_time &lt;&lt; &quot;\n&quot;;
+-                    break;
+-                }
++        std::vector&lt;Actor*&gt; actors;
++        GetActorsInsideField(get_pos(), actors);
++        for (std::vector&lt;Actor*&gt;::iterator itr = actors.begin(); itr != actors.end(); ++itr) {
++            if (!(*itr)-&gt;is_flying() &amp;&amp;  whiteball==NULL &amp;&amp; get_id(*itr)==ac_meditation &amp;&amp; isMeditating(*itr)) {
++                 // meditatist entered a free hollow
++                whiteball  = *itr;
++                enter_time = server::LevelTime;
++                break;
+             }
+         }
+     }
+
+Modified: trunk/src/items/RubberbandItem.cc
+===================================================================
+--- trunk/src/items/RubberbandItem.cc	2008-09-08 23:07:19 UTC (rev 1314)
++++ trunk/src/items/RubberbandItem.cc	2008-09-10 21:43:00 UTC (rev 1315)
+@@ -66,9 +66,9 @@
+             AddOther(dynamic_cast&lt;Other *&gt;(obj));
+             transferIdentity(obj);
+             SendMessage(obj, &quot;_performaction&quot;);
+-        }
+-
+-        return ITEM_KILL;
++            return ITEM_KILL;
++        } else
++            return ITEM_DROP;
+     }
+     
+     DEF_ITEMTRAITS(RubberbandItem, &quot;it_rubberband&quot;, it_rubberband);
+
+Modified: trunk/src/items/ShogunDot.cc
+===================================================================
+--- trunk/src/items/ShogunDot.cc	2008-09-08 23:07:19 UTC (rev 1314)
++++ trunk/src/items/ShogunDot.cc	2008-09-10 21:43:00 UTC (rev 1315)
+@@ -71,15 +71,6 @@
+             if (server::EnigmaCompatibility &lt; 1.10 &amp;&amp; state == ON) {
+                 performAction(true);
+             }
+-        } else if (m.message ==&quot;_shogun&quot; &amp;&amp; server::WorldInitialized) {
+-            if (state == OFF &amp;&amp; (requiredShogunHoles() == (int)m.value)) {  
+-                state = ON;
+-                performAction(true);
+-            } else if (state == ON &amp;&amp; (requiredShogunHoles() != (int)m.value)) {
+-                state = OFF;
+-                performAction(false);
+-            }
+-            return Value();
+         }
+         return Item::message(m);
+     }
+@@ -95,6 +86,14 @@
+         Item::on_creation(p);
+     }
+     
++    void ShogunDot::stone_change(Stone *st) {
++        int newState = SendMessage(GetStone(get_pos()), &quot;_shogun&quot;, requiredShogunHoles()).to_bool() ? ON : OFF;
++        if (state != newState ) {  
++            state = newState;
++            performAction(newState == ON);
++        }
++    }
++    
+     int ShogunDot::getHoles() const {
+         return (objFlags &amp; OBJBIT_HOLES) &gt;&gt; 24;
+     }
+
+Modified: trunk/src/items/ShogunDot.hh
+===================================================================
+--- trunk/src/items/ShogunDot.hh	2008-09-08 23:07:19 UTC (rev 1314)
++++ trunk/src/items/ShogunDot.hh	2008-09-10 21:43:00 UTC (rev 1315)
+@@ -54,6 +54,9 @@
+         // GridObject interface
+         virtual void on_creation(GridPos p);
+ 
++        // Item interface
++        virtual void stone_change(Stone *st);
++        
+     private:
+         int getHoles() const;
+         int requiredShogunHoles() const;
+
+Modified: trunk/src/stones/ShogunStone.cc
+===================================================================
+--- trunk/src/stones/ShogunStone.cc	2008-09-08 23:07:19 UTC (rev 1314)
++++ trunk/src/stones/ShogunStone.cc	2008-09-10 21:43:00 UTC (rev 1315)
+@@ -141,11 +141,9 @@
+                 s-&gt;setOwnerPos(p);
+             }
+         }
+-        SendMessage(GetItem(p), &quot;_shogun&quot;, getHoles());
+     }
+     
+     void ShogunStone::on_removal(GridPos p) {
+-        SendMessage(GetItem(p), &quot;_shogun&quot;, 0);
+         if (subShogun != NULL)
+             subShogun-&gt;setOwnerPos(GridPos(-1,-1));
+         Stone::on_removal(p);
+@@ -153,7 +151,6 @@
+ 
+     void ShogunStone::on_impulse(const Impulse&amp; impulse) {
+         static char * soundevent = &quot;movesmall&quot;;
+-        int id = getId();
+         
+         if (!impulse.byWire &amp;&amp; subShogun != NULL) {
+             subShogun-&gt;on_impulse(impulse);
+@@ -179,7 +176,6 @@
+             // then put to new position
+             if (st == NULL) {
+                 SetStone(newPos, this);
+-                SendMessage(GetItem(newPos), &quot;_shogun&quot;, getHoles());
+             } else {
+                 // register our hole to all super shoguns
+                 ShogunStone *s = nss;
+@@ -193,7 +189,7 @@
+ 
+                 nss-&gt;init_model();     // display new hole         
+                 setOwnerPos(newPos);   // the stone is owned at the new position
+-                SendMessage(GetItem(newPos), &quot;_shogun&quot;, nss-&gt;getHoles());
++                TouchStone(newPos);
+             }
+             
+             server::IncMoveCounter();
+@@ -207,8 +203,7 @@
+                 }
+             }
+         }
+-        if (Object::getObject(id) != NULL)   // not killed?
+-            propagateImpulse(impulse);
++        propagateImpulse(impulse);
+     }
+     
+     int ShogunStone::getHoles() const {
+@@ -240,14 +235,12 @@
+     bool ShogunStone::yieldShogun() {
+         if (isDisplayable() &amp;&amp; subShogun == NULL) {
+             YieldStone(get_pos());
+-            SendMessage(GetItem(get_pos()), &quot;_shogun&quot;, 0);
+         } else if (isDisplayable()) {
+             // top most shogun moved by wire or killed
+             GridPos oldPos = get_pos(); 
+             YieldStone(oldPos);
+             subShogun-&gt;superShogun = NULL;
+             SetStone(oldPos, subShogun);
+-            SendMessage(GetItem(oldPos), &quot;_shogun&quot;, subShogun-&gt;getHoles());
+             subShogun = NULL;
+             removeAllSubHoles();
+         } else {
+@@ -262,10 +255,10 @@
+             if (ShogunStone *superSuperShogun = superShogun-&gt;superShogun) {
+                 superSuperShogun-&gt;removeSubHoles(ownHole());
+                 superSuperShogun-&gt;init_model();
+-                SendMessage(GetItem(getOwnerPos()), &quot;_shogun&quot;, superSuperShogun-&gt;getHoles());
++                TouchStone(getOwnerPos());
+             } else
+                 superShogun-&gt;init_model();
+-                SendMessage(GetItem(getOwnerPos()), &quot;_shogun&quot;, superShogun-&gt;getHoles());
++                TouchStone(getOwnerPos());
+             if (subShogun != NULL) subShogun-&gt;superShogun = superShogun;
+             superShogun = NULL;
+             subShogun = NULL;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000744.html">[Enigma-game-svn] r1314 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000746.html">[Enigma-game-svn] r1316 - in trunk: doc src src/floors src/items
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#745">[ date ]</a>
+              <a href="thread.html#745">[ thread ]</a>
+              <a href="subject.html#745">[ subject ]</a>
+              <a href="author.html#745">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

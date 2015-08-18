@@ -1,0 +1,150 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r565 - in branches/1.0/src: . lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r565%20-%20in%20branches/1.0/src%3A%20.%20lev&In-Reply-To=%3C200701042105.l04L5pDq024878%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000004.html">
+   <LINK REL="Next"  HREF="000006.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r565 - in branches/1.0/src: . lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r565%20-%20in%20branches/1.0/src%3A%20.%20lev&In-Reply-To=%3C200701042105.l04L5pDq024878%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r565 - in branches/1.0/src: . lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Jan  4 22:05:51 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000004.html">[Enigma-game-svn] r562 - branches/1.0/data
+</A></li>
+        <LI>Next message: <A HREF="000006.html">[Enigma-game-svn] r566 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5">[ date ]</a>
+              <a href="thread.html#5">[ thread ]</a>
+              <a href="subject.html#5">[ subject ]</a>
+              <a href="author.html#5">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-01-04 22:05:50 +0100 (Thu, 04 Jan 2007)
+New Revision: 565
+
+Modified:
+   branches/1.0/src/lev/Proxy.cc
+   branches/1.0/src/server.cc
+   branches/1.0/src/server.hh
+Log:
+Fixes:
+- set engine compatibility on first load of a level correctly to values besides
+  &quot;enigma&quot; (&quot;Prepare your Defense&quot; bug)
+
+
+Modified: branches/1.0/src/lev/Proxy.cc
+===================================================================
+--- branches/1.0/src/lev/Proxy.cc	2007-01-03 22:17:13 UTC (rev 564)
++++ branches/1.0/src/lev/Proxy.cc	2007-01-04 21:05:50 UTC (rev 565)
+@@ -25,6 +25,7 @@
+ #include &quot;main.hh&quot;
+ #include &quot;nls.hh&quot;
+ #include &quot;oxyd_internal.hh&quot;
++#include &quot;server.hh&quot;
+ #include &quot;utilXML.hh&quot;
+ #include &quot;Utf8ToXML.hh&quot;
+ #include &quot;XMLtoUtf8.hh&quot;
+@@ -613,6 +614,7 @@
+         if (getEnigmaCompatibility() &gt; ENIGMACOMPATIBITLITY)
+             throw XLevelLoading(ecl::strf(&quot;Level is incompatible: %s requires Enigma %.2f or above&quot;, 
+                     absLevelPath.c_str(), getEnigmaCompatibility()));
++        server::SetCompatibility(this);
+         processDependencies();
+         loadLuaCode();
+     }
+
+Modified: branches/1.0/src/server.cc
+===================================================================
+--- branches/1.0/src/server.cc	2007-01-03 22:17:13 UTC (rev 564)
++++ branches/1.0/src/server.cc	2007-01-04 21:05:50 UTC (rev 565)
+@@ -118,19 +118,11 @@
+     server::PrepareLevel();
+ 
+     try {
+-        // first set default compatibility mode
+-        // (may be overidden by load_level (from Lua))
+-        server::GameCompatibility = levelProxy-&gt;getEngineCompatibility();
+-        if (server::GameCompatibility == GAMET_UNKNOWN)
+-            // use default Comopatibility
+-            // server::GameCompatibility = GAMET_ENIGMA;
+-            throw XLevelLoading(&quot;unknown engine compatibility&quot;);
+-        
+         // clear inventory before level load and give us 2 extralives
+         player::NewGame(isRestart);
+ 
+-        levelProxy-&gt;loadLevel();
+-//            server::CurrentLevel = static_cast&lt;unsigned&gt; (ilevel);
++        levelProxy-&gt;loadLevel();  // sets the compatibility mode
++
+         game::ResetGameTimer();
+ 
+         world::InitWorld();
+@@ -563,6 +555,11 @@
+     GameCompatibility = type;
+ }
+ 
++void server::SetCompatibility(lev::Proxy *levelProxy) {
++    server::GameCompatibility = levelProxy-&gt;getEngineCompatibility();
++    if (server::GameCompatibility == GAMET_UNKNOWN)
++        throw XLevelLoading(&quot;unknown engine compatibility&quot;);
++}
+ 
+ enigma::Difficulty server::GetDifficulty()
+ {
+
+Modified: branches/1.0/src/server.hh
+===================================================================
+--- branches/1.0/src/server.hh	2007-01-03 22:17:13 UTC (rev 564)
++++ branches/1.0/src/server.hh	2007-01-04 21:05:50 UTC (rev 565)
+@@ -128,7 +128,8 @@
+     void FinishLevel();
+ 
+     void SetCompatibility(const char *version); // set compatibility (from lua)
+-
++    void SetCompatibility(lev::Proxy *levelProxy); // set compatibility from xml
++    
+     enigma::Difficulty GetDifficulty();
+ 
+     // move counter
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000004.html">[Enigma-game-svn] r562 - branches/1.0/data
+</A></li>
+	<LI>Next message: <A HREF="000006.html">[Enigma-game-svn] r566 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5">[ date ]</a>
+              <a href="thread.html#5">[ thread ]</a>
+              <a href="subject.html#5">[ subject ]</a>
+              <a href="author.html#5">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

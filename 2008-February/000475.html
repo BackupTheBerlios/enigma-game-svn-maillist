@@ -1,0 +1,470 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1043 - in trunk: data data/schemas src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1043%20-%20in%20trunk%3A%20data%20data/schemas%20src&In-Reply-To=%3C200802202315.m1KNFS4l030220%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000474.html">
+   <LINK REL="Next"  HREF="000476.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1043 - in trunk: data data/schemas src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1043%20-%20in%20trunk%3A%20data%20data/schemas%20src&In-Reply-To=%3C200802202315.m1KNFS4l030220%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1043 - in trunk: data data/schemas src">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Feb 21 00:15:28 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000474.html">[Enigma-game-svn] r1042 - in trunk: data src src/lev
+</A></li>
+        <LI>Next message: <A HREF="000476.html">[Enigma-game-svn] r1044 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#475">[ date ]</a>
+              <a href="thread.html#475">[ thread ]</a>
+              <a href="subject.html#475">[ subject ]</a>
+              <a href="author.html#475">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-02-21 00:15:27 +0100 (Thu, 21 Feb 2008)
+New Revision: 1043
+
+Modified:
+   trunk/data/Makefile.am
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/data/schemas/objects.xsd
+   trunk/src/items.cc
+   trunk/src/lua.cc
+   trunk/src/world.cc
+   trunk/src/world.hh
+   trunk/src/world_internal.hh
+Log:
+Trunk 1.1: new API reengineering magnet
+- rename it-magnet to it_magnet
+- magnet as StateObject - on,off,signal,toggle,state support
+- magnet as direct multiinherited ForceField instead of FF helper object
+- magnet range and strength can be reset during the game
+- magnet slight performance optimization
+- abolish ConstantForce object
+- fix r1042 compile problems due to missing data/Makefile.am changes
+- use classname for methodmapping in api1init - no more need to list all subkinds
+
+
+Modified: trunk/data/Makefile.am
+===================================================================
+--- trunk/data/Makefile.am	2008-02-19 23:34:47 UTC (rev 1042)
++++ trunk/data/Makefile.am	2008-02-20 23:15:27 UTC (rev 1043)
+@@ -1,6 +1,8 @@
+-SUBDIRS = gfx fonts schemas levels sound soundsets gfx16 gfx32 gfx40 gfx48 
++SUBDIRS = gfx fonts schemas levels sound soundsets gfx16 gfx32 gfx40 gfx48 gfx64
+ 
+ pkgdata_DATA = \
++	api1init.lua \
++	api2init.lua \
+ 	enigma_conf.lua \
+ 	models.lua \
+ 	models-2d.lua \
+@@ -10,7 +12,6 @@
+ 	models-32.lua \
+ 	models-40.lua \
+ 	models-48.lua \
+-	init.lua \
+ 	startup.lua \
+ 	sound-defaults.lua \
+ 	compat.lua \
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-02-19 23:34:47 UTC (rev 1042)
++++ trunk/data/api1init.lua	2008-02-20 23:15:27 UTC (rev 1043)
+@@ -47,6 +47,9 @@
+ RenamingObjectsNew2Old = {
+     it_blocker = &quot;it-blocker&quot;,
+     it_blocker_new = &quot;it-blocker-new&quot;,
++    it_magnet = &quot;it-magnet&quot;,
++    it_magnet_on = &quot;it-magnet-on&quot;,
++    it_magnet_off = &quot;it-magnet-off&quot;,
+     it_trigger = &quot;it-trigger&quot;,
+     st_blocker = &quot;st-blocker&quot;,
+     st_blocker_new = &quot;st-blocker-growing&quot;,
+@@ -135,7 +138,9 @@
+      end
+      if (_obj_name == &quot;st-switch&quot;) or (_obj_name == &quot;st-switch_black&quot;)
+              or (_obj_name == &quot;st-switch_white&quot;) 
+-             or (_obj_name == &quot;st-floppy&quot;) then
++             or (_obj_name == &quot;st-floppy&quot;) 
++             or (_obj_name == &quot;it-magnet&quot;) or (_obj_name == &quot;it-magnet-on&quot;)
++             or (_obj_name == &quot;it-magnet-off&quot;) then
+          if key == &quot;on&quot; then
+ 	     _key = &quot;state&quot;   -- new attr name
+ 	 end
+@@ -190,7 +195,9 @@
+      local _obj_name = enigma.GetKind(obj)
+      if (_obj_name == &quot;st-switch&quot;) or (_obj_name == &quot;st-switch_black&quot;)
+              or (_obj_name == &quot;st-switch_white&quot;) 
+-             or (_obj_name == &quot;st-floppy&quot;) then
++             or (_obj_name == &quot;st-floppy&quot;)
++             or (_obj_name == &quot;it-magnet&quot;) or (_obj_name == &quot;it-magnet-on&quot;)
++             or (_obj_name == &quot;it-magnet-off&quot;) then
+          if key == &quot;on&quot; then
+ 	     _key = &quot;state&quot;
+ 	     end
+@@ -255,6 +262,7 @@
+     [&quot;it-burnable_oil__trigger&quot;] = &quot;ignite&quot;,
+     [&quot;it-hill__trigger&quot;] = &quot;flip&quot;,
+     [&quot;it-hollow__trigger&quot;] = &quot;flip&quot;,
++    it_magnet__onoff = &quot;toggle&quot;,
+     [&quot;it-tinyhill__trigger&quot;] = &quot;flip&quot;,
+     [&quot;it-tinyhollow__trigger&quot;] = &quot;flip&quot;,
+     [&quot;it-vortex-open__trigger&quot;] = &quot;toggle&quot;,
+@@ -281,9 +289,7 @@
+     [&quot;st-oxyd__trigger&quot;] = &quot;toggle&quot;,
+     [&quot;st-plain__trigger&quot;] = &quot;signal&quot;,
+     [&quot;st-plain_hole__trigger&quot;] = &quot;signal&quot;,
+-    st_switch_instant__onoff = &quot;toggle&quot;,
+-    st_switch_black_instant__onoff = &quot;toggle&quot;,
+-    st_switch_white_instant__onoff = &quot;toggle&quot;,
++    st_switch__onoff = &quot;toggle&quot;,
+     [&quot;st-volcano__trigger&quot;] = &quot;toggle&quot;,
+     [&quot;st-white1__trigger&quot;] = &quot;signal&quot;,
+     [&quot;st-white2__trigger&quot;] = &quot;signal&quot;,
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-02-19 23:34:47 UTC (rev 1042)
++++ trunk/data/schemas/objects.xml	2008-02-20 23:15:27 UTC (rev 1043)
+@@ -7,7 +7,9 @@
+     &lt;attr name=&quot;counterclock&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;inverse&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;name&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;range&quot; type=&quot;double&quot; default=&quot;1.0&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;state&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;1&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;strength&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;target&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+   &lt;/attributes&gt;
+   &lt;messages&gt;
+@@ -52,6 +54,19 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;it_blocker_new&quot; init=&quot;true&quot;&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;it_magnet&quot;&gt;
++      &lt;attr name=&quot;range&quot; default=&quot;nil&quot;/&gt;
++      &lt;attr name=&quot;strength&quot; default=&quot;nil&quot;/&gt;
++      &lt;msg name=&quot;on&quot;/&gt;
++      &lt;msg name=&quot;off&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_magnet_off&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;0&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_magnet_on&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;1&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st&quot; abstract=&quot;true&quot;/&gt;
+     &lt;object name=&quot;st_blocker&quot;&gt;
+       &lt;attr name=&quot;autoclose&quot;/&gt;
+
+Modified: trunk/data/schemas/objects.xsd
+===================================================================
+--- trunk/data/schemas/objects.xsd	2008-02-19 23:34:47 UTC (rev 1042)
++++ trunk/data/schemas/objects.xsd	2008-02-20 23:15:27 UTC (rev 1043)
+@@ -23,8 +23,8 @@
+                   &lt;xs:attribute name=&quot;name&quot; type=&quot;xs:string&quot; use=&quot;required&quot;/&gt;
+                   &lt;xs:attribute name=&quot;type&quot; type=&quot;valueType&quot; use=&quot;required&quot;/&gt;
+                   &lt;xs:attribute name=&quot;default&quot; type=&quot;xs:string&quot; use=&quot;required&quot;/&gt;
+-                  &lt;xs:attribute name=&quot;min&quot; type=&quot;xs:string&quot; use=&quot;optional&quot;/&gt;
+-                  &lt;xs:attribute name=&quot;max&quot; type=&quot;xs:string&quot; use=&quot;optional&quot;/&gt;
++                  &lt;xs:attribute name=&quot;min&quot; type=&quot;xs:string&quot; use=&quot;optional&quot; default=&quot;0&quot;/&gt;
++                  &lt;xs:attribute name=&quot;max&quot; type=&quot;xs:string&quot; use=&quot;optional&quot; default=&quot;1&quot;/&gt;
+                   &lt;xs:attribute name=&quot;rw&quot; type=&quot;xs:string&quot; use=&quot;required&quot;/&gt;
+                   &lt;xs:anyAttribute namespace=&quot;##targetNamespace&quot; processContents=&quot;skip&quot;/&gt;
+                 &lt;/xs:complexType&gt;
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-02-19 23:34:47 UTC (rev 1042)
++++ trunk/src/items.cc	2008-02-20 23:15:27 UTC (rev 1043)
+@@ -1626,72 +1626,87 @@
+ 
+ 
+ /* -------------------- Magnet -------------------- */
+-namespace
+-{
+-    class Magnet : public OnOffItem {
+-        class Magnet_FF : public ForceField {
+-        public:
+-            Magnet_FF()
+-            : m_active(false), strength(30), range(1000)
+-            {}
+ 
+-            void set_pos(GridPos p) { center = p.center(); }
+-            void set_range(double r) { range = r; }
+-            void set_strength(double s) { strength = s; }
++    class Magnet : public Item, public ForceField {
++    private:
++        enum iState {
++            OFF,
++            ON
++        };
++       
++    public:
++        CLONEOBJ(Magnet);
++        DECL_TRAITS_ARRAY(2, state);
+ 
+-            void add_force(Actor *a, V2 &amp;f) {
+-                if (m_active) {
+-                    V2 dv = center - a-&gt;get_pos_force();
+-                    double dist = length(dv);
++        Magnet(bool onoff);
++        
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const std::string &amp;key, const Value &amp;val);
+ 
+-                    if (dist &gt;= 0.2 &amp;&amp; dist &lt; range)
+-                        f += 0.6* strength * dv / (dist*dist);
+-                }
+-            }
++        // GridObject interface
++        virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
++        virtual void init_model();
+ 
+-            bool   m_active;
+-            V2     center;
+-            double strength;
+-            double range;
+-        };
+-
+-        CLONEOBJ(Magnet);
+-        DECL_TRAITS_ARRAY(2, is_on());
+-    public:
+-        Magnet(bool onoff) : OnOffItem (onoff) {
+-        }
++        // ForceField interface
++        virtual void add_force(Actor *a, V2 &amp;f);
++        
+     private:
+-        void on_creation (GridPos p) {
+-            double range = getDefaultedAttr(&quot;range&quot;, server::MagnetRange);
+-            double strength = getDefaultedAttr(&quot;strength&quot;, server::MagnetForce);
++        double correctedStrength;     // 0.6 * strength
++        double squareRange;
++    };
++    
++    Magnet::Magnet(bool isOn) : Item(), correctedStrength (0.6 * 30), squareRange (1000 * 1000) {
++        state = isOn ? ON : OFF;
++    }
+ 
+-            ff.m_active = is_on();
+-            ff.set_pos (p);
+-	        ff.set_range (range);
+-	        ff.set_strength (strength);
++    std::string Magnet::getClass() const {
++        return &quot;it_magnet&quot;;
++    }
++    
++    void Magnet::setAttr(const std::string &amp;key, const Value &amp;val) {
++        if (key == &quot;range&quot;) {
++            double range = (val.getType() == Value::NIL) ? server::MagnetRange : (double)val;
++            squareRange = range * range;
++        } else if (key == &quot;strength&quot;) {
++            correctedStrength = 0.6 * ((val.getType() == Value::NIL) ? server::MagnetForce : (double)val);
++        } else
++            Item::setAttr(key, val);
++    }
++    
++    void Magnet::init_model() {
++        set_model(ecl::strf(&quot;it-magnet%s&quot;, state == ON ? &quot;-on&quot; : &quot;-off&quot;));
++    }
++    
++    void Magnet::on_creation(GridPos p) {
++        double range = getDefaultedAttr(&quot;range&quot;, server::MagnetRange);
++        squareRange = range * range;
++        correctedStrength = 0.6 * (double)getDefaultedAttr(&quot;strength&quot;, server::MagnetForce);
+ 
+-            AddForceField(&amp;ff);
+-            Item::on_creation (p);
+-        }
+-        
+-        void on_removal (GridPos p) {
+-            Item::on_removal(p);
+-            RemoveForceField(&amp;ff);
+-        }
++        AddForceField(this);
++        Item::on_creation(p);
++    }
++    
++    void Magnet::on_removal(GridPos p) {
++        Item::on_removal(p);
++        RemoveForceField(this);
++    }
++    
++    void Magnet::add_force(Actor *a, V2 &amp;f) {
++        if (state == ON) {
++            V2 dv = get_pos().center() - a-&gt;get_pos_force();
++            double squareDist = square(dv);
+ 
+-        virtual void notify_onoff(bool on) {
+-            ff.m_active = on;
++            if (squareDist &gt;= 0.04 &amp;&amp; squareDist &lt; squareRange)
++                f += (correctedStrength / squareDist) * dv;
+         }
+-
+-
+-        Magnet_FF ff;
+-    };
+-
++    }
++    
+     ItemTraits Magnet::traits[2] = {
+-        { &quot;it-magnet-off&quot;, it_magnet_off, itf_static | itf_indestructible, 0.0 },
+-        { &quot;it-magnet-on&quot;,  it_magnet_on,  itf_static | itf_indestructible, 0.0 },
++        { &quot;it_magnet_off&quot;, it_magnet_off, itf_static | itf_indestructible, 0.0 },
++        { &quot;it_magnet_on&quot;,  it_magnet_on,  itf_static | itf_indestructible, 0.0 },
+     };
+-}
+ 
+ 
+ /* -------------------- Wormhole -------------------- */
+@@ -1783,7 +1798,7 @@
+ 
+         V2 vec_to_center (V2 v) {return v-get_pos().center();}
+         bool near_center_p (Actor *a) {
+-            return (length(vec_to_center(a-&gt;get_pos())) &lt; 0.5/4);
++            return (length(vec_to_center(a-&gt;get_pos())) &lt; 0.5/4);   // TODO use square!
+         }
+         bool get_target (V2 &amp;targetpos);
+ 
+@@ -3787,9 +3802,9 @@
+     RegisterItem (new Key(Key::KEY3));
+     RegisterItem (new Landmine);
+     RegisterItem (new MagicWand);
+-    Register (&quot;it-magnet&quot;, new Magnet (false));
+-    RegisterItem (new Magnet (true));
+-    RegisterItem (new Magnet (false));
++    Register (&quot;it_magnet&quot;, new Magnet(false));
++    RegisterItem (new Magnet(true));
++    RegisterItem (new Magnet(false));
+     RegisterItem (new Odometer);
+     RegisterItem (new OnePKillStone);
+     RegisterItem (new OxydBridge);
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-02-19 23:34:47 UTC (rev 1042)
++++ trunk/src/lua.cc	2008-02-20 23:15:27 UTC (rev 1043)
+@@ -74,7 +74,6 @@
+ using enigma::GridPos;
+ using enigma::Object;
+ using enigma::GridObject;
+-using enigma::ForceField;
+ using enigma::WorldProxy;
+ 
+ namespace enigma { namespace lua {
+@@ -2703,7 +2702,7 @@
+     std::string result;
+     lua_getglobal(L, &quot;MessageRenaming&quot;);
+     if (lua_istable(L, -1)) {
+-        lua_pushstring(L, ecl::strf(&quot;%s__%s&quot;, obj-&gt;get_kind(), message.c_str()).c_str());
++        lua_pushstring(L, ecl::strf(&quot;%s__%s&quot;, obj-&gt;getClass().c_str(), message.c_str()).c_str());
+         lua_gettable(L, -2);
+         if (!lua_isnil(L, -1))
+             result = lua_tostring(L, -1);
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-02-19 23:34:47 UTC (rev 1042)
++++ trunk/src/world.cc	2008-02-20 23:15:27 UTC (rev 1043)
+@@ -530,7 +530,7 @@
+     if (a-&gt;is_on_floor()) {
+         if (Floor *floor = a-&gt;m_actorinfo.field-&gt;floor) {
+             // Constant force
+-            m_flatforce.add_force(a, f);
++            f += flatForce;
+ 
+             // Mouse force
+             add_mouseforce (a, floor, f);
+@@ -1671,7 +1671,7 @@
+ }
+ 
+ void SetConstantForce (V2 force) {
+-    level-&gt;m_flatforce.set_force(force);
++    level-&gt;flatForce = force;
+ }
+ 
+ 
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2008-02-19 23:34:47 UTC (rev 1042)
++++ trunk/src/world.hh	2008-02-20 23:15:27 UTC (rev 1043)
+@@ -117,16 +117,6 @@
+         virtual void tick(double /*dtime*/) {}
+     };
+ 
+-    class ConstantForce : public ForceField {
+-    public:
+-        ConstantForce(V2 f=V2()) : force(f) {}
+-        void add_force(Actor * /*a*/, V2 &amp;f) {
+-            f += force;
+-        }
+-        void set_force (const V2 &amp;force_) { force = force_; }
+-    private:
+-        V2 force;
+-    };
+ 
+ //----------------------------------------------------------------------
+ // GLOBAL VARIABLES
+
+Modified: trunk/src/world_internal.hh
+===================================================================
+--- trunk/src/world_internal.hh	2008-02-19 23:34:47 UTC (rev 1042)
++++ trunk/src/world_internal.hh	2008-02-20 23:15:27 UTC (rev 1043)
+@@ -336,9 +336,8 @@
+         Actor               *leftmost_actor;   // sorted double linked list of actors
+         Actor               *rightmost_actor;  
+         vector&lt;RubberBand *&gt; m_rubberbands;
+-//        SignalList           m_signals;
+         MouseForce           m_mouseforce;
+-        ConstantForce        m_flatforce;
++        V2                   flatForce;
+         int                  scrambleIntensity;
+         int                  numMeditatists; 
+         int                  indispensableHollows;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000474.html">[Enigma-game-svn] r1042 - in trunk: data src src/lev
+</A></li>
+	<LI>Next message: <A HREF="000476.html">[Enigma-game-svn] r1044 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#475">[ date ]</a>
+              <a href="thread.html#475">[ thread ]</a>
+              <a href="subject.html#475">[ subject ]</a>
+              <a href="author.html#475">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,290 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r566 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r566%20-%20trunk/src&In-Reply-To=%3C200701042311.l04NB4n4012633%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000005.html">
+   <LINK REL="Next"  HREF="000007.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r566 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r566%20-%20trunk/src&In-Reply-To=%3C200701042311.l04NB4n4012633%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r566 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Fri Jan  5 00:11:04 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000005.html">[Enigma-game-svn] r565 - in branches/1.0/src: . lev
+</A></li>
+        <LI>Next message: <A HREF="000007.html">[Enigma-game-svn] r567 - in branches/1.0/data/levels: enigma_cross	enigma_i enigma_iii enigma_iv enigma_tutorial enigma_v enigma_vi
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6">[ date ]</a>
+              <a href="thread.html#6">[ thread ]</a>
+              <a href="subject.html#6">[ subject ]</a>
+              <a href="author.html#6">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-01-05 00:11:03 +0100 (Fri, 05 Jan 2007)
+New Revision: 566
+
+Modified:
+   trunk/src/d_engine.hh
+   trunk/src/display.cc
+Log:
+Performance tuning VI:
+- speedup sprite display by a factor of 4 - 7 by keeping them partially sorted
+Note:
+- sprite shadow draw is even more improved
+- the n^2 dependency is substituted by a worst case n^(3/2) algorithm 
+- wolf among 186 sheep is playable on a 2.6 GHz Pentium with 25 - 60 fps
+  (we started with 1 - 2 fps)
+- this patch is not yet cleaned up - the sprites are drawn in a unstable order,
+  jumping marbles may switch from frame to frame in stack sequence
+
+
+Modified: trunk/src/d_engine.hh
+===================================================================
+--- trunk/src/d_engine.hh	2007-01-04 21:05:50 UTC (rev 565)
++++ trunk/src/d_engine.hh	2007-01-04 23:11:03 UTC (rev 566)
+@@ -198,11 +198,15 @@
+         SpriteLayer  layer;
+         bool         visible;
+         bool         mayNeedRedraw;
++        Sprite *     above[3];
++        Sprite *     beneath[3];
+ 
+         Sprite (const V2 &amp; p, SpriteLayer l, Model *m)
+         : model(m), pos(p), layer(l), visible(true), mayNeedRedraw(false)
+         {
+             screenpos[0] = screenpos[1] = 0;
++            above[0] = above[1] = above[2] = NULL;
++            beneath[0] = beneath[1] = beneath[2] = NULL;
+         }
+         ~Sprite() { delete model; }
+     };
+@@ -225,8 +229,8 @@
+         void move_sprite (SpriteId, const ecl::V2&amp; newpos);
+         void replace_sprite (SpriteId id, Model *m);
+ 
+-        void redraw_sprite_region (SpriteId id);
+-        void draw_sprites (bool shades, ecl::GC &amp;gc);
++        void redraw_sprite_region (SpriteId id, bool is_add);
++        void draw_sprites (bool shades, ecl::GC &amp;gc, const WorldArea &amp;a);
+ 
+         Model *get_model (SpriteId id) { return sprites[id]-&gt;model; }
+ 
+@@ -236,6 +240,7 @@
+ 
+         static const SpriteId MAGIC_SPRITEID = 1000000;
+         SpriteList sprites;
++        SpriteList bottomSprites; // bottom sprite for each x
+ 
+     private:
+         // ModelLayer interface
+
+Modified: trunk/src/display.cc
+===================================================================
+--- trunk/src/display.cc	2007-01-04 21:05:50 UTC (rev 565)
++++ trunk/src/display.cc	2007-01-04 23:11:03 UTC (rev 566)
+@@ -878,6 +878,8 @@
+     ModelLayer::new_world (w,h);
+     delete_sequence (sprites.begin(), sprites.end());
+     sprites.clear();
++    Sprite *dummy = NULL;
++    bottomSprites.assign(w, dummy);
+     numsprites = 0;
+ }
+ 
+@@ -890,13 +892,13 @@
+ 
+     if (newx != sprite-&gt;screenpos[0] || newy != sprite-&gt;screenpos[1] ||
+             sprite-&gt;mayNeedRedraw ) {
+-        redraw_sprite_region(id); // make sure old sprite is removed
++        redraw_sprite_region(id, false); // make sure old sprite is removed
+         sprite-&gt;pos = newpos;
+         sprite-&gt;screenpos[0] = newx;
+         sprite-&gt;screenpos[1] = newy;
+         if (Anim2d* anim = dynamic_cast&lt;Anim2d*&gt;(sprite-&gt;model))
+             anim-&gt;move (newx, newy);
+-        redraw_sprite_region(id); // draw new sprite
++        redraw_sprite_region(id, true); // draw new sprite
+     }
+ }
+ 
+@@ -923,7 +925,7 @@
+     get_engine()-&gt;world_to_video (sprite-&gt;pos, &amp;sprite-&gt;screenpos[0], &amp;sprite-&gt;screenpos[1]);
+     if (Model *m = sprite-&gt;model)
+         m-&gt;expose (this, sprite-&gt;screenpos[0], sprite-&gt;screenpos[1]);
+-    redraw_sprite_region(id);
++    redraw_sprite_region(id, true);
+     numsprites += 1;
+     return id;
+ }
+@@ -931,20 +933,20 @@
+ void DL_Sprites::replace_sprite (SpriteId id, Model *m) {
+     Sprite *sprite = sprites[id];
+     if (Model *old = sprite-&gt;model) {
+-        redraw_sprite_region(id);
++        redraw_sprite_region(id, false);
+         old-&gt;remove (this);
+         delete old;
+     }
+     sprite-&gt;model = m;
+     if (m) {
+         m-&gt;expose (this, sprite-&gt;screenpos[0], sprite-&gt;screenpos[1]);
+-        redraw_sprite_region(id);
++        redraw_sprite_region(id, true);
+     }
+ }
+ 
+ void DL_Sprites::kill_sprite (SpriteId id) {
+     if (Sprite *sprite = sprites[id]) {
+-        redraw_sprite_region(id);
++        redraw_sprite_region(id, false);
+         if (Model *m = sprite-&gt;model) {
+             m-&gt;remove (this);
+         }
+@@ -958,22 +960,28 @@
+ {
+     DisplayEngine *engine = get_engine();
+     clip (gc, intersect (engine-&gt;get_area(), engine-&gt;world_to_screen(a)));
+-    draw_sprites (false, gc);
++    draw_sprites (false, gc, a);
+ }
+ 
+ 
+-void DL_Sprites::draw_sprites (bool drawshadowp, GC &amp;gc) {
++void DL_Sprites::draw_sprites (bool drawshadowp, GC &amp;gc, const WorldArea &amp;a) {
+     SpriteList &amp;sl = sprites;
+ 
+-    for (unsigned i=0, sl_size=sl.size() ; i&lt;sl_size; ++i) {
+-        Sprite *s = sl[i];
+-        if (s &amp;&amp; s-&gt;model &amp;&amp; s-&gt;visible) {
+-            int sx, sy;
+-            get_engine()-&gt;world_to_screen(s-&gt;pos, &amp;sx, &amp;sy);
+-            if (drawshadowp)
+-                s-&gt;model-&gt;draw_shadow(gc, sx, sy);
+-            else
+-                s-&gt;model-&gt;draw(gc, sx, sy);
++//    for (unsigned i=0, sl_size=sl.size() ; i&lt;sl_size; ++i) {
++//        Sprite *s = sl[i];
++    int gx = a.x;
++    for (int i = 0; i &lt; a.w; i++, gx++) {
++        int m = gx%3;
++        Sprite *s = bottomSprites[gx];
++        for ( ; s != NULL; s = s-&gt;above[m]) {
++            if (s &amp;&amp; s-&gt;model &amp;&amp; s-&gt;visible) {
++                int sx, sy;
++                get_engine()-&gt;world_to_screen(s-&gt;pos, &amp;sx, &amp;sy);
++                if (drawshadowp)
++                    s-&gt;model-&gt;draw_shadow(gc, sx, sy);
++                else
++                    s-&gt;model-&gt;draw(gc, sx, sy);
++            }
+         }
+     }
+ }
+@@ -983,7 +991,7 @@
+ //     draw_sprites (false, gc);
+ }
+ 
+-void DL_Sprites::redraw_sprite_region (SpriteId id) 
++void DL_Sprites::redraw_sprite_region (SpriteId id, bool is_add) 
+ {
+     Sprite *s = sprites[id];
+     if (s &amp;&amp; s-&gt;model) {
+@@ -994,6 +1002,33 @@
+         DisplayEngine *e = get_engine();
+         e-&gt;video_to_world (r, redrawr);
+         e-&gt;mark_redraw_area (redrawr);
++        
++        int x = redrawr.x;
++        for (int i = 0; i &lt; redrawr.w; i++, x++) {
++            if (x &gt;= 0 &amp;&amp; x &lt; e-&gt;get_width()) {
++                int m = x%3;
++                if (is_add) {
++                    if (bottomSprites[x] != NULL)
++                        bottomSprites[x]-&gt;beneath[m] = s;
++                    s-&gt;above[m] = bottomSprites[x];
++                    s-&gt;beneath[m] = NULL;
++                    bottomSprites[x] = s;
++                } else {  // remove
++                    if (bottomSprites[x] == s) {
++                        bottomSprites[x] = s-&gt;above[m];
++                        if (s-&gt;above[m] != NULL)
++                            s-&gt;above[m]-&gt;beneath[m] = NULL;
++                    } else {
++                        if (s-&gt;above[m] != NULL) {
++                            s-&gt;above[m]-&gt;beneath[m] = s-&gt;beneath[m];
++                        }
++                        if (s-&gt;beneath[m] != NULL) {
++                            s-&gt;beneath[m]-&gt;above[m] = s-&gt;above[m];
++                        }
++                    }
++                }           
++            }
++        }
+     }
+ }
+ 
+@@ -1522,14 +1557,20 @@
+                 set_color (gc2, 255, 255, 255);
+                 box (gc2, buffer-&gt;size());
+             }
+-            for (unsigned i=0; i&lt;m_sprites-&gt;sprites.size(); ++i) {
+-                if (Sprite *sp = m_sprites-&gt;sprites[i]) {
++            
++//            for (unsigned i=0; i&lt;m_sprites-&gt;sprites.size(); ++i) {
++//                if (Sprite *sp = m_sprites-&gt;sprites[i]) {
++//                    
++            int m = x%3;
++            Sprite *sp = m_sprites-&gt;bottomSprites[x];
++            for ( ; sp != NULL; sp = sp-&gt;above[m]) {
++                            
+                     if (sp-&gt;visible &amp;&amp; sp-&gt;model) {
+                         int sx = round_nearest&lt;int&gt;(sp-&gt;pos[0]*tilew) - x*tilew;
+                         int sy = round_nearest&lt;int&gt;(sp-&gt;pos[1]*tileh) - y*tileh;
+                         sp-&gt;model-&gt;draw_shadow(gc2, sx, sy);
+                     }
+-                }
++//                }
+             }
+             blit(gc, xpos, ypos, buffer);
+         }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000005.html">[Enigma-game-svn] r565 - in branches/1.0/src: . lev
+</A></li>
+	<LI>Next message: <A HREF="000007.html">[Enigma-game-svn] r567 - in branches/1.0/data/levels: enigma_cross	enigma_i enigma_iii enigma_iv enigma_tutorial enigma_v enigma_vi
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6">[ date ]</a>
+              <a href="thread.html#6">[ thread ]</a>
+              <a href="subject.html#6">[ subject ]</a>
+              <a href="author.html#6">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

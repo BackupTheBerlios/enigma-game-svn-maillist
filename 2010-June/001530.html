@@ -1,0 +1,209 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r2106 - trunk/src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2010-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2106%20-%20trunk/src/stones&In-Reply-To=%3C201006191250.o5JCotLw027240%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001529.html">
+   
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r2106 - trunk/src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2106%20-%20trunk/src/stones&In-Reply-To=%3C201006191250.o5JCotLw027240%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r2106 - trunk/src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Jun 19 14:50:55 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001529.html">[Enigma-game-svn] r2105 - homepage/input
+</A></li>
+        
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1530">[ date ]</a>
+              <a href="thread.html#1530">[ thread ]</a>
+              <a href="subject.html#1530">[ subject ]</a>
+              <a href="author.html#1530">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2010-06-19 14:50:55 +0200 (Sat, 19 Jun 2010)
+New Revision: 2106
+
+Modified:
+   trunk/src/stones/PullStone.cc
+   trunk/src/stones/WindowStone.cc
+Log:
+fix avoid actors being warped beneath stones on window and pull stone actions
+
+- stones neighboring the warp destination which partially cover 
+  the actors default warp position cause the actors to be displaced if 
+  they are sticky for the actor or a window face would cut the actor
+
+
+
+Modified: trunk/src/stones/PullStone.cc
+===================================================================
+--- trunk/src/stones/PullStone.cc	2010-06-17 19:26:14 UTC (rev 2105)
++++ trunk/src/stones/PullStone.cc	2010-06-19 12:50:55 UTC (rev 2106)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2008 Ronald Lamprecht
++ * Copyright (C) 2008,2009,2010 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -77,7 +77,8 @@
+             return;
+ 
+         GridPos oldPos = get_pos();
+-        GridPos newPos = move(oldPos, reverse(impulse.dir));
++        Direction dir = reverse(impulse.dir);
++        GridPos newPos = move(oldPos, dir);
+         Stone *otherStone = GetStone(newPos);
+     
+         if (!IsInsideLevel(newPos) || (otherStone &amp;&amp; (!otherStone-&gt;is_removable() || 
+@@ -109,15 +110,40 @@
+         for (std::vector&lt;Actor*&gt;::iterator i = found_actors.begin(); i != e; ++i) {
+             Actor *actor = *i;
+             GridPos actor_pos(actor-&gt;get_pos());
++            double r = get_radius(actor);
+     
+             if (actor_pos == newPos) { // if the actor is in the dest field
+                 actors.push_back(actor);
+                 SendMessage(actor, &quot;_freeze&quot;);
+ 
+-                ecl::V2 mid_dest = actor-&gt;get_pos();
+-                mid_dest[0] = ecl::Clamp&lt;double&gt; (mid_dest[0], oldPos.x+0.01, oldPos.x+0.99);
+-                mid_dest[1] = ecl::Clamp&lt;double&gt; (mid_dest[1], oldPos.y+0.01, oldPos.y+0.99);
+-                WarpActor(actor, mid_dest[0], mid_dest[1], false);                
++                ecl::V2 dest = actor-&gt;get_pos();
++                dest[0] = ecl::Clamp&lt;double&gt; (dest[0], oldPos.x+0.01, oldPos.x+0.99);
++                dest[1] = ecl::Clamp&lt;double&gt; (dest[1], oldPos.y+0.01, oldPos.y+0.99);
++
++                if (dir == EAST || dir == WEST) {
++                    Stone *obstacle = GetStone(move(oldPos, NORTH));
++                    if ((obstacle != NULL) &amp;&amp; (((obstacle-&gt;get_traits().id == st_window) &amp;&amp;
++                            has_dir(obstacle-&gt;getFaces(), SOUTH)) || obstacle-&gt;is_sticky(actor))) {
++                        dest[1] = ecl::Max(dest[1], oldPos.y + r);
++                    }
++                    obstacle = GetStone(move(oldPos, SOUTH));
++                    if ((obstacle != NULL) &amp;&amp; (((obstacle-&gt;get_traits().id == st_window) &amp;&amp;
++                            has_dir(obstacle-&gt;getFaces(), NORTH)) || obstacle-&gt;is_sticky(actor))) {
++                        dest[1] = ecl::Min(dest[1], oldPos.y + 1 - r);
++                    }
++                } else if (dir == NORTH || dir == SOUTH) {
++                    Stone *obstacle = GetStone(move(oldPos, WEST));
++                    if ((obstacle != NULL) &amp;&amp; (((obstacle-&gt;get_traits().id == st_window) &amp;&amp;
++                            has_dir(obstacle-&gt;getFaces(), EAST)) || obstacle-&gt;is_sticky(actor))) {
++                        dest[0] = ecl::Max(dest[0], oldPos.x + r);
++                    }
++                    obstacle = GetStone(move(oldPos, EAST));
++                    if ((obstacle != NULL) &amp;&amp; (((obstacle-&gt;get_traits().id == st_window) &amp;&amp;
++                            has_dir(obstacle-&gt;getFaces(), WEST)) || obstacle-&gt;is_sticky(actor))) {
++                        dest[0] = ecl::Min(dest[0], oldPos.x + 1 - r);
++                    }
++                }
++                WarpActor(actor, dest[0], dest[1], false);
+             }
+         }
+         vanishStone-&gt;setAttr(&quot;$frozen_actors&quot;, actors);
+
+Modified: trunk/src/stones/WindowStone.cc
+===================================================================
+--- trunk/src/stones/WindowStone.cc	2010-06-17 19:26:14 UTC (rev 2105)
++++ trunk/src/stones/WindowStone.cc	2010-06-19 12:50:55 UTC (rev 2106)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2007, 2008 Ronald Lamprecht
++ * Copyright (C) 2007,2008,2009,2010 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -268,24 +268,40 @@
+                             // we do not have to worry about the level border as no face can be pushed to the border
+                             if (dir == EAST || dir == WEST) {
+                                 dest[0] = (dir == EAST) ? (w_pos.x + 1 + r) : (w_pos.x - r) ;
+-                                if (stone &amp;&amp; has_dir(stone-&gt;getFaces(), NORTH))
++                                if (stone &amp;&amp; has_dir(stone-&gt;getFaces(), NORTH)) {
+                                    dest[1] = ecl::Max(dest[1], w_pos.y + r + eps);
+-                                else if (GetStone(move(w_pos, NORTH)) != NULL)
+-                                   dest[1] = ecl::Max(dest[1], w_pos.y + r);
+-                                if (stone &amp;&amp; has_dir(stone-&gt;getFaces(), SOUTH))
++                                } else {
++                                   Stone *obstacle = GetStone(move(w_pos_neighbor, NORTH));
++                                   if ((obstacle != NULL) &amp;&amp; (((obstacle-&gt;get_traits().id == st_window) &amp;&amp;
++                                           has_dir(obstacle-&gt;getFaces(), SOUTH)) || obstacle-&gt;is_sticky(a)))
++                                       dest[1] = ecl::Max(dest[1], w_pos.y + r);
++                                }
++                                if (stone &amp;&amp; has_dir(stone-&gt;getFaces(), SOUTH)) {
+                                    dest[1] = ecl::Min(dest[1], w_pos.y + 1 - r - eps);
+-                                else if (GetStone(move(w_pos, SOUTH)) != NULL)
+-                                   dest[1] = ecl::Min(dest[1], w_pos.y + 1 - r);
++                                } else {
++                                   Stone *obstacle = GetStone(move(w_pos_neighbor, SOUTH));
++                                   if ((obstacle != NULL) &amp;&amp; (((obstacle-&gt;get_traits().id == st_window) &amp;&amp;
++                                           has_dir(obstacle-&gt;getFaces(), NORTH)) || obstacle-&gt;is_sticky(a)))
++                                       dest[1] = ecl::Min(dest[1], w_pos.y + 1 - r);
++                                }
+                             } else {
+                                 dest[1] = (dir == SOUTH) ? (w_pos.y + 1 + r): ((dir == NORTH) ? (w_pos.y - r) : dest[1]);
+-                                if (stone &amp;&amp; has_dir(stone-&gt;getFaces(), WEST))
++                                if (stone &amp;&amp; has_dir(stone-&gt;getFaces(), WEST)) {
+                                    dest[0] = ecl::Max(dest[0], w_pos.x + r + eps);
+-                                else if (GetStone(move(w_pos, WEST)) != NULL)
+-                                   dest[0] = ecl::Max(dest[0], w_pos.x + r);
+-                                if (stone &amp;&amp; has_dir(stone-&gt;getFaces(), EAST))
++                                } else {
++                                   Stone *obstacle = GetStone(move(w_pos_neighbor, WEST));
++                                   if ((obstacle != NULL) &amp;&amp; (((obstacle-&gt;get_traits().id == st_window) &amp;&amp;
++                                           has_dir(obstacle-&gt;getFaces(), EAST)) || obstacle-&gt;is_sticky(a)))
++                                       dest[0] = ecl::Max(dest[0], w_pos.x + r);
++                                }
++                                if (stone &amp;&amp; has_dir(stone-&gt;getFaces(), EAST)) {
+                                    dest[0] = ecl::Min(dest[0], w_pos.x + 1 - r - eps);
+-                                else if (GetStone(move(w_pos, EAST)) != NULL)
+-                                   dest[0] = ecl::Min(dest[0], w_pos.x + 1 - r);
++                                } else {
++                                   Stone *obstacle = GetStone(move(w_pos_neighbor, EAST));
++                                   if ((obstacle != NULL) &amp;&amp; (((obstacle-&gt;get_traits().id == st_window) &amp;&amp;
++                                           has_dir(obstacle-&gt;getFaces(), WEST)) || obstacle-&gt;is_sticky(a)))
++                                       dest[0] = ecl::Min(dest[0], w_pos.x + 1 - r);
++                                }
+                             }
+                             WarpActor(a, dest[0], dest[1], true);
+                         }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001529.html">[Enigma-game-svn] r2105 - homepage/input
+</A></li>
+	
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1530">[ date ]</a>
+              <a href="thread.html#1530">[ thread ]</a>
+              <a href="subject.html#1530">[ subject ]</a>
+              <a href="author.html#1530">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

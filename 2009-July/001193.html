@@ -1,0 +1,227 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1764 - in trunk/src: . gui lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1764%20-%20in%20trunk/src%3A%20.%20gui%20lev&In-Reply-To=%3C200907202318.n6KNIbfr004463%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001192.html">
+   <LINK REL="Next"  HREF="001194.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1764 - in trunk/src: . gui lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1764%20-%20in%20trunk/src%3A%20.%20gui%20lev&In-Reply-To=%3C200907202318.n6KNIbfr004463%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1764 - in trunk/src: . gui lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Jul 21 01:18:37 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001192.html">[Enigma-game-svn] r1763 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="001194.html">[Enigma-game-svn] r1765 - trunk/data/levels/lib
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1193">[ date ]</a>
+              <a href="thread.html#1193">[ thread ]</a>
+              <a href="subject.html#1193">[ subject ]</a>
+              <a href="author.html#1193">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-07-21 01:18:33 +0200 (Tue, 21 Jul 2009)
+New Revision: 1764
+
+Modified:
+   trunk/src/gui/LevelMenu.cc
+   trunk/src/lev/Index.cc
+   trunk/src/lev/Index.hh
+   trunk/src/lev/PersistentIndex.cc
+   trunk/src/lev/PersistentIndex.hh
+   trunk/src/lev/Proxy.cc
+   trunk/src/lev/VolatileIndex.cc
+   trunk/src/lev/VolatileIndex.hh
+   trunk/src/oxyd.cc
+   trunk/src/oxyd_internal.hh
+Log:
+Trunk 1.1: 
+- extend auto folder update to handle multilevel changes
+
+Modified: trunk/src/gui/LevelMenu.cc
+===================================================================
+--- trunk/src/gui/LevelMenu.cc	2009-07-20 21:17:33 UTC (rev 1763)
++++ trunk/src/gui/LevelMenu.cc	2009-07-20 23:18:33 UTC (rev 1764)
+@@ -230,7 +230,7 @@
+                     next_unsolved();
+                     break;
+                 case SDLK_F7:
+-                    lev::Index::getCurrentIndex()-&gt;updateFromProxies();
++                    lev::Index::getCurrentIndex()-&gt;updateFromFolder();
+                     draw_all();
+                     break;
+                 case SDLK_u: {
+
+Modified: trunk/src/lev/Index.cc
+===================================================================
+--- trunk/src/lev/Index.cc	2009-07-20 21:17:33 UTC (rev 1763)
++++ trunk/src/lev/Index.cc	2009-07-20 23:18:33 UTC (rev 1764)
+@@ -693,6 +693,7 @@
+     }
+     
+     void Index::updateFromProxies() {
++        Proxy::releaseCache();   // enforce a reload from file
+         for (int i = 0, l = proxies.size();  i &lt; l; i++) {
+             try {
+                 proxies[i]-&gt;loadMetadata(true);
+
+Modified: trunk/src/lev/Index.hh
+===================================================================
+--- trunk/src/lev/Index.hh	2009-07-20 21:17:33 UTC (rev 1763)
++++ trunk/src/lev/Index.hh	2009-07-20 23:18:33 UTC (rev 1764)
+@@ -126,7 +126,8 @@
+                 scoreUnitType varUnit = duration, std::string varTarget = &quot;time&quot;,
+                 std::map&lt;std::string, std::string&gt; varExtensions = nullExtensions);
+         virtual void clear();
+-        virtual void updateFromProxies();
++        void updateFromProxies();
++        virtual void updateFromFolder() = 0;
+ 
+         // ---------- LevelPack legacy methods ---to be renamed ------- */
+         /*! Return the default SoundSet (see options::SoundSet for meaning) */
+
+Modified: trunk/src/lev/PersistentIndex.cc
+===================================================================
+--- trunk/src/lev/PersistentIndex.cc	2009-07-20 21:17:33 UTC (rev 1763)
++++ trunk/src/lev/PersistentIndex.cc	2009-07-20 23:18:33 UTC (rev 1764)
+@@ -674,13 +674,16 @@
+         }
+     }
+     
+-    void PersistentIndex::updateFromProxies() {
++    void PersistentIndex::updateFromFolder() {
+         if (!isAuto)
+             return;
+         
++        // force a reload of metadata to update existing proxies
++        // for multilevels it is essential to do this prior the reload
++        Index::updateFromProxies();
+         clear();
++        // now reload - existing proxies are reused, but we have updated them already
+         load(false);
+-        Index::updateFromProxies();
+     }
+     
+     bool PersistentIndex::save(bool allowOverwrite) {
+
+Modified: trunk/src/lev/PersistentIndex.hh
+===================================================================
+--- trunk/src/lev/PersistentIndex.hh	2009-07-20 21:17:33 UTC (rev 1763)
++++ trunk/src/lev/PersistentIndex.hh	2009-07-20 23:18:33 UTC (rev 1764)
+@@ -101,7 +101,7 @@
+         void erase(int pos);
+         void exchange(int pos1, int pos2);
+         virtual bool isSource(Proxy * aProxy);
+-        virtual void updateFromProxies();
++        virtual void updateFromFolder();
+         bool save(bool allowOverwrite = true);
+     protected:
+         std::string packPath;  // &quot;auto&quot;, &quot;&quot;,...
+
+Modified: trunk/src/lev/Proxy.cc
+===================================================================
+--- trunk/src/lev/Proxy.cc	2009-07-20 21:17:33 UTC (rev 1763)
++++ trunk/src/lev/Proxy.cc	2009-07-20 23:18:33 UTC (rev 1764)
+@@ -247,7 +247,6 @@
+         }
+         return theProxy;
+     }
+-   
+ 
+     struct LowerCaseString {
+         std::string low;
+
+Modified: trunk/src/lev/VolatileIndex.cc
+===================================================================
+--- trunk/src/lev/VolatileIndex.cc	2009-07-20 21:17:33 UTC (rev 1763)
++++ trunk/src/lev/VolatileIndex.cc	2009-07-20 23:18:33 UTC (rev 1764)
+@@ -57,4 +57,7 @@
+         proxies.clear();
+         currentPosition = 0;
+     }
++    
++    void VolatileIndex::updateFromFolder() {
++    }
+ }} // namespace enigma::lev
+
+Modified: trunk/src/lev/VolatileIndex.hh
+===================================================================
+--- trunk/src/lev/VolatileIndex.hh	2009-07-20 21:17:33 UTC (rev 1763)
++++ trunk/src/lev/VolatileIndex.hh	2009-07-20 23:18:33 UTC (rev 1764)
+@@ -38,6 +38,7 @@
+                 double defaultLocation = INDEX_DEFAULT_PACK_LOCATION);
+         ~VolatileIndex();
+         virtual void clear();
++        virtual void updateFromFolder();
+     private:
+         static int levelCount;  // used for volatile level ids - necessary for lua levels
+     };
+
+Modified: trunk/src/oxyd.cc
+===================================================================
+--- trunk/src/oxyd.cc	2009-07-20 21:17:33 UTC (rev 1763)
++++ trunk/src/oxyd.cc	2009-07-20 23:18:33 UTC (rev 1764)
+@@ -771,6 +771,9 @@
+     Log &lt;&lt; &quot;Levelpack '&quot; &lt;&lt; get_name() &lt;&lt; &quot;' has &quot; &lt;&lt; nlevels &lt;&lt; &quot; levels.&quot; &lt;&lt; endl;
+ }
+ 
++void LevelPack_Oxyd::updateFromFolder() {
++}
++
+ const char* LevelPack_Oxyd::get_default_SoundSet() const 
+ { 
+     return sound::GetOxydSoundSet(m_datfile-&gt;getVersion()).c_str();
+
+Modified: trunk/src/oxyd_internal.hh
+===================================================================
+--- trunk/src/oxyd_internal.hh	2009-07-20 21:17:33 UTC (rev 1763)
++++ trunk/src/oxyd_internal.hh	2009-07-20 23:18:33 UTC (rev 1764)
+@@ -155,6 +155,7 @@
+                         int idx_start, int idx_end, bool twoplayers);
+ 
+         void load_oxyd_level (size_t index);
++        virtual void updateFromFolder();
+ 
+         /* ---------- LevelPack interface ---------- */
+         string get_name() const;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001192.html">[Enigma-game-svn] r1763 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="001194.html">[Enigma-game-svn] r1765 - trunk/data/levels/lib
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1193">[ date ]</a>
+              <a href="thread.html#1193">[ thread ]</a>
+              <a href="subject.html#1193">[ subject ]</a>
+              <a href="author.html#1193">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

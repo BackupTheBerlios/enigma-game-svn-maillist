@@ -1,0 +1,224 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r669 - branches/1.0/src/lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r669%20-%20branches/1.0/src/lev&In-Reply-To=%3C200703220016.l2M0G4QI023359%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000106.html">
+   <LINK REL="Next"  HREF="000108.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r669 - branches/1.0/src/lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r669%20-%20branches/1.0/src/lev&In-Reply-To=%3C200703220016.l2M0G4QI023359%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r669 - branches/1.0/src/lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Mar 22 01:16:04 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000106.html">[Enigma-game-svn] r668 - in branches/1.0/src: . gui lev
+</A></li>
+        <LI>Next message: <A HREF="000108.html">[Enigma-game-svn] r670 - in branches/1.0/src: . lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#107">[ date ]</a>
+              <a href="thread.html#107">[ thread ]</a>
+              <a href="subject.html#107">[ subject ]</a>
+              <a href="author.html#107">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-03-22 01:16:02 +0100 (Thu, 22 Mar 2007)
+New Revision: 669
+
+Modified:
+   branches/1.0/src/lev/ScoreManager.cc
+Log:
+Branch 1.0
+- save second dat free score file
+
+
+Modified: branches/1.0/src/lev/ScoreManager.cc
+===================================================================
+--- branches/1.0/src/lev/ScoreManager.cc	2007-03-21 00:10:06 UTC (rev 668)
++++ branches/1.0/src/lev/ScoreManager.cc	2007-03-22 00:16:02 UTC (rev 669)
+@@ -58,6 +58,34 @@
+ using namespace enigma;
+ XERCES_CPP_NAMESPACE_USE 
+ 
++namespace {
++#if _XERCES_VERSION &gt;= 30000
++    class ScoreDomSerFilter : public DOMLSSerializerFilter {
++#else
++    class ScoreDomSerFilter : public DOMWriterFilter {
++#endif
++        public:
++            virtual short acceptNode(const DOMNode *node) const;
++            virtual unsigned long getWhatToShow () const {
++                return DOMNodeFilter::SHOW_ALL;
++            }
++            virtual void setWhatToShow (unsigned long toShow) {}
++    };
++    
++    short ScoreDomSerFilter::acceptNode(const DOMNode *node) const {
++        if (node-&gt;getNodeType () == DOMNode::ELEMENT_NODE &amp;&amp;
++                 std::string(XMLtoUtf8(node-&gt;getNodeName()).c_str()) == &quot;level&quot;) {
++            const DOMElement *e = dynamic_cast&lt;const DOMElement *&gt;(node);
++            std::string id = XMLtoUtf8(e-&gt;getAttribute(Utf8ToXML(&quot;id&quot;).x_str())).c_str();
++            if (id.find(&quot;Import &quot;) == 0) {
++                Log &lt;&lt; &quot;Score reject: &quot; &lt;&lt; id &lt;&lt; &quot;\n&quot;;
++                return DOMNodeFilter::FILTER_REJECT;
++            }
++        }
++        return DOMNodeFilter::FILTER_ACCEPT;
++    }
++}
++
+ namespace enigma { namespace lev {
+     ScoreManager *ScoreManager::theSingleton = 0;
+     unsigned ScoreManager::ctab[256];
+@@ -357,6 +385,7 @@
+         stripIgnorableWhitespace(doc-&gt;getDocumentElement());
+ //        std::string path = app.userPath + &quot;/score.xml&quot;;
+         std::string zipPath = app.userPath + &quot;/enigma.score&quot;;
++        std::string zipPathNoDat = app.userPath + &quot;/enigma_nodat.score&quot;;
+         std::string zipPathBackup = app.userPath + &quot;/backup/enigma.score&quot;;
+         
+         // backup score every 10th save as we save after each level completion once
+@@ -381,53 +410,65 @@
+         }
+         
+         try {
++            ScoreDomSerFilter serialFilter;
++            for (int j=0; j &lt; 2; j++) { // save twice: first all, then without dat scores
+ #if _XERCES_VERSION &gt;= 30000
+ //            result = app.domSer-&gt;writeToURI(doc, LocalToXML(&amp; path).x_str());
+-            std::string contents(XMLtoUtf8(app.domSer-&gt;writeToString(doc)).c_str());
+-            contents.replace(contents.find(&quot;UTF-16&quot;), 6, &quot;UTF-8&quot;); // adapt encoding info
++                if (j==1)
++                    (app.domSer)-&gt;setFilter(&amp;serialFilter);
++                std::string contents(XMLtoUtf8(app.domSer-&gt;writeToString(doc)).c_str());
++                if (j==1)
++                    (app.domSer)-&gt;setFilter(NULL);
++                contents.replace(contents.find(&quot;UTF-16&quot;), 6, &quot;UTF-8&quot;); // adapt encoding info
+ #else
+ //            XMLFormatTarget *myFormTarget = new LocalFileFormatTarget(path.c_str());
+ //            result = app.domSer-&gt;writeNode(myFormTarget, *doc);            
+ //            delete myFormTarget;   // flush
+             
+-            MemBufFormatTarget *memFormTarget = new MemBufFormatTarget();
+-            result = app.domSer-&gt;writeNode(memFormTarget, *doc);
+-            std::string contents(
+-                    reinterpret_cast&lt;const char *&gt;(memFormTarget-&gt;getRawBuffer()),
+-                    memFormTarget-&gt;getLen());
+-            delete memFormTarget;
++                MemBufFormatTarget *memFormTarget = new MemBufFormatTarget();
++                if (j==1)
++                    app.domSer-&gt;setFilter(&amp;serialFilter);
++                result = app.domSer-&gt;writeNode(memFormTarget, *doc);
++                if (j==1)
++                    app.domSer-&gt;setFilter(NULL);
++                std::string contents(
++                        reinterpret_cast&lt;const char *&gt;(memFormTarget-&gt;getRawBuffer()),
++                        memFormTarget-&gt;getLen());
++                delete memFormTarget;
+ #endif
+-            std::istringstream contentStream(contents);
+-            std::ostringstream zippedStream;
+-            writeToZip(zippedStream, &quot;score.xml&quot;, contents.size(), contentStream);
+-            std::ofstream of( zipPath.c_str(), ios::out | ios::binary );
+-            std::string zipScore = zippedStream.str();
+-            
+-            // patch zipios++ malformed output
+-            // assumptions: just one file named &quot;score.xml&quot; (9 chars)
+-            if ((zipScore[0x06] &amp; 0x08) == 0) {
+-                Log &lt;&lt; &quot;Fixing Zipios++ output\n&quot;;
+-                unsigned cdirOffset = zipScore.size() - 22 - 46 - 9;
+-                unsigned compressedSize = cdirOffset - 30 - 9;
+-                zipScore.replace(cdirOffset + 20, 1, 1, (char)(compressedSize &amp; 0xFF));
+-                zipScore.replace(cdirOffset + 21, 1, 1, (char)((compressedSize &amp; 0xFF00) &gt;&gt; 8));
+-                zipScore.replace(cdirOffset + 22, 1, 1, (char)((compressedSize &amp; 0xFF0000) &gt;&gt; 16));
+-                zipScore.replace(cdirOffset + 23, 1, 1, (char)((compressedSize &amp; 0xFF000000) &gt;&gt; 24));
+-                std::string dataDescr = &quot;\x50\x4B\x07\x08&quot; + zipScore.substr(cdirOffset + 16, 12);
+-                zipScore.replace(6, 1 , 1, '\x08'); // general purpose bit flag
+-                zipScore.replace(14, 12, 12, '\x00');
+-                zipScore.replace(cdirOffset + 8, 1 , 1, '\x08'); // general purpose bit flag
+-                zipScore.replace(cdirOffset + 38, 8, 8, '\x00'); // external file attr, offset local header
+-                zipScore.insert(cdirOffset, dataDescr);
+-                cdirOffset += 16;
+-                zipScore.replace(zipScore.size() - 6, 1, 1, (char)(cdirOffset &amp; 0xFF));
+-                zipScore.replace(zipScore.size() - 5, 1, 1, (char)((cdirOffset &amp; 0xFF00) &gt;&gt; 8));
+-                zipScore.replace(zipScore.size() - 4, 1, 1, (char)((cdirOffset &amp; 0xFF0000) &gt;&gt; 16));
+-                zipScore.replace(zipScore.size() - 3, 1, 1, (char)((cdirOffset &amp; 0xFF000000) &gt;&gt; 24));
++                std::istringstream contentStream(contents);
++                std::ostringstream zippedStream;
++                writeToZip(zippedStream, &quot;score.xml&quot;, contents.size(), contentStream);
++                std::ofstream of( j==0 ? zipPath.c_str() : zipPathNoDat.c_str(),
++                        ios::out | ios::binary );
++                std::string zipScore = zippedStream.str();
++                
++                // patch zipios++ malformed output
++                // assumptions: just one file named &quot;score.xml&quot; (9 chars)
++                if ((zipScore[0x06] &amp; 0x08) == 0) {
++                    Log &lt;&lt; &quot;Fixing Zipios++ output\n&quot;;
++                    unsigned cdirOffset = zipScore.size() - 22 - 46 - 9;
++                    unsigned compressedSize = cdirOffset - 30 - 9;
++                    zipScore.replace(cdirOffset + 20, 1, 1, (char)(compressedSize &amp; 0xFF));
++                    zipScore.replace(cdirOffset + 21, 1, 1, (char)((compressedSize &amp; 0xFF00) &gt;&gt; 8));
++                    zipScore.replace(cdirOffset + 22, 1, 1, (char)((compressedSize &amp; 0xFF0000) &gt;&gt; 16));
++                    zipScore.replace(cdirOffset + 23, 1, 1, (char)((compressedSize &amp; 0xFF000000) &gt;&gt; 24));
++                    std::string dataDescr = &quot;\x50\x4B\x07\x08&quot; + zipScore.substr(cdirOffset + 16, 12);
++                    zipScore.replace(6, 1 , 1, '\x08'); // general purpose bit flag
++                    zipScore.replace(14, 12, 12, '\x00');
++                    zipScore.replace(cdirOffset + 8, 1 , 1, '\x08'); // general purpose bit flag
++                    zipScore.replace(cdirOffset + 38, 8, 8, '\x00'); // external file attr, offset local header
++                    zipScore.insert(cdirOffset, dataDescr);
++                    cdirOffset += 16;
++                    zipScore.replace(zipScore.size() - 6, 1, 1, (char)(cdirOffset &amp; 0xFF));
++                    zipScore.replace(zipScore.size() - 5, 1, 1, (char)((cdirOffset &amp; 0xFF00) &gt;&gt; 8));
++                    zipScore.replace(zipScore.size() - 4, 1, 1, (char)((cdirOffset &amp; 0xFF0000) &gt;&gt; 16));
++                    zipScore.replace(zipScore.size() - 3, 1, 1, (char)((cdirOffset &amp; 0xFF000000) &gt;&gt; 24));
++                }
++                
++                for (int i=0; i&lt;zipScore.size(); i++)
++                    of &lt;&lt; (char)(zipScore[i] ^ 0xE5);
+             }
+-            
+-            for (int i=0; i&lt;zipScore.size(); i++)
+-                of &lt;&lt; (char)(zipScore[i] ^ 0xE5);
+         } catch (const XMLException&amp; toCatch) {
+             errMessage = std::string(&quot;Exception on save of score: \n&quot;) + 
+                     XMLtoUtf8(toCatch.getMessage()).c_str() + &quot;\n&quot;;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000106.html">[Enigma-game-svn] r668 - in branches/1.0/src: . gui lev
+</A></li>
+	<LI>Next message: <A HREF="000108.html">[Enigma-game-svn] r670 - in branches/1.0/src: . lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#107">[ date ]</a>
+              <a href="thread.html#107">[ thread ]</a>
+              <a href="subject.html#107">[ subject ]</a>
+              <a href="author.html#107">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

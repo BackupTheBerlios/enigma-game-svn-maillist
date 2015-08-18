@@ -1,0 +1,967 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r874 - in trunk: lib-src/enigma-core src src/gui
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r874%20-%20in%20trunk%3A%20lib-src/enigma-core%20src%20src/gui&In-Reply-To=%3C200709081653.l88Grs22020740%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000305.html">
+   <LINK REL="Next"  HREF="000307.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r874 - in trunk: lib-src/enigma-core src src/gui</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r874%20-%20in%20trunk%3A%20lib-src/enigma-core%20src%20src/gui&In-Reply-To=%3C200709081653.l88Grs22020740%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r874 - in trunk: lib-src/enigma-core src src/gui">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Sep  8 18:53:54 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000305.html">[Enigma-game-svn] r873 - branches/1.01/lib-src/zipios++/zipios++
+</A></li>
+        <LI>Next message: <A HREF="000307.html">[Enigma-game-svn] r875 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#306">[ date ]</a>
+              <a href="thread.html#306">[ thread ]</a>
+              <a href="subject.html#306">[ subject ]</a>
+              <a href="author.html#306">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-09-08 18:53:53 +0200 (Sat, 08 Sep 2007)
+New Revision: 874
+
+Modified:
+   trunk/lib-src/enigma-core/ecl_video.hh
+   trunk/src/gui/MainMenu.cc
+   trunk/src/gui/OptionsMenu.cc
+   trunk/src/gui/OptionsMenu.hh
+   trunk/src/gui/ScreenshotViewer.cc
+   trunk/src/gui/widgets.cc
+   trunk/src/gui/widgets.hh
+   trunk/src/main.cc
+   trunk/src/main.hh
+   trunk/src/video.cc
+   trunk/src/video.hh
+Log:
+Trunk 1.1: 
+- replaced video modes:
+   960x768   = 5,   // 48 bit grid linear strechable to 1280x1024
+   1152x720  = 6,   // 48 bit grid lineas strechable to 1680x1050
+  by
+   1280x720  = 5,   // 48 bit embedded - 16:9  - HD720
+   1440x960  = 7,   // 64 bit embedded -  3:2  - none
+  to provide modes for all common h/w ratios
+- limit modes in option menu to those that are available on given hardware
+- different resolution mode user prefs for fullscreen and window mode
+- add mouse scroll on options menu screen resolution mode
+- mode prefs made extendable in future versions without causing problems
+  on current enigma versions due to a new fallback strategy
+- limit screenshot to display area
+- redisplay screenshots just in display area to avoid distortions
+Note:
+- .enigmarc.xml prefs FullScreen1.1 and VideoMode1.1 added with r840 are
+  obsolete and can be manually removed.
+ToDo:
+- fine tuning of some menus
+- 64 bit images
+
+
+Modified: trunk/lib-src/enigma-core/ecl_video.hh
+===================================================================
+--- trunk/lib-src/enigma-core/ecl_video.hh	2007-09-08 13:33:27 UTC (rev 873)
++++ trunk/lib-src/enigma-core/ecl_video.hh	2007-09-08 16:53:53 UTC (rev 874)
+@@ -134,11 +134,11 @@
+ 
+ 	Surface *zoom(int w, int h);
+ 
+-	void set_color_key (int r, int g, int b);
++        void set_color_key (int r, int g, int b);
+         void set_alpha (int a);
+ 
+         void lock();
+-	void unlock();
++        void unlock();
+ 
+         int bypp() const { return m_surface-&gt;format-&gt;BytesPerPixel; }
+         int bipp() const { return m_surface-&gt;format-&gt;BitsPerPixel; }
+
+Modified: trunk/src/gui/MainMenu.cc
+===================================================================
+--- trunk/src/gui/MainMenu.cc	2007-09-08 13:33:27 UTC (rev 873)
++++ trunk/src/gui/MainMenu.cc	2007-09-08 16:53:53 UTC (rev 874)
+@@ -289,8 +289,9 @@
+     
+     void MainMenu::tick(double /* dtime */) 
+     {
+-        if (app.prefs-&gt;getInt(&quot;VideoMode1.1&quot;) != video::GetVideoMode()
+-                || app.prefs-&gt;getBool(&quot;FullScreen1.1&quot;) != video::IsFullScreen())
++        bool isFullScreen = app.prefs-&gt;getBool(&quot;FullScreen&quot;);
++        if (app.selectedVideoMode != video::GetVideoMode()
++                || isFullScreen != video::IsFullScreen())
+         {
+             ChangeVideoMode();
+             clear();
+
+Modified: trunk/src/gui/OptionsMenu.cc
+===================================================================
+--- trunk/src/gui/OptionsMenu.cc	2007-09-08 13:33:27 UTC (rev 873)
++++ trunk/src/gui/OptionsMenu.cc	2007-09-08 16:53:53 UTC (rev 874)
+@@ -123,37 +123,45 @@
+         RatingsUpdateButton() : BoolOptionButton(&quot;RatingsAutoUpdate&quot;, N_(&quot;Auto&quot;), N_(&quot;Never&quot;), this) {}
+     };
+ 
+-    class VideoModeButton : public TextButton {
+ 
+-        video::VideoModes get_mode() const {
+-            int mode = Clamp(app.prefs-&gt;getInt(&quot;VideoMode1.1&quot;), 0, int(video::VM_COUNT));
+-            return static_cast&lt;video::VideoModes&gt;(mode);
+-        }
+-        string get_text() const {
+-            return video::GetInfo(get_mode())-&gt;name;
+-        }
+-        void on_action(Widget *) {
+-            int mode = get_mode();
+ 
+-            // cycle at most once through all available video modes
+-            do {
+-                mode += 1;
+-                if (mode &gt;= video::VM_COUNT) 
+-                    mode = 0;
++    /* -------------------- VideoModeButton -------------------- */
++    
++    VideoModeButton::VideoModeButton() : ValueButton(0, 1) {
++        bool isFullScreen = app.prefs-&gt;getBool(&quot;FullScreen&quot;);
++        setMaxValue(video::GetNumAvailableModes(isFullScreen) - 1);
++        init();
++    }
++    
++    void VideoModeButton::reinit() {
++        bool isFullScreen = app.prefs-&gt;getBool(&quot;FullScreen&quot;);
++        ValueButton::setMaxValue(video::GetNumAvailableModes(isFullScreen) - 1);
++    }
+ 
+-                const video::VMInfo *vminfo = video::GetInfo (static_cast&lt;video::VideoModes&gt;(mode));
+-                if (vminfo-&gt;available) {
+-                    app.prefs-&gt;setProperty(&quot;VideoMode1.1&quot;, mode);
+-                    invalidate();
+-                    break;
+-                }
+-            } while (mode != get_mode());
++    int VideoModeButton::get_value() const {
++        bool isFullScreen = app.prefs-&gt;getBool(&quot;FullScreen&quot;);        
++        return video::GetModeNumber(static_cast&lt;video::VideoModes&gt;(app.selectedVideoMode), isFullScreen);
++    }
++
++    void VideoModeButton::set_value(int value) {
++        bool isFullScreen = app.prefs-&gt;getBool(&quot;FullScreen&quot;);
++        video::VideoModes vm = video::GetVideoMode(value, isFullScreen);
++        app.selectedVideoMode = vm;
++
++        if (vm != video::GetBestUserMode(isFullScreen)) {
++            const video::VMInfo * info = video::GetInfo(vm);
++            app.prefs-&gt;setProperty(isFullScreen ? &quot;VideoModesFullscreen&quot; : &quot;VideoModesWindow&quot;,
++                    isFullScreen ? info-&gt;fallback_fullscreen : info-&gt;fallback_window);
+         }
+-    public:
+-        VideoModeButton() : TextButton(this) { }
+-    };
++    }
+ 
++    string VideoModeButton::get_text(int value) const {
++        bool isFullScreen = app.prefs-&gt;getBool(&quot;FullScreen&quot;);        
++        const video::VMInfo * vi = video::GetInfo(video::GetVideoMode(value, isFullScreen));
++        return vi-&gt;name;
++    }
+ 
++
+     /* -------------------- SoundSetButton -------------------- */
+     
+     SoundSetButton::SoundSetButton() : ValueButton(0, 1) {
+@@ -215,7 +223,7 @@
+     /* -------------------- FullscreenButton -------------------- */
+     
+     FullscreenButton::FullscreenButton()
+-        : BoolOptionButton(&quot;FullScreen1.1&quot;, N_(&quot;Yes&quot;), N_(&quot;No&quot;), this)
++        : BoolOptionButton(&quot;FullScreen&quot;, N_(&quot;Yes&quot;), N_(&quot;No&quot;))
+     {
+     }
+     
+@@ -314,7 +322,6 @@
+     
+     OptionsMenu::OptionsMenu(ecl::Surface *background_)
+     : back(new StaticTextButton(N_(&quot;Back&quot;), this)),
+-      fullscreen(new FullscreenButton),
+       m_restartinfo (new Label(&quot;&quot;)),
+       background(background_),
+       previous_caption(video::GetCaption())
+@@ -340,8 +347,11 @@
+     
+         language = new LanguageButton(this);
+         left.add (language);
++        fullscreen = new FullscreenButton();
++        fullscreen-&gt;set_listener(this);
+         left.add (fullscreen);
+-        left.add (new VideoModeButton);
++        videomode = new VideoModeButton();
++        left.add (videomode);
+         left.add (new GammaButton);
+         left.add (new MouseSpeedButton);
+     
+@@ -448,6 +458,14 @@
+         else if (w == language)
+             // language changed - retranslate and redraw everything
+             invalidate_all();
++        else if (w == fullscreen) {
++            // switch the fullscreen button and option
++            fullscreen-&gt;on_action(fullscreen);
++            app.selectedVideoMode = video::GetBestUserMode(app.prefs-&gt;getBool(&quot;FullScreen&quot;));
++            // update the video mode button to the modes available
++            videomode-&gt;reinit();
++            invalidate_all();
++        }
+     }
+     
+     void OptionsMenu::tick (double)
+
+Modified: trunk/src/gui/OptionsMenu.hh
+===================================================================
+--- trunk/src/gui/OptionsMenu.hh	2007-09-08 13:33:27 UTC (rev 873)
++++ trunk/src/gui/OptionsMenu.hh	2007-09-08 16:53:53 UTC (rev 874)
+@@ -23,6 +23,8 @@
+ #include &quot;gui/TextField.hh&quot;
+ 
+ namespace enigma { namespace gui {
++    class VideoModeButton;
++    
+ /* -------------------- OptionsMenu -------------------- */
+ 
+     class OptionsMenu : public Menu {
+@@ -42,7 +44,9 @@
+         void tick(double dtime);
+ 
+         // Variables.
+-        gui::Widget *back, *fullscreen, *language;
++        gui::Widget *back, *language;
++        gui::BoolOptionButton *fullscreen;
++        gui::VideoModeButton *videomode;
+         gui::TextField *userNameTF;
+         gui::TextField *userPathTF;
+         gui::TextField *userImagePathTF;
+@@ -58,6 +62,15 @@
+     };
+ 
+ 
++    class VideoModeButton : public ValueButton {
++        int get_value() const;
++        void set_value(int value);
++        std::string get_text(int value) const;
++    public:
++        VideoModeButton();
++        void reinit();
++    };
++
+     class StereoButton : public ValueButton {
+         int get_value() const;
+         void set_value(int value);
+
+Modified: trunk/src/gui/ScreenshotViewer.cc
+===================================================================
+--- trunk/src/gui/ScreenshotViewer.cc	2007-09-08 13:33:27 UTC (rev 873)
++++ trunk/src/gui/ScreenshotViewer.cc	2007-09-08 16:53:53 UTC (rev 874)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2006 Ronald Lamprecht
++ * Copyright (C) 2006, 2007 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -92,10 +92,12 @@
+         if (app.resourceFS-&gt;findFile(filename, fullPath)) {
+             ecl::Surface * image = ecl::LoadImage(fullPath.c_str());
+             if (image-&gt;width() == vminfo-&gt;width &amp;&amp; image-&gt;height() == vminfo-&gt;height) {
+-                blit(gc, 0,0, image);
++                ecl::blit(gc, 0,0, image);
+             } else {
+-                ecl::Surface * imageZoomed = image-&gt;zoom(vminfo-&gt;width, vminfo-&gt;height);
+-                blit(gc, 0,0, imageZoomed);
++                ecl::set_color(gc, 0, 0, 0);
++                ecl::box(gc, 0, 0, vminfo-&gt;width, vminfo-&gt;height);
++                ecl::Surface * imageZoomed = image-&gt;zoom(vminfo-&gt;area.w, vminfo-&gt;area.h);
++                ecl::blit(gc, vminfo-&gt;area.x, vminfo-&gt;area.y, imageZoomed);
+                 delete imageZoomed;
+             }
+             delete image;
+
+Modified: trunk/src/gui/widgets.cc
+===================================================================
+--- trunk/src/gui/widgets.cc	2007-09-08 13:33:27 UTC (rev 873)
++++ trunk/src/gui/widgets.cc	2007-09-08 16:53:53 UTC (rev 874)
+@@ -842,8 +842,7 @@
+ string BoolOptionButton::get_text() const {
+     return enigma_options::GetBool(optionName) ? _(trueText.c_str()) : _(falseText.c_str());
+ }
+-    
+-
++
+ /* -------------------- ValueButton -------------------- */
+ 
+ ValueButton::ValueButton(int min_value_, int max_value_)
+@@ -911,7 +910,6 @@
+ bool ValueButton::soundOk() {
+     return false;
+ }
+-
+ 
+ /* -------------------- ImageButton -------------------- */
+ 
+
+Modified: trunk/src/gui/widgets.hh
+===================================================================
+--- trunk/src/gui/widgets.hh	2007-09-08 13:33:27 UTC (rev 873)
++++ trunk/src/gui/widgets.hh	2007-09-08 16:53:53 UTC (rev 874)
+@@ -409,7 +409,7 @@
+                          ActionListener     *al = 0);
+ 
+         bool toggle(); // returns new value
+-        void on_action(Widget *);
++        virtual void on_action(Widget *);
+ 
+         // TextButton interface.
+         std::string get_text() const;
+
+Modified: trunk/src/main.cc
+===================================================================
+--- trunk/src/main.cc	2007-09-08 13:33:27 UTC (rev 873)
++++ trunk/src/main.cc	2007-09-08 16:53:53 UTC (rev 874)
+@@ -285,10 +285,11 @@
+     prefs = PreferenceManager::instance();
+     
+     if (ap.force_window) {
+-        app.prefs-&gt;setProperty(&quot;FullScreen1.1&quot;, false);
++        app.prefs-&gt;setProperty(&quot;FullScreen&quot;, false);
+     }
+     if (isMakePreviews) {
+-        app.prefs-&gt;setProperty(&quot;VideoMode1.1&quot;, 0);  // we will not save the prefs!
++        app.prefs-&gt;setProperty(&quot;VideoModesFullscreen&quot;, &quot;-0-&quot;);
++        app.prefs-&gt;setProperty(&quot;VideoModesWindow&quot;, &quot;-0-&quot;);     // we will not save the prefs!
+     }
+ 
+     // initialize user data paths -- needs preferences, system datapaths
+
+Modified: trunk/src/main.hh
+===================================================================
+--- trunk/src/main.hh	2007-09-08 13:33:27 UTC (rev 873)
++++ trunk/src/main.hh	2007-09-08 16:53:53 UTC (rev 874)
+@@ -28,6 +28,7 @@
+ #include &quot;StateManager.hh&quot;
+ #include &quot;DOMErrorReporter.hh&quot;
+ #include &quot;DOMSchemaResolver.hh&quot;
++#include &quot;video.hh&quot;
+ #include &lt;string&gt;
+ #include &lt;vector&gt;
+ #include &lt;memory&gt;
+@@ -208,13 +209,14 @@
+         DOMErrorReporter *domSerErrorHandler;
+         bool errorInit;
+         bool isMakePreviews;
++        video::VideoModes selectedVideoMode;
+ 
+     private:
+         void initSysDatapaths(const std::string &amp;prefFilename);
+         void initXerces();
+         void initUserDatapaths();
+         void updateMac1_00();
+-	double enigmaVersion;
++        double enigmaVersion;
+         std::string systemAppDataPath;    // dir path to the apps data
+         std::string systemCmdDataPath;    // commandline override of systemAppDataPath
+         std::string userStdPath;          // standard user data path
+
+Modified: trunk/src/video.cc
+===================================================================
+--- trunk/src/video.cc	2007-09-08 13:33:27 UTC (rev 873)
++++ trunk/src/video.cc	2007-09-08 16:53:53 UTC (rev 874)
+@@ -40,6 +40,7 @@
+ #include &lt;cassert&gt;
+ #include &lt;cstdio&gt;
+ #include &lt;fstream&gt;
++#include &lt;sstream&gt;
+ #include &quot;config.h&quot;
+ 
+ #define SCREEN ecl::Screen::get_instance()
+@@ -99,9 +100,9 @@
+ 
+         int      x, y;
+         int      oldx, oldy;
+-	int      hotx, hoty;    // Coordinates of hotspot inside cursor image
+-	int      visible;
+-	bool     changedp;
++        int      hotx, hoty;    // Coordinates of hotspot inside cursor image
++        int      visible;
++        bool     changedp;
+     };
+ }
+ 
+@@ -132,10 +133,13 @@
+ {
+     static bool firstInit = true;
+     
++#ifndef MACOSX
+     if (firstInit) {
+-        // set the caption icon -- usually it is taken without this init from
+-        // the app -- but XP in WindowsXP Design fails.
+-        // This init has to take place before the first SDL_SetVideoMode() !!
++        // Set the caption icon -- due to SDL doc it has to be set before first SDL_SetVideoMode() !!
++        // In praxis this SetIcon does not work for Linux, nor is it necessary for OSX.
++        // Just XP with selected &quot;WindowsXP Design&quot; needs this SetIcon.
++        // See video::Init() for icon set for Linux and other Windows versions
++        // Mac icon is set via Makefile 
+         firstInit = false;
+         std::string iconpath;
+         ecl::Surface *es = NULL;
+@@ -146,6 +150,7 @@
+             }
+         }
+     }
++#endif
+ 
+     SDL_WM_SetCaption(caption.c_str(), 0);
+ 
+@@ -328,7 +333,7 @@
+         { 
+             VM_640x480, 640, 480,            // id, w, h
+             32, VTS_32,                      // tilesize, tiletype
+-            &quot;640x480&quot;, &quot;640x480&quot;, false,     // name, fsname, fs only
++            &quot;640x480&quot;, &quot;VGA&quot;, &quot;4:3&quot;,         // name, fsname, fs only
+             &quot;models-32.lua&quot;, &quot;gfx32/&quot;,       // initscript, dir
+             Rect (0, 0, 640, 480),           // display area
+             0, 0,                            // menu background image offsets 
+@@ -339,12 +344,13 @@
+             Rect (100, 425, 30, 43),         // moves area
+             Rect (152, 433, 490, 52),        // inventory area
+             Rect (150, 434, 475, 35),        // text area
+-            VM_None, true,                   // fallback, available
++            true, true,                      // available window, fullscreen
++            &quot;-0-&quot;,&quot;-0-&quot;                      // fallback modes window, fullscreen
+         },
+         { 
+             VM_640x512, 640, 512,            // id, w, h
+             32, VTS_32,                      // tilesize, tiletype
+-            &quot;640x512&quot;, &quot;640x512&quot;, false,     // name, fsname, fs only
++            &quot;640x512&quot;, &quot;640x512&quot;, &quot;5:4&quot;,     // name, fsname, fs only
+             &quot;models-32.lua&quot;, &quot;gfx32/&quot;,       // initscript, dir
+             Rect (0, 0, 640, 480),           // display area
+             0, 0,                            // menu background image offsets 
+@@ -355,12 +361,13 @@
+             Rect (100, 420, 30, 40),         // moves area
+             Rect (152, 433, 490, 52),        // inventory area
+             Rect (150, 434, 475, 35),        // text area
+-            VM_640x480, false,               // 640x512 is deprecated!
++            false, false,                    // 640x512 is deprecated!
++            &quot;-0-&quot;,&quot;-0-&quot;                      // fallback modes window, fullscreen
+         },
+         { 
+             VM_800x600, 800, 600,            // id, w, h
+             40, VTS_40,                      // tilesize, tiletype
+-            &quot;800x600&quot;, &quot;800x600&quot;, false,     // name, fsname, fs only
++            &quot;800x600&quot;, &quot;SVGA&quot;, &quot;4:3&quot;,        // name, fsname, fs only
+             &quot;models-40.lua&quot;, &quot;gfx40/&quot;,       // initscript, dir
+             Rect (0, 0, 800, 600),           // display area
+             0, 0,                            // menu background image offsets 
+@@ -371,12 +378,13 @@
+             Rect (125, 540, 30, 40),         // moves area
+             Rect (192, 539, 610, 46),        // inventory area
+             Rect (185, 545, 600, 39),        // text area
+-            VM_640x480, true,                // fallback, available
++            true, true,                      // available window, fullscreen
++            &quot;-2-0-&quot;,&quot;-2-0-&quot;                  // fallback modes window, fullscreen
+         },
+         { 
+             VM_1024x768, 1024, 768,          // id, w, h
+             48, VTS_48,                      // tilesize, tiletype
+-            &quot;1024x768&quot;, &quot;1024x768&quot;, false,   // name, fsname, fs only
++            &quot;1024x768&quot;, &quot;XGA&quot;, &quot;4:3&quot;,        // name, fsname, fs only
+             &quot;models-48.lua&quot;, &quot;gfx48/&quot;,       // initscript, dir
+             Rect (32, 0, 960, 720),          // display area
+             -128, -96,                       // menu background image offsets 
+@@ -387,12 +395,13 @@
+             Rect (185, 640, 30, 60),         // moves area
+             Rect (260, 650, 710, 46),        // inventory area
+             Rect (260, 655, 710, 40),        // text area
+-            VM_640x480, true,                // fallback, available
++            true, true,                      // available window, fullscreen
++            &quot;-3-2-0-&quot;,&quot;-3-2-0-&quot;              // fallback modes window, fullscreen
+         },
+         { 
+             VM_960x720, 960, 720,            // id, w, h
+             48, VTS_48,                      // tilesize, tiletype
+-            &quot;960x720&quot;, &quot;960x720&quot;, false,     // name, fsname, fs only
++            &quot;960x720&quot;, &quot;960x720&quot;, &quot;4:3&quot;,     // name, fsname, fs only
+             &quot;models-48.lua&quot;, &quot;gfx48/&quot;,       // initscript, dir
+             Rect (0, 0, 960, 720),           // display area
+             -192, -144,                      // menu background image offsets 
+@@ -403,44 +412,30 @@
+             Rect (153, 640, 30, 60),         // moves area
+             Rect (228, 650, 710, 46),        // inventory area
+             Rect (228, 655, 710, 40),        // text area
+-            VM_640x480, true,                // fallback, available
++            true, true,                      // available window, fullscreen
++            &quot;-4-2-0-&quot;,&quot;-4-2-0-&quot;              // fallback modes window, fullscreen
+         },
+         { 
+-            VM_960x768, 960, 768,            // id, w, h
++            VM_1280x720, 1280, 720,          // id, w, h
+             48, VTS_48,                      // tilesize, tiletype
+-            &quot;960x768&quot;, &quot;1280x1024&quot;, true,    // name, fsname, fs only
++            &quot;1280x720&quot;, &quot;HD720&quot;, &quot;16:10&quot;,    // name, fsname, fs only
+             &quot;models-48.lua&quot;, &quot;gfx48/&quot;,       // initscript, dir
+-            Rect (0, 0, 960, 720),           // display area
++            Rect (160, 0, 960, 720),         // display area
+             -192, -96,                       // menu background image offsets 
+             120, 78, &quot;&quot;,                     // thumbnail size/extension
+-            Rect (0, 0, 960, 624),           // game area
+-            Rect (0, 624, 960, 96),          // statusbar area
+-            Rect (18, 640, 170, 60),         // time area
+-            Rect (153, 640, 30, 60),         // moves area
+-            Rect (228, 650, 710, 46),        // inventory area
+-            Rect (228, 655, 710, 40),        // text area
+-            VM_640x480, true,                // fallback, available
++            Rect (160, 0, 960, 624),         // game area
++            Rect (160, 624, 960, 96),        // statusbar area
++            Rect (178, 640, 170, 60),        // time area
++            Rect (313, 640, 30, 60),         // moves area
++            Rect (388, 650, 710, 46),        // inventory area
++            Rect (388, 655, 710, 40),        // text area
++            false, true,                     // available window, fullscreen
++            &quot;-0-&quot;,&quot;-5-0-&quot;                    // fallback modes window, fullscreen
+         },
+         { 
+-            VM_1152x720, 1152, 720,          // id, w, h
+-            48, VTS_48,                      // tilesize, tiletype
+-            &quot;1152x720&quot;, &quot;1680x1050&quot;, true,   // name, fsname, fs only
+-            &quot;models-48.lua&quot;, &quot;gfx48/&quot;,       // initscript, dir
+-            Rect (96, 0, 960, 720),          // display area
+-            0, -144,                         // menu background image offsets 
+-            120, 78, &quot;&quot;,                     // thumbnail size/extension
+-            Rect (96, 0, 960, 624),          // game area
+-            Rect (96, 624, 960, 96),         // statusbar area
+-            Rect (114, 640, 170, 60),        // time area
+-            Rect (249, 640, 30, 60),         // moves area
+-            Rect (324, 650, 710, 46),        // inventory area
+-            Rect (324, 655, 710, 40),        // text area
+-            VM_640x480, true,                // fallback, available
+-        },
+-        { 
+             VM_1280x960, 1280, 960,          // id, w, h
+             64, VTS_64,                      // tilesize, tiletype
+-            &quot;1280x960&quot;, &quot;1280x960&quot;, false,   // name, fsname, fs only
++            &quot;1280x960&quot;, &quot;1280x960&quot;, &quot;4:3&quot;,   // name, fsname, fs only
+             &quot;models-64.lua&quot;, &quot;gfx64/&quot;,       // initscript, dir
+             Rect (0, 0, 1280, 960),          // display area
+             -400, -90,                       // menu background image offsets 
+@@ -451,12 +446,30 @@
+             Rect (204, 853, 40, 80),         // moves area //TODO
+             Rect (304, 867, 947, 61),        // inventory area //TODO
+             Rect (304, 873, 947, 53),        // text area //TODO
+-            VM_640x480, true,                // fallback, available
++            true, true,                      // available window, fullscreen
++            &quot;-6-4-2-0-&quot;,&quot;-6-4-2-0-&quot;          // fallback modes window, fullscreen
+         },
+         { 
++            VM_1440x960, 1440, 960,          // id, w, h
++            64, VTS_64,                      // tilesize, tiletype
++            &quot;1440x960&quot;, &quot;1440x960&quot;, &quot;3:2&quot;,   // name, fsname, fs only
++            &quot;models-64.lua&quot;, &quot;gfx64/&quot;,       // initscript, dir
++            Rect (80, 0, 1280, 960),         // display area
++            -400, -90,                       // menu background image offsets 
++            160, 104, &quot;-160x104&quot;,            // thumbnail size/extension
++            Rect (80, 0, 1280, 832),         // game area
++            Rect (80, 832, 1280, 128),       // statusbar area
++            Rect (104, 853, 227, 80),        // time area //TODO
++            Rect (284, 853, 40, 80),         // moves area //TODO
++            Rect (384, 867, 947, 61),        // inventory area //TODO
++            Rect (384, 873, 947, 53),        // text area //TODO
++            false, true,                     // available window, fullscreen
++            &quot;-0-&quot;,&quot;-7-0-&quot;                    // fallback modes window, fullscreen
++        },
++        { 
+             VM_1280x1024, 1280, 1024,        // id, w, h
+             64, VTS_64,                      // tilesize, tiletype
+-            &quot;1280x1024&quot;, &quot;1280x1024&quot;, true,  // name, fsname, fs only
++            &quot;1280x1024&quot;, &quot;SXGA&quot;, &quot;5:4&quot;,      // name, fsname, fs only
+             &quot;models-64.lua&quot;, &quot;gfx64/&quot;,       // initscript, dir
+             Rect (0, 0, 1280, 960),          // display area
+             -400, -26,                       // menu background image offsets 
+@@ -467,12 +480,13 @@
+             Rect (153, 640, 30, 60),         // moves area //TODO
+             Rect (228, 650, 710, 46),        // inventory area //TODO
+             Rect (228, 655, 710, 40),        // text area //TODO
+-            VM_640x480, true,                // fallback, available
++            false, true,                     // available window, fullscreen
++            &quot;-0-&quot;,&quot;-8-0-&quot;                    // fallback modes window, fullscreen
+         },
+         { 
+             VM_1680x1050, 1680, 1050,        // id, w, h
+             64, VTS_64,                      // tilesize, tiletype
+-            &quot;1680x1050&quot;, &quot;1680x1050&quot;, false, // name, fsname, fs only
++            &quot;1680x1050&quot;, &quot;WSXGA+&quot;, &quot;16:10&quot;,  // name, fsname, fs only
+             &quot;models-64.lua&quot;, &quot;gfx64/&quot;,       // initscript, dir
+             Rect (200, 0, 1280, 960),        // display area
+             -0, -0,                          // menu background image offsets 
+@@ -483,8 +497,9 @@
+             Rect (404, 853, 40, 80),         // moves area //TODO
+             Rect (504, 867, 947, 61),        // inventory area //TODO
+             Rect (504, 873, 947, 53),        // text area //TODO
+-            VM_640x480, true,                // fallback, available
+-        },
++            false, true,                     // available window, fullscreen
++            &quot;-0-&quot;,&quot;-9-0-&quot;                    // fallback modes window, fullscreen
++        }
+     };
+ 
+     VideoModes current_video_mode = VM_None;
+@@ -494,7 +509,7 @@
+ 
+ namespace
+ {
+-    bool vm_available (int w, int h, int &amp;bpp, bool &amp;fullscreen)
++    bool vm_available (int w, int h, int &amp;bpp, bool fullscreen)
+     {
+         Uint32 flags = SDL_HWSURFACE;
+         if (fullscreen)
+@@ -609,53 +624,126 @@
+     video_modes[current_video_mode].thumbsext = extension;
+ }
+ 
++int video::GetNumAvailableModes(bool isFullscreen) {
++    int avail = 0;
++    for (int i = VM_None + 1; i &lt; VM_COUNT; i++)
++        if (isFullscreen ? video_modes[i].f_available : video_modes[i].w_available)
++            avail++;
++            
++    return avail;
++}
++
++VideoModes video::GetVideoMode(int number, bool isFullscreen) {
++    int avail = 0;
++    for (int i = VM_None + 1; i &lt; VM_COUNT; i++)
++        if (isFullscreen ? video_modes[i].f_available : video_modes[i].w_available) {
++            if (avail == number)
++                return static_cast&lt;video::VideoModes&gt;(i);
++            else
++                avail++;
++        }
++    return VM_None;
++}
++
++VideoModes video::GetBestUserMode(bool isFullscreen, int seq) {
++    std::string modes = app.prefs-&gt;getString(isFullscreen ? &quot;VideoModesFullscreen&quot; : &quot;VideoModesWindow&quot;);
++    if (modes.length() &gt; 1) {
++        std::istringstream ms(modes);
++        int m = VM_None;
++        ms.ignore();  // leading '-'
++        while (ms &amp;&amp; seq &gt; 0) {
++            ms &gt;&gt; std::dec &gt;&gt; m;
++            ms.ignore();
++            if (m &lt;= VM_COUNT &amp;&amp; ((!isFullscreen &amp;&amp; video_modes[m].w_available) ||
++                    (isFullscreen &amp;&amp; video_modes[m].f_available))) {
++                if (seq == 1) {
++                    return static_cast&lt;video::VideoModes&gt;(m);
++                }
++                --seq; 
++            }
++        }
++    }
++    return VM_None;
++}
++
++
++int video::GetModeNumber(VideoModes mode, bool isFullscreen) {
++    int avail = 0;
++    for (int i = VM_None + 1; i &lt; mode; i++)
++        if (isFullscreen ? video_modes[i].f_available : video_modes[i].w_available)
++            avail++;
++    return avail;
++}
++
++
+ bool video::ModeAvailable (VideoModes vm)
+ {
+     const VMInfo *vminfo = GetInfo (vm);
+     string fname;
+-    return (vminfo-&gt;available &amp;&amp; app.systemFS-&gt;findFile (vminfo-&gt;initscript, fname));
++    return (vminfo-&gt;w_available &amp;&amp; app.systemFS-&gt;findFile (vminfo-&gt;initscript, fname));
+ }
+ 
+ 
+ void video::Init() 
+ {
+-    assert (NUMENTRIES(video_modes) == VM_COUNT);
++    static bool isInit = false;
++    static int bpp_default = 16;
++    int bpp = bpp_default; //options::BitsPerPixel;
+ 
++    
++    if (!isInit) {
++        assert (NUMENTRIES(video_modes) == VM_COUNT);
++        isInit = true;
++        for (int i = VM_None + 1; i &lt; VM_COUNT; i++) {
++            bpp = bpp_default;
++            if (video_modes[i].w_available &amp;&amp; !vm_available(video_modes[i].width, video_modes[i].height, bpp, false)) {
++                video_modes[i].w_available = false;
++                Log &lt;&lt; &quot;Video mode &quot; &lt;&lt; video_modes[i].width &lt;&lt; &quot; x &quot; &lt;&lt; video_modes[i].height &lt;&lt; &quot; window not available\n&quot;;
++            }
++            if (bpp != bpp_default)
++                Log &lt;&lt; &quot;Video mode &quot; &lt;&lt; video_modes[i].width &lt;&lt; &quot; x &quot; &lt;&lt; video_modes[i].height &lt;&lt; &quot; window available with bpp &quot; &lt;&lt; bpp &lt;&lt; &quot;\n&quot;;
++            bpp = bpp_default;
++            if (video_modes[i].f_available &amp;&amp; !vm_available(video_modes[i].width, video_modes[i].height, bpp, true)) {
++                video_modes[i].f_available = false;
++                Log &lt;&lt; &quot;Video mode &quot; &lt;&lt; video_modes[i].width &lt;&lt; &quot; x &quot; &lt;&lt; video_modes[i].height &lt;&lt; &quot; fullscreen not available\n&quot;;
++            }
++            if (bpp != bpp_default)
++                Log &lt;&lt; &quot;Video mode &quot; &lt;&lt; video_modes[i].width &lt;&lt; &quot; x &quot; &lt;&lt; video_modes[i].height &lt;&lt; &quot; fullscreen available with bpp &quot; &lt;&lt; bpp &lt;&lt; &quot;\n&quot;;
++        }
++    }
++
++    bool isFullScreen = app.prefs-&gt;getBool(&quot;FullScreen&quot;);
+     int vidmode = -1;
+-    app.prefs-&gt;getProperty(&quot;VideoMode1.1&quot;, vidmode);
+-    if (vidmode == -1) {
++    if (app.prefs-&gt;getString(&quot;VideoModesFullscreen&quot;).empty()) {
+         // initialize from 1.0 mode if never set before
+         vidmode = app.prefs-&gt;getInt(&quot;VideoMode&quot;);
+-        app.prefs-&gt;setProperty(&quot;VideoMode1.1&quot;, vidmode);
+-        app.prefs-&gt;setProperty(&quot;FullScreen1.1&quot;, app.prefs-&gt;getBool(&quot;FullScreen&quot;));
++        app.prefs-&gt;setProperty(&quot;VideoModesFullscreen&quot;, video_modes[vidmode].fallback_fullscreen);
++        app.prefs-&gt;setProperty(&quot;VideoModesWindow&quot;, video_modes[vidmode].fallback_window);
+     }
+-    if (vidmode &gt;= VM_COUNT) {
+-        // TODO
+-    }
+-    vidmode = ecl::Clamp(vidmode, 0, VM_COUNT-1);
++    vidmode = video::GetBestUserMode(isFullScreen);
++    
+     int oldvidmode = vidmode;
+ 
+     video_engine = new Video_SDL();
+ 
+-    int bpp = 16; //options::BitsPerPixel;
++
+     assert(bpp==16 || bpp==32);
+-
++    int fallback_sequence = 1;
+     while (true) {
+         VMInfo *vminfo     = &amp;video_modes[vidmode];
+         int     w          = vminfo-&gt;width;
+         int     h          = vminfo-&gt;height;
+-        bool    fullscreen = app.prefs-&gt;getBool(&quot;FullScreen1.1&quot;);
+ 
+         if (ModeAvailable (static_cast&lt;VideoModes&gt; (vidmode))
+-            &amp;&amp; vm_available (w, h, bpp, fullscreen)
+-            &amp;&amp; video_engine-&gt;init (w, h, bpp, fullscreen)) 
++            &amp;&amp; vm_available (w, h, bpp, isFullScreen)
++            &amp;&amp; video_engine-&gt;init (w, h, bpp, isFullScreen)) 
+         {
+             // Success!
+             break;
+         }
+ 
+-        // Video mode not available? Try the fallback video mode
+-        vidmode = vminfo-&gt;fallback_videomode;
++        // Video mode not available? Try the next fallback video mode
++        vidmode =  video::GetBestUserMode(isFullScreen, ++fallback_sequence); 
+         if (vidmode == VM_None) {
+             // Give up :-(
+             fprintf(stderr, &quot;Couldn't open screen: %s\n&quot;, SDL_GetError());
+@@ -664,11 +752,12 @@
+     }
+ 
+     current_video_mode = static_cast&lt;VideoModes&gt;(vidmode);
+-    if (vidmode != app.prefs-&gt;getInt(&quot;VideoMode1.1&quot;)) {
+-        app.prefs-&gt;setProperty(&quot;VideoMode1.1&quot;, vidmode);
+-    }
++    app.selectedVideoMode = current_video_mode;
+ 
+-
++    // Set the caption icon -- this position after SDL_SetVideoMode() contradicts SDL doc!!
++    // But it proves to be the only working position for Linux.
++    // It works for Windows besides XP with selected &quot;WindowsXP Design&quot;, too.
++    // Mac icon is set via Makefile 
+ #ifndef MACOSX
+     Surface *icn = enigma::GetImage(&quot;enigma_marble&quot;);
+     if(icn)
+@@ -724,14 +813,17 @@
+     return SCREEN-&gt;get_surface()-&gt;bipp();
+ }
+ 
+-bool video::SetFullscreen(bool onoff) 
++bool video::SetFullscreen(bool on) 
+ {
+-    video_engine-&gt;set_fullscreen(onoff);
+-    bool is_fullscreen = video_engine-&gt;is_fullscreen();
+-    if (onoff == is_fullscreen) {
+-        app.prefs-&gt;setProperty(&quot;FullScreen1.1&quot;, is_fullscreen);
++    if ((on &amp;&amp; video_modes[current_video_mode].f_available) || 
++            (!on &amp;&amp; video_modes[current_video_mode].w_available)) {
++        video_engine-&gt;set_fullscreen(on);
++        bool is_fullscreen = video_engine-&gt;is_fullscreen();
++        if (on == is_fullscreen) {
++            app.prefs-&gt;setProperty(&quot;FullScreen&quot;, is_fullscreen);
++        }
+     }
+-    return is_fullscreen;
++    return video::IsFullScreen();
+ }
+ 
+ bool video::ToggleFullscreen() 
+@@ -763,7 +855,7 @@
+         ecl::FolderCreate (directory);
+     }
+ 
+-    ecl::SavePNG (SCREEN-&gt;get_surface(), fname);
++    ecl::SavePNG (ecl::Grab(SCREEN-&gt;get_surface(), video_modes[current_video_mode].area), fname);
+     enigma::Log &lt;&lt; &quot;Wrote screenshot to '&quot; &lt;&lt; fname &lt;&lt; &quot;\n&quot;;
+ }
+ 
+
+Modified: trunk/src/video.hh
+===================================================================
+--- trunk/src/video.hh	2007-09-08 13:33:27 UTC (rev 873)
++++ trunk/src/video.hh	2007-09-08 16:53:53 UTC (rev 874)
+@@ -31,16 +31,16 @@
+ 
+     enum VideoModes {
+         VM_None      = -1,
+-        VM_640x480   = 0,   // 32 bit basic
+-        VM_640x512   = 1,
+-        VM_800x600   = 2,   // 40 bit basic
+-        VM_1024x768  = 3,   // 48 bit embedded
+-        VM_960x720   = 4,   // 48 bit basic
+-        VM_960x768   = 5,   // 48 bit grid linear strechable to 1280x1024
+-        VM_1152x720  = 6,   // 48 bit grid lineas strechable to 1680x1050
+-        VM_1280x960  = 7,   // 64 bit basic
+-        VM_1280x1024 = 8,   // 64 bit embedded 
+-        VM_1680x1050 = 9,   // 64 bit embedded
++        VM_640x480   = 0,   ///&lt; 32 bit basic    -  4:3  - VGA
++        VM_640x512   = 1,   ///&lt; 32 bit embedded -  5:4  - none
++        VM_800x600   = 2,   ///&lt; 40 bit basic    -  4:3  - SVGA
++        VM_1024x768  = 3,   ///&lt; 48 bit embedded -  4:3  - XGA
++        VM_960x720   = 4,   ///&lt; 48 bit basic    -  4:3  - none
++        VM_1280x720  = 5,   ///&lt; 48 bit embedded - 16:9  - HD720
++        VM_1280x960  = 6,   ///&lt; 64 bit basic    -  4:3  - none
++        VM_1440x960  = 7,   ///&lt; 64 bit embedded -  3:2  - none
++        VM_1280x1024 = 8,   ///&lt; 64 bit embedded -  5:4  - SXGA
++        VM_1680x1050 = 9,   ///&lt; 64 bit embedded - 16:10 - WSXGA+
+         VM_COUNT
+     };
+     
+@@ -56,9 +56,9 @@
+         int            width, height;    // Screen width and height in pixels
+         int            tile_size;        // Tile size in pixels
+         VideoTileType  tt;               // Tile type
+-        const char    *name;             // Menu text 
+-        const char    *fullscreen_name;  // Menu text 
+-        bool           isFullscreenOnly;
++        const char    *name;             // Menu text resolution
++        const char    *std_name;         // Menu text svg standard
++        const char    *relation_name;    // Menu text relation width : height
+         const char    *initscript;       // Lua initialization script
+         const char    *gfxdir;           // Directory that contains the graphics
+         ecl::Rect      area;             // Area that is used for display
+@@ -71,8 +71,10 @@
+         ecl::Rect      sb_movesarea;
+         ecl::Rect      sb_itemarea;
+         ecl::Rect      sb_textarea;
+-        VideoModes     fallback_videomode;
+-        bool           available;        // Is this video mode available?
++        bool           w_available;        // Is this video mode available?
++        bool           f_available;        // Is this video mode available?
++        std::string    fallback_window;    // hyphen seperated list of modes e.g. &quot;-7-4-2-0-&quot;
++        std::string    fallback_fullscreen;
+     };
+ 
+     void Init();
+@@ -91,11 +93,48 @@
+     const VMInfo *GetInfo (VideoModes vm);
+ 
+     /*! Return information about current video mode. */
+-    const VMInfo *GetInfo ();
++    const VMInfo *GetInfo();
+ 
+     // just for main batch thumb generation in wrong videomode
+     void SetThumbInfo(int width, int height, std::string extension);
+ 
++    /**
++     * Count number of available modes for the current configuration.
++     * @arg  isFullScreen   video mode for fullscreen or window mode
++     * @return   number of modes
++     */
++    int GetNumAvailableModes(bool isFullscreen);
++    
++    /**
++     * Get the video mode by the sequence number of available modes for the
++     * current configuration
++     * @arg  number         desired sequence number within the list of available modes
++     * @arg  isFullScreen   video mode for fullscreen or window mode
++     * @return   the requested video mode
++     */
++    VideoModes GetVideoMode(int number, bool isFullscreen);
++    
++    /**
++     * Calulate the sequence number for a given mode within the number of
++     * available modes for the current configuration.
++     * @arg  mode           the video mode to locate
++     * @arg  isFullScreen   video mode for fullscreen or window mode
++     * @return   the sequence number of the mode
++     */
++    int GetModeNumber(VideoModes mode, bool isFullScreen);
++    
++    /**
++     * Calculate the best video mode out of the users preferences that is
++     * available for the current configuration. As the user preference 
++     * state a sequence of fallback modes this function returns a useful 
++     * mode even if the user did run previously a future version of Enigma
++     * and selected a mode that is not available in this Enigma version.
++     * @arg  isFullScreen   video mode for fullscreen or window mode
++     * @arg  seq            sequence number of best available mode, default to 1
++     * @return   the preferable video mode 
++     */
++    VideoModes GetBestUserMode(bool isFullScreen, int seq = 1);
++    
+     bool ModeAvailable (VideoModes vm);
+ 
+     //! Return the current video mode
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000305.html">[Enigma-game-svn] r873 - branches/1.01/lib-src/zipios++/zipios++
+</A></li>
+	<LI>Next message: <A HREF="000307.html">[Enigma-game-svn] r875 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#306">[ date ]</a>
+              <a href="thread.html#306">[ thread ]</a>
+              <a href="subject.html#306">[ subject ]</a>
+              <a href="author.html#306">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

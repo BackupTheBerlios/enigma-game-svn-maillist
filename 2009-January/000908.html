@@ -1,0 +1,620 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1479 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1479%20-%20trunk/src&In-Reply-To=%3C200901232328.n0NNSxZ8022573%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000907.html">
+   <LINK REL="Next"  HREF="000909.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1479 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1479%20-%20trunk/src&In-Reply-To=%3C200901232328.n0NNSxZ8022573%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1479 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Jan 24 00:28:59 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000907.html">[Enigma-game-svn] r1478 - in trunk/data/levels: enigma_cross	enigma_iv enigma_v enigma_vi enigma_vii enigma_viii
+</A></li>
+        <LI>Next message: <A HREF="000909.html">[Enigma-game-svn] r1480 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#908">[ date ]</a>
+              <a href="thread.html#908">[ thread ]</a>
+              <a href="subject.html#908">[ subject ]</a>
+              <a href="author.html#908">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-01-24 00:28:58 +0100 (Sat, 24 Jan 2009)
+New Revision: 1479
+
+Modified:
+   trunk/src/Object.cc
+   trunk/src/Value.cc
+   trunk/src/Value.hh
+   trunk/src/WorldProxy.cc
+   trunk/src/enigma.cc
+   trunk/src/enigma.hh
+   trunk/src/lua.cc
+   trunk/src/world.cc
+   trunk/src/world.hh
+   trunk/src/world_internal.hh
+Log:
+Trunk 1.1:
+- fix typo in group:subGroup evaluation of second argument
+- fix argument checking for group index write access: numbers not allowed
+- Value: 
+  - add type GRIDPOS besides POSITION to distinguish origional meaning
+  - add position retrieval for Values that describe objects or named positions
+  - add method ecl::V2 centeredPos() to retrieve a position vector that is
+    centered to the grid for GRIDPOS and objects aligned to grids
+- attribute &quot;destination&quot; as supported by ac_horse, it_wormhole, it_vortex
+  - allow named position strings, thus being able to add multiple pure position
+    destinations
+  - named floor destinations being killed remain valid as they are now
+    interpreted as named positions
+- add global attribute &quot;GlobalForce&quot; as a constant force applied to every
+    actor, the value is position like vector
+
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2009-01-22 22:17:36 UTC (rev 1478)
++++ trunk/src/Object.cc	2009-01-23 23:28:58 UTC (rev 1479)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004,2005 Daniel Heck
+- * Copyright (C) 2007, 2008 Ronald Lamprecht
++ * Copyright (C) 2007,2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -362,31 +362,20 @@
+     
+     bool Object::getDestinationByIndex(int idx, ecl::V2 &amp;dstpos) const {
+         int i = 0;  // counter for destination candidates
+-        Value dest = getAttr(&quot;destination&quot;);
+-        if (dest.getType() == Value::POSITION &amp;&amp; idx == 0) {
+-            // arbitrary precision position as destination
+-            dstpos = dest;
+-            return true;
+-        } else {
+-            // evaluate destination objects in sequence up to &quot;idx&quot;
+-            TokenList tl = dest;  // convert any object type value to a tokenlist 
+-            for (TokenList::iterator tit = tl.begin(); tit != tl.end(); ++tit) {
+-                ObjectList ol = (*tit).getObjectList(this);  // convert next token to an objectlist
+-                for (ObjectList::iterator oit = ol.begin(); oit != ol.end(); ++oit) {
+-                    GridObject *go = dynamic_cast&lt;GridObject *&gt;(*oit);  // get the object
+-                    if (go != NULL) {   // no actors and deleted objects as destination!
+-                        GridPos p = go-&gt;get_pos();
+-                        if (IsInsideLevel(p)) {   // no objects in inventory,...
+-                            if (i == idx) {
+-                                dstpos = p.center();
+-                                return true;
+-                            } else
+-                                i++;
+-                        }
+-                    }
++        TokenList tl = getAttr(&quot;destination&quot;);  // expand any tokens to a list of values 
++        for (TokenList::iterator tit = tl.begin(); tit != tl.end(); ++tit) {
++            PositionList pl = (*tit).getPositionList(this);  // convert next token to a list of positions
++            for (PositionList::iterator pit = pl.begin(); pit != pl.end(); ++pit) {
++                ecl::V2 pos = (*pit).centeredPos();
++                if (IsInsideLevel(pos))  {  // no positions in inventory,..
++                    if (i == idx) {
++                        dstpos = pos;
++                        return true;
++                    } else
++                        i++;
+                 }
+             }
+-        }
++        }        
+         return false;
+     }
+     
+
+Modified: trunk/src/Value.cc
+===================================================================
+--- trunk/src/Value.cc	2009-01-22 22:17:36 UTC (rev 1478)
++++ trunk/src/Value.cc	2009-01-23 23:28:58 UTC (rev 1479)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2007 Ronald Lamprecht
++ * Copyright (C) 2007,2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -125,7 +125,7 @@
+          val.dval[1] = pos[1];
+     }
+     
+-    Value::Value(GridPos gpos) : type (POSITION) {
++    Value::Value(GridPos gpos) : type (GRIDPOS) {
+          val.dval[0] = gpos.x;
+          val.dval[1] = gpos.y;
+     }
+@@ -133,6 +133,7 @@
+     Value::Value(Type t) : type (t) {
+         switch (t) {
+             case POSITION :
++            case GRIDPOS :
+                 val.dval[1] = 0;
+                 // fall thorough
+             case DOUBLE :
+@@ -213,6 +214,7 @@
+                 case NAMEDOBJECT :
+                     return strcmp(val.str, other.val.str) == 0;
+                 case POSITION :
++                case GRIDPOS :
+                     return (val.dval[0] == other.val.dval[0]) &amp;&amp; (val.dval[1] == other.val.dval[1]);
+             }
+         return true;
+@@ -293,6 +295,8 @@
+             case NAMEDOBJECT:
+             case STRING:
+             case GROUP:
++            case POSITION:
++            case GRIDPOS:
+                 result.push_back(*this);
+                 break;
+             case TOKENS:
+@@ -323,22 +327,34 @@
+     }
+     
+     Value::operator ecl::V2() const {
++        Object *obj = NULL;
+         switch (type) {
+-            case POSITION: {
++            case POSITION:
++            case GRIDPOS:
+                 return ecl::V2(val.dval[0], val.dval[1]);
+-            }
+-            default:
+-                return ecl::V2(0, 0);
++            case NAMEDOBJECT:
++            case STRING:
++            case OBJECT:
++                obj = *this;
++                if (obj != NULL)
++                    switch (obj-&gt;getObjectType()) {
++                        case Object::STONE :
++                        case Object::FLOOR :
++                        case Object::ITEM  :
++                            return dynamic_cast&lt;GridObject *&gt;(obj)-&gt;get_pos();
++                        case Object::ACTOR :
++                            return dynamic_cast&lt;Actor *&gt;(obj)-&gt;get_pos();
++                    }
++                else if (type != OBJECT)
++                    return GetNamedPosition(val.str);
+         }
++        // all other cases
++        return ecl::V2(-1, -1);
+     }
+     
+     Value::operator GridPos() const {
+-        switch (type) {
+-            case POSITION:
+-                return GridPos(round_down&lt;int&gt;(val.dval[0]), round_down&lt;int&gt;(val.dval[1]));
+-            default:
+-                return GridPos(0, 0);
+-        }
++        ecl::V2 pos = *this;
++        return GridPos(pos);
+     }
+     
+     Value::operator const char*() const {
+@@ -421,6 +437,33 @@
+         }
+     }
+     
++    ecl::V2 Value::centeredPos() const {
++        Object *obj = NULL;
++        switch (type) {
++            case POSITION:
++                return ecl::V2(val.dval[0], val.dval[1]);
++            case GRIDPOS:
++                return ecl::V2(val.dval[0] + 0.5, val.dval[1] + 0.5);
++            case NAMEDOBJECT:
++            case STRING:
++            case OBJECT:
++                obj = *this;
++                if (obj != NULL)
++                    switch (obj-&gt;getObjectType()) {
++                        case Object::STONE :
++                        case Object::FLOOR :
++                        case Object::ITEM  :
++                            return dynamic_cast&lt;GridObject *&gt;(obj)-&gt;get_pos().center();
++                        case Object::ACTOR :
++                            return dynamic_cast&lt;Actor *&gt;(obj)-&gt;get_pos();
++                    }
++                else if (type != OBJECT)
++                    return GetNamedPosition(val.str).centeredPos();
++        }
++        // all other cases
++        return ecl::V2(-1, -1);        
++    }
++    
+     ObjectList Value::getObjectList(const Object *reference) const {
+         ObjectList result;
+         switch (type) {
+@@ -452,6 +495,40 @@
+         return result;
+     }
+     
++    PositionList Value::getPositionList(const Object *reference) const {
++        PositionList result;
++        switch (type) {
++            case STRING:
++                if (std::string(val.str).find_first_of(&quot;*?&quot;) != std::string::npos) {
++                    // wildcards in object name - we need to add all objects
++                    result = GetNamedPositionList(val.str, reference);
++                    break;
++                }
++                // else it is a single object name - fall through not possible
++                
++                
++                
++            case NAMEDOBJECT:
++            case OBJECT:
++                result.push_back(*this);
++                break;
++            case GROUP:
++                std::vector&lt;std::string&gt; vs;
++                ecl::split_copy(std::string(val.str), ',', back_inserter(vs));
++                for (std::vector&lt;std::string&gt;::iterator it = vs.begin(); it != vs.end(); ++it) {
++                    if (it-&gt;size() &gt; 0) {
++                        if ((*it)[0] == '#') {
++                            result.push_back(Object::getObject(atoi((*it).c_str() + 1)));
++                        } else {
++                            result.push_back(GetNamedPosition(*it));
++                        }
++                    }
++                }
++                break;
++        }
++        return result;
++    }
++    
+     bool Value::finalizeNearestObjectReference(const Object *reference) {
+         if (type == STRING &amp;&amp; std::string(val.str).find(&quot;@@&quot;) != 0 &amp;&amp; std::string(val.str).find(&quot;@&quot;) == 0
+                 &amp;&amp; std::string(val.str).find_first_of(&quot;*?&quot;) != std::string::npos) {
+
+Modified: trunk/src/Value.hh
+===================================================================
+--- trunk/src/Value.hh	2009-01-22 22:17:36 UTC (rev 1478)
++++ trunk/src/Value.hh	2009-01-23 23:28:58 UTC (rev 1479)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2004 Daniel Heck
+- * Copyright (C) 2007 Ronald Lamprecht
++ * Copyright (C) 2007,2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -94,6 +94,7 @@
+                       ///&lt; identifier.
+             GROUP,    ///&lt; Value is a group of objects.
+             POSITION, ///&lt; Value is a position
++            GRIDPOS,  ///&lt; Value is a grid position
+             TOKENS,   ///&lt; Value is a list of token values
+             NAMEDOBJECT  ///&lt; internal Value type for named objects - public type is OBJECT
+         };
+@@ -236,9 +237,19 @@
+         bool to_bool() const;
+         
+         /**
++         * Returns the value converted to a vector position with a centering of all
++         * grid position type values. GRIDPOS type values as well as all positions of
++         * GridObject's will be return as grid centered vector positions, while true
++         * vector position values and positions of Actor's will be returned as is.
++         * Other values will return a position of (-1, -1) indicating a false position 
++         */
++        ecl::V2 centeredPos() const;
++        
++        /**
+          * 
+          */
+         ObjectList getObjectList(const Object *reference = NULL) const;
++        PositionList getPositionList(const Object *reference =NULL) const;
+         bool finalizeNearestObjectReference(const Object *reference = NULL);
+     private:
+         void clear();      ///&lt; Release resources and assign type NIL
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2009-01-22 22:17:36 UTC (rev 1478)
++++ trunk/src/WorldProxy.cc	2009-01-23 23:28:58 UTC (rev 1479)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2007,2008 Ronald Lamprecht
++ * Copyright (C) 2007,2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -86,6 +86,8 @@
+             return server::Fragility;
+         } else if (key == &quot;FrictionStrength&quot;) {
+             return server::FrictionFactor;
++        } else if (key == &quot;GlobalForce&quot;) {
++            return GetGlobalForce();
+         } else if (key == &quot;MeditationStrength&quot;) {
+             return server::HoleForce;
+         } else if (key == &quot;MagnetStrength&quot;) {
+@@ -172,6 +174,8 @@
+             server::Fragility = val;
+         } else if (key == &quot;FrictionStrength&quot;) {
+             server::FrictionFactor = val;
++        } else if (key == &quot;GlobalForce&quot;) {
++            SetGlobalForce(val);
+         } else if (key == &quot;MeditationStrength&quot;) {
+             server::HoleForce = val;
+         } else if (key == &quot;MagnetStrength&quot;) {
+
+Modified: trunk/src/enigma.cc
+===================================================================
+--- trunk/src/enigma.cc	2009-01-22 22:17:36 UTC (rev 1478)
++++ trunk/src/enigma.cc	2009-01-23 23:28:58 UTC (rev 1479)
+@@ -147,7 +147,11 @@
+   y (round_down&lt;int&gt;(p[1])) 
+ {}
+ 
++    GridPos::operator ecl::V2() const {
++        return ecl::V2(x, y);
++    }
+ 
++
+ std::ostream&amp; operator&lt;&lt;(std::ostream&amp; os, const GridPos&amp; val)
+ {
+     return os &lt;&lt; '(' &lt;&lt; val.x &lt;&lt; ',' &lt;&lt; val.y &lt;&lt; ')';
+
+Modified: trunk/src/enigma.hh
+===================================================================
+--- trunk/src/enigma.hh	2009-01-22 22:17:36 UTC (rev 1478)
++++ trunk/src/enigma.hh	2009-01-23 23:28:58 UTC (rev 1479)
+@@ -156,6 +156,11 @@
+         explicit GridPos(const ecl::V2&amp; p);
+         void move(Direction dir);
+         ecl::V2 center() const;
++        
++        /**
++         * Conversion of a value to a position vector.
++         */
++        operator ecl::V2() const;
+     };
+ 
+     GridPos move(GridPos p, Direction dir);
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2009-01-22 22:17:36 UTC (rev 1478)
++++ trunk/src/lua.cc	2009-01-23 23:28:58 UTC (rev 1479)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2007,2008 Ronald Lamprecht
++ * Copyright (C) 2007,2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -420,6 +420,7 @@
+             pushNewGroup(L, val);
+             break;
+         case Value::POSITION:
++        case Value::GRIDPOS:
+             pushNewPosition(L, val);
+             break;
+         case Value::TOKENS: {
+@@ -804,7 +805,7 @@
+     ecl::V2 v;
+     v[0] = lua_tonumber(L, 1);
+     v[1] = lua_tonumber(L, 2);
+-    SetConstantForce (v);
++    SetGlobalForce(v);
+     return 0;
+ }
+ 
+@@ -2862,7 +2863,7 @@
+ MethodMap groupMethodeMap;
+ 
+ static int dispatchGroupWriteAccess(lua_State *L) {
+-    if (!(lua_isstring(L, 2))) {
++    if (!(lua_isstring(L, 2)) || lua_type(L, 2) == LUA_TNUMBER) {
+         throwLuaError(L, &quot;Group: illegal attribute write access&quot;);
+         return 0;
+     }
+@@ -2980,7 +2981,7 @@
+     }
+     if (lua_gettop(L) == 3 &amp;&amp; lua_isnumber(L, 2) &amp;&amp; lua_isnumber(L, 3)) {
+         start = lua_tointeger(L, 2) - 1;
+-        end = lua_tointeger(L, 2);
++        end = lua_tointeger(L, 3);
+         if (end &lt; 0) {
+             end = start - end;
+         }
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2009-01-22 22:17:36 UTC (rev 1478)
++++ trunk/src/world.cc	2009-01-23 23:28:58 UTC (rev 1479)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004,2005 Daniel Heck
+- * Copyright (C) 2007,2008, 2009 Ronald Lamprecht
++ * Copyright (C) 2007,2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -226,7 +226,7 @@
+ World::World(int ww, int hh) : fields(ww,hh), preparing_level(true),
+         leftmost_actor (NULL), rightmost_actor (NULL), numMeditatists (0), 
+         indispensableHollows (0), engagedIndispensableHollows(0), engagedDispensableHollows (0),
+-        registerCriticalPositions (false), scrambleIntensity(10) // difficult default
++        globalForce (0, 0), registerCriticalPositions (false), scrambleIntensity(10) // difficult default
+         {
+     w = ww;
+     h = hh;
+@@ -374,9 +374,9 @@
+     return Value(GridPos(-1, -1));
+ }
+ 
+-PositionList World::getPositionList(const std::string &amp;tmpl) {
++PositionList World::getPositionList(const std::string &amp;tmpl, const Object *reference) {
+     PositionList positions;
+-    ObjectList objects = get_group(tmpl);
++    ObjectList objects = get_group(tmpl, reference);
+     for (ObjectList::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
+         switch ((*itr)-&gt;getObjectType()) {
+             case Object::STONE :
+@@ -570,7 +570,7 @@
+     if (a-&gt;is_on_floor()) {
+         if (Floor *floor = a-&gt;m_actorinfo.field-&gt;floor) {
+             // Constant force
+-            f += flatForce;
++            f += globalForce;
+ 
+             // Mouse force
+             if (a-&gt;get_controllers() != 0) {
+@@ -1744,8 +1744,8 @@
+     return level-&gt;getNamedPosition(name);    
+ }
+ 
+-PositionList GetNamedPositionList(const string &amp;tmpl) {
+-    return level-&gt;getPositionList(tmpl);    
++PositionList GetNamedPositionList(const string &amp;tmpl, const Object *reference) {
++    return level-&gt;getPositionList(tmpl, reference);    
+ }
+ 
+ bool IsLevelBorder(const GridPos &amp;p) {
+@@ -1756,6 +1756,10 @@
+     return level-&gt;contains(p);
+ }
+ 
++bool IsInsideLevel(const ecl::V2 &amp;p) {
++    return level-&gt;contains(p);
++}
++
+ /* -------------------- Force fields -------------------- */
+ 
+ void AddForceField(ForceField *ff)
+@@ -1767,10 +1771,13 @@
+     level-&gt;remove (ff);
+ }
+ 
+-void SetConstantForce (V2 force) {
+-    level-&gt;flatForce = force;
++void SetGlobalForce(V2 force) {
++    level-&gt;globalForce = force;
+ }
+ 
++ecl::V2 GetGlobalForce() {
++    return level-&gt;globalForce;
++}
+ 
+ /* -------------------- Signals, Messages, Actions -------------------- */
+ 
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2009-01-22 22:17:36 UTC (rev 1478)
++++ trunk/src/world.hh	2009-01-23 23:28:58 UTC (rev 1479)
+@@ -160,6 +160,7 @@
+ 
+     bool IsLevelBorder(const GridPos &amp;p);
+     bool IsInsideLevel(const GridPos &amp;p);
++    bool IsInsideLevel(const ecl::V2 &amp;p);
+     Object *GetObject(const GridLoc &amp;l);
+ 
+ /* -------------------- Named Objects -------------------- */
+@@ -173,7 +174,7 @@
+ 
+     void NamePosition(Value po, const string &amp;name);
+     Value GetNamedPosition(const string &amp;name);
+-    PositionList GetNamedPositionList(const std::string &amp;templ);
++    PositionList GetNamedPositionList(const std::string &amp;templ, const Object *reference = NULL);
+ 
+ /* -------------------- Force Fields -------------------- */
+ 
+@@ -181,9 +182,9 @@
+     void RemoveForceField (ForceField *ff);
+     void SetMouseForce (V2 f);
+ 
+-    void SetConstantForce (V2 force);
++    void SetGlobalForce(V2 force);
++    ecl::V2 GetGlobalForce();
+ 
+-
+ /* -------------------- Other Objects -------------------- */
+ 
+     void AddOther(Other *o);
+
+Modified: trunk/src/world_internal.hh
+===================================================================
+--- trunk/src/world_internal.hh	2009-01-22 22:17:36 UTC (rev 1478)
++++ trunk/src/world_internal.hh	2009-01-23 23:28:58 UTC (rev 1479)
+@@ -259,6 +259,10 @@
+             return (p.x&gt;=0 &amp;&amp; p.y&gt;=0 &amp;&amp; p.x&lt;w &amp;&amp; p.y&lt;h);
+         }
+ 
++        bool contains(const ecl::V2 &amp;p) {
++            return (p[0]&gt;=0 &amp;&amp; p[1]&gt;=0 &amp;&amp; p[0]&lt;w &amp;&amp; p[1]&lt;h);
++        }
++
+         bool is_border(const GridPos &amp;p);
+ 
+         Field *get_field (GridPos p) {
+@@ -274,7 +278,7 @@
+         std::list&lt;Object *&gt; get_group(const std::string &amp;tmpl, const Object *reference = NULL);
+         void namePosition(Value po, const std::string &amp;name);
+         Value getNamedPosition(const std::string &amp;name);
+-        PositionList getPositionList(const std::string &amp;tmpl);
++        PositionList getPositionList(const std::string &amp;tmpl, const Object *reference = NULL);
+         
+         void tick (double dtime);
+         void remove (ForceField *ff);
+@@ -331,7 +335,7 @@
+         OtherList            others;
+         RubberbandList       rubberbands;
+         MouseForce           m_mouseforce;
+-        V2                   flatForce;
++        ecl::V2              globalForce;
+         int                  scrambleIntensity;
+         int                  numMeditatists; 
+         int                  indispensableHollows;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000907.html">[Enigma-game-svn] r1478 - in trunk/data/levels: enigma_cross	enigma_iv enigma_v enigma_vi enigma_vii enigma_viii
+</A></li>
+	<LI>Next message: <A HREF="000909.html">[Enigma-game-svn] r1480 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#908">[ date ]</a>
+              <a href="thread.html#908">[ thread ]</a>
+              <a href="subject.html#908">[ subject ]</a>
+              <a href="author.html#908">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

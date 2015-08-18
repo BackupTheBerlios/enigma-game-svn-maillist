@@ -1,0 +1,1018 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1402 - in trunk: data data/schemas src src/items	src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-December/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1402%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/items%0A%09src/stones&In-Reply-To=%3C200812200040.mBK0eHPl019564%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000830.html">
+   <LINK REL="Next"  HREF="000832.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1402 - in trunk: data data/schemas src src/items	src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1402%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/items%0A%09src/stones&In-Reply-To=%3C200812200040.mBK0eHPl019564%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1402 - in trunk: data data/schemas src src/items	src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Dec 20 01:40:17 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000830.html">[Enigma-game-svn] r1401 - homepage/input
+</A></li>
+        <LI>Next message: <A HREF="000832.html">[Enigma-game-svn] r1403 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#831">[ date ]</a>
+              <a href="thread.html#831">[ thread ]</a>
+              <a href="subject.html#831">[ subject ]</a>
+              <a href="author.html#831">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-12-20 01:40:14 +0100 (Sat, 20 Dec 2008)
+New Revision: 1402
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/WorldProxy.cc
+   trunk/src/actors.cc
+   trunk/src/items.cc
+   trunk/src/items/SimpleItems.cc
+   trunk/src/items/SimpleItems.hh
+   trunk/src/items/Vortex.cc
+   trunk/src/ox_extra.cc
+   trunk/src/ox_magnum.cc
+   trunk/src/ox_oxyd1.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/stones.cc
+   trunk/src/stones/MailStone.cc
+   trunk/src/stones/SimpleStones.cc
+   trunk/src/stones/SimpleStones.hh
+Log:
+Trunk 1.1: new API reengineering
+- fix old API fart message trigger mapping
+- rename global variables:
+  - FrictionFactor to FrictionStrength
+  - SlopeForce to SlopeStrength
+  - ElectricForce to ElectricStrength
+- reengineering charge stone:
+  - renaming to st_charge, st_charge_zero, st_charge_plus, st_charge_minus
+  - attribute &quot;charge&quot;, defaults to 0.0, plus equals 1.0, minus equals -1.0,
+    but no more limited to any specific value range
+  - charge value can be changed on the fly, but the image shows always the
+    real sign of the charge
+- reengineering items - concerning the new API it is just a renaming:
+  - it_cherry
+  - it_banana
+  - it_squashed
+- actors: some code cleanup
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-12-20 00:23:00 UTC (rev 1401)
++++ trunk/data/api1init.lua	2008-12-20 00:40:14 UTC (rev 1402)
+@@ -59,10 +59,12 @@
+     fl_wood_framed = &quot;fl-stwood&quot;,
+     fl_wood_framed_h = &quot;fl-stwood1&quot;,
+     fl_wood_framed_v = &quot;fl-stwood2&quot;,
++    it_banana = &quot;it-banana&quot;,
+     it_blocker = &quot;it-blocker&quot;,
+     it_blocker_new = &quot;it-blocker-new&quot;,
+     it_brake = &quot;it-brake&quot;,
+     it_brush = &quot;it-brush&quot;,
++    it_cherry = &quot;it-cherry&quot;,
+     it_coin_s = &quot;it-coin1&quot;,
+     it_coin_m = &quot;it-coin2&quot;,
+     it_coin_l = &quot;it-coin4&quot;,
+@@ -96,6 +98,7 @@
+     it_seed = &quot;it-seed&quot;,
+     it_seed_fake = &quot;it-seed_nowood&quot;,
+     it_seed_volcano = &quot;it-seed_volcano&quot;,
++    it_squashed = &quot;it-squashed&quot;,
+     it_shogun_s = &quot;it-shogun-s&quot;,
+     it_shogun_m = &quot;it-shogun-m&quot;,
+     it_shogun_l = &quot;it-shogun-l&quot;,
+@@ -153,6 +156,9 @@
+     st_brick_new = &quot;st-bigbrick-new&quot;,
+     st_brick_nes = &quot;st-bigbrick-nes&quot;,
+     st_brick_nesw = &quot;st-bigbrick-nesw&quot;,
++    st_charge_minus = &quot;st-chargeminus&quot;,
++    st_charge_plus = &quot;st-chargeplus&quot;,
++    st_charge_zero = &quot;st-chargezero&quot;,
+     st_chess = &quot;st-chess&quot;,
+     st_chess_black = &quot;st-chess_black&quot;,
+     st_chess_white = &quot;st-chess_white&quot;,
+@@ -816,12 +822,10 @@
+     st_blocker_new__trigger = &quot;toggle&quot;,
+     st_boulder__direction = &quot;orientate&quot;,
+     st_door__openclose = &quot;toggle&quot;,
+-    st_fart__trigger = &quot;toggle&quot;,
+     st_fourswitch__trigger = &quot;toggle&quot;,
+     st_floppy__onoff = &quot;toggle&quot;,
+     st_key__onoff = &quot;toggle&quot;,
+     st_laser__onoff = &quot;toggle&quot;,
+-    st_stoneimpulse__trigger = &quot;signal&quot;,
+     st_lightpassenger__trigger = &quot;toggle&quot;,
+     st_lightpassenger__onoff = &quot;toggle&quot;,
+     st_mirror__trigger = &quot;turn&quot;,
+@@ -830,6 +834,8 @@
+     [&quot;st-plain__trigger&quot;] = &quot;signal&quot;,
+     [&quot;st-plain_hole__trigger&quot;] = &quot;signal&quot;,
+     st_polarswitch__onoff = &quot;toggle&quot;,
++    st_quake__trigger = &quot;toggle&quot;,
++    st_stoneimpulse__trigger = &quot;signal&quot;,
+     st_switch__onoff = &quot;toggle&quot;,
+     st_volcano__trigger = &quot;toggle&quot;
+ }
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-12-20 00:23:00 UTC (rev 1401)
++++ trunk/data/models-2d.lua	2008-12-20 00:40:14 UTC (rev 1402)
+@@ -432,12 +432,10 @@
+ do
+     itemlist = {
+         &quot;it-bag&quot;,
+-        &quot;it-banana&quot;,
+         &quot;it-blackbomb&quot;,
+         &quot;it-blocker&quot;,
+         &quot;it-booze&quot;,
+         &quot;it-booze-broken&quot;,
+-        &quot;it-cherry&quot;,
+         &quot;it-document&quot;,
+         &quot;it-drop&quot;,
+         &quot;it-dynamite&quot;,
+@@ -449,7 +447,6 @@
+         &quot;it-ring&quot;,
+         &quot;it-spade&quot;,
+         &quot;it-spoon&quot;,
+-        &quot;it-squashed&quot;,
+         &quot;it-spring1&quot;,
+         &quot;it-spring2&quot;,
+         &quot;it-surprise&quot;,
+@@ -459,8 +456,10 @@
+ 
+     DefImages(itemlist)
+ 
+-    DefImage(&quot;it-brake&quot;, {filename=&quot;st-brake&quot;})
++    DefImage(&quot;it_banana&quot;, {filename=&quot;it-banana&quot;})
++    DefImage(&quot;it_brake&quot;, {filename=&quot;st-brake&quot;})
+     DefImage(&quot;it_brush&quot;, {filename=&quot;it-brush&quot;})
++    DefImage(&quot;it_cherry&quot;, {filename=&quot;it-cherry&quot;})
+     DefImage(&quot;it_coin_s&quot;, {filename=&quot;it-coin1&quot;})
+     DefImage(&quot;it_coin_m&quot;, {filename=&quot;it-coin2&quot;})
+     DefImage(&quot;it_coin_l&quot;, {filename=&quot;it-coin4&quot;})
+@@ -480,6 +479,7 @@
+     DefImage(&quot;it_meditation_volcano&quot;, {filename=&quot;it_meditation_volcano&quot;})
+     DefImage(&quot;it_meditation_caldera&quot;, {filename=&quot;it_meditation_caldera&quot;})
+     DefImage(&quot;it_rubberband&quot;, {filename=&quot;it-rubberband&quot;})
++    DefImage(&quot;it_squashed&quot;, {filename=&quot;it-squashed&quot;})
+     DefImage(&quot;it_sword&quot;, {filename=&quot;it-sword&quot;})
+     DefImage(&quot;it_umbrella&quot;, {filename=&quot;it-umbrella&quot;})
+     DefImage(&quot;it_wrench&quot;, {filename=&quot;it-wrench&quot;})
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-12-20 00:23:00 UTC (rev 1401)
++++ trunk/data/schemas/objects.xml	2008-12-20 00:40:14 UTC (rev 1402)
+@@ -8,6 +8,7 @@
+     &lt;attr name=&quot;anchor2&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;autoclose&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;burnable&quot; type=&quot;bool&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;charge&quot; type=&quot;double&quot; default=&quot;0&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;cluster&quot; type=&quot;int&quot; default=&quot;nil&quot; min=&quot;0&quot; max=&quot;9&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;code&quot; type=&quot;int&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;coin_value&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+@@ -69,6 +70,7 @@
+     &lt;attr name=&quot;transparent&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;threshold&quot; type=&quot;double&quot; default=&quot;0&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;wires&quot; type=&quot;group&quot; default=&quot;nil&quot; rw=&quot;r&quot;/&gt;
++    &lt;attr name=&quot;$charge&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;-1&quot; max=&quot;1&quot; rw=&quot;&quot;/&gt;
+     &lt;attr name=&quot;$firetransform&quot; type=&quot;string&quot; default=&quot;&quot; rw=&quot;&quot;/&gt;
+     &lt;attr name=&quot;$heattransform&quot; type=&quot;string&quot; default=&quot;&quot; rw=&quot;&quot;/&gt;
+   &lt;/attributes&gt;
+@@ -111,10 +113,12 @@
+     &lt;msg name=&quot;_capture&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_checkflood&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_explosion&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;_fallvortex&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_freeze&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_glasses&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_hit&quot; type=&quot;object&quot;/&gt;
+     &lt;msg name=&quot;_init&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;_invisibility&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_jumping&quot; type=&quot;bool&quot;/&gt;
+     &lt;msg name=&quot;_model_reanimated&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_passed&quot; type=&quot;nil&quot;/&gt;            &lt;!-- check type--&gt;
+@@ -240,6 +244,7 @@
+     &lt;object name=&quot;fl_wood_framed_h&quot; init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;fl_wood_framed_v&quot; init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;it&quot; abstract=&quot;true&quot;/&gt;
++    &lt;object name=&quot;it_banana&quot;/&gt;
+     &lt;object name=&quot;it_blocker&quot;&gt;
+       &lt;attr name=&quot;autoclose&quot;/&gt;
+       &lt;msg name=&quot;close&quot;/&gt;
+@@ -252,6 +257,7 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;it_brake&quot;/&gt;
+     &lt;object name=&quot;it_brush&quot;/&gt;
++    &lt;object name=&quot;it_cherry&quot;/&gt;
+     &lt;object name=&quot;it_coin&quot;&gt;
+       &lt;attr name=&quot;coin_value&quot; default=&quot;3&quot;/&gt;
+       &lt;attr name=&quot;state&quot; rw=&quot;r&quot;/&gt;
+@@ -404,6 +410,9 @@
+     &lt;object name=&quot;it_shogun_l&quot;&gt;
+       &lt;attr name=&quot;flavor&quot; value=&quot;l&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;it_squashed&quot;&gt;
++      &lt;msg name=&quot;_brush&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;it_strip&quot;&gt;
+       &lt;attr name=&quot;connections&quot;/&gt;
+       &lt;attr name=&quot;friction&quot;/&gt;
+@@ -670,6 +679,19 @@
+     &lt;object name=&quot;st_brick_nesw&quot;&gt;
+       &lt;attr name=&quot;connections&quot; value=&quot;nesw&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_charge&quot;&gt;
++      &lt;attr name=&quot;charge&quot;/&gt;
++      &lt;attr name=&quot;$charge&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_charge_zero&quot;&gt;
++      &lt;attr name=&quot;$charge&quot; value=&quot;0&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_charge_plus&quot;&gt;
++      &lt;attr name=&quot;$charge&quot; value=&quot;1&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_charge_minus&quot;&gt;
++      &lt;attr name=&quot;$charge&quot; value=&quot;-1&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_chess&quot;&gt;
+       &lt;attr name=&quot;color&quot; default=&quot;0&quot;/&gt;
+       &lt;attr name=&quot;movable&quot; default=&quot;true&quot; rw=&quot;r&quot;/&gt;
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2008-12-20 00:23:00 UTC (rev 1401)
++++ trunk/src/WorldProxy.cc	2008-12-20 00:40:14 UTC (rev 1402)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2007 Ronald Lamprecht
++ * Copyright (C) 2007,2008 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -78,11 +78,11 @@
+             return server::Brittleness;
+         } else if (key == &quot;ActorimpulseStrength&quot;) {
+             return server::BumperForce;
+-        } else if (key == &quot;ElectricForce&quot;) {
++        } else if (key == &quot;ElectricStrength&quot;) {
+             return server::ElectricForce;
+         } else if (key == &quot;ExtralifeGlasses&quot;) {
+             return server::ExtralifeGlasses;
+-        } else if (key == &quot;FrictionFactor&quot;) {
++        } else if (key == &quot;FrictionStrength&quot;) {
+             return server::FrictionFactor;
+         } else if (key == &quot;MeditationStrength&quot;) {
+             return server::HoleForce;
+@@ -94,7 +94,7 @@
+             return server::MaxOxydColor;
+         } else if (key == &quot;RubberViolationStrength&quot;) {
+             return server::RubberViolationStrength;
+-        } else if (key == &quot;SlopeForce&quot;) {
++        } else if (key == &quot;SlopeStrength&quot;) {
+             return server::SlopeForce;
+         } else if (key == &quot;SwampSinkSpeed&quot;) {
+             return server::SwampSinkSpeed;
+@@ -162,11 +162,11 @@
+             server::Brittleness = val;
+         } else if (key == &quot;ActorimpulseStrength&quot;) {
+             server::BumperForce = val;
+-        } else if (key == &quot;ElectricForce&quot;) {
++        } else if (key == &quot;ElectricStrength&quot;) {
+             server::ElectricForce = val;
+         } else if (key == &quot;ExtralifeGlasses&quot;) {
+             server::ExtralifeGlasses = val;
+-        } else if (key == &quot;FrictionFactor&quot;) {
++        } else if (key == &quot;FrictionStrength&quot;) {
+             server::FrictionFactor = val;
+         } else if (key == &quot;MeditationStrength&quot;) {
+             server::HoleForce = val;
+@@ -182,7 +182,7 @@
+                     &quot;Attribute 'MaxOxydColor' value is out of range.&quot;);
+         } else if (key == &quot;RubberViolationStrength&quot;) {
+             server::RubberViolationStrength = val;
+-        } else if (key == &quot;SlopeForce&quot;) {
++        } else if (key == &quot;SlopeStrength&quot;) {
+             server::SlopeForce = val;
+         } else if (key == &quot;SwampSinkSpeed&quot;) {
+             server::SwampSinkSpeed = val;
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2008-12-20 00:23:00 UTC (rev 1401)
++++ trunk/src/actors.cc	2008-12-20 00:40:14 UTC (rev 1402)
+@@ -625,7 +625,6 @@
+             NO_STATE,
+             NORMAL,
+             SHATTERING,
+-            DROWNING,
+             BUBBLING,
+             FALLING,            // falling into abyss
+             JUMPING,
+@@ -782,13 +781,10 @@
+             } else if (m.message == &quot;laserhit&quot;) {
+                 change_state_noshield(SHATTERING);
+                 handled = true;
+-            } else if (m.message == &quot;drown&quot;) {
+-                change_state_noshield(DROWNING);
+-                handled = true;
+             } else if (m.message == &quot;fall&quot;) {
+                 change_state_noshield(FALLING);
+                 handled = true;
+-            } else if (m.message == &quot;fallvortex&quot;) {
++            } else if (m.message == &quot;_fallvortex&quot;) {
+                 change_state(FALLING_VORTEX);
+                 handled = true;
+             } else if (m.message == &quot;jump&quot;) {
+@@ -859,7 +855,7 @@
+             update_halo();
+             handled = true;
+         }
+-        else if (m.message == &quot;invisibility&quot;) {
++        else if (m.message == &quot;_invisibility&quot;) {
+             m_invisible_rest_time += 8.0;
+             handled = true;
+         }
+@@ -996,7 +992,6 @@
+         set_model(kind+&quot;-shattered&quot;);
+         change_state(DEAD);
+         break;
+-    case DROWNING:
+     case BUBBLING:
+         set_model(&quot;invisible&quot;);
+         change_state(DEAD);
+@@ -1077,14 +1072,6 @@
+         set_anim (kind+&quot;-shatter&quot;);
+         break;
+ 
+-    case DROWNING:
+-        // @@@ FIXME: use same animation as SINKING ?
+-        GrabActor(this);
+-//         sound::PlaySound(&quot;drown&quot;);
+-        sound_event(&quot;drown&quot;);
+-//         set_anim (&quot;ring-anim&quot;);
+-        set_anim (&quot;ac-drowned&quot;);
+-        break;
+     case BUBBLING:
+         GrabActor(this);
+ //         sound::PlaySound(&quot;drown&quot;);
+
+Modified: trunk/src/items/SimpleItems.cc
+===================================================================
+--- trunk/src/items/SimpleItems.cc	2008-12-20 00:23:00 UTC (rev 1401)
++++ trunk/src/items/SimpleItems.cc	2008-12-20 00:40:14 UTC (rev 1402)
+@@ -26,6 +26,23 @@
+ 
+ namespace enigma {
+ 
++/* -------------------- Banana -------------------- */
++
++    Banana::Banana() {
++    }
++    
++    void Banana::processLight(Direction d) {
++        sound_event(&quot;itemtransform&quot;);
++        transform(&quot;it_cherry&quot;);
++    }
++
++    void Banana::on_stonehit(Stone *) {
++        transform(&quot;it_squashed&quot;);
++    }
++
++    DEF_ITEMTRAITS(Banana, &quot;it_banana&quot;, it_banana);
++
++
+ /* -------------------- Brush -------------------- */
+    
+     Brush::Brush() {
+@@ -39,6 +56,22 @@
+     
+     DEF_ITEMTRAITSF(Brush, &quot;it_brush&quot;, it_brush, itf_inflammable);
+ 
++/* -------------------- Cherry -------------------- */
++
++    Cherry::Cherry() {
++    }
++    
++    ItemAction Cherry::activate(Actor *actor, GridPos p) {
++        SendMessage(actor, &quot;_invisibility&quot;);
++        return ITEM_KILL;
++    }
++
++    void Cherry::on_stonehit(Stone *) {
++        transform(&quot;it_squashed&quot;);
++    }
++
++    DEF_ITEMTRAITS(Cherry, &quot;it_cherry&quot;, it_cherry);
++
+ /* -------------------- Death Item  -------------------- */
+     
+     DeathItem::DeathItem() {
+@@ -63,13 +96,33 @@
+     
+     DEF_ITEMTRAITSF(DeathItem, &quot;it_death&quot;, it_death, itf_static | itf_indestructible);
+ 
++/* -------------------- Squashed Cherry -------------------- */
+ 
++    Squashed::Squashed() {
++    }
++    
++    Value Squashed::message (const Message &amp;m) {
++        if (enigma_server::GameCompatibility == GAMET_ENIGMA) {
++            if (m.message == &quot;_brush&quot;) {
++                KillItem(this-&gt;get_pos());
++                return Value();
++            }
++        }
++        return Item::message(m);
++    }
++
++    DEF_ITEMTRAITSF(Squashed, &quot;it_squashed&quot;, it_squashed, itf_static);
++
++
+     BOOT_REGISTER_START
++        BootRegister(new Banana(), &quot;it_banana&quot;);
+         BootRegister(new Brush(), &quot;it_brush&quot;);
++        BootRegister(new Cherry(), &quot;it_cherry&quot;);
+         BootRegister(new DeathItem(), &quot;it_death&quot;);
+         BootRegister(new Floppy(), &quot;it_floppy&quot;);
+         BootRegister(new MagicWand(), &quot;it_magicwand&quot;);
+         BootRegister(new Key(), &quot;it_key&quot;);
++        BootRegister(new Squashed(), &quot;it_squashed&quot;);
+         BootRegister(new Wrench(), &quot;it_wrench&quot;);
+     BOOT_REGISTER_END
+ 
+
+Modified: trunk/src/items/SimpleItems.hh
+===================================================================
+--- trunk/src/items/SimpleItems.hh	2008-12-20 00:23:00 UTC (rev 1401)
++++ trunk/src/items/SimpleItems.hh	2008-12-20 00:40:14 UTC (rev 1402)
+@@ -25,6 +25,23 @@
+ 
+ namespace enigma {
+     /**
++     * Banana
++     */
++    class Banana : public Item {
++        CLONEOBJ(Banana);
++        DECL_ITEMTRAITS;
++
++    public:
++        Banana();
++
++        // GridObject interface
++        virtual void processLight(Direction d);   // direction of laserbeam
++        
++        // Item interface
++        virtual void on_stonehit(Stone *st);
++    };
++
++    /**
+      * Brush Can &quot;paint&quot; some stones and remove ash
+      */
+     class Brush : public Item {
+@@ -40,6 +57,22 @@
+     
+ 
+     /**
++     * Cherry
++     */
++
++    class Cherry : public Item {
++        CLONEOBJ(Cherry);
++        DECL_ITEMTRAITS;
++        
++    public:
++        Cherry();
++
++        // Item interface
++        virtual ItemAction activate(Actor* a, GridPos p);
++        virtual void on_stonehit(Stone *st);
++    };
++    
++    /**
+      * DeathItem
+      */
+     class DeathItem : public Item {
+@@ -73,6 +106,20 @@
+     DEF_ITEM(Key, &quot;it_key&quot;, it_key);
+ 
+     /**
++     * Squashed
++     */
++    class Squashed : public Item {
++        CLONEOBJ(Squashed);
++        DECL_ITEMTRAITS;
++
++    public:
++        Squashed();
++        
++        // Object interface
++        virtual Value message(const Message &amp;m);
++    };
++
++    /**
+      * Wrench
+      */
+     DEF_ITEM(Wrench, &quot;it_wrench&quot;, it_wrench);
+
+Modified: trunk/src/items/Vortex.cc
+===================================================================
+--- trunk/src/items/Vortex.cc	2008-12-20 00:23:00 UTC (rev 1401)
++++ trunk/src/items/Vortex.cc	2008-12-20 00:40:14 UTC (rev 1402)
+@@ -68,7 +68,7 @@
+                 }
+                 else if (state == CLOSED) {
+                     state = OPENING;
+-                    sound_event (&quot;vortexopen&quot;);
++                    sound_event(&quot;vortexopen&quot;);
+                     init_model();
+                 }
+             } else if (extState == 0) { // close
+@@ -78,7 +78,7 @@
+                 }
+                 else if (state == OPEN) {
+                     state = CLOSING;
+-                    sound_event (&quot;vortexclose&quot;);
++                    sound_event(&quot;vortexclose&quot;);
+                     init_model();
+                 }
+             }
+@@ -142,14 +142,14 @@
+             emit_actor(dynamic_cast&lt;Vortex *&gt;((Object *)getAttr(&quot;$dest_vortex&quot;)));
+         } else if (state == SWALLOWING) {
+             state = WARPING;
+-            sound_event (&quot;hitfloor&quot;);
++            sound_event(&quot;hitfloor&quot;);
+             perform_warp();
+         } else
+             ASSERT (0, XLevelRuntime, &quot;Vortex: alarm called with inconsistent state&quot;);
+     }
+     
+     void Vortex::prepare_for_warp (Actor *actor) {
+-        SendMessage(actor, &quot;fallvortex&quot;);
++        SendMessage(actor, &quot;_fallvortex&quot;);
+         setAttr(&quot;$dest_idx&quot;, 0);
+         setAttr(&quot;$grabbed_actor&quot;, actor);
+         state = SWALLOWING;
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-12-20 00:23:00 UTC (rev 1401)
++++ trunk/src/items.cc	2008-12-20 00:40:14 UTC (rev 1402)
+@@ -163,7 +163,6 @@
+     DEF_ITEMF(Coffee,   &quot;it-coffee&quot;, it_coffee, itf_inflammable);
+ }
+ 
+-
+ /* -------------------- DummyItem -------------------- */
+     class Dummyitem : public Item {
+         CLONEOBJ(Dummyitem);
+@@ -182,49 +181,6 @@
+     };
+     DEF_ITEMTRAITSF(Dummyitem, &quot;it-dummy&quot;, it_dummy, itf_fireproof);
+ 
+-/* -------------------- Cherry -------------------- */
+-
+-    class Cherry : public Item {
+-        CLONEOBJ(Cherry);
+-        DECL_ITEMTRAITS;
+-        ItemAction activate(Actor *actor, GridPos) {
+-            SendMessage (actor, &quot;invisibility&quot;);
+-            return ITEM_KILL;
+-        }
+-
+-        void on_stonehit(Stone *) {
+-            replace(&quot;it-squashed&quot;);
+-        }
+-    public:
+-        Cherry() {
+-        }
+-    };
+-    DEF_ITEMTRAITS(Cherry, &quot;it-cherry&quot;, it_cherry);
+-
+-/* -------------------- Squashed Cherry -------------------- */
+-
+-    class Squashed : public Item {
+-        CLONEOBJ(Squashed);
+-        DECL_ITEMTRAITS;
+-
+-        virtual Value message (const Message &amp;m) {
+-            if (enigma_server::GameCompatibility == GAMET_ENIGMA) {
+-                if (m.message == &quot;_brush&quot;) {
+-                    KillItem(this-&gt;get_pos());
+-                    return Value();
+-                }
+-            }
+-            return Item::message(m);
+-        }
+-
+-
+-    public:
+-        Squashed() {
+-        }
+-    };
+-    DEF_ITEMTRAITSF(Squashed, &quot;it-squashed&quot;, it_squashed, itf_static);
+-
+-
+ /* -------------------- Weight -------------------- */
+ 
+     class Weight : public Item {
+@@ -260,26 +216,6 @@
+     };
+     DEF_ITEMTRAITS(Pin, &quot;it-pin&quot;, it_pin);
+ 
+-/* -------------------- Banana -------------------- */
+-
+-    class Banana : public Item {
+-        CLONEOBJ(Banana);
+-        DECL_ITEMTRAITS;
+-
+-        void processLight(Direction d) {
+-            sound_event (&quot;itemtransform&quot;);
+-            replace(&quot;it-cherry&quot;);
+-        }
+-
+-        void on_stonehit(Stone *) {
+-            replace(&quot;it-squashed&quot;);
+-        }
+-
+-    public:
+-        Banana() {}
+-    };
+-    DEF_ITEMTRAITS(Banana, &quot;it-banana&quot;, it_banana);
+-
+ /* -------------------- Spoon -------------------- */
+ namespace
+ {
+@@ -1879,14 +1815,12 @@
+ void InitItems()
+ {
+     RegisterItem (new Bag);
+-    RegisterItem (new Banana);
+     RegisterItem (new BlackBomb);
+     RegisterItem (new BlackBombBurning);
+     RegisterItem (new Booze);
+     RegisterItem (new BrokenBooze);
+     Burnable::setup();
+     RegisterItem (new ChangeFloorItem);
+-    RegisterItem (new Cherry);
+     RegisterItem (new Coffee);
+     Crack::setup();
+     RegisterItem (new Cross);
+@@ -1918,7 +1852,6 @@
+     RegisterItem (new Spring1);
+     RegisterItem (new Spring2);
+     RegisterItem (new Springboard);
+-    RegisterItem (new Squashed);
+     RegisterItem (new SurpriseItem);
+     RegisterItem (new TwoPKillStone);
+     RegisterItem (new Weight);
+
+Modified: trunk/src/ox_extra.cc
+===================================================================
+--- trunk/src/ox_extra.cc	2008-12-20 00:23:00 UTC (rev 1401)
++++ trunk/src/ox_extra.cc	2008-12-20 00:40:14 UTC (rev 1402)
+@@ -314,7 +314,7 @@
+     IT_EXTERNAL,                // OxydExtra item 0x03
+     &quot;it_hammer&quot;,                  // OxydExtra item 0x04
+     &quot;it-coffee&quot;,                  // OxydExtra item 0x05
+-    &quot;it-cherry&quot;,                  // OxydExtra item 0x06
++    &quot;it_cherry&quot;,                  // OxydExtra item 0x06
+     &quot;it_umbrella&quot;,                // OxydExtra item 0x07
+     IT_MISSING,                 // OxydExtra item 0x08
+     UNUSED,                  // OxydExtra item 0x09
+@@ -374,6 +374,6 @@
+     UNUSED,                  // OxydExtra item 0x3f
+     &quot;it_trigger&quot;,                 // OxydExtra item 0x40
+     &quot;it_brush&quot;,                   // OxydExtra item 0x41
+-    &quot;it-banana&quot;,                  // OxydExtra item 0x42
++    &quot;it_banana&quot;,                  // OxydExtra item 0x42
+     // codes &gt;= 0x43 are unused
+ };
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2008-12-20 00:23:00 UTC (rev 1401)
++++ trunk/src/ox_magnum.cc	2008-12-20 00:40:14 UTC (rev 1402)
+@@ -266,9 +266,9 @@
+     &quot;st-yinyang1&quot;,              // OxydMagnum stone 0x93
+     &quot;st-break_acwhite&quot;,         // OxydMagnum stone 0x94
+     &quot;st-break_acblack&quot;,         // OxydMagnum stone 0x95
+-    &quot;st-chargeplus&quot;,            // OxydMagnum stone 0x96
+-    &quot;st-chargeminus&quot;,           // OxydMagnum stone 0x97
+-    &quot;st-chargezero&quot;,            // OxydMagnum stone 0x98
++    &quot;st_charge_plus&quot;,           // OxydMagnum stone 0x96
++    &quot;st_charge_minus&quot;,          // OxydMagnum stone 0x97
++    &quot;st_charge_zero&quot;,           // OxydMagnum stone 0x98
+     0,                          // OxydMagnum stone 0x99 (common was 'st-blocker')(Level 121 ?)(in normal Oxyd Magnum Levels unused!)
+     &quot;st_turnstile_red&quot;,         // OxydMagnum stone 0x9a
+     &quot;st_turnstilearm_n&quot;,        // OxydMagnum stone 0x9b
+@@ -296,7 +296,7 @@
+     IT_EXTERNAL,      // OxydMagnum item 0x03 document 2
+     &quot;it_hammer&quot;,        // OxydMagnum item 0x04
+     &quot;it-coffee&quot;,        // OxydMagnum item 0x05
+-    &quot;it-cherry&quot;,        // OxydMagnum item 0x06
++    &quot;it_cherry&quot;,        // OxydMagnum item 0x06
+     &quot;it_umbrella&quot;,      // OxydMagnum item 0x07
+     &quot;it_glasses&quot;,       // OxydMagnum item 0x08
+     &quot;it_glasses_broken&quot;, // OxydMagnum item 0x09
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2008-12-20 00:23:00 UTC (rev 1401)
++++ trunk/src/ox_oxyd1.cc	2008-12-20 00:40:14 UTC (rev 1402)
+@@ -298,9 +298,9 @@
+     &quot;st-yinyang1&quot;,              // Oxyd1 stone 0x93
+     &quot;st-break_acwhite&quot;,         // Oxyd1 stone 0x94
+     &quot;st-break_acblack&quot;,         // Oxyd1 stone 0x95
+-    &quot;st-chargeplus&quot;,            // Oxyd1 stone 0x96
+-    &quot;st-chargeminus&quot;,           // Oxyd1 stone 0x97
+-    &quot;st-chargezero&quot;,            // Oxyd1 stone 0x98
++    &quot;st_charge_plus&quot;,           // Oxyd1 stone 0x96
++    &quot;st_charge_minus&quot;,          // Oxyd1 stone 0x97
++    &quot;st_charge_zero&quot;,           // Oxyd1 stone 0x98
+     &quot;st-glass1&quot;,                // Oxyd1 stone 0x99
+     // codes &gt;= 0x9a are unused
+ };
+@@ -312,7 +312,7 @@
+     IT_EXTERNAL,                  // 0x03 document 2
+     &quot;it_hammer&quot;,                  // 0x04
+     &quot;it-coffee&quot;,                  // 0x05
+-    &quot;it-cherry&quot;,                  // 0x06
++    &quot;it_cherry&quot;,                  // 0x06
+     &quot;it_umbrella&quot;,                // 0x07
+     &quot;it_glasses&quot;,                 // 0x08
+     &quot;it_glasses_broken&quot;,          // 0x09
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-12-20 00:23:00 UTC (rev 1401)
++++ trunk/src/ox_peroxyd.cc	2008-12-20 00:40:14 UTC (rev 1402)
+@@ -316,9 +316,9 @@
+     &quot;st-yinyang3&quot;,              // PerOxyd stone 0x7d
+     &quot;st-break_acwhite&quot;,         // PerOxyd stone 0x7e
+     &quot;st-break_acblack&quot;,         // PerOxyd stone 0x7f
+-    &quot;st-chargeplus&quot;,            // PerOxyd stone 0x80
+-    &quot;st-chargeminus&quot;,           // PerOxyd stone 0x81
+-    &quot;st-chargezero&quot;,            // PerOxyd stone 0x82
++    &quot;st_charge_plus&quot;,           // PerOxyd stone 0x80
++    &quot;st_charge_minus&quot;,          // PerOxyd stone 0x81
++    &quot;st_charge_zero&quot;,           // PerOxyd stone 0x82
+     &quot;st_boulder_n&quot;,             // PerOxyd stone 0x83
+     &quot;st_boulder_s&quot;,             // PerOxyd stone 0x84
+     &quot;st_boulder_w&quot;,             // PerOxyd stone 0x85
+@@ -385,7 +385,7 @@
+     IT_EXTERNAL,                  // 0x03 document 2
+     &quot;it_hammer&quot;,                  // 0x04
+     &quot;it-coffee&quot;,                  // 0x05
+-    &quot;it-cherry&quot;,                  // 0x06
++    &quot;it_cherry&quot;,                  // 0x06
+     &quot;it_umbrella&quot;,                // 0x07
+     &quot;it_glasses&quot;,                 // 0x08
+     &quot;it_glasses_broken&quot;,          // 0x09
+@@ -445,10 +445,10 @@
+     &quot;it-changefloor&quot;,             // 0x3f
+     &quot;it_trigger&quot;,                 // 0x40
+     &quot;it_brush&quot;,                   // 0x41
+-    &quot;it-banana&quot;,                  // 0x42
++    &quot;it_banana&quot;,                  // 0x42
+     &quot;it-pencil&quot;,                  // 0x43
+     &quot;it_brake&quot;,                   // 0x44
+-    &quot;it-squashed&quot;,                // 0x45
++    &quot;it_squashed&quot;,                // 0x45
+     &quot;it_blocker&quot;,                 // 0x46
+     &quot;it_magicwand&quot;,               // 0x47
+     &quot;it_wrench&quot;,                  // 0x48
+
+Modified: trunk/src/stones/MailStone.cc
+===================================================================
+--- trunk/src/stones/MailStone.cc	2008-12-20 00:23:00 UTC (rev 1401)
++++ trunk/src/stones/MailStone.cc	2008-12-20 00:40:14 UTC (rev 1402)
+@@ -53,9 +53,9 @@
+         if (enigma::Inventory *inv = player::GetInventory(sc.actor)) {
+             if (Item *it = inv-&gt;get_item(0)) {
+                 GridPos p = PipeItem::findPipeEndpoint(get_pos(), getOrientation());
+-                if (IsInsideLevel(p) &amp;&amp; it-&gt;can_drop_at (p)) {
++                if (IsInsideLevel(p) &amp;&amp; it-&gt;can_drop_at(p)) {
+                     it = inv-&gt;yield_first();
+-                    player::RedrawInventory (inv);
++                    player::RedrawInventory(inv);
+                     it-&gt;drop(sc.actor, p);
+                 }
+             }
+
+Modified: trunk/src/stones/SimpleStones.cc
+===================================================================
+--- trunk/src/stones/SimpleStones.cc	2008-12-20 00:23:00 UTC (rev 1401)
++++ trunk/src/stones/SimpleStones.cc	2008-12-20 00:40:14 UTC (rev 1402)
+@@ -26,6 +26,55 @@
+ 
+ namespace enigma {
+ 
++/* -------------------- Charge stone -------------------- */
++
++    ChargeStone::ChargeStone(double charge) : Stone(&quot;st_charge&quot;) {
++        Stone::setAttr(&quot;charge&quot;, charge);
++    }
++    
++    std::string ChargeStone::getClass() const {
++        return &quot;st_charge&quot;;
++    }
++
++    void ChargeStone::setAttr(const string&amp; key, const Value &amp;val) {
++        Stone::setAttr(key, val);
++        if (key == &quot;charge&quot; &amp;&amp; isDisplayable()) 
++            init_model();
++    }
++
++    Value ChargeStone::getAttr(const std::string &amp;key) const {
++        if (key == &quot;$charge&quot;) {
++            double charge = getAttr(&quot;charge&quot;);
++            return (charge == 0) ? 0 : ((charge &gt; 0.0) ? 1 : -1);
++        } else
++            return Stone::getAttr(key);
++    }
++
++    Value ChargeStone::message(const Message &amp;m) {
++        if (server::GameCompatibility == enigma::GAMET_PEROXYD &amp;&amp; m.message == &quot;signal&quot;) {
++            performAction(m.value);
++            return Value();
++        }
++        return Stone::message(m);
++    }
++    
++    void ChargeStone::init_model() {
++        double charge = getAttr(&quot;charge&quot;);
++        set_model(ecl::strf(&quot;st-charge%s&quot;, (charge == 0) ? &quot;zero&quot; : ((charge &gt; 0.0) ? &quot;plus&quot; : &quot;minus&quot;)).c_str());
++    }
++    
++    void ChargeStone::animcb() {
++        init_model();
++    }
++    
++    void ChargeStone::actor_hit(const StoneContact &amp;sc) {
++        double charge = getAttr(&quot;charge&quot;);
++        ActorInfo *ai = sc.actor-&gt;get_actorinfo();
++        ai-&gt;charge = charge;
++        set_anim(ecl::strf(&quot;st-charge%s-anim&quot;, (charge == 0) ? &quot;zero&quot; : ((charge &gt; 0.0) ? &quot;plus&quot; : &quot;minus&quot;)).c_str());
++    }
++    
++
+ /* -------------------- Flash stone -------------------- */
+ 
+     FlashStone::FlashStone() : Stone (&quot;st_flash&quot;) {
+@@ -42,6 +91,10 @@
+     }
+     
+     BOOT_REGISTER_START
++        BootRegister(new ChargeStone(0.0), &quot;st_charge&quot;);
++        BootRegister(new ChargeStone(0.0), &quot;st_charge_zero&quot;);
++        BootRegister(new ChargeStone(1.0), &quot;st_charge_plus&quot;);
++        BootRegister(new ChargeStone(-1.0), &quot;st_charge_minus&quot;);
+         BootRegister(new FlashStone(), &quot;st_flash&quot;);
+     BOOT_REGISTER_END
+ 
+
+Modified: trunk/src/stones/SimpleStones.hh
+===================================================================
+--- trunk/src/stones/SimpleStones.hh	2008-12-20 00:23:00 UTC (rev 1401)
++++ trunk/src/stones/SimpleStones.hh	2008-12-20 00:40:14 UTC (rev 1402)
+@@ -27,6 +27,31 @@
+ namespace enigma {
+ 
+     /** 
++     * ChargeStone
++     */
++    class ChargeStone : public Stone {
++        CLONEOBJ(ChargeStone);
++        
++    public:
++        ChargeStone(double charge);
++
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++        virtual Value getAttr(const std::string &amp;key) const;
++        virtual Value message(const Message &amp;m);
++
++        // GridObject interface
++        virtual void init_model();
++        
++        // ModelCallback interface  - Animation callback
++        virtual void animcb();
++
++        // Stone interface
++        virtual void actor_hit(const StoneContact &amp;sc);
++    };
++
++    /** 
+      * FlashStone
+      */
+     class FlashStone : public Stone {
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-12-20 00:23:00 UTC (rev 1401)
++++ trunk/src/stones.cc	2008-12-20 00:40:14 UTC (rev 1402)
+@@ -337,43 +337,7 @@
+ //  Stones under development :
+ 
+ 
+-/* -------------------- Charge stone -------------------- */
+ 
+-// Attributes:
+-//
+-// :charge  + - 0
+-namespace
+-{
+-    class ChargeStone : public Stone {
+-        CLONEOBJ(ChargeStone);
+-    public:
+-        ChargeStone(const char *kind, double charge)
+-        : Stone(kind)
+-        {
+-            setAttr(&quot;charge&quot;, charge);
+-        }
+-        virtual Value message(const Message &amp;m) {
+-            if (server::GameCompatibility == enigma::GAMET_PEROXYD &amp;&amp; m.message == &quot;signal&quot;) {
+-                performAction(m.value);
+-                return Value();
+-            }
+-            return Stone::message(m);
+-        }
+-    private:
+-        double get_charge() {
+-            double q = getAttr(&quot;charge&quot;);
+-            return max(-1.0, min(1.0, q));
+-        }
+-        void animcb() { init_model(); }
+-        void actor_hit (const StoneContact &amp;sc) {
+-            ActorInfo *ai = sc.actor-&gt;get_actorinfo();
+-            ai-&gt;charge = get_charge();
+-            set_anim(string(get_kind())+&quot;-anim&quot;);
+-        }
+-    };
+-}
+-
+-
+ /* -------------------- SpitterStone -------------------- */
+ 
+ namespace
+@@ -874,9 +838,6 @@
+ 
+     // Register(new ...);
+ 
+-    Register (new ChargeStone (&quot;st-chargeplus&quot;, +1.0));
+-    Register (new ChargeStone (&quot;st-chargeminus&quot;, -1.0));
+-    Register (new ChargeStone (&quot;st-chargezero&quot;, 0.0));
+     Register (new SpitterStone);
+     Register (new SurpriseStone);
+     Register (new CoffeeStone);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000830.html">[Enigma-game-svn] r1401 - homepage/input
+</A></li>
+	<LI>Next message: <A HREF="000832.html">[Enigma-game-svn] r1403 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#831">[ date ]</a>
+              <a href="thread.html#831">[ thread ]</a>
+              <a href="subject.html#831">[ subject ]</a>
+              <a href="author.html#831">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

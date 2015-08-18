@@ -1,0 +1,914 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1000 - in trunk: data src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1000%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200801232131.m0NLVebI026804%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000431.html">
+   <LINK REL="Next"  HREF="000433.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1000 - in trunk: data src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1000%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200801232131.m0NLVebI026804%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1000 - in trunk: data src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Jan 23 22:31:40 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000431.html">[Enigma-game-svn] r999 - trunk/doc/reference
+</A></li>
+        <LI>Next message: <A HREF="000433.html">[Enigma-game-svn] r1001 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#432">[ date ]</a>
+              <a href="thread.html#432">[ thread ]</a>
+              <a href="subject.html#432">[ subject ]</a>
+              <a href="author.html#432">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-01-23 22:31:39 +0100 (Wed, 23 Jan 2008)
+New Revision: 1000
+
+Modified:
+   trunk/data/init.lua
+   trunk/src/actors.cc
+   trunk/src/floors.cc
+   trunk/src/items.cc
+   trunk/src/oxyd.cc
+   trunk/src/stones.cc
+   trunk/src/stones/OxydStone.cc
+   trunk/src/stones/OxydStone.hh
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1: Reengineering
+- renamed internal message &quot;expl&quot; to &quot;_explosion&quot;
+- renamed internal message &quot;bombstone&quot; to &quot;_bombstone&quot;
+- renamed internal message &quot;spitter&quot; to &quot;_spitter&quot;
+- attribute &quot;inverse&quot; switched from 0/1 value to bool 
+- renamed &quot;st-oxyd&quot; to &quot;st_oxyd&quot;
+- renamed OxydStone attribut &quot;color&quot; to &quot;oxydcolor&quot;
+- OxydStone support and usage of StateObject: state, open, close, toggle
+- OxydStone add performAction on state change close vs. open
+
+
+Modified: trunk/data/init.lua
+===================================================================
+--- trunk/data/init.lua	2008-01-22 01:17:17 UTC (rev 999)
++++ trunk/data/init.lua	2008-01-23 21:31:39 UTC (rev 1000)
+@@ -39,6 +39,7 @@
+ enigma._GetKind = enigma.GetKind
+ enigma._SetAttrib = enigma.SetAttrib
+ enigma._GetAttrib = enigma.GetAttrib
++enigma._GetObjectTemplate = enigma.GetObjectTemplate
+ 
+ RenamingObjectsOld2New = {
+ }
+@@ -55,6 +56,7 @@
+     st_boulder_w = &quot;st-bolder-w&quot;,
+     st_floppy = &quot;st-floppy&quot;,
+     st_fourswitch = &quot;st-fourswitch&quot;,
++    st_oxyd = &quot;st-oxyd&quot;,
+     st_switch_instant = &quot;st-switch&quot;,
+     st_switch_black_instant = &quot;st-switch_black&quot;,
+     st_switch_white_instant = &quot;st-switch_white&quot;
+@@ -125,6 +127,7 @@
+      if _obj_name == &quot;st-oxyd&quot; then
+          if key == &quot;color&quot; then
+ 	     _val = 0 + val   -- convert to int
++             _key = &quot;oxydcolor&quot;
+ 	 end
+      end
+      if (_obj_name == &quot;st-switch&quot;) or (_obj_name == &quot;st-switch_black&quot;)
+@@ -192,7 +195,12 @@
+      if key == &quot;blackball&quot; or key == &quot;whiteball&quot; then
+          _key = &quot;color&quot;
+      end
++     if _obj_name == &quot;st-oxyd&quot; then
++         _key = &quot;oxydcolor&quot;
++     end
++
+      local val = enigma._GetAttrib(obj, _key)
++     
+      if key == &quot;blackball&quot; then
+         if val == 0 then val = 1 else val = 0 end
+      end
+@@ -216,9 +224,23 @@
+              val = d.y
+          end
+      end
++     if key == &quot;invisible&quot; then
++         if val == false then val = 0 else val = 1 end
++     end
+      return val
+ end
+ 
++function enigma.GetObjectTemplate(kind)
++    local _kind = RenamingObjectsOld2New[kind]
++    if _kind == nil then
++        _kind = kind
++    end
++    if kind == &quot;st-key&quot; or kind == &quot;st-key_a&quot; or kind == &quot;st-key_b&quot; or kind == &quot;st-key_c&quot; then
++        _kind = &quot;st_key&quot;
++    end
++    return enigma._GetObjectTemplate(_kind)
++end
++
+ MessageRenaming = {
+     it_blocker__trigger = &quot;toggle&quot;,
+     it_blocker__openclose = &quot;toggle&quot;,
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2008-01-22 01:17:17 UTC (rev 999)
++++ trunk/src/actors.cc	2008-01-23 21:31:39 UTC (rev 1000)
+@@ -565,7 +565,7 @@
+     const GridPos &amp;p = get_gridpos();
+ 
+     if (Stone *st = GetStone (p)) {
+-        SendMessage (st, &quot;spitter&quot;);
++        SendMessage (st, &quot;_spitter&quot;);
+     }
+     else if (Item *it = GetItem(p)) {
+         if (!has_flags(it, itf_indestructible))
+
+Modified: trunk/src/floors.cc
+===================================================================
+--- trunk/src/floors.cc	2008-01-22 01:17:17 UTC (rev 999)
++++ trunk/src/floors.cc	2008-01-23 21:31:39 UTC (rev 1000)
+@@ -67,7 +67,7 @@
+         return force_fire();
+     if (m.message == &quot;heat&quot;)
+         return try_heating(NODIR, flhf_message);
+-    if ((m.message == &quot;ignite&quot; || m.message == &quot;expl&quot;) &amp;&amp; has_firetype(flft_ignitable))
++    if ((m.message == &quot;ignite&quot; || m.message == &quot;_explosion&quot;) &amp;&amp; has_firetype(flft_ignitable))
+         return try_ignite(NODIR, flhf_message);
+     if (m.message == &quot;setfire&quot;)
+         return try_ignite(NODIR, flhf_message);
+@@ -154,7 +154,7 @@
+  *    - it-burnable or it-burnable_oil is on it
+  *  Fire on a burnable floor can be ignited by:
+  *    - &quot;setfire&quot;-message
+- *    - &quot;expl&quot; or &quot;ignite&quot; message if the &quot;ignitable&quot;-attribute is set
++ *    - &quot;_explosion&quot; or &quot;ignite&quot; message if the &quot;ignitable&quot;-attribute is set
+  *        - thereby by it-dynamite or it-*bomb + &quot;ignitable&quot;
+  *    - fire in the neighborhood (see below)
+  *    - on initialisation (&quot;_init&quot;-message) when &quot;initfire&quot;-attribute is set
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-01-22 01:17:17 UTC (rev 999)
++++ trunk/src/items.cc	2008-01-23 21:31:39 UTC (rev 1000)
+@@ -991,7 +991,7 @@
+         {}
+ 
+     private:
+-        void init_model() {set_anim(&quot;expl&quot;);}
++        void init_model() {set_anim(&quot;_explosion&quot;);}
+         bool actor_hit(Actor *actor) {
+             SendMessage(actor, &quot;shatter&quot;);
+             return false;
+@@ -1083,7 +1083,7 @@
+             if (m.message == &quot;ignite&quot;) {
+                 // dynamite does not blow up Documents in Oxyd1
+                 explode = server::GameCompatibility != GAMET_OXYD1;
+-            } else if (m.message == &quot;expl&quot; || m.message == &quot;bombstone&quot;) {
++            } else if (m.message == &quot;_explosion&quot; || m.message == &quot;_bombstone&quot;) {
+                 explode = true;
+             } else {
+                 return Item::message(m);
+@@ -1144,7 +1144,7 @@
+         }
+ 
+         virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;ignite&quot; || m.message == &quot;expl&quot; || m.message == &quot;bombstone&quot;) {
++            if (m.message == &quot;ignite&quot; || m.message == &quot;_explosion&quot; || m.message == &quot;_bombstone&quot;) {
+                 change_state(BURNING);
+                 return Value();
+             } else if (m.message == &quot;explode&quot;) { // currently unused in c++ code
+@@ -1187,7 +1187,7 @@
+ 
+     protected:
+         virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;ignite&quot;  || m.message == &quot;expl&quot;) {
++            if (m.message == &quot;ignite&quot;  || m.message == &quot;_explosion&quot;) {
+                 burn();
+                 return Value();
+             } else if (m.message == &quot;explode&quot; ) {
+@@ -1357,12 +1357,12 @@
+ {
+     m_pressedp = false;
+     m_actorcount = 0;
+-    set_attrib(&quot;invisible&quot;, 0.0);
++    set_attrib(&quot;invisible&quot;, false);
+ }
+ 
+ void Trigger::init_model()
+ {
+-    if (getAttr(&quot;invisible&quot;) != 0)
++    if (getAttr(&quot;invisible&quot;).to_bool())
+         set_model(&quot;invisible&quot;);
+     else if (m_pressedp)
+         set_model(&quot;it-trigger1&quot;);
+@@ -2187,7 +2187,7 @@
+ 
+         Pipe(int stype) : subtype(stype) {}
+         virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;expl&quot;) {
++            if (m.message == &quot;_explosion&quot;) {
+                 replace (it_explosion1);
+                 return Value();
+             }
+@@ -2481,7 +2481,7 @@
+         kill();   // The brush cleans the floor
+         return Value();
+     } else if (Floor *fl = GetFloor(get_pos())) {
+-        if (m.message == &quot;ignite&quot; || m.message == &quot;expl&quot;)
++        if (m.message == &quot;ignite&quot; || m.message == &quot;_explosion&quot;)
+             return SendMessage(fl, &quot;ignite&quot;);
+     }
+     return Item::message(m);
+
+Modified: trunk/src/oxyd.cc
+===================================================================
+--- trunk/src/oxyd.cc	2008-01-22 01:17:17 UTC (rev 999)
++++ trunk/src/oxyd.cc	2008-01-23 21:31:39 UTC (rev 1000)
+@@ -305,8 +305,8 @@
+         char color[2] = &quot;0&quot;;
+         color[0] += (type-1) / 2; 
+ 
+-        st = MakeStone(&quot;st-oxyd&quot;);
+-        st-&gt;set_attrib(&quot;color&quot;, color);
++        st = MakeStone(&quot;st_oxyd&quot;);
++        st-&gt;set_attrib(&quot;oxydcolor&quot;, color);
+         st-&gt;set_attrib(&quot;flavor&quot;, config.oxyd_flavor);
+     }
+     else if (type == config.id_timer) {
+@@ -448,7 +448,7 @@
+         }
+     }
+ 
+-    SendMessage(GetObjectTemplate(&quot;st-oxyd&quot;), &quot;shuffle&quot;);
++    SendMessage(GetObjectTemplate(&quot;st_oxyd&quot;), &quot;shuffle&quot;);
+ }
+ 
+ void OxydLoader::scramble_puzzles ()
+
+Modified: trunk/src/stones/OxydStone.cc
+===================================================================
+--- trunk/src/stones/OxydStone.cc	2008-01-22 01:17:17 UTC (rev 999)
++++ trunk/src/stones/OxydStone.cc	2008-01-23 21:31:39 UTC (rev 1000)
+@@ -123,7 +123,7 @@
+         size_t  isize = levelOxyds.size();
+         // count color usage
+         for (size_t i=0; i&lt;isize; ++i) {
+-            int color = levelOxyds[i]-&gt;getAttr(&quot;color&quot;);
++            int color = levelOxyds[i]-&gt;getAttr(&quot;oxydcolor&quot;);
+             bool declineShuffle = to_bool(levelOxyds[i]-&gt;getAttr(&quot;noshuffle&quot;));
+             if (color &gt;= 0 &amp;&amp; color &lt; numColors) {
+                 colorsUsageCount[color]++;
+@@ -151,7 +151,7 @@
+         for (int i = 0; i &lt; numColors; i++) {
+             if (colorsUsageCount[i] % 2 == 1) {
+                 if (autocoloredOxyds.size() &gt; 0) {
+-                    autocoloredOxyds.back()-&gt;set_attrib(&quot;color&quot;, i);
++                    autocoloredOxyds.back()-&gt;set_attrib(&quot;oxydcolor&quot;, i);
+                     autocoloredOxyds.pop_back();
+                     colorsUsageCount[i]++;
+                 } else if (onlyPairs) {
+@@ -176,7 +176,7 @@
+             if (colorsUsageCount[c] &lt;= 2*(dc/2/numColors) + 1) {
+                 lastColor = c;
+                 lastObject = autocoloredOxyds.back();
+-                lastObject-&gt;set_attrib(&quot;color&quot;, c);
++                lastObject-&gt;set_attrib(&quot;oxydcolor&quot;, c);
+                 autocoloredOxyds.pop_back();
+                 colorsUsageCount[c]++;
+             }
+@@ -184,7 +184,7 @@
+         }
+         // substitute odd oxyd with a fake one
+         if (!onlyPairs &amp;&amp; lastObject != NULL) {
+-            lastObject-&gt;set_attrib(&quot;color&quot;, FAKE);
++            lastObject-&gt;set_attrib(&quot;oxydcolor&quot;, FAKE);
+             colorsUsageCount[lastColor]--;
+             shuffledFakeCount++;
+         } else {
+@@ -218,7 +218,7 @@
+         size_t  isize = levelOxyds.size();
+         for (size_t i=0; i&lt;isize; ++i) {
+             OxydStone *candidate = levelOxyds[i];
+-            if (candidate-&gt;iState == CLOSED &amp;&amp; !to_bool(candidate-&gt;getAttr(&quot;noshuffle&quot;))) {
++            if (candidate-&gt;state == CLOSED &amp;&amp; !to_bool(candidate-&gt;getAttr(&quot;noshuffle&quot;))) {
+                 closedOxyds.push_back(i);
+             }
+         }
+@@ -232,10 +232,10 @@
+                 OxydStone *o1 = levelOxyds[closedOxyds[i]];
+                 OxydStone *o2 = levelOxyds[closedOxyds[a]];
+     
+-                Value icolor = o1-&gt;getAttr(&quot;color&quot;); 
++                Value icolor = o1-&gt;getAttr(&quot;oxydcolor&quot;); 
+     
+-                o1-&gt;set_attrib(&quot;color&quot;, o2-&gt;getAttr(&quot;color&quot;));
+-                o2-&gt;set_attrib(&quot;color&quot;, icolor);
++                o1-&gt;set_attrib(&quot;oxydcolor&quot;, o2-&gt;getAttr(&quot;oxydcolor&quot;));
++                o2-&gt;set_attrib(&quot;oxydcolor&quot;, icolor);
+             }
+         }
+     }
+@@ -263,7 +263,7 @@
+             uint32_t noshufflePseudoMask = 0; 
+             for (int i = 0; i &lt; numOxyds; i++) {
+                 OxydStone *candidate = levelOxyds[i];
+-                if ((int)candidate-&gt;getAttr(&quot;color&quot;) &lt; AUTO &amp;&amp; 
++                if ((int)candidate-&gt;getAttr(&quot;oxydcolor&quot;) &lt; AUTO &amp;&amp; 
+                         to_bool(candidate-&gt;getAttr(&quot;noshuffle&quot;)))
+                     noshufflePseudoMask |= 1 &lt;&lt; i;
+             }
+@@ -308,7 +308,7 @@
+         uint32_t notClosedPseudoMask = 0; 
+         for (int i = 0; i &lt; numOxyds; i++) {
+             OxydStone *candidate = levelOxyds[i];
+-            if ((int)candidate-&gt;getAttr(&quot;color&quot;) &lt; AUTO &amp;&amp; candidate-&gt;iState != CLOSED)
++            if ((int)candidate-&gt;getAttr(&quot;oxydcolor&quot;) &lt; AUTO &amp;&amp; candidate-&gt;state != CLOSED)
+                 notClosedPseudoMask |= 1 &lt;&lt; i;
+         }
+         second.freeOxydsMask &amp;= ~notClosedPseudoMask;
+@@ -353,10 +353,10 @@
+             if (top.selOxyd2Mask != 0) {
+                 OxydStone *o1 = levelOxyds[oxydId(top.selOxyd1Mask)];
+                 OxydStone *o2 = levelOxyds[oxydId(top.selOxyd2Mask)];
+-                if ((to_bool(o1-&gt;getAttr(&quot;noshuffle&quot;)) || o1-&gt;iState != CLOSED) &amp;&amp;
+-                        (to_bool(o2-&gt;getAttr(&quot;noshuffle&quot;)) || o2-&gt;iState != CLOSED) &amp;&amp;
+-                        (int)(o1-&gt;getAttr(&quot;color&quot;)) &gt;= 0 &amp;&amp;  (int)(o2-&gt;getAttr(&quot;color&quot;)) &gt;= 0 &amp;&amp;
+-                        o1-&gt;getAttr(&quot;color&quot;) != o2-&gt;getAttr(&quot;color&quot;)) {
++                if ((to_bool(o1-&gt;getAttr(&quot;noshuffle&quot;)) || o1-&gt;state != CLOSED) &amp;&amp;
++                        (to_bool(o2-&gt;getAttr(&quot;noshuffle&quot;)) || o2-&gt;state != CLOSED) &amp;&amp;
++                        (int)(o1-&gt;getAttr(&quot;oxydcolor&quot;)) &gt;= 0 &amp;&amp;  (int)(o2-&gt;getAttr(&quot;oxydcolor&quot;)) &gt;= 0 &amp;&amp;
++                        o1-&gt;getAttr(&quot;oxydcolor&quot;) != o2-&gt;getAttr(&quot;oxydcolor&quot;)) {
+                     logBadFrameCount++;
+                     return 0;
+                 }
+@@ -520,10 +520,10 @@
+ 
+         // opened oxyd pairs first
+         for (;next.openedOxydIndex &lt; numOxyds; next.openedOxydIndex++) {
+-            if (levelOxyds[next.openedOxydIndex]-&gt;iState == OPEN_PAIR) {
+-                int c = levelOxyds[next.openedOxydIndex]-&gt;getAttr(&quot;color&quot;);
++            if (levelOxyds[next.openedOxydIndex]-&gt;state == OPEN_PAIR) {
++                int c = levelOxyds[next.openedOxydIndex]-&gt;getAttr(&quot;oxydcolor&quot;);
+                 for (int i = next.openedOxydIndex+1; i &lt; numOxyds; i++) {
+-                    if (levelOxyds[i]-&gt;getAttr(&quot;color&quot;) == c) {
++                    if (levelOxyds[i]-&gt;getAttr(&quot;oxydcolor&quot;) == c) {
+                         next.selOxyd1Mask = 1 &lt;&lt; next.openedOxydIndex;
+                         next.selOxyd2Mask = 1 &lt;&lt; i;
+                         next.openedOxydIndex++;
+@@ -540,15 +540,15 @@
+         // it is essential to select known pairs first
+         for (;next.fixedcolorOxydIndex &lt; numOxyds; next.fixedcolorOxydIndex++) {
+             OxydStone *candidate1 = levelOxyds[next.fixedcolorOxydIndex];
+-            int color1 = candidate1-&gt;getAttr(&quot;color&quot;);
+-            if ((int)candidate1-&gt;getAttr(&quot;color&quot;) &gt; AUTO &amp;&amp; (
+-                    to_bool(candidate1-&gt;getAttr(&quot;noshuffle&quot;)) || candidate1-&gt;iState == OPENING ||
+-                    candidate1-&gt;iState == CLOSING || candidate1-&gt;iState == OPEN_SINGLE )) {
++            int color1 = candidate1-&gt;getAttr(&quot;oxydcolor&quot;);
++            if ((int)candidate1-&gt;getAttr(&quot;oxydcolor&quot;) &gt; AUTO &amp;&amp; (
++                    to_bool(candidate1-&gt;getAttr(&quot;noshuffle&quot;)) || candidate1-&gt;state == OPENING ||
++                    candidate1-&gt;state == CLOSING || candidate1-&gt;state == OPEN_SINGLE )) {
+                 for (int i = next.fixedcolorOxydIndex+1; i &lt; numOxyds; i++) {
+                     OxydStone *candidate2 = levelOxyds[i];
+-                    if (candidate2-&gt;getAttr(&quot;color&quot;) == color1 &amp;&amp; (
+-                            to_bool(candidate2-&gt;getAttr(&quot;noshuffle&quot;)) || candidate2-&gt;iState == OPENING ||
+-                            candidate2-&gt;iState == CLOSING || candidate2-&gt;iState == OPEN_SINGLE)) {
++                    if (candidate2-&gt;getAttr(&quot;oxydcolor&quot;) == color1 &amp;&amp; (
++                            to_bool(candidate2-&gt;getAttr(&quot;noshuffle&quot;)) || candidate2-&gt;state == OPENING ||
++                            candidate2-&gt;state == CLOSING || candidate2-&gt;state == OPEN_SINGLE)) {
+                         next.selOxyd1Mask = 1 &lt;&lt; next.fixedcolorOxydIndex;
+                         next.selOxyd2Mask = 1 &lt;&lt; i;
+                         if ((next.selOxyd2Mask &amp; next.oxydsCandidatesMask[next.fixedcolorOxydIndex]) == 0)
+@@ -638,9 +638,9 @@
+         // check that minFreeOxydId is not a noshuffle standard oxyd that can not
+         // be recolored to a pseudo!
+         OxydStone *pseudocandidate = levelOxyds[minFreeOxydId];
+-        if (next.freePseudoCount &gt; 0 &amp;&amp; ((int)pseudocandidate-&gt;getAttr(&quot;color&quot;) &lt; AUTO || 
++        if (next.freePseudoCount &gt; 0 &amp;&amp; ((int)pseudocandidate-&gt;getAttr(&quot;oxydcolor&quot;) &lt; AUTO || 
+                 (!(to_bool(pseudocandidate-&gt;getAttr(&quot;noshuffle&quot;))) &amp;&amp;
+-                pseudocandidate-&gt;iState == CLOSED))) {
++                pseudocandidate-&gt;state == CLOSED))) {
+             next.selOxyd1Mask = 1 &lt;&lt; minFreeOxydId;
+             next.selOxyd2Mask = 0;
+             shuffleStack.push_back(next);    // add copy of next frame
+@@ -676,13 +676,13 @@
+                     int i = IntegerRand(1, remainFakeCount + remainFartCount + remainBoldCount);  // use enigma's internal rand!
+                     if (i &lt;= remainFakeCount) {
+                         remainFakeCount--;
+-                        oxyd-&gt;set_attrib(&quot;color&quot;, FAKE);
++                        oxyd-&gt;set_attrib(&quot;oxydcolor&quot;, FAKE);
+                     } else if ( i &lt;= remainFakeCount + remainFartCount) {
+                         remainFartCount--;
+-                        oxyd-&gt;set_attrib(&quot;color&quot;, FART);
++                        oxyd-&gt;set_attrib(&quot;oxydcolor&quot;, FART);
+                     } else {
+                         remainBoldCount--;
+-                        oxyd-&gt;set_attrib(&quot;color&quot;, BOLD);
++                        oxyd-&gt;set_attrib(&quot;oxydcolor&quot;, BOLD);
+                     }
+                     (*itr).isColored = true;
+                 } else {
+@@ -690,23 +690,23 @@
+                     OxydStone *oxyd1 = levelOxyds[oxydId((*itr).selOxyd1Mask)];
+                     OxydStone *oxyd2 = levelOxyds[oxydId((*itr).selOxyd2Mask)];
+                     int c = AUTO;
+-                    if (oxyd1-&gt;iState == OPEN_PAIR) {
++                    if (oxyd1-&gt;state == OPEN_PAIR) {
+                         // a pair of opened oxyds - we need not to recolor
+                         // but we need to register the used color
+-                        c = oxyd1-&gt;getAttr(&quot;color&quot;);
++                        c = oxyd1-&gt;getAttr(&quot;oxydcolor&quot;);
+                         colorsRemainCount[c] -= 2;                        
+                         (*itr).isColored = true;
+                     }
+-                    else if (to_bool(oxyd1-&gt;getAttr(&quot;noshuffle&quot;)) || oxyd1-&gt;iState != CLOSED) {
++                    else if (to_bool(oxyd1-&gt;getAttr(&quot;noshuffle&quot;)) || oxyd1-&gt;state != CLOSED) {
+                         // a standard oxyd (pseudo is impossible) that requires a color
+-                        c = oxyd1-&gt;getAttr(&quot;color&quot;);
+-                        oxyd2-&gt;set_attrib(&quot;color&quot;, c);
++                        c = oxyd1-&gt;getAttr(&quot;oxydcolor&quot;);
++                        oxyd2-&gt;set_attrib(&quot;oxydcolor&quot;, c);
+                         colorsRemainCount[c] -= 2;
+                         (*itr).isColored = true;
+                     }
+-                    else if (to_bool(oxyd2-&gt;getAttr(&quot;noshuffle&quot;)) || oxyd2-&gt;iState != CLOSED) {
+-                        c = oxyd2-&gt;getAttr(&quot;color&quot;);
+-                        oxyd1-&gt;set_attrib(&quot;color&quot;, c);
++                    else if (to_bool(oxyd2-&gt;getAttr(&quot;noshuffle&quot;)) || oxyd2-&gt;state != CLOSED) {
++                        c = oxyd2-&gt;getAttr(&quot;oxydcolor&quot;);
++                        oxyd1-&gt;set_attrib(&quot;oxydcolor&quot;, c);
+                         colorsRemainCount[c] -= 2;
+                         (*itr).isColored = true;
+                     }
+@@ -733,8 +733,8 @@
+         int ci = 0;
+         for (std::list&lt;ShuffleFrame&gt;::iterator itr = shuffleStack.begin(); itr != shuffleStack.end(); ++itr) {
+             if (!(*itr).isColored &amp;&amp; (*itr).selOxyd1Mask != 0) {
+-                levelOxyds[oxydId((*itr).selOxyd1Mask)]-&gt;set_attrib(&quot;color&quot;, colorPairs[ci]);
+-                levelOxyds[oxydId((*itr).selOxyd2Mask)]-&gt;set_attrib(&quot;color&quot;, colorPairs[ci]);
++                levelOxyds[oxydId((*itr).selOxyd1Mask)]-&gt;set_attrib(&quot;oxydcolor&quot;, colorPairs[ci]);
++                levelOxyds[oxydId((*itr).selOxyd2Mask)]-&gt;set_attrib(&quot;oxydcolor&quot;, colorPairs[ci]);
+                 ci++;
+             }
+         }
+@@ -836,9 +836,9 @@
+     
+     // Instance Methods
+     
+-    OxydStone::OxydStone() : PhotoStone(&quot;st-oxyd&quot;), iState (CLOSED) {
++    OxydStone::OxydStone() : PhotoStone(&quot;st_oxyd&quot;) {
+         set_attrib(&quot;flavor&quot;, &quot;b&quot;);
+-        set_attrib(&quot;color&quot;, AUTO);
++        set_attrib(&quot;oxydcolor&quot;, AUTO);
+     }
+     
+     OxydStone * OxydStone::clone() { 
+@@ -856,22 +856,18 @@
+     
+     Value OxydStone::message(const Message &amp;m) {
+         if (m.message == &quot;closeall&quot;) {
+-            closeAllStandardOxyds();
++            if (isDisplayable())
++                closeAllStandardOxyds();
+             return Value();
+         }
+         else if (m.message == &quot;shuffle&quot;) {
+             shuffleColors();
+             return Value();
+         }
+-        else if ((m.message == &quot;_trigger&quot;  &amp;&amp; m.value.to_bool())|| m.message == &quot;toggle&quot;|| m.message == &quot;spitter&quot;) {
+-            tryOpen();
++        else if ((m.message == &quot;_trigger&quot;  &amp;&amp; m.value.to_bool()) || m.message == &quot;_spitter&quot;) {
++            tryOpen();   // just internal messages on displayable oxyds
+             return Value();
+         }
+-        else if (m.message == &quot;signal&quot;) {
+-            if (m.value != 0)
+-                tryOpen();
+-            return Value();
+-        }
+         else if (m.message == &quot;_init&quot;) {
+             initColors();
+             return Value();
+@@ -880,23 +876,60 @@
+     }
+     
+     void OxydStone::set_attrib(const string&amp; key, const Value &amp;val) {
+-        if (key == &quot;color&quot;) 
+-            ASSERT(iState == CLOSED, XLevelRuntime, &quot;OxydStone error - recoloring of an not closed stone&quot;);
++        if (key == &quot;oxydcolor&quot;) 
++            ASSERT(state == CLOSED, XLevelRuntime, &quot;OxydStone error - recoloring of an not closed stone&quot;);
+         else if (key == &quot;flavor&quot;) {
+-            ASSERT(iState == CLOSED, XLevelRuntime, &quot;OxydStone error - reflavoring of an not closed stone&quot;);
++            ASSERT(state == CLOSED, XLevelRuntime, &quot;OxydStone error - reflavoring of an not closed stone&quot;);
+         }
+         
+-        Object::set_attrib(key, val);   // do value checking
++        PhotoStone::set_attrib(key, val);   // do value checking
+         
+         if (key == &quot;flavor&quot; &amp;&amp; IsInsideLevel(get_pos()))
+             set_model(string(&quot;st-oxyd&quot;)+(std::string)val);
+     }
++        
++    int OxydStone::maxState() {
++        return 2;
++    }
+     
+-    Value OxydStone::getAttr(const string &amp;key) const {
+-        // TODO &quot;state&quot; 0=CLOSE || CLOSING; 1 = other iState values
+-        return PhotoStone::getAttr(key);
++    void OxydStone::toggleState() {
++        switch (state) {
++            case OPEN_PAIR :
++                return;         // not possible
++            case OPEN_SINGLE :
++            case OPENING :
++                setState(0);    // start closing
++                return;
++            default:
++                setState(1);    // try to open
++                return;
++        }        
+     }
+     
++    int OxydStone::externalState() const {
++        switch (state) {
++            case OPEN_SINGLE :
++            case OPENING :
++                return 1;
++            case OPEN_PAIR :
++                return 2;
++            default:
++                return 0;
++        }
++    }
++    
++    void OxydStone::setState(int extState) {
++        ASSERT(extState &lt;= 1, XLevelRuntime, &quot;OxydStone error - attempt to set state OPEN_PAIR&quot;);
++        if (isDisplayable()) {
++            if (state == OPEN_PAIR)
++                return;      // ignore - no change possible
++            else if (extState == 1)
++                tryOpen();
++            else if (getAttr(&quot;oxydcolor&quot;) &gt;= AUTO)  // just close standard oxyds
++                set_iState(CLOSING);
++        }
++    }
++    
+     void OxydStone::actor_hit(const StoneContact &amp;/*sc*/) {
+         tryOpen();
+     }
+@@ -906,13 +939,13 @@
+     }
+     
+     void OxydStone::animcb() {
+-        if (iState == CLOSING)
++        if (state == CLOSING)
+             set_iState(CLOSED);
+-        else if (iState == OPENING)
++        else if (state == OPENING)
+             set_iState(OPEN_SINGLE);
+-        else if (iState == OPEN_PAIR)     // end of opening anim for second oxyd in a pair
++        else if (state == OPEN_PAIR)     // end of opening anim for second oxyd in a pair
+             set_iState(OPEN_PAIR);      // set the right model
+-        else if (iState == OPEN_SINGLE)   // pseudo animation
++        else if (state == OPEN_SINGLE)   // pseudo animation
+             set_iState(CLOSING);
+     }
+     
+@@ -935,20 +968,20 @@
+         
+         // check for a blocking pseudo
+         for (InstanceVector::iterator itr = levelOxyds.begin(); itr != levelOxyds.end(); ++itr) {
+-            if ((*itr)-&gt;iState != CLOSED &amp;&amp; (int)((*itr)-&gt;getAttr(&quot;color&quot;)) &lt; AUTO) {
++            if ((*itr)-&gt;state != CLOSED &amp;&amp; (int)((*itr)-&gt;getAttr(&quot;oxydcolor&quot;)) &lt; AUTO) {
+                 // a pseudo is blocking any opening of other oxyds
+                 // this is necessary as the bold reshuffle can take place only after
+                 // finishing its closing animation!
+                 return;
+             }
+-            if ((*itr)-&gt;iState == OPEN_SINGLE || (*itr)-&gt;iState == OPENING) {
++            if ((*itr)-&gt;state == OPEN_SINGLE || (*itr)-&gt;state == OPENING) {
+                 // remember a standard colored pair candidate
+                 isSingleOpened = true;
+                 pairCandidate = *itr;
+             }
+         }
+         
+-        Value mycolor = getAttr(&quot;color&quot;);    
++        Value mycolor = getAttr(&quot;oxydcolor&quot;);    
+         if ((int)mycolor &lt; AUTO) {
+             // pseudo open
+             if (isSingleOpened) {
+@@ -959,7 +992,7 @@
+             if ((int)mycolor &lt;= FART)
+                 set_iState(OPENING);
+         }
+-        else if (iState == CLOSED || iState == CLOSING) {
++        else if (state == CLOSED || state == CLOSING) {
+             // standard colored oxyd open
+             
+             if (isSingleOpened) {
+@@ -970,14 +1003,14 @@
+                     // open both stones. Close one of them otherwise.
+                     // (This is the Oxyd behaviour; it doesn't work with
+                     // some Enigma levels.)
+-                    can_open = (mycolor == pairCandidate-&gt;getAttr(&quot;color&quot;) &amp;&amp; pairCandidate-&gt;iState==OPEN_SINGLE);
++                    can_open = (mycolor == pairCandidate-&gt;getAttr(&quot;oxydcolor&quot;) &amp;&amp; pairCandidate-&gt;state==OPEN_SINGLE);
+                 }
+                 else 
+-                    can_open = (mycolor == pairCandidate-&gt;getAttr(&quot;color&quot;));
++                    can_open = (mycolor == pairCandidate-&gt;getAttr(&quot;oxydcolor&quot;));
+     
+                 if (can_open) {
++                    pairCandidate-&gt;set_iState(OPEN_PAIR);
+                     set_iState(OPEN_PAIR);
+-                    pairCandidate-&gt;set_iState(OPEN_PAIR);
+                 } else {
+                     pairCandidate-&gt;set_iState(CLOSING);
+                     set_iState(OPENING);
+@@ -992,35 +1025,37 @@
+     
+     void OxydStone::closeAllStandardOxyds() {
+         for (unsigned i=0; i&lt;levelOxyds.size(); ++i)
+-            if ((int)(levelOxyds[i]-&gt;getAttr(&quot;color&quot;)) &gt;= AUTO)
++            if ((int)(levelOxyds[i]-&gt;getAttr(&quot;oxydcolor&quot;)) &gt;= AUTO)
+                 levelOxyds[i]-&gt;set_iState(CLOSING);
+     }
+     
+-    void OxydStone::set_iState(State newState) {
++    void OxydStone::set_iState(iState newState) {
+         string flavor(getDefaultedAttr(&quot;flavor&quot;,&quot;a&quot;));
+-        string color(getDefaultedAttr(&quot;color&quot;, 0));
++        string color(getDefaultedAttr(&quot;oxydcolor&quot;, 0));
+     
+         string basemodelname = string(&quot;st-oxyd&quot;) + flavor;
+         string modelname = basemodelname + color;
+     
+-        State oldState = iState;
+-        iState = newState;
++        iState oldState = (iState)state;
++        int oldExtState = externalState();
++        
++        state = newState;
+     
+         switch (newState) {
+             case CLOSED:
+-                if ((int)getAttr(&quot;color&quot;) == BOLD)
++                if ((int)getAttr(&quot;oxydcolor&quot;) == BOLD)
+                     shuffleColors();    // shuffle all closed oxyds including itself
+                     
+                 set_model(string(&quot;st-oxyd&quot;)+flavor);
+                 break;
+         
+             case OPEN_SINGLE:
+-                if ((int)getAttr(&quot;color&quot;) &lt;= FART) {
++                if ((int)getAttr(&quot;oxydcolor&quot;) &lt;= FART) {
+                     set_anim(basemodelname + &quot;-pseudo&quot; + color);
+-                    if ((int)getAttr(&quot;color&quot;) == FART) {
++                    if ((int)getAttr(&quot;oxydcolor&quot;) == FART) {
+                         closeAllStandardOxyds();
+                         sound_event(&quot;fart&quot;);
+-                    } else if ((int)getAttr(&quot;color&quot;) == BOLD) {
++                    } else if ((int)getAttr(&quot;oxydcolor&quot;) == BOLD) {
+                         sound_event(&quot;shuffle&quot;);
+                     }
+                 } else
+@@ -1053,7 +1088,7 @@
+         
+             case CLOSING:
+                 if (oldState == CLOSED || oldState==CLOSING) {
+-                    iState = oldState;
++                    state = oldState;
+                     return;
+                 }
+         
+@@ -1065,6 +1100,8 @@
+                 }
+                 break;
+         }
++        if (oldExtState != externalState() &amp;&amp; (oldExtState != 1 || externalState() != 2))
++            performAction(externalState() != 0);
+     }
+     
+ 
+
+Modified: trunk/src/stones/OxydStone.hh
+===================================================================
+--- trunk/src/stones/OxydStone.hh	2008-01-22 01:17:17 UTC (rev 999)
++++ trunk/src/stones/OxydStone.hh	2008-01-23 21:31:39 UTC (rev 1000)
+@@ -85,8 +85,13 @@
+         virtual void dispose();
+         virtual Value message(const Message &amp;m);
+         virtual void set_attrib(const string&amp; key, const Value &amp;val);
+-        virtual Value getAttr(const string &amp;key) const;
+ 
++        // StateObject interface
++        virtual int maxState();
++        virtual void toggleState();
++        virtual int externalState() const;
++        virtual void setState(int extState);
++
+         // Stone interface
+         virtual void actor_hit(const StoneContact &amp;sc);
+         virtual const char *collision_sound() { return &quot;stone&quot;; }
+@@ -105,7 +110,7 @@
+         void on_removal (GridPos p);
+             
+     private:
+-        enum State { CLOSED, OPEN_PAIR, OPENING, CLOSING, OPEN_SINGLE };
++        enum iState { CLOSED, OPEN_PAIR, OPENING, CLOSING, OPEN_SINGLE };
+         
+         typedef std::vector&lt;OxydStone *&gt; InstanceVector;
+         
+@@ -175,15 +180,14 @@
+         static void log_shuffle_stack();
+         
+         static bool not_open(OxydStone *a) {
+-            return !(a-&gt;iState == OPEN_PAIR || (int)a-&gt;getAttr(&quot;color&quot;) &lt; AUTO);
++            return !(a-&gt;state == OPEN_PAIR || (int)a-&gt;getAttr(&quot;oxydcolor&quot;) &lt; AUTO);
+         }
+ 
+-        State iState;
+ 
+         // Private methods
+         void tryOpen();
+         void closeAllStandardOxyds();
+-        void set_iState(State newState);
++        void set_iState(iState newState);
+     };
+ } // namespace enigma
+ 
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-01-22 01:17:17 UTC (rev 999)
++++ trunk/src/stones.cc	2008-01-23 21:31:39 UTC (rev 1000)
+@@ -747,7 +747,7 @@
+             break_me();
+         }
+         virtual Value message(const Message &amp;m) {
+-            if (m.message ==&quot;ignite&quot; || m.message == &quot;expl&quot; || m.message == &quot;bombstone&quot;) {
++            if (m.message ==&quot;ignite&quot; || m.message == &quot;_explosion&quot; || m.message == &quot;_bombstone&quot;) {
+                 break_me();
+                 return Value();
+             }
+@@ -788,7 +788,7 @@
+         }
+ 
+         virtual Value message(const Message &amp;m) {
+-            if (m.message ==&quot;ignite&quot; || m.message == &quot;expl&quot; || m.message == &quot;bombstone&quot;) {
++            if (m.message ==&quot;ignite&quot; || m.message == &quot;_explosion&quot; || m.message == &quot;_bombstone&quot;) {
+                 break_me();
+                 return Value();
+             }
+@@ -830,7 +830,7 @@
+             ReplaceStone(get_pos(), MakeStone (&quot;st-plain_breaking&quot;));
+         }
+         virtual Value message(const Message &amp;m) {
+-            if (m.message ==&quot;ignite&quot; || m.message == &quot;expl&quot; || m.message == &quot;bombstone&quot;) {
++            if (m.message ==&quot;ignite&quot; || m.message == &quot;_explosion&quot; || m.message == &quot;_bombstone&quot;) {
+                 break_me();
+                 return Value();
+             }
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-01-22 01:17:17 UTC (rev 999)
++++ trunk/src/stones_simple.cc	2008-01-23 21:31:39 UTC (rev 1000)
+@@ -556,7 +556,7 @@
+         }
+         
+         virtual Value message(const Message &amp;m) {
+-            if (m.message ==&quot;ignite&quot; || m.message == &quot;expl&quot; || m.message == &quot;bombstone&quot;) {
++            if (m.message ==&quot;ignite&quot; || m.message == &quot;_explosion&quot; || m.message == &quot;_bombstone&quot;) {
+                 break_me();
+                 return Value();
+             }
+@@ -1258,7 +1258,7 @@
+             set_attrib(&quot;interval&quot;, 1.0);
+             set_attrib(&quot;loop&quot;, true);
+             set_attrib(&quot;on&quot;, 1.0);
+-            set_attrib(&quot;invisible&quot;, 0.0);
++            set_attrib(&quot;invisible&quot;, false);
+ 
+             // set_on(true);   DOESN'T WORK! calls init_model()
+         }
+@@ -1276,7 +1276,7 @@
+         }
+ 
+         void init_model() {
+-            if (getAttr(&quot;invisible&quot;) == 1) {
++            if (getAttr(&quot;invisible&quot;).to_bool()) {
+                 set_model(&quot;invisible&quot;);
+             }
+             else {
+@@ -1408,7 +1408,7 @@
+             (m.message == &quot;_trigger&quot; &amp;&amp; m.value.to_bool())) {
+         change_state(FARTING);
+         return Value();
+-    } else if (m.message == &quot;ignite&quot; || m.message == &quot;expl&quot;) { 
++    } else if (m.message == &quot;ignite&quot; || m.message == &quot;_explosion&quot;) { 
+         change_state(BREAKING);
+         return Value();
+     }
+@@ -1847,7 +1847,7 @@
+ 
+ Value BombStone::message(const Message &amp;m) 
+ {
+-    if (m.message ==&quot;expl&quot; || m.message ==&quot;bombstone&quot;) {
++    if (m.message ==&quot;_explosion&quot; || m.message ==&quot;_bombstone&quot;) {
+         change_state(BREAK);
+         return Value();
+     }
+@@ -2029,7 +2029,7 @@
+         }
+ 
+         virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;expl&quot;) {
++            if (m.message == &quot;_explosion&quot;) {
+                 explode();
+                 return Value();
+             }
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-01-22 01:17:17 UTC (rev 999)
++++ trunk/src/world.cc	2008-01-23 21:31:39 UTC (rev 1000)
+@@ -1916,17 +1916,17 @@
+     void explosion (GridPos p, ItemID explosion_item)
+     {
+         if (Stone *stone = GetStone(p))
+-            SendMessage(stone, &quot;expl&quot;);
++            SendMessage(stone, &quot;_explosion&quot;);
+         if (Item  *item  = GetItem(p)) {
+             if (has_flags(item, itf_indestructible))
+-                SendMessage(item, &quot;expl&quot;);
++                SendMessage(item, &quot;_explosion&quot;);
+             else
+                 SetItem(p, explosion_item);
+         }
+         else
+             SetItem(p, explosion_item);
+         if (Floor *floor = GetFloor(p))
+-            SendMessage(floor, &quot;expl&quot;);
++            SendMessage(floor, &quot;_explosion&quot;);
+     }
+ }
+ 
+@@ -1967,9 +1967,9 @@
+ 
+         case EXPLOSION_BOMBSTONE:
+             if (direct_neighbor) {
+-                if (stone) SendMessage(stone, &quot;bombstone&quot;);
+-                if (item) SendMessage(item, &quot;bombstone&quot;);
+-                if (floor) SendMessage(floor, &quot;bombstone&quot;);
++                if (stone) SendMessage(stone, &quot;_bombstone&quot;);
++                if (item) SendMessage(item, &quot;_bombstone&quot;);
++                if (floor) SendMessage(floor, &quot;_bombstone&quot;);
+             }
+             break;
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000431.html">[Enigma-game-svn] r999 - trunk/doc/reference
+</A></li>
+	<LI>Next message: <A HREF="000433.html">[Enigma-game-svn] r1001 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#432">[ date ]</a>
+              <a href="thread.html#432">[ thread ]</a>
+              <a href="subject.html#432">[ subject ]</a>
+              <a href="author.html#432">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

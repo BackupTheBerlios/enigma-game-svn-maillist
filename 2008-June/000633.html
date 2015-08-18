@@ -1,0 +1,222 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1199 - in trunk: data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1199%20-%20in%20trunk%3A%20data/schemas%20src%20src/stones&In-Reply-To=%3C200806291253.m5TCrD8J020682%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000632.html">
+   <LINK REL="Next"  HREF="000634.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1199 - in trunk: data/schemas src src/stones</H1>
+    <B>ral at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1199%20-%20in%20trunk%3A%20data/schemas%20src%20src/stones&In-Reply-To=%3C200806291253.m5TCrD8J020682%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1199 - in trunk: data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Jun 29 14:53:13 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000632.html">[Enigma-game-svn] r1198 - in trunk: data data/levels/enigma_vi	data/levels/lib src/stones
+</A></li>
+        <LI>Next message: <A HREF="000634.html">[Enigma-game-svn] r1200 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#633">[ date ]</a>
+              <a href="thread.html#633">[ thread ]</a>
+              <a href="subject.html#633">[ subject ]</a>
+              <a href="author.html#633">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-06-29 14:53:04 +0200 (Sun, 29 Jun 2008)
+New Revision: 1199
+
+Modified:
+   trunk/data/schemas/objects.xml
+   trunk/src/floors.cc
+   trunk/src/stones/ChessStone.cc
+   trunk/src/stones/ChessStone.hh
+   trunk/src/stones_simple.cc
+Log:
+Trunk 1.1: new API reengineering
+- chess: add attribute &quot;movable&quot; support - read only, true
+- make message capture a system message &quot;_capture&quot;
+
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-06-27 22:17:06 UTC (rev 1198)
++++ trunk/data/schemas/objects.xml	2008-06-29 12:53:04 UTC (rev 1199)
+@@ -44,7 +44,6 @@
+     &lt;attr name=&quot;transparent&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+   &lt;/attributes&gt;
+   &lt;messages&gt;
+-    &lt;msg name=&quot;capture&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;close&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;closeall&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;flip&quot; type=&quot;nil&quot;/&gt;
+@@ -63,6 +62,7 @@
+     &lt;msg name=&quot;turnback&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_bombstone&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_brush&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;_capture&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_explosion&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_glasses&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_hit&quot; type=&quot;object&quot;/&gt;
+@@ -348,10 +348,11 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;st_chess&quot;&gt;
+       &lt;attr name=&quot;color&quot; default=&quot;0&quot;/&gt;
+-      &lt;msg name=&quot;capture&quot;/&gt;
++      &lt;attr name=&quot;movable&quot; default=&quot;true&quot; rw=&quot;r&quot;/&gt;
+       &lt;msg name=&quot;flip&quot;/&gt;
+       &lt;msg name=&quot;move&quot;/&gt;
+       &lt;msg name=&quot;signal&quot;/&gt;
++      &lt;msg name=&quot;_capture&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;st_chess_black&quot;&gt;
+       &lt;attr name=&quot;color&quot; value=&quot;0&quot;/&gt;
+
+Modified: trunk/src/floors.cc
+===================================================================
+--- trunk/src/floors.cc	2008-06-27 22:17:06 UTC (rev 1198)
++++ trunk/src/floors.cc	2008-06-29 12:53:04 UTC (rev 1199)
+@@ -955,7 +955,7 @@
+ }
+ 
+ Value Thief::message(const Message &amp;m) {
+-    if(m.message == &quot;capture&quot; &amp;&amp; state == IDLE) {
++    if(m.message == &quot;_capture&quot; &amp;&amp; state == IDLE) {
+         state = CAPTURED;
+         Item * it =  GetItem(get_pos());
+         
+
+Modified: trunk/src/stones/ChessStone.cc
+===================================================================
+--- trunk/src/stones/ChessStone.cc	2008-06-27 22:17:06 UTC (rev 1198)
++++ trunk/src/stones/ChessStone.cc	2008-06-29 12:53:04 UTC (rev 1199)
+@@ -48,7 +48,7 @@
+     }
+ 
+     Value ChessStone::message(const Message &amp;m) {
+-        if (m.message == &quot;capture&quot;) {
++        if (m.message == &quot;_capture&quot;) {
+             if (isDisplayable() &amp;&amp; state == IDLE &amp;&amp; m.value.to_string() != getKind())
+                 if (try_state(CAPTURED)) {
+                     set_anim(get_model_name() + &quot;-captured&quot;);
+@@ -97,7 +97,7 @@
+                             // Don't move, just reappear at old position.                
+                         } else {
+                             move_stone(getAttr(&quot;$destination&quot;), &quot;movesmall&quot;);
+-                            SendMessage(GetFloor(getAttr(&quot;$destination&quot;)), &quot;capture&quot;);
++                            SendMessage(GetFloor(getAttr(&quot;$destination&quot;)), &quot;_capture&quot;);
+                         }
+                         // maybe a floor-change has happened, but during
+                         // state APPEARING this doesn't mean anything:
+@@ -211,7 +211,7 @@
+             } else {
+                 // Test stone. Is it opposite chess stone or totally another one?
+                 Stone *st = GetStone(destination);
+-                if(to_int(SendMessage(st, &quot;capture&quot;, Value(get_model_name()))) ) {
++                if(to_int(SendMessage(st, &quot;_capture&quot;, Value(get_model_name()))) ) {
+                     // Give it some time for animation, then replace it.
+                     ASSERT(try_state(CAPTURING), XLevelRuntime,
+                         &quot;ChessStone: strange things happening in maybe_move_to&quot;);
+
+Modified: trunk/src/stones/ChessStone.hh
+===================================================================
+--- trunk/src/stones/ChessStone.hh	2008-06-27 22:17:06 UTC (rev 1198)
++++ trunk/src/stones/ChessStone.hh	2008-06-29 12:53:04 UTC (rev 1199)
+@@ -36,25 +36,29 @@
+         DECL_TRAITS;
+ 
+     private:
+-        // Variables and Constants
+-        // (APPEARING and DISAPPEARING are used when moving the stone.)
++        /**
++         * Variables and Constants
++         * (APPEARING and DISAPPEARING are used when moving the stone.)
++         */
+         enum State {IDLE, APPEARING, DISAPPEARING, CAPTURING,
+                     CAPTURED, FALLING, SINKING};
+ 
+-        // The first three boolean flags are meant as buffers to
+-        // remember state-changes. When the horse is just jumping
+-        // or capturing, no state-change can be done at once, but
+-        // only after jumping. To avoid shortcuts, this is
+-        // consequently done for floor-changes as well, which
+-        // means that a horse can (retroactively) sink or fall
+-        // though standing on normal floor after a jump, if the
+-        // origin floor became swamp or abyss in meanwhile.
+-        // The final 5 bits are used in the following way:
+-        // During a capture, the capturing stone has to give the
+-        // captured stone enough time to play its animation.
+-        // So 20 alarms of 0.1 seconds each are scheduled, to
+-        // wait before finally cancelling the capture.
+-        // OBJBIT_CAPTURE_RETRY is the corresponding counter.
++        /**
++         * The first three boolean flags are meant as buffers to
++         * remember state-changes. When the horse is just jumping
++         * or capturing, no state-change can be done at once, but
++         * only after jumping. To avoid shortcuts, this is
++         * consequently done for floor-changes as well, which
++         * means that a horse can (retroactively) sink or fall
++         * though standing on normal floor after a jump, if the
++         * origin floor became swamp or abyss in meanwhile.
++         * The final 5 bits are used in the following way:
++         * During a capture, the capturing stone has to give the
++         * captured stone enough time to play its animation.
++         * So 20 alarms of 0.1 seconds each are scheduled, to
++         * wait before finally cancelling the capture.
++         * OBJBIT_CAPTURE_RETRY is the corresponding counter.
++         */
+         enum ObjectPrivatFlagsBits {
+             OBJBIT_NEWCOLOR      =  1&lt;&lt;24, ///&lt; change to this color next time possible
+             OBJBIT_FALL          =  1&lt;&lt;25, ///&lt; fall next time possible
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-06-27 22:17:06 UTC (rev 1198)
++++ trunk/src/stones_simple.cc	2008-06-29 12:53:04 UTC (rev 1199)
+@@ -1414,7 +1414,7 @@
+     if(m.message == &quot;signal&quot; &amp;&amp; server::GameCompatibility != GAMET_ENIGMA) {
+         performAction(!m.value.to_bool());  // inverse signal multiplier
+         return Value();
+-    } else if (m.message == &quot;capture&quot; &amp;&amp; state == IDLE) {
++    } else if (m.message == &quot;_capture&quot; &amp;&amp; state == IDLE) {
+         state = CAPTURED;
+         Item * it =  GetItem(get_pos());
+         
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000632.html">[Enigma-game-svn] r1198 - in trunk: data data/levels/enigma_vi	data/levels/lib src/stones
+</A></li>
+	<LI>Next message: <A HREF="000634.html">[Enigma-game-svn] r1200 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#633">[ date ]</a>
+              <a href="thread.html#633">[ thread ]</a>
+              <a href="subject.html#633">[ subject ]</a>
+              <a href="author.html#633">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,178 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r698 - branches/1.0/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r698%20-%20branches/1.0/src&In-Reply-To=%3C200704271904.l3RJ47Ma030784%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000135.html">
+   <LINK REL="Next"  HREF="000137.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r698 - branches/1.0/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r698%20-%20branches/1.0/src&In-Reply-To=%3C200704271904.l3RJ47Ma030784%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r698 - branches/1.0/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Fri Apr 27 21:04:07 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000135.html">[Enigma-game-svn] r697 - branches/1.0/src
+</A></li>
+        <LI>Next message: <A HREF="000137.html">[Enigma-game-svn] r700 - in branches/1.0/data/levels: enigma_cross	enigma_experimental enigma_iii enigma_oxyd enigma_peroxyd	enigma_v enigma_vi
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#136">[ date ]</a>
+              <a href="thread.html#136">[ thread ]</a>
+              <a href="subject.html#136">[ subject ]</a>
+              <a href="author.html#136">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-04-27 21:04:06 +0200 (Fri, 27 Apr 2007)
+New Revision: 698
+
+Modified:
+   branches/1.0/src/display.cc
+   branches/1.0/src/stones.hh
+   branches/1.0/src/world.cc
+   branches/1.0/src/world.hh
+   branches/1.0/src/world_internal.hh
+Log:
+Branch 1.0: merge some urgent patches from 1.1 to 1.0
+- r560 border collision crash fix
+- r560&amp;573 minimize sprite redraws on show/hide
+
+
+Modified: branches/1.0/src/display.cc
+===================================================================
+--- branches/1.0/src/display.cc	2007-04-25 19:43:00 UTC (rev 697)
++++ branches/1.0/src/display.cc	2007-04-27 19:04:06 UTC (rev 698)
+@@ -835,13 +835,23 @@
+ }
+ 
+ void SpriteHandle::hide() const {
+-    layer-&gt;get_sprite(id)-&gt;visible = false;
+-    layer-&gt;get_sprite(id)-&gt;mayNeedRedraw = false;
++    if (layer) {
++        Sprite * s = layer-&gt;get_sprite(id);
++        if(s-&gt;visible) {
++            s-&gt;visible = false;
++            layer-&gt;redraw_sprite_region(id);
++        }
++    }
+ }
+ 
+ void SpriteHandle::show() const {
+-    layer-&gt;get_sprite(id)-&gt;visible = true;
+-    layer-&gt;get_sprite(id)-&gt;mayNeedRedraw = true;
++    if (layer) {
++        Sprite * s = layer-&gt;get_sprite(id);
++        if(!s-&gt;visible) {
++            s-&gt;visible = true;
++            layer-&gt;redraw_sprite_region(id);
++        }
++    }
+ }
+ 
+ 
+
+Modified: branches/1.0/src/stones.hh
+===================================================================
+--- branches/1.0/src/stones.hh	2007-04-25 19:43:00 UTC (rev 697)
++++ branches/1.0/src/stones.hh	2007-04-27 19:04:06 UTC (rev 698)
+@@ -30,7 +30,8 @@
+         st_FIRST = 0,
+         st_none = 0,
+ 
+-        st_black1,
++        st_borderstone,
++	st_black1,
+         st_black2,
+         st_black3,
+         st_black4,
+
+Modified: branches/1.0/src/world.cc
+===================================================================
+--- branches/1.0/src/world.cc	2007-04-25 19:43:00 UTC (rev 697)
++++ branches/1.0/src/world.cc	2007-04-27 19:04:06 UTC (rev 698)
+@@ -758,6 +758,7 @@
+         c.ignore   = false;
+         c.actor    = a;
+         c.stonepos = p;
++	c.stoneid  = stone-&gt;get_traits().id;
+         c.response = stone-&gt;collision_response(c);
+         c.sound    = stone-&gt;collision_sound();
+     }
+@@ -805,7 +806,7 @@
+     ActorInfo &amp;ai          = *a-&gt;get_actorinfo();
+     double     restitution = 1.0; //0.85;
+ 
+-    if (server::NoCollisions)
++    if (server::NoCollisions  &amp;&amp; (sc.stoneid != st_borderstone))
+         return;
+ 
+     Contact contact (sc.contact_point, sc.normal);
+
+Modified: branches/1.0/src/world.hh
+===================================================================
+--- branches/1.0/src/world.hh	2007-04-25 19:43:00 UTC (rev 697)
++++ branches/1.0/src/world.hh	2007-04-27 19:04:06 UTC (rev 698)
+@@ -81,6 +81,7 @@
+         // Variables.
+         Actor           *actor;
+         GridPos         stonepos;
++	StoneID         stoneid;
+         StoneResponse   response;
+ 
+         V2      contact_point;  // Where do the shapes meet? (world coordinates)
+
+Modified: branches/1.0/src/world_internal.hh
+===================================================================
+--- branches/1.0/src/world_internal.hh	2007-04-25 19:43:00 UTC (rev 697)
++++ branches/1.0/src/world_internal.hh	2007-04-27 19:04:06 UTC (rev 698)
+@@ -251,6 +251,12 @@
+             BorderStone() : Stone(&quot;borderstone&quot;) {}
+             Stone *clone() { return this; }
+             void dispose() {}
++            virtual const StoneTraits &amp;get_traits() const {
++                static StoneTraits border_traits = {
++                        &quot;INVALID&quot;, st_borderstone, stf_none, material_stone, 1.0
++                };
++                return border_traits;
++            }
+         };
+ 
+         BorderStone borderstone;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000135.html">[Enigma-game-svn] r697 - branches/1.0/src
+</A></li>
+	<LI>Next message: <A HREF="000137.html">[Enigma-game-svn] r700 - in branches/1.0/data/levels: enigma_cross	enigma_experimental enigma_iii enigma_oxyd enigma_peroxyd	enigma_v enigma_vi
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#136">[ date ]</a>
+              <a href="thread.html#136">[ thread ]</a>
+              <a href="subject.html#136">[ subject ]</a>
+              <a href="author.html#136">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

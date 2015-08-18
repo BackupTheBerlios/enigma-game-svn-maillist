@@ -1,0 +1,157 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1334 - in trunk: data src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1334%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200809172209.m8HM97Tg010551%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000763.html">
+   <LINK REL="Next"  HREF="000765.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1334 - in trunk: data src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1334%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200809172209.m8HM97Tg010551%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1334 - in trunk: data src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Sep 18 00:09:07 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000763.html">[Enigma-game-svn] r1333 - trunk/data/levels/lib
+</A></li>
+        <LI>Next message: <A HREF="000765.html">[Enigma-game-svn] r1335 - in trunk: data/levels/lib src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#764">[ date ]</a>
+              <a href="thread.html#764">[ thread ]</a>
+              <a href="subject.html#764">[ subject ]</a>
+              <a href="author.html#764">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-09-18 00:09:04 +0200 (Thu, 18 Sep 2008)
+New Revision: 1334
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/src/GridObject.cc
+   trunk/src/stones/PuzzleStone.cc
+Log:
+Trunk 1.1: new API reengineering
+- fix GridObject light handling for stones moving on light impulses
+- puzzle part 4:
+  - fix api 1 mapping
+  - laser light rotations: fix and ensure reliable rotations, ignore
+       initial light due to the snapshot principle
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-09-17 19:55:07 UTC (rev 1333)
++++ trunk/data/api1init.lua	2008-09-17 22:09:04 UTC (rev 1334)
+@@ -235,7 +235,7 @@
+     st_puzzle_blue_new = &quot;st-puzzle-new&quot;,
+     st_puzzle_blue_nes = &quot;st-puzzle-nes&quot;,
+     st_puzzle_blue_nesw = &quot;st-puzzle-nesw&quot;,
+-    st_puzzle_blue_hollow = &quot;st-puzzle-hollow&quot;,
++    st_puzzle_blue_nesw_hollow = &quot;st-puzzle-hollow&quot;,
+     st_puzzle_yellow_w = &quot;st-puzzle2-w&quot;,
+     st_puzzle_yellow_s = &quot;st-puzzle2-s&quot;,
+     st_puzzle_yellow_sw = &quot;st-puzzle2-sw&quot;,
+@@ -250,6 +250,7 @@
+     st_puzzle_yellow_ne = &quot;st-puzzle2-ne&quot;,
+     st_puzzle_yellow_new = &quot;st-puzzle2-new&quot;,
+     st_puzzle_yellow_nes = &quot;st-puzzle2-nes&quot;,
++    st_puzzle_yellow_nesw = &quot;st-puzzle2-nesw&quot;,
+     st_puzzle_yellow_nesw_hollow = &quot;st-puzzle2-hollow&quot;,
+     st_rotator_cw = &quot;st-rotator-right&quot;,
+     st_rotator_ccw = &quot;st-rotator-left&quot;,
+
+Modified: trunk/src/GridObject.cc
+===================================================================
+--- trunk/src/GridObject.cc	2008-09-17 19:55:07 UTC (rev 1333)
++++ trunk/src/GridObject.cc	2008-09-17 22:09:04 UTC (rev 1334)
+@@ -259,7 +259,7 @@
+     
+     void GridObject::activatePhoto() {
+         ASSERT((objFlags &amp; OBJBIT_PHOTOACTIV) == 0, XLevelRuntime , &quot;GridObject: double photo sensor activation&quot;);
+-        photoSensorList.push_back(this);
++        photoSensorList.push_front(this);  // it is essential to insert at front in case a object is moved on lightDirChanged()
+         objFlags |= OBJBIT_PHOTOACTIV;
+     }
+ 
+
+Modified: trunk/src/stones/PuzzleStone.cc
+===================================================================
+--- trunk/src/stones/PuzzleStone.cc	2008-09-17 19:55:07 UTC (rev 1333)
++++ trunk/src/stones/PuzzleStone.cc	2008-09-17 22:09:04 UTC (rev 1334)
+@@ -99,6 +99,9 @@
+         } else if (m.message == &quot;push_rotate&quot;) {
+             rotateLine(to_direction(m.value), true);
+             return Value();
++        } else if (m.message == &quot;_init&quot;) {
++            updateCurrentLightDirs();
++            return Value();
+         }
+         return Stone::message(m);
+     }
+@@ -124,6 +127,7 @@
+             objFlags |= OBJBIT_INIT;
+         }
+         activatePhoto();
++        updateCurrentLightDirs();
+         Stone::on_creation(p);
+     }
+ 
+@@ -131,10 +135,16 @@
+         if (state == IDLE &amp;&amp; !(objFlags &amp; OBJBIT_HOLLOW)) {
+             DirectionBits addDirs = added_dirs(oldDirs, newDirs);
+             if (addDirs != NODIRBIT &amp;&amp; !explodeCluster() &amp;&amp; getAttr(&quot;color&quot;) == BLUE) {
++                GridPos p = get_pos();
+                 if (addDirs &amp; SOUTHBIT) rotateLine(SOUTH);
+-                if (addDirs &amp; NORTHBIT) rotateLine(NORTH);
+-                if (addDirs &amp; WESTBIT)  rotateLine(WEST);
+-                if (addDirs &amp; EASTBIT)  rotateLine(EAST);
++                if (p == get_pos() &amp;&amp; (addDirs &amp; WESTBIT))  rotateLine(WEST);
++                if (p == get_pos() &amp;&amp; (addDirs &amp; NORTHBIT)) rotateLine(NORTH);
++                if (p == get_pos() &amp;&amp; (addDirs &amp; EASTBIT))  rotateLine(EAST);
++                
++                if (p != get_pos() &amp;&amp; GetStone(p)-&gt;getAttr(&quot;hollow&quot;).to_bool()) {
++                    // we are still enlighted via hollow successor
++                    objFlags |= to_bits(direction_fromto(p, get_pos()));
++                }
+             }
+         }
+     }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000763.html">[Enigma-game-svn] r1333 - trunk/data/levels/lib
+</A></li>
+	<LI>Next message: <A HREF="000765.html">[Enigma-game-svn] r1335 - in trunk: data/levels/lib src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#764">[ date ]</a>
+              <a href="thread.html#764">[ thread ]</a>
+              <a href="subject.html#764">[ subject ]</a>
+              <a href="author.html#764">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

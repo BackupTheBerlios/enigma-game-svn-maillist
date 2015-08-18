@@ -1,0 +1,1282 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1737 - in trunk/src: . gui items lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1737%20-%20in%20trunk/src%3A%20.%20gui%20items%20lev&In-Reply-To=%3C200906302325.n5UNPBVW012558%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   
+   <LINK REL="Next"  HREF="001167.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1737 - in trunk/src: . gui items lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1737%20-%20in%20trunk/src%3A%20.%20gui%20items%20lev&In-Reply-To=%3C200906302325.n5UNPBVW012558%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1737 - in trunk/src: . gui items lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Jul  1 01:25:11 CEST 2009</I>
+    <P><UL>
+        
+        <LI>Next message: <A HREF="001167.html">[Enigma-game-svn] r1738 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1166">[ date ]</a>
+              <a href="thread.html#1166">[ thread ]</a>
+              <a href="subject.html#1166">[ subject ]</a>
+              <a href="author.html#1166">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-07-01 01:25:06 +0200 (Wed, 01 Jul 2009)
+New Revision: 1737
+
+Added:
+   trunk/src/lev/SubProxy.cc
+   trunk/src/lev/SubProxy.hh
+Modified:
+   trunk/src/Makefile.am
+   trunk/src/WorldProxy.cc
+   trunk/src/client.cc
+   trunk/src/gui/GameMenu.cc
+   trunk/src/gui/LevelInspector.cc
+   trunk/src/gui/LevelMenu.cc
+   trunk/src/gui/LevelPackComposer.cc
+   trunk/src/items/Bottle.cc
+   trunk/src/items/DocumentItem.cc
+   trunk/src/lev/Index.cc
+   trunk/src/lev/PersistentIndex.cc
+   trunk/src/lev/Proxy.cc
+   trunk/src/lev/Proxy.hh
+   trunk/src/server.cc
+   trunk/src/server.hh
+Log:
+Trunk 1.1: 
+- multilevel support:
+  - full support on auto folder and persistent levelpacks
+  - no support on commandline
+  - full composer support
+  - global read only attribute &quot;SublevelNumber&quot; for level selection
+  - multilevel title with trailing &quot;#&quot; will cause numbered sublevel titles
+  - multilevel title without trailing &quot;#&quot; indicates lua based titles:
+      - global attribute &quot;SublevelTitle&quot; should be set on level load
+      - otherwise the default numbered title is used
+  - sublevels use the id of the multilevel file with appended &quot;[n]&quot;,
+      - no other level id must end on &quot;]&quot;
+  - sublevel screenshots, thumbs use a suffix &quot;_n&quot; to the filename
+
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2009-06-27 23:19:26 UTC (rev 1736)
++++ trunk/src/Makefile.am	2009-06-30 23:25:06 UTC (rev 1737)
+@@ -283,6 +283,8 @@
+ 	lev/Proxy.hh		\
+ 	lev/ScoreManager.cc	\
+ 	lev/ScoreManager.hh	\
++	lev/SubProxy.cc		\
++	lev/SubProxy.hh		\
+ 	lev/VolatileIndex.cc	\
+ 	lev/VolatileIndex.hh	\
+ 	others/CannonBall.cc	\
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2009-06-27 23:19:26 UTC (rev 1736)
++++ trunk/src/WorldProxy.cc	2009-06-30 23:25:06 UTC (rev 1737)
+@@ -74,6 +74,10 @@
+             return server::InfiniteReincarnation;
+         } else if (key == &quot;ShowMoves&quot;) {
+             return server::ShowMoves;
++        } else if (key == &quot;SublevelNumber&quot;) {
++            return (int)server::SublevelNumber;
++        } else if (key == &quot;SublevelTitle&quot;) {
++            return server::SublevelTitle;
+         } else if (key == &quot;SurviveFinish&quot;) {
+             return server::SurviveFinish;
+         } else if (key == &quot;Width&quot;) {
+@@ -179,6 +183,8 @@
+         } else if (key == &quot;ShowMoves&quot;) {
+             server::ShowMoves = val.to_bool();
+             STATUSBAR-&gt;show_move_counter (server::ShowMoves);
++        } else if (key == &quot;SublevelTitle&quot;) {
++            server::SublevelTitle = val.to_string();
+         } else if (key == &quot;SurviveFinish&quot;) {
+             server::SurviveFinish = val.to_bool();
+         } else if (key == &quot;CrackSpreading&quot;) {
+
+Modified: trunk/src/client.cc
+===================================================================
+--- trunk/src/client.cc	2009-06-27 23:19:26 UTC (rev 1736)
++++ trunk/src/client.cc	2009-06-30 23:25:06 UTC (rev 1737)
+@@ -382,9 +382,7 @@
+         case SDLK_F3: 
+             if (keymod &amp; KMOD_SHIFT) {
+                 // force a reload from file
+-                lev::Proxy * curProxy = lev::Proxy::loadedLevel();
+-                if (curProxy != NULL)
+-                    curProxy-&gt;release();
++                lev::Proxy::releaseCache();
+                 server::Msg_Command (&quot;restart&quot;);
+             }
+         default:
+@@ -448,7 +446,7 @@
+         case SDLK_F6: Msg_JumpBack(); break;
+ 
+         case SDLK_F10: {
+-            lev::Proxy *level = lev::Proxy::loadedLevel();
++            lev::Proxy *level = lev::Index::getCurrentProxy();
+             std::string basename = std::string(&quot;screenshots/&quot;) +
+                     level-&gt;getLocalSubstitutionLevelPath();
+             std::string fname = basename + &quot;.png&quot;;
+
+Modified: trunk/src/gui/GameMenu.cc
+===================================================================
+--- trunk/src/gui/GameMenu.cc	2009-06-27 23:19:26 UTC (rev 1736)
++++ trunk/src/gui/GameMenu.cc	2009-06-30 23:25:06 UTC (rev 1737)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004,2005,2006 Daniel Heck
++ * Copyright (C) 2006,2007,2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -153,9 +154,7 @@
+         else if (w == restart) {
+             if (w-&gt;lastModifierKeys() &amp; KMOD_CTRL &amp;&amp; w-&gt;lastModifierKeys() &amp; KMOD_SHIFT) {
+                 // force a reload from file
+-                lev::Proxy * curProxy = lev::Proxy::loadedLevel();
+-                if (curProxy != NULL)
+-                    curProxy-&gt;release();
++                lev::Proxy::releaseCache();
+             }
+             client::Stop ();
+             server::Msg_LoadLevel(ind-&gt;getCurrent(), false);
+
+Modified: trunk/src/gui/LevelInspector.cc
+===================================================================
+--- trunk/src/gui/LevelInspector.cc	2009-06-27 23:19:26 UTC (rev 1736)
++++ trunk/src/gui/LevelInspector.cc	2009-06-30 23:25:06 UTC (rev 1737)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2006, 2007 Ronald Lamprecht
++ * Copyright (C) 2006,2007,2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -199,7 +199,7 @@
+         catch (XLevelLoading &amp;err) {
+             std::vector&lt;string&gt; lines;
+             std::string errmsg = _(&quot;Server Error: could not load level '&quot;)
+-                                   + aLevel-&gt;getNormLevelPath() + &quot;'\n&quot;
++                                   + aLevel-&gt;getNormFilePath() + &quot;'\n&quot;
+                                    + err.what();
+             ecl::split_copy (errmsg, '\n', back_inserter(lines));
+             int x     = vshrink?30:60;
+@@ -220,7 +220,7 @@
+         ecl::Font *menufont = enigma::GetFont(&quot;menufont&quot;);
+         levelPathString = 
+                 (levelProxy-&gt;getNormPathType() == lev::Proxy::pt_resource) ?
+-                levelProxy-&gt;getAbsLevelPath() : levelProxy-&gt;getNormLevelPath();
++                levelProxy-&gt;getAbsLevelPath() : levelProxy-&gt;getNormFilePath();
+         // substitute all backslashes by slashes
+         for (std::string::size_type slpos = levelPathString.find('\\');
+                 slpos != std::string::npos; slpos = levelPathString.find('\\')) 
+
+Modified: trunk/src/gui/LevelMenu.cc
+===================================================================
+--- trunk/src/gui/LevelMenu.cc	2009-06-27 23:19:26 UTC (rev 1736)
++++ trunk/src/gui/LevelMenu.cc	2009-06-30 23:25:06 UTC (rev 1737)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004,2005,2006 Daniel Heck
++ * Copyright (C) 2006,2007,2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -259,9 +260,7 @@
+             int ilevel = ind-&gt;getCurrentPosition();
+             if (w-&gt;lastModifierKeys() &amp; KMOD_CTRL &amp;&amp; w-&gt;lastModifierKeys() &amp; KMOD_SHIFT) {
+                 // force a reload from file
+-                lev::Proxy * curProxy = lev::Proxy::loadedLevel();
+-                if (curProxy != NULL)
+-                    curProxy-&gt;release();
++                lev::Proxy::releaseCache();
+             }
+     
+             if ((unsigned)ilevel &lt; ind-&gt;size()) {
+@@ -344,7 +343,7 @@
+                 // use the inspector to check the absolute path!
+                 lbl_levelname-&gt;set_text(ecl::strf(&quot;#%d: %s (%s)&quot;,
+                           ind-&gt;getCurrentLevel(), curProxy-&gt;getTitle().c_str(), 
+-                          curProxy-&gt;getNormLevelPath().c_str()));
++                          curProxy-&gt;getNormFilePath().c_str()));
+             } else {
+                 lbl_levelname-&gt;set_text(ecl::strf(&quot;#%d: %s&quot;,
+                           ind-&gt;getCurrentLevel(), curProxy-&gt;getTitle().c_str()));
+
+Modified: trunk/src/gui/LevelPackComposer.cc
+===================================================================
+--- trunk/src/gui/LevelPackComposer.cc	2009-06-27 23:19:26 UTC (rev 1736)
++++ trunk/src/gui/LevelPackComposer.cc	2009-06-30 23:25:06 UTC (rev 1737)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2006 Ronald Lamprecht
++ * Copyright (C) 2006,2007,2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -173,10 +173,10 @@
+                                 break;
+                             }
+                             if (curIndex-&gt;isSource(curProxy) &amp;&amp; 
+-                                    backups.find(curProxy-&gt;getNormLevelPath()) == backups.end()) {
++                                    backups.find(curProxy-&gt;getNormFilePath()) == backups.end()) {
+                                 // mark as deletion candidate - the final check
+                                 // if we delete it really occurs on save
+-                                deletions.insert(curProxy-&gt;getNormLevelPath());
++                                deletions.insert(curProxy-&gt;getNormFilePath());
+                             }
+                             curIndex-&gt;erase(pos);
+                             if (pos &gt;= curIndex-&gt;size() &amp;&amp; pos &gt; 0)
+@@ -216,8 +216,8 @@
+                                 // insert reference to our copy
+                                 curIndex-&gt;insertProxy(pos++, levelCopy, true,
+                                         var.ctrl, var.unit, var.target, var.extensions);
+-                                backups.insert(levelCopy-&gt;getNormLevelPath());
+-                                deletions.erase(levelCopy-&gt;getNormLevelPath());
++                                backups.insert(levelCopy-&gt;getNormFilePath());
++                                deletions.erase(levelCopy-&gt;getNormFilePath());
+                             }
+                             isModified = true;
+                         }
+@@ -357,7 +357,7 @@
+         else {
+             lbl_levelname-&gt;set_text(ecl::strf(&quot;#%d:(%s)&quot;,
+                       ind-&gt;getCurrentLevel(), 
+-                      curProxy-&gt;getNormLevelPath().c_str()));
++                      curProxy-&gt;getNormFilePath().c_str()));
+         }
+         
+         int csize = clipboard-&gt;size();
+
+Modified: trunk/src/items/Bottle.cc
+===================================================================
+--- trunk/src/items/Bottle.cc	2009-06-27 23:19:26 UTC (rev 1736)
++++ trunk/src/items/Bottle.cc	2009-06-30 23:25:06 UTC (rev 1737)
+@@ -22,6 +22,7 @@
+ #include &quot;client.hh&quot;
+ //#include &quot;errors.hh&quot;
+ //#include &quot;main.hh&quot;
++#include &quot;lev/Index.hh&quot;
+ #include &quot;lev/Proxy.hh&quot;
+ #include &quot;world.hh&quot;
+ 
+@@ -67,7 +68,7 @@
+     ItemAction Bottle::activate(Actor *a, GridPos) {
+         if (Value v = getAttr(&quot;text&quot;)) {
+             std::string txt(v);
+-            lev::Proxy *level = lev::Proxy::loadedLevel();
++            lev::Proxy *level = lev::Index::getCurrentProxy();
+             // after complete switch to Proxy as levelloader the following
+             // conditional can be abolished
+             if (level)
+
+Modified: trunk/src/items/DocumentItem.cc
+===================================================================
+--- trunk/src/items/DocumentItem.cc	2009-06-27 23:19:26 UTC (rev 1736)
++++ trunk/src/items/DocumentItem.cc	2009-06-30 23:25:06 UTC (rev 1737)
+@@ -22,7 +22,7 @@
+ #include &quot;client.hh&quot;
+ //#include &quot;errors.hh&quot;
+ //#include &quot;main.hh&quot;
+-//#include &quot;player.hh&quot;
++#include &quot;lev/Index.hh&quot;
+ #include &quot;lev/Proxy.hh&quot;
+ #include &quot;world.hh&quot;
+ 
+@@ -51,7 +51,7 @@
+     ItemAction DocumentItem::activate(Actor *a, GridPos) {
+         if (Value v = getAttr(&quot;text&quot;)) {
+             std::string txt(v);
+-            lev::Proxy *level = lev::Proxy::loadedLevel();
++            lev::Proxy *level = lev::Index::getCurrentProxy();
+             // after complete switch to Proxy as levelloader the following
+             // conditional can be abolished
+             if (level)
+
+Modified: trunk/src/lev/Index.cc
+===================================================================
+--- trunk/src/lev/Index.cc	2009-06-27 23:19:26 UTC (rev 1736)
++++ trunk/src/lev/Index.cc	2009-06-30 23:25:06 UTC (rev 1737)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2006 Ronald Lamprecht
++ * Copyright (C) 2006,2007,2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -619,7 +619,7 @@
+     
+     bool Index::hasNormLevelPath(std::string path) {
+         for (int i = 0; i &lt; proxies.size(); i++) {
+-            if (proxies[i]-&gt;getNormLevelPath() == path)
++            if (proxies[i]-&gt;getNormFilePath() == path)
+                 return true;
+         }
+         return false;
+
+Modified: trunk/src/lev/PersistentIndex.cc
+===================================================================
+--- trunk/src/lev/PersistentIndex.cc	2009-06-27 23:19:26 UTC (rev 1736)
++++ trunk/src/lev/PersistentIndex.cc	2009-06-30 23:25:06 UTC (rev 1737)
+@@ -143,6 +143,23 @@
+         if (onlySystemIndices)
+             return;
+         
++        // register index free auto folder
++        // this needs to be done prior history registration to avoid outdated proxies
++        PersistentIndex * autoIndex = new PersistentIndex(&quot;auto&quot;, false, true,
++                INDEX_AUTO_PACK_LOCATION, INDEX_AUTO_PACK_NAME);
++        autoIndex-&gt;isEditable = false;
++        Index::registerIndex(autoIndex);
++        
++        // register team auto not yet registered new files
++        PersistentIndex * teamautoIndex = new PersistentIndex(&quot;team_test_new_api&quot;, false, true,
++                75000, &quot;test_new_api&quot;);
++        if (teamautoIndex-&gt;size() &gt; 0) {
++            teamautoIndex-&gt;isEditable = false;
++            Index::registerIndex(teamautoIndex);
++        } else {
++            delete teamautoIndex;
++        }
++        
+         // UserPath: register dirs and zips with xml-indices excl auto
+         dirIter = DirIter::instance(app.userPath + &quot;/levels&quot;);
+         while (dirIter-&gt;get_next(dirEntry)) {
+@@ -190,22 +207,6 @@
+             Index::registerIndex(indexCandidates[i]);
+         }
+ 	
+-        // register auto not yet registered new files
+-        PersistentIndex * autoIndex = new PersistentIndex(&quot;auto&quot;, false, true,
+-                INDEX_AUTO_PACK_LOCATION, INDEX_AUTO_PACK_NAME);
+-        autoIndex-&gt;isEditable = false;
+-        Index::registerIndex(autoIndex);
+-        
+-        // register team auto not yet registered new files
+-        PersistentIndex * teamautoIndex = new PersistentIndex(&quot;team_test_new_api&quot;, false, true,
+-                75000, &quot;test_new_api&quot;);
+-        if (teamautoIndex-&gt;size() &gt; 0) {
+-            teamautoIndex-&gt;isEditable = false;
+-            Index::registerIndex(teamautoIndex);
+-        } else {
+-            delete teamautoIndex;
+-        }
+-        
+         // check if history is available - else generate a new index
+         Index * foundHistory = Index::findIndex(&quot;History&quot;);
+         if ( foundHistory != NULL) {
+@@ -246,7 +247,7 @@
+     }
+     
+     int autoIndexProxyCompare(Proxy * first, Proxy * second) {
+-        return first-&gt;getNormLevelPath() &lt; second-&gt;getNormLevelPath();
++        return first-&gt;getNormFilePath() &lt; second-&gt;getNormFilePath();
+     }
+     
+     void PersistentIndex::load(bool systemOnly, bool update) {
+@@ -268,7 +269,7 @@
+                             (dirEntry.name.rfind(&quot;.xml&quot;) == dirEntry.name.size() - 4) ||
+                             (dirEntry.name.rfind(&quot;.lua&quot;) == dirEntry.name.size() - 4))) {
+                         Proxy * newProxy = Proxy::autoRegisterLevel(packPath, 
+-                                dirEntry.name.substr(0, dirEntry.name.size() - 4));
++                                dirEntry.name.substr(0, dirEntry.name.size() - 4), 1);
+                         if (newProxy != NULL) {
+                             // first check that the proxy is not in the index
+                             //  - may occur if the level is stored as .xml and .lua in the folder
+@@ -277,6 +278,12 @@
+                                 appendProxy(newProxy);
+                             }
+                             // do not delete Proxy if not used - we are not the owner!
++                            // register additional sublevels
++                            for (int i = 2; i &lt;= newProxy-&gt;getQuantity(); i++) {
++                                Proxy * newSubProxy = Proxy::autoRegisterLevel(packPath, 
++                                        dirEntry.name.substr(0, dirEntry.name.size() - 4), i);
++                                appendProxy(newSubProxy);                                
++                            }
+                         }
+                     }
+                 }
+@@ -649,7 +656,7 @@
+     }
+     
+     bool PersistentIndex::isSource(Proxy * aProxy) {
+-        std::string proxyPath = aProxy-&gt;getNormLevelPath();
++        std::string proxyPath = aProxy-&gt;getNormFilePath();
+         if (proxyPath[0] == '#')
+             // Oxyd reference
+             return false;
+@@ -751,7 +758,7 @@
+             
+             Proxy * level = getProxy(i);
+             // convert Proxy normLevelPath to pack local path ./* if possible
+-            std::string xpath = level-&gt;getNormLevelPath();
++            std::string xpath = level-&gt;getNormFilePath();
+             if (xpath.find(packPath + &quot;/&quot;) == 0)
+                 xpath = &quot;.&quot; + xpath.substr(packPath.size());
+             else if (packPath.empty() &amp;&amp; xpath.find(&quot;/&quot;) == std::string::npos)
+
+Modified: trunk/src/lev/Proxy.cc
+===================================================================
+--- trunk/src/lev/Proxy.cc	2009-06-27 23:19:26 UTC (rev 1736)
++++ trunk/src/lev/Proxy.cc	2009-06-30 23:25:06 UTC (rev 1737)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2006 Ronald Lamprecht
++ * Copyright (C) 2006,2007,2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -17,10 +17,12 @@
+  */
+ 
+ #include &quot;lev/Proxy.hh&quot;
++#include &quot;lev/SubProxy.hh&quot;
+ 
+ #include &quot;ecl_system.hh&quot;
+ #include &quot;errors.hh&quot;
+ #include &quot;gui/ErrorMenu.hh&quot;
++#include &quot;gui/LevelPreviewCache.hh&quot;
+ #include &quot;lua.hh&quot;
+ #include &quot;main.hh&quot;
+ #include &quot;nls.hh&quot;
+@@ -60,7 +62,7 @@
+ using namespace enigma;
+ XERCES_CPP_NAMESPACE_USE 
+ 
+-namespace enigma { namespace lev {     
++namespace enigma { namespace lev {
+     // <A HREF="http://enigma-game.org/schema/level/1">http://enigma-game.org/schema/level/1</A>
+     const XMLCh Proxy::levelNS[] = {
+             chLatin_h, chLatin_t, chLatin_t, chLatin_p, chColon, chForwardSlash,
+@@ -83,12 +85,12 @@
+         registeredLibs.clear();
+     }
+ 
+-    Proxy *Proxy::currentLevel = NULL;
++    Proxy *Proxy::cachedLevel = NULL;
+     
+-    Proxy *Proxy::loadedLevel() {
+-        return currentLevel;
++    void Proxy::releaseCache() {
++        if (cachedLevel != NULL)
++            cachedLevel-&gt;release();
+     }
+-    
+ 
+     Proxy * Proxy::registerLevel(std::string levelPath, std::string indexPath,
+             std::string levelId, std::string levelTitle, std::string levelAuthor,
+@@ -97,7 +99,23 @@
+         Proxy *theProxy;
+         pathType thePathType = pt_resource;
+         std::string theNormLevelPath;
++        bool isMulti = false;
++        std::string fileId;
++        unsigned subnum; 
+         
++        // Multilevel
++        if (levelId[levelId.size() - 1] == ']') {
++            isMulti = true;
++            std::string::size_type numpos = levelId.find_last_of(&quot;[&quot;);
++            ASSERT(numpos != std::string::npos, XLevelPackInit, &quot;Proxy - invalid multilevel id&quot;);
++            ASSERT(levelId.find_first_not_of(&quot;0123456789&quot;, numpos+1) == levelId.size() -1, 
++                    XLevelPackInit, &quot;Proxy - invalid multilevel id&quot;);
++            std::istringstream subnumstr(levelId.substr(numpos + 1, levelId.size() - numpos - 2));
++            subnumstr &gt;&gt; std::dec &gt;&gt; subnum;
++            fileId = levelId.substr(0, numpos);
++//            Log &lt;&lt; &quot;Multilevel Id '&quot; &lt;&lt; levelId &lt;&lt; &quot;' sublevel &quot; &lt;&lt; subnum &lt;&lt; &quot; fileId '&quot; &lt;&lt; fileId &lt;&lt; &quot;'\n&quot;;
++        }
++
+         // Normalize level path
+         if (indexPath == &quot;#commandline&quot;) {
+             if (levelPath.find(&quot;://&quot;) != std::string::npos) {
+@@ -137,24 +155,43 @@
+         // should have different filenames -- but we have to handle it:
+         // we generate proxys for each registration and decide on level load
+         // evaluating the level metadata which proxy was right.
+-        char txt[5];
+-        snprintf(txt, sizeof(txt), &quot;%d&quot;, levelRelease);        
+-        std::string cacheKey = theNormLevelPath + levelId + txt;
++        std::string cacheKey = theNormLevelPath + levelId + ecl::strf(&quot;%d&quot;, levelRelease);
+         std::map&lt;std::string, Proxy *&gt;::iterator i = cache.find(cacheKey);
+         if (i != cache.end()) {
+             Proxy * candidate = i-&gt;second;
+             return candidate;
+         }
+         
+-        // create new proxy
+-        theProxy = new Proxy(false, thePathType, theNormLevelPath, levelId, levelTitle,
+-            levelAuthor, levelScoreVersion, levelRelease, levelHasEasymode, 
+-            levelCompatibilty, status, levelRevision);
+-        cache.insert(std::make_pair(cacheKey, theProxy));
+-        return theProxy;
++        if (!isMulti) {
++            // create new proxy
++            theProxy = new Proxy(false, thePathType, theNormLevelPath, levelId, levelTitle,
++                levelAuthor, levelScoreVersion, levelRelease, levelHasEasymode, 
++                levelCompatibilty, status, levelRevision);
++            cache.insert(std::make_pair(cacheKey, theProxy));
++            return theProxy;
++        } else {
++            // search for existing proxy for multilevel file
++            Proxy * fileProxy;
++            std::string multiCacheKey = theNormLevelPath + fileId + ecl::strf(&quot;%d&quot;, levelRelease);
++            std::map&lt;std::string, Proxy *&gt;::iterator mi = cache.find(multiCacheKey);
++            if (i != cache.end()) {
++                fileProxy = mi-&gt;second;
++            } else {
++                // create new multilevel file proxy
++                fileProxy = new Proxy(false, thePathType, theNormLevelPath, fileId, levelTitle,
++                    levelAuthor, levelScoreVersion, levelRelease, levelHasEasymode, 
++                    levelCompatibilty, status, levelRevision);
++                cache.insert(std::make_pair(multiCacheKey, fileProxy));
++            }
++            // create sublevel proxy
++            theProxy = new SubProxy(fileProxy, subnum, thePathType, theNormLevelPath, levelId, levelTitle);
++            cache.insert(std::make_pair(cacheKey, theProxy));
++            return theProxy;            
++        }
++        
+     }
+     
+-    Proxy * Proxy::autoRegisterLevel(std::string indexPath, std::string filename) {
++    Proxy * Proxy::autoRegisterLevel(std::string indexPath, std::string filename, int subNum) {
+         Proxy *theProxy = new Proxy(false, pt_resource, indexPath + &quot;/&quot; + filename , &quot;&quot;, &quot;&quot;,
+             &quot;unknown&quot;, 1, 0, false, GAMET_UNKNOWN, STATUS_UNKNOWN);
+         try {
+@@ -175,16 +212,36 @@
+         } else {
+             // eliminate duplicates and register
+ //            Log &lt;&lt; &quot;autoRegisterLevel register '&quot; &lt;&lt; indexPath &lt;&lt; &quot;/&quot;&lt;&lt; filename &lt;&lt; &quot; Title: &quot; &lt;&lt; theProxy-&gt;getTitle() &lt;&lt;&quot;\n&quot;;
+-            std::string cacheKey = theProxy-&gt;getNormLevelPath() + theProxy-&gt;getId() + 
++            std::string cacheKey = theProxy-&gt;getNormFilePath() + theProxy-&gt;getId() + 
+                     ecl::strf(&quot;%d&quot;, theProxy-&gt;getReleaseVersion());
+             std::map&lt;std::string, Proxy *&gt;::iterator i = cache.find(cacheKey);
+             if (i != cache.end()) {
+                 delete theProxy;
++//                Log &lt;&lt; &quot;duplicate Proxy - &quot; &lt;&lt; cacheKey &lt;&lt;&quot;\n&quot;;
+                 theProxy = i-&gt;second;
+             } else {
+                 cache.insert(std::make_pair(cacheKey, theProxy));        
+             }
+         }
++        // multilevel
++        if ((theProxy != NULL) &amp;&amp; 
++                (theProxy-&gt;isMultiFlag)) {
++            std::string cacheKey = theProxy-&gt;getNormFilePath() + theProxy-&gt;getId() + ecl::strf(&quot;[%d]&quot;, subNum) + 
++                    ecl::strf(&quot;%d&quot;, theProxy-&gt;getReleaseVersion());
++            std::map&lt;std::string, Proxy *&gt;::iterator i = cache.find(cacheKey);
++            if (i != cache.end()) {
++                theProxy = i-&gt;second;
++            } else {
++                // create sublevel proxy
++                std::string fileTitle = theProxy-&gt;getTitle();
++                bool isLuaTitle = (fileTitle[fileTitle.size() - 1] != '#');
++                theProxy = new SubProxy(theProxy, subNum, pt_resource, indexPath + &quot;/&quot; + filename,
++                    theProxy-&gt;getId() + ecl::strf(&quot;[%d]&quot;, subNum), &quot;&quot;);
++                cache.insert(std::make_pair(cacheKey, theProxy));
++                if (isLuaTitle)   // update Preview to get lua title
++                    gui::LevelPreviewCache::instance()-&gt;updatePreview(theProxy);
++            }
++        }
+         return theProxy;
+     }
+    
+@@ -204,7 +261,7 @@
+     LowerCaseString searchText(&quot;&quot;);
+     void do_search(const std::map&lt;std::string, Proxy *&gt;::value_type pair) {
+         Proxy * candidate = pair.second;
+-        if (searchText.containedBy(candidate-&gt;getNormLevelPath()) ||
++        if (searchText.containedBy(candidate-&gt;getNormFilePath()) ||
+                 searchText.containedBy(candidate-&gt;getTitle()) ||
+                 searchText.containedBy(candidate-&gt;getId()) ||
+                 searchText.containedBy(candidate-&gt;getAuthor())) {
+@@ -271,8 +328,8 @@
+             std::string levelId, std::string levelTitle, std::string levelAuthor,
+             int levelScoreVersion, int levelRelease, bool levelHasEasymode,
+             GameType levelCompatibilty,levelStatusType status, int levelRevision) :  
+-            isLibraryFlag (proxyIsLibrary), normPathType(thePathType), normLevelPath(theNormLevelPath), 
+-            id(levelId), title(levelTitle), author(levelAuthor),
++            isLibraryFlag (proxyIsLibrary), isMultiFlag (false), normPathType(thePathType), normFilePath(theNormLevelPath), 
++            quantity (1), id(levelId), title(levelTitle), author(levelAuthor),
+             scoreVersion(levelScoreVersion), releaseVersion(levelRelease),
+             revisionNumber(levelRevision), hasEasyModeFlag(levelHasEasymode), 
+             engineCompatibility(levelCompatibilty), levelStatus (status), 
+@@ -288,14 +345,18 @@
+             doc-&gt;release();
+             doc = NULL;
+         }
+-        if (this == currentLevel) {
+-            currentLevel = NULL;
++        if (this == cachedLevel) {
++            cachedLevel = NULL;
+             releaseLibs();
+         }
+     }
+     
++    std::string Proxy::getNormFilePath() {
++        return normFilePath;
++    }
++    
+     std::string Proxy::getNormLevelPath() {
+-        return normLevelPath;
++        return normFilePath;
+     }
+     
+     std::string Proxy::getLocalSubstitutionLevelPath() {
+@@ -342,11 +403,11 @@
+         
+         // resolve resource path to filepath
+         } else if (normPathType == pt_absolute || normPathType == pt_url) { 
+-            absLevelPath = normLevelPath;
++            absLevelPath = normFilePath;
+         } else if(normPathType == pt_resource) {
+-            if(!app.resourceFS-&gt;findFile (&quot;levels/&quot; + normLevelPath + &quot;.xml&quot;, 
++            if(!app.resourceFS-&gt;findFile (&quot;levels/&quot; + normFilePath + &quot;.xml&quot;, 
+                         absLevelPath, isptr) &amp;&amp;
+-                    !app.resourceFS-&gt;findFile (&quot;levels/&quot; + normLevelPath + &quot;.lua&quot;, 
++                    !app.resourceFS-&gt;findFile (&quot;levels/&quot; + normFilePath + &quot;.lua&quot;, 
+                         absLevelPath, isptr)) {
+                 return NULL;
+             }
+@@ -417,7 +478,7 @@
+                 // doc exists - metadata are loaded
+                 return;
+             if (!isLibraryFlag != expectLevel)
+-                    throw XLevelLoading(ecl::strf(&quot;Level - Library mismatch on %s&quot;, normLevelPath.c_str()));
++                    throw XLevelLoading(ecl::strf(&quot;Level - Library mismatch on %s&quot;, normFilePath.c_str()));
+             // doc exists - we can directly load
+             loadDoc();
+             return;
+@@ -432,9 +493,9 @@
+         
+         // release current proxy
+         if (!isLibraryFlag) {
+-            if (currentLevel != NULL)
+-                currentLevel-&gt;release();
+-            currentLevel = this;
++            if (cachedLevel != NULL)
++                cachedLevel-&gt;release();
++            cachedLevel = this;
+         }
+         
+         // handle oxyd first
+@@ -449,28 +510,28 @@
+                 server::AllowSingleOxyds = true;
+             server::PrepareLua();
+             // use oxyd loader
+-            std::string::size_type posSecondHash = normLevelPath.find('#',1);
++            std::string::size_type posSecondHash = normFilePath.find('#',1);
+             if (posSecondHash == string::npos)
+-                throw XLevelLoading(&quot;Bad filename for oxyd level: &quot; + normLevelPath );
+-            std::string packName = normLevelPath.substr(1, posSecondHash -1);
+-            std::string levelNumber = normLevelPath.substr(posSecondHash + 1);
++                throw XLevelLoading(&quot;Bad filename for oxyd level: &quot; + normFilePath );
++            std::string packName = normFilePath.substr(1, posSecondHash -1);
++            std::string levelNumber = normFilePath.substr(posSecondHash + 1);
+             if (Index * oxydIndex = Index::findIndex(packName)) {
+                 dynamic_cast&lt;oxyd::LevelPack_Oxyd *&gt;(oxydIndex)-&gt;load_oxyd_level(atoi(levelNumber.c_str()));
+             } else {
+-                throw XLevelLoading(&quot;Missing oxyd levelpack for: &quot; + normLevelPath);
++                throw XLevelLoading(&quot;Missing oxyd levelpack for: &quot; + normFilePath);
+             }
+             return;
+             
+         // resolve resource path to filepath
+         } else if (normPathType == pt_absolute || normPathType == pt_url) { 
+-            absLevelPath = normLevelPath;
++            absLevelPath = normFilePath;
+         } else if(normPathType == pt_resource) {
+-            if(!app.resourceFS-&gt;findFile (&quot;levels/&quot; + normLevelPath + &quot;.xml&quot;, 
++            if(!app.resourceFS-&gt;findFile (&quot;levels/&quot; + normFilePath + &quot;.xml&quot;, 
+                         absLevelPath, isptr) &amp;&amp;
+-                    !app.resourceFS-&gt;findFile (&quot;levels/&quot; + normLevelPath + &quot;.lua&quot;, 
++                    !app.resourceFS-&gt;findFile (&quot;levels/&quot; + normFilePath + &quot;.lua&quot;, 
+                         absLevelPath, isptr)) {
+                 std::string type = isLibraryFlag ? &quot;library &quot; : &quot;level &quot;;
+-                throw XLevelLoading(&quot;Could not find &quot; + type + normLevelPath );
++                throw XLevelLoading(&quot;Could not find &quot; + type + normFilePath );
+             }
+         } else
+             // error unknown type
+@@ -594,14 +655,16 @@
+             } else {
+                 // check metadata - currently just overwrite
+                 isLibraryFlag = (getType() == &quot;library&quot;) ? true : false;
++                isMultiFlag = (getType() == &quot;multilevel&quot;) ? true : false;
+                 if (!updateReleaseVersion()) {
+                     release();   // avoid load success on a second read attempt
+-                    throw XLevelLoading(ecl::strf(&quot;Release version mismatch on %s: requested %d\n&quot;, normLevelPath.c_str(), releaseVersion));
++                    throw XLevelLoading(ecl::strf(&quot;Release version mismatch on %s: requested %d\n&quot;, normFilePath.c_str(), releaseVersion));
+                 }
+                 if (!updateId()) {
+                     release();   // avoid load success on a second read attempt
+-                    throw XLevelLoading(ecl::strf(&quot;Id mismatch on %s: requested %s\n&quot;, normLevelPath.c_str(), id.c_str()));
++                    throw XLevelLoading(ecl::strf(&quot;Id mismatch on %s: requested %s\n&quot;, normFilePath.c_str(), id.c_str()));
+                 }
++                getQuantity();
+                 getTitle();
+                 getScoreVersion();
+                 getRevisionNumber();
+@@ -614,7 +677,7 @@
+                 getEngineCompatibility();
+                 if (!onlyMetadata){   
+                     if (!isLibraryFlag != expectLevel)
+-                        throw XLevelLoading(ecl::strf(&quot;Level - Library mismatch on %s&quot;, normLevelPath.c_str()));
++                        throw XLevelLoading(ecl::strf(&quot;Level - Library mismatch on %s&quot;, normFilePath.c_str()));
+                     loadDoc();
+                 }
+             }
+@@ -625,7 +688,7 @@
+         if (getEnigmaCompatibility() &gt; ENIGMACOMPATIBITLITY)
+             throw XLevelLoading(ecl::strf(&quot;Level is incompatible: %s requires Enigma %.2f or above&quot;, 
+                     absLevelPath.c_str(), getEnigmaCompatibility()));
+-        if (this == currentLevel) {    // just level - no libs
++        if (this == cachedLevel) {    // just level - no libs
+             server::SetCompatibility(this);
+             server::EnigmaCompatibility = getEnigmaCompatibility();
+             server::TwoPlayerGame = hasNetworkMode();
+@@ -644,7 +707,7 @@
+ 
+     void Proxy::processDependencies() {
+         // cleanup on level but not on libs
+-        if (this == currentLevel) {
++        if (this == cachedLevel) {
+             // cleanup all lib proxies loaded by previous load
+             releaseLibs();
+         }
+@@ -671,7 +734,7 @@
+ //                Log &lt;&lt; &quot;Deps: Path=&quot;&lt;&lt;depPath&lt;&lt;&quot; Id=&quot;&lt;&lt; depId &lt;&lt;&quot; Rel=&quot;&lt;&lt; depRelease &lt;&lt;&quot; Prel=&quot;&lt;&lt; depPreload&lt;&lt; &quot; Url=&quot; &lt;&lt; depUrl&lt;&lt;&quot;\n&quot;;
+                 // load every dependency just once and break circular dependencies
+                 // by central load via Level
+-                currentLevel-&gt;registerPreloadDependency(depPath, depId, depRelease,
++                cachedLevel-&gt;registerPreloadDependency(depPath, depId, depRelease,
+                         depPreload, depUrl);
+             }
+         }
+@@ -709,7 +772,7 @@
+             // relative lib path
+             std::string levelDir;
+             std::string levelFilename;
+-            if (ecl::split_path(normLevelPath, &amp;levelDir, &amp;levelFilename))
++            if (ecl::split_path(normFilePath, &amp;levelDir, &amp;levelFilename))
+                 // the level is on subdirectory or in a zip
+                 depPath = levelDir + &quot;/&quot; +  depPath.substr(2);
+             else
+@@ -891,6 +954,14 @@
+             return &quot;&quot;;
+     }
+     
++    int Proxy::getQuantity() {
++        if (doc != NULL) {
++            quantity = XMLString::parseInt(infoElem-&gt;getAttributeNS(levelNS, 
++                    Utf8ToXML(&quot;quantity&quot;).x_str()));
++        }
++        return quantity;
++    }
++    
+     bool Proxy::updateId() {
+         if (doc != NULL) {
+             DOMElement *identityElem = 
+
+Modified: trunk/src/lev/Proxy.hh
+===================================================================
+--- trunk/src/lev/Proxy.hh	2009-06-27 23:19:26 UTC (rev 1736)
++++ trunk/src/lev/Proxy.hh	2009-06-30 23:25:06 UTC (rev 1737)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2006 Ronald Lamprecht
++ * Copyright (C) 2006,2007,2008,2009 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -57,7 +57,7 @@
+     public:
+         enum pathType { pt_url, pt_resource, pt_absolute, pt_oxyd};
+         static const XMLCh levelNS[]; // the XML namespace
+-        static Proxy *loadedLevel(); // tmp ?
++        static void releaseCache();
+         
+         /**
+          * The registration of a level.
+@@ -81,16 +81,16 @@
+                 GameType levelCompatibilty, levelStatusType status =STATUS_RELEASED,
+                 int levelRevision = 0);
+         
+-        static Proxy *autoRegisterLevel(std::string indexPath, std::string filename);
++        static Proxy *autoRegisterLevel(std::string indexPath, std::string filename, int subNum);
+ 
+         static std::string search(std::string text);
+         static void countLevels();
+         static std::set&lt;std::string&gt; getLevelIds(bool withEasy);
+         static std::set&lt;Proxy *&gt; getProxies();
+ 
+-        void loadLevel();
+-        void loadMetadata(bool expectLevel);
+-        Proxy * copy(std::string newBasePath, std::string newPackPath, bool backup = true);
++        virtual void loadLevel();
++        virtual void loadMetadata(bool expectLevel);
++        virtual Proxy * copy(std::string newBasePath, std::string newPackPath, bool backup = true);
+         
+         /**
+          * Retrieve and translate a level string. The key may be &quot;title&quot;,
+@@ -100,36 +100,37 @@
+          * @arg key     the key for the search string
+          * @return      the translation of the string
+          */
+-        std::string getLocalizedString(const std::string &amp;key);
+-        
++        virtual int getQuantity();
+         std::string getId();
+-        int getScoreVersion();
+-        int getReleaseVersion();
+-        int getRevisionNumber();
+-        levelStatusType getLevelStatus();
+-        std::string getAuthor();
+-        std::string getTitle(); // english title
+-        bool hasEasyMode();
+-        bool hasSingleMode();
+-        bool hasNetworkMode();
+-        std::string getContact();
+-        std::string getHomepage();
+-        controlType getControl();
+-        scoreUnitType getScoreUnit();
+-        std::string getScoreTarget();
+-        std::string getCredits(bool infoUsage);
+-        std::string getDedication(bool infoUsage);
+-        int getEasyScore();
+-        int getDifficultScore();
+-        GameType getEngineCompatibility();
+-        double getEnigmaCompatibility();
++        virtual int getScoreVersion();
++        virtual int getReleaseVersion();
++        virtual int getRevisionNumber();
++        virtual std::string getLocalizedString(const std::string &amp;key);
++        virtual levelStatusType getLevelStatus();
++        virtual std::string getAuthor();
++        virtual std::string getTitle(); // untranslated English title
++        virtual bool hasEasyMode();
++        virtual bool hasSingleMode();
++        virtual bool hasNetworkMode();
++        virtual std::string getContact();
++        virtual std::string getHomepage();
++        virtual controlType getControl();
++        virtual scoreUnitType getScoreUnit();
++        virtual std::string getScoreTarget();
++        virtual std::string getCredits(bool infoUsage);
++        virtual std::string getDedication(bool infoUsage);
++        virtual int getEasyScore();
++        virtual int getDifficultScore();
++        virtual GameType getEngineCompatibility();
++        virtual double getEnigmaCompatibility();
+         
+         /**
+-         * the level address that can be used independent of a level pack
++         * the levels file address that can be used independent of a level pack
+          * as a crossreference. (stable/welcome, #oxyd#17, <A HREF="http://...,">http://...,</A> ~/test)
+          */
+-        std::string getNormLevelPath();
++        std::string getNormFilePath();
+         
++        virtual std::string getNormLevelPath();
+         /**
+          * The normalized level path with all critical characters substituted
+          * by '~' to allow url's to be used and to make generated paths portable.
+@@ -142,22 +143,33 @@
+          * the type of the level address
+          */
+         Proxy::pathType getNormPathType();
+-        std::string getAbsLevelPath();
++        virtual std::string getAbsLevelPath();
+         void loadDependency(std::string depId);
++    
++    protected:
++        std::string title;
++        
++        Proxy(bool proxyIsLibrary, pathType thePathType, std::string theNormLevelPath,
++                std::string levelId, std::string levelTitle, std::string levelAuthor,
++                int levelScoreVersion, int levelRelease, bool levelHasEasymode,
++                GameType levelCompatibilty, levelStatusType status, int levelRevision = 0);
++        ~Proxy();
+         void release();
++
+     private:
+-        static Proxy *currentLevel;
++        static Proxy *cachedLevel;           // file proxy only
+         static std::map&lt;std::string, Proxy *&gt; cache;
+         static std::vector&lt;Proxy *&gt; loadedLibs;
+         static std::vector&lt;Proxy *&gt; registeredLibs;
+         static void releaseLibs();
+         
+         bool isLibraryFlag;
++        bool isMultiFlag;
+         pathType normPathType;
+-        std::string normLevelPath; // stable/welcome, #oxyd#17, <A HREF="http://...,">http://...,</A> ~/test
++        std::string normFilePath; // stable/welcome, #oxyd#17, <A HREF="http://...,">http://...,</A> ~/test
+         std::string absLevelPath;
++        int quantity;
+         std::string id; // level id - old filename or indexname
+-        std::string title; // old name
+         std::string author;
+         int scoreVersion;
+         int releaseVersion;
+@@ -178,11 +190,6 @@
+         XERCES_CPP_NAMESPACE_QUALIFIER DOMElement *infoElem;
+         XERCES_CPP_NAMESPACE_QUALIFIER DOMNodeList *stringList;
+         
+-        Proxy(bool proxyIsLibrary, pathType thePathType, std::string theNormLevelPath,
+-                std::string levelId, std::string levelTitle, std::string levelAuthor,
+-                int levelScoreVersion, int levelRelease, bool levelHasEasymode,
+-                GameType levelCompatibilty, levelStatusType status, int levelRevision = 0);
+-        ~Proxy();
+         void load(bool onlyMetadata, bool expectLevel);
+         void loadDoc();
+         void loadLuaCode();
+
+Added: trunk/src/lev/SubProxy.cc
+===================================================================
+--- trunk/src/lev/SubProxy.cc	2009-06-27 23:19:26 UTC (rev 1736)
++++ trunk/src/lev/SubProxy.cc	2009-06-30 23:25:06 UTC (rev 1737)
+@@ -0,0 +1,162 @@
++/*
++ * Copyright (C) 2009 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ */
++
++#include &quot;lev/SubProxy.hh&quot;
++
++#include &quot;main.hh&quot;
++#include &quot;server.hh&quot;
++
++namespace enigma { namespace lev {
++    
++    SubProxy::SubProxy(Proxy * fileProxy, unsigned num, Proxy::pathType thePathType, std::string theNormLevelPath,
++            std::string levelId, std::string levelTitle) :
++            Proxy(false, thePathType, theNormLevelPath, levelId, levelTitle, &quot;unknown&quot;,
++            1, 0, false, GAMET_UNKNOWN, STATUS_UNKNOWN) {
++        multiProxy = fileProxy;
++        subNum = num;
++    }
++    
++    void SubProxy::loadLevel() {
++        server::SublevelNumber = subNum;
++        multiProxy-&gt;loadLevel();
++        if (server::SublevelTitle.length() &gt; 0)
++            title = server::SublevelTitle;
++    }
++    
++    void SubProxy::loadMetadata(bool expectLevel) {
++        multiProxy-&gt;loadMetadata(expectLevel);
++    }
++    
++    std::string SubProxy::getLocalizedString(const std::string &amp;key) {
++        if (key == &quot;title&quot;)
++            return getTitle();   // no localization possible
++        else
++            return multiProxy-&gt;getLocalizedString(key);
++    }
++
++    Proxy * SubProxy::copy(std::string newBasePath, std::string newPackPath, bool backup) {
++        Proxy * newMulti = multiProxy-&gt;copy(newBasePath, newPackPath, backup);
++        return registerLevel(newMulti-&gt;getNormFilePath(), newPackPath, getId(), getTitle(),
++                        getAuthor(), getScoreVersion(), getReleaseVersion(), hasEasyMode(), 
++                        getEngineCompatibility(), getLevelStatus(), getRevisionNumber());
++        
++    }
++    
++    int SubProxy::getQuantity() {
++        return multiProxy-&gt;getQuantity();
++    }
++
++    int SubProxy::getScoreVersion() {
++        return multiProxy-&gt;getScoreVersion();
++    }
++    int SubProxy::getReleaseVersion() {
++        return multiProxy-&gt;getReleaseVersion();
++    }
++    int SubProxy::getRevisionNumber() {
++        return multiProxy-&gt;getRevisionNumber();
++    }
++    
++    levelStatusType SubProxy::getLevelStatus() {
++        return multiProxy-&gt;getLevelStatus();
++    }
++
++    std::string SubProxy::getAuthor() {
++        return multiProxy-&gt;getAuthor();
++    }
++
++    std::string SubProxy::getTitle() {
++        std::string text = title;
++        if (text.size() == 0) {
++            text = multiProxy-&gt;getTitle();
++            if (text[text.size() - 1] == '#') {
++                // numbered titles for sublevels are intended
++                text += ecl::strf(&quot; %d&quot;, subNum);
++                title = text;  // store generated title for index usage
++            } else {
++                // Lua part will supply title on load
++                text += ecl::strf(&quot; # %d&quot;, subNum);  // just a temporary title
++            } 
++        }
++        return text;
++    }
++
++    bool SubProxy::hasEasyMode() {
++        return multiProxy-&gt;hasEasyMode();
++    }
++
++    bool SubProxy::hasSingleMode() {
++        return multiProxy-&gt;hasSingleMode();
++    }
++
++    bool SubProxy::hasNetworkMode() {
++        return multiProxy-&gt;hasNetworkMode();
++    }
++
++    std::string SubProxy::getContact() {
++        return multiProxy-&gt;getContact();
++    }
++
++    std::string SubProxy::getHomepage() {
++        return multiProxy-&gt;getHomepage();
++    }
++
++    controlType SubProxy::getControl() {
++        return multiProxy-&gt;getControl();
++    }
++
++    scoreUnitType SubProxy::getScoreUnit() {
++        return multiProxy-&gt;getScoreUnit();
++    }
++
++    std::string SubProxy::getScoreTarget() {
++        return multiProxy-&gt;getScoreTarget();
++    }
++
++    std::string SubProxy::getCredits(bool infoUsage) {
++        return multiProxy-&gt;getCredits(infoUsage);
++    }
++
++    std::string SubProxy::getDedication(bool infoUsage) {
++        return multiProxy-&gt;getDedication(infoUsage);
++    }
++
++    int SubProxy::getEasyScore() {
++        return multiProxy-&gt;getEasyScore();
++    }
++
++    int SubProxy::getDifficultScore() {
++        return multiProxy-&gt;getDifficultScore();
++    }
++
++    GameType SubProxy::getEngineCompatibility() {
++        return multiProxy-&gt;getEngineCompatibility();
++    }
++
++    double SubProxy::getEnigmaCompatibility() {
++        return multiProxy-&gt;getEnigmaCompatibility();
++    }
++    
++    std::string SubProxy::getNormLevelPath() {
++        return getNormFilePath() + ecl::strf(&quot;_%d&quot;, subNum);
++    }
++    
++    std::string SubProxy::getAbsLevelPath() {
++        return multiProxy-&gt;getAbsLevelPath();
++    }
++
++}} // namespace enigma::lev
+
+
+Property changes on: trunk/src/lev/SubProxy.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/lev/SubProxy.hh
+===================================================================
+--- trunk/src/lev/SubProxy.hh	2009-06-27 23:19:26 UTC (rev 1736)
++++ trunk/src/lev/SubProxy.hh	2009-06-30 23:25:06 UTC (rev 1737)
+@@ -0,0 +1,65 @@
++/*
++ * Copyright (C) 2009 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ */
++ 
++#ifndef LEV_SUBPROXY_HH_INCLUDED
++#define LEV_SUBPROXY_HH_INCLUDED
++
++#include &quot;enigma.hh&quot;
++#include &quot;lev/Proxy.hh&quot;
++
++namespace enigma { namespace lev {
++
++    class SubProxy : public Proxy {
++    public:
++        SubProxy(Proxy * fileProxy, unsigned num, pathType thePathType, std::string theNormLevelPath,
++                std::string levelId, std::string levelTitle);
++                
++        virtual void loadLevel();
++        virtual void loadMetadata(bool expectLevel);
++        virtual Proxy * copy(std::string newBasePath, std::string newPackPath, bool backup = true);
++        virtual std::string getLocalizedString(const std::string &amp;key);
++        virtual int getQuantity();
++        virtual int getScoreVersion();
++        virtual int getReleaseVersion();
++        virtual int getRevisionNumber();
++        virtual levelStatusType getLevelStatus();
++        virtual std::string getAuthor();
++        virtual std::string getTitle(); // english title
++        virtual bool hasEasyMode();
++        virtual bool hasSingleMode();
++        virtual bool hasNetworkMode();
++        virtual std::string getContact();
++        virtual std::string getHomepage();
++        virtual controlType getControl();
++        virtual scoreUnitType getScoreUnit();
++        virtual std::string getScoreTarget();
++        virtual std::string getCredits(bool infoUsage);
++        virtual std::string getDedication(bool infoUsage);
++        virtual int getEasyScore();
++        virtual int getDifficultScore();
++        virtual GameType getEngineCompatibility();
++        virtual double getEnigmaCompatibility();
++        virtual std::string getNormLevelPath();
++        virtual std::string getAbsLevelPath();
++        
++    private:
++        Proxy * multiProxy;
++        unsigned subNum;
++    };
++}} // namespace enigma::lev
++#endif
+
+
+Property changes on: trunk/src/lev/SubProxy.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2009-06-27 23:19:26 UTC (rev 1736)
++++ trunk/src/server.cc	2009-06-30 23:25:06 UTC (rev 1737)
+@@ -78,6 +78,8 @@
+ 
+ double   server::LastMenuTime;
+ int      server::MenuCount;
++unsigned server::SublevelNumber;
++std::string server::SublevelTitle;
+ 
+ bool     server::NoCollisions = false;
+ 
+@@ -166,7 +168,7 @@
+     catch (XLevelLoading &amp;err) {
+         std::string levelPathString = 
+             (levelProxy-&gt;getNormPathType() == lev::Proxy::pt_resource) ?
+-            levelProxy-&gt;getAbsLevelPath() : levelProxy-&gt;getNormLevelPath();
++            levelProxy-&gt;getAbsLevelPath() : levelProxy-&gt;getNormFilePath();
+         std::string msg = _(&quot;Server Error: could not load level '&quot;)
+                                + levelPathString + &quot;'\n&quot;
+                                + err.what();
+@@ -180,7 +182,7 @@
+     catch (XLevelRuntime &amp;err) {
+         std::string levelPathString = 
+             (levelProxy-&gt;getNormPathType() == lev::Proxy::pt_resource) ?
+-            levelProxy-&gt;getAbsLevelPath() : levelProxy-&gt;getNormLevelPath();
++            levelProxy-&gt;getAbsLevelPath() : levelProxy-&gt;getNormFilePath();
+         std::string msg = _(&quot;Server Error: could not load level '&quot;)
+                                + levelPathString + &quot;'\n&quot;
+                                + err.what();
+@@ -252,6 +254,8 @@
+ {
+     state = sv_waiting_for_clients;
+     
++    server::SublevelNumber    = 1;
++    server::SublevelTitle     = &quot;&quot;;
+     server::LastMenuTime      = 0.0;
+     server::MenuCount         = 0;
+     server::NoCollisions      = false;
+
+Modified: trunk/src/server.hh
+===================================================================
+--- trunk/src/server.hh	2009-06-27 23:19:26 UTC (rev 1736)
++++ trunk/src/server.hh	2009-06-30 23:25:06 UTC (rev 1737)
+@@ -58,6 +58,8 @@
+     extern int MenuCount;
+     
+     extern int32_t  RandomState;
++    extern unsigned SublevelNumber;
++    extern std::string SublevelTitle;
+ 
+     // True: do not reset level when player dies
+     extern bool     ConserveLevel;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	
+	<LI>Next message: <A HREF="001167.html">[Enigma-game-svn] r1738 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1166">[ date ]</a>
+              <a href="thread.html#1166">[ thread ]</a>
+              <a href="subject.html#1166">[ subject ]</a>
+              <a href="author.html#1166">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

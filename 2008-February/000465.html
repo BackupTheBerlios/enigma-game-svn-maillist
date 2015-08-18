@@ -1,0 +1,1720 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1033 - in trunk/src: . stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1033%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200802091841.m19IfwaA029087%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000464.html">
+   <LINK REL="Next"  HREF="000466.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1033 - in trunk/src: . stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1033%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200802091841.m19IfwaA029087%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1033 - in trunk/src: . stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Feb  9 19:41:58 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000464.html">[Enigma-game-svn] r1032 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="000466.html">[Enigma-game-svn] r1034 - in trunk/src: . stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#465">[ date ]</a>
+              <a href="thread.html#465">[ thread ]</a>
+              <a href="subject.html#465">[ subject ]</a>
+              <a href="author.html#465">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-02-09 19:41:37 +0100 (Sat, 09 Feb 2008)
+New Revision: 1033
+
+Modified:
+   trunk/src/GridObject.cc
+   trunk/src/GridObject.hh
+   trunk/src/Object.cc
+   trunk/src/Object.hh
+   trunk/src/StateObject.cc
+   trunk/src/StateObject.hh
+   trunk/src/WorldProxy.cc
+   trunk/src/WorldProxy.hh
+   trunk/src/actors.cc
+   trunk/src/actors.hh
+   trunk/src/floors.cc
+   trunk/src/floors.hh
+   trunk/src/items.cc
+   trunk/src/laser.cc
+   trunk/src/lua.cc
+   trunk/src/oxyd.cc
+   trunk/src/st_switches.cc
+   trunk/src/stones.cc
+   trunk/src/stones/BlockerStone.cc
+   trunk/src/stones/BoulderStone.cc
+   trunk/src/stones/BoulderStone.hh
+   trunk/src/stones/ClusterStone.cc
+   trunk/src/stones/ClusterStone.hh
+   trunk/src/stones/ConnectiveStone.hh
+   trunk/src/stones/KeySwitch.cc
+   trunk/src/stones/OxydStone.cc
+   trunk/src/stones/OxydStone.hh
+   trunk/src/stones/Switch.cc
+   trunk/src/stones/Switch.hh
+   trunk/src/stones/WindowStone.cc
+   trunk/src/stones_complex.cc
+   trunk/src/stones_internal.hh
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1: 
+- finish up of switch from &quot;get_attrib&quot; to &quot;getAttr&quot; + &quot;getAttrChecked&quot;
+
+
+Modified: trunk/src/GridObject.cc
+===================================================================
+--- trunk/src/GridObject.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/GridObject.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -112,7 +112,7 @@
+         va_end(arg_ptr);
+     }
+     
+-    void GridObject::set_attrib(const string&amp; key, const Value &amp;val) {
++    void GridObject::setAttr(const string&amp; key, const Value &amp;val) {
+         if (key == &quot;connections&quot; || key == &quot;faces&quot;) {
+             int d = NODIRBIT;
+             std::string vs(val);
+@@ -121,15 +121,15 @@
+             if (vs.find('s') != std::string::npos) d |= SOUTHBIT;
+             if (vs.find('w') != std::string::npos) d |= WESTBIT;
+             if (key == &quot;faces&quot;) d ^= ALL_DIRECTIONS;
+-            Object::set_attrib(&quot;$connections&quot;, d);
++            Object::setAttr(&quot;$connections&quot;, d);
+             if (isDisplayable())
+                 init_model();
+         } else if (key == &quot;$connections&quot;) {
+-            Object::set_attrib(&quot;$connections&quot;, val);
++            Object::setAttr(&quot;$connections&quot;, val);
+             if (isDisplayable())
+                 init_model();
+         } else
+-            StateObject::set_attrib(key, val);
++            StateObject::setAttr(key, val);
+     }
+     
+     Value GridObject::getAttr(const string &amp;key) const {
+
+Modified: trunk/src/GridObject.hh
+===================================================================
+--- trunk/src/GridObject.hh	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/GridObject.hh	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -45,7 +45,7 @@
+         GridObject(const char * kind) : StateObject(kind), pos (GridPos(-1, -1)) {}
+ 
+         // Object interface
+-        virtual void set_attrib(const string&amp; key, const Value &amp;val);
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
+         virtual Value getAttr(const string &amp;key) const;
+ 
+         // StateObject interface
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/Object.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -95,7 +95,7 @@
+     }
+     
+     Object::Object(const char *kind) {
+-        set_attrib(&quot;kind&quot;, Value(kind));
++        setAttr(&quot;kind&quot;, Value(kind));
+         id = getNextId(this, false);
+     }
+     
+@@ -152,7 +152,7 @@
+     
+     
+     
+-    void Object::set_attrib(const string&amp; key, const Value&amp; val) {
++    void Object::setAttr(const std::string&amp; key, const Value&amp; val) {
+         if (val) {        // only set non-default values
+             if (val.getType() == Value::NIL &amp;&amp; server::EnigmaCompatibility &gt;= 1.10)
+                 // delete attribute
+@@ -169,10 +169,6 @@
+             setAttr(key, val);
+     }
+     
+-    void Object::setAttr(const std::string&amp; key, const Value &amp;val) {
+-        set_attrib(key, val);
+-    }
+-    
+     Value Object::getAttrChecked(const std::string &amp;key) const {
+         // allow all user attributes and those system attributes with read allowance
+         if (key.find('_') == 0 || ObjectValidator::instance()-&gt;validateAttributeRead(this, key))
+@@ -225,7 +221,7 @@
+             // target and actions including their stated versions
+             if ( it-&gt;first.find(&quot;_&quot;) == 0 || it-&gt;first.find(&quot;target&quot;) == 0
+                     || it-&gt;first.find(&quot;action&quot;) == 0) {
+-                target-&gt;set_attrib(it-&gt;first, it-&gt;second);
++                target-&gt;setAttr(it-&gt;first, it-&gt;second);
+ //                Log &lt;&lt; &quot;Identity transfer key &quot; &lt;&lt; it-&gt;first &lt;&lt; &quot; - value &quot; &lt;&lt; it-&gt;second.to_string() &lt;&lt; &quot;\n&quot;;
+             }
+         }
+
+Modified: trunk/src/Object.hh
+===================================================================
+--- trunk/src/Object.hh	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/Object.hh	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -130,9 +130,7 @@
+          * 
+          */
+         virtual Value message(const Message &amp;m);
+-        
+-        virtual void set_attrib(const string &amp;key, const Value &amp;val);
+-        
++                
+         /**
+          * Store the value information for the given key with prior checking of
+          * write allowance. All level code attribute settings should pass this
+
+Modified: trunk/src/StateObject.cc
+===================================================================
+--- trunk/src/StateObject.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/StateObject.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -55,13 +55,13 @@
+         return Object::getAttr(key);
+     }
+     
+-    void StateObject::set_attrib(const string&amp; key, const Value &amp;val) {
++    void StateObject::setAttr(const string&amp; key, const Value &amp;val) {
+         if (key == &quot;state&quot;) {
+             if (val &gt;= minState() &amp;&amp; val &lt;= maxState())
+                 setState(val);
+             return;
+         }
+-        Object::set_attrib(key, val);
++        Object::setAttr(key, val);
+     }
+     
+     int StateObject::maxState() {
+
+Modified: trunk/src/StateObject.hh
+===================================================================
+--- trunk/src/StateObject.hh	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/StateObject.hh	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -78,7 +78,7 @@
+          * shall not interfere with this attribute but override the method
+          * &quot;setState()&quot;. New state values are checked against min and max. 
+          */
+-        virtual void set_attrib(const string&amp; key, const Value &amp;val);
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
+         
+     protected:
+         /**
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/WorldProxy.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -88,7 +88,7 @@
+         return Value(Value::DEFAULT);
+     }  
+ 
+-    void WorldProxy::set_attrib(const string&amp; key, const Value &amp;val) {
++    void WorldProxy::setAttr(const string&amp; key, const Value &amp;val) {
+         if (key == &quot;AllowSingleOxyds&quot;) {
+             server::AllowSingleOxyds = val;
+         } else if (key == &quot;AllowTogglePlayer&quot;) {
+
+Modified: trunk/src/WorldProxy.hh
+===================================================================
+--- trunk/src/WorldProxy.hh	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/WorldProxy.hh	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -28,7 +28,7 @@
+         static WorldProxy *instance();
+         static void shutdown();
+         virtual Value getAttr(const string&amp; key) const;
+-        virtual void set_attrib(const string&amp; key, const Value &amp;val);
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
+         
+     protected:
+         WorldProxy();
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/actors.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -100,7 +100,7 @@
+   respawnpos(), use_respawnpos(false),
+   spikes(false), controllers (0), left (NULL), right (NULL)
+ {
+-    set_attrib(&quot;mouseforce&quot;, 0.0);
++    setAttr(&quot;mouseforce&quot;, 0.0);
+ 
+     // copy default properties to dynamic properties
+     m_actorinfo.mass = tr.default_mass;
+@@ -276,13 +276,13 @@
+     return sound::EmitSoundEvent (name, get_pos(), getVolume(name, this, vol));
+ }
+ 
+-void Actor::set_attrib(const string&amp; key, const Value &amp;val)
++void Actor::setAttr(const string&amp; key, const Value &amp;val)
+ {
+     if (key == &quot;controllers&quot;)
+         controllers = to_int (val);
+     else if (key == &quot;mouseforce&quot;) 
+         mouseforce = to_double (val);
+-    Object::set_attrib (key, val);
++    Object::setAttr(key, val);
+ }
+ 
+ 
+@@ -293,7 +293,7 @@
+     /*! The base class for rotors and spinning tops. */
+     class RotorBase : public Actor {
+     public:
+-        void   set_attrib (const string&amp; key, const Value &amp;val);
++        void   setAttr (const string&amp; key, const Value &amp;val);
+     protected:
+         RotorBase(const ActorTraits &amp;tr);
+     private:
+@@ -321,14 +321,14 @@
+ RotorBase::RotorBase(const ActorTraits &amp;tr)
+ : Actor(tr), attackCurrentOnly(false), timeKeepAttackStrategy(0)
+ {
+-    set_attrib (&quot;range&quot;, 5.0);
+-    set_attrib (&quot;force&quot;, 10.0);
+-    set_attrib (&quot;gohome&quot;, 1.0);
+-    set_attrib (&quot;attacknearest&quot;, 1.0);
+-    set_attrib (&quot;prefercurrent&quot;, 0.0);
++    setAttr(&quot;range&quot;, 5.0);
++    setAttr(&quot;force&quot;, 10.0);
++    setAttr(&quot;gohome&quot;, 1.0);
++    setAttr(&quot;attacknearest&quot;, 1.0);
++    setAttr(&quot;prefercurrent&quot;, 0.0);
+ }
+ 
+-void RotorBase::set_attrib(const string&amp; key, const Value &amp;val)
++void RotorBase::setAttr(const string&amp; key, const Value &amp;val)
+ {
+     if (key == &quot;range&quot;)
+         range = to_double(val);
+@@ -340,7 +340,7 @@
+         attacknearest = (to_int(val) != 0);
+     else if (key == &quot;prefercurrent&quot;) 
+         prefercurrent = to_double(val);
+-    Actor::set_attrib (key, val);
++    Actor::setAttr(key, val);
+ }
+ 
+ void RotorBase::think (double dtime)
+@@ -495,7 +495,7 @@
+   m_targetidx(-1),
+   m_target()
+ {
+-    set_attrib(&quot;force&quot;, Value(10.0));
++    setAttr(&quot;force&quot;, Value(10.0));
+ }
+  
+ void Horse::think (double /* dtime */) 
+@@ -1176,10 +1176,10 @@
+     public:
+         BlackBall() : BasicBall(traits)
+         {
+-            set_attrib(&quot;mouseforce&quot;, Value(1.0));
+-            set_attrib(&quot;color&quot;, Value(0.0));
+-            set_attrib(&quot;player&quot;, Value(0.0));
+-            set_attrib(&quot;controllers&quot;, Value(1.0));
++            setAttr(&quot;mouseforce&quot;, Value(1.0));
++            setAttr(&quot;color&quot;, Value(0.0));
++            setAttr(&quot;player&quot;, Value(0.0));
++            setAttr(&quot;controllers&quot;, Value(1.0));
+         }
+     };
+ 
+@@ -1189,10 +1189,10 @@
+     public:
+         WhiteBall() : BasicBall(traits)
+         {
+-            set_attrib(&quot;mouseforce&quot;, Value(1.0));
+-            set_attrib(&quot;color&quot;, Value(1.0));
+-            set_attrib(&quot;player&quot;, Value(1.0));
+-            set_attrib(&quot;controllers&quot;, Value(2.0));
++            setAttr(&quot;mouseforce&quot;, Value(1.0));
++            setAttr(&quot;color&quot;, Value(1.0));
++            setAttr(&quot;player&quot;, Value(1.0));
++            setAttr(&quot;controllers&quot;, Value(2.0));
+         }
+     };
+ 
+@@ -1202,9 +1202,9 @@
+     public:
+         WhiteBall_Small() : BasicBall(traits)
+         {
+-            set_attrib(&quot;mouseforce&quot;, Value(1.0));
+-            set_attrib(&quot;color&quot;, Value(1.0));
+-            set_attrib(&quot;controllers&quot;, Value(3.0));
++            setAttr(&quot;mouseforce&quot;, Value(1.0));
++            setAttr(&quot;color&quot;, Value(1.0));
++            setAttr(&quot;controllers&quot;, Value(3.0));
+             maxSinkDepth = 4;
+         }
+     };
+@@ -1216,9 +1216,9 @@
+ 
+         Killerball() : Actor (traits)
+         {
+-            set_attrib(&quot;mouseforce&quot;, Value(2.0));
+-            set_attrib(&quot;color&quot;, Value(1.0));
+-            set_attrib(&quot;controllers&quot;, Value(3.0));
++            setAttr(&quot;mouseforce&quot;, Value(2.0));
++            setAttr(&quot;color&quot;, Value(1.0));
++            setAttr(&quot;controllers&quot;, Value(3.0));
+         }
+         bool is_dead() const { return false; }
+ 
+
+Modified: trunk/src/actors.hh
+===================================================================
+--- trunk/src/actors.hh	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/actors.hh	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -116,7 +116,7 @@
+         /* ---------- Object interface ---------- */
+         Actor *clone() = 0;
+         virtual Value message(const Message &amp;m);
+-        void   set_attrib (const string&amp; key, const Value &amp;val);
++        void   setAttr(const string&amp; key, const Value &amp;val);
+ 
+         /* ---------- Actor interface ---------- */
+         virtual const ActorTraits &amp;get_traits() const = 0;
+
+Modified: trunk/src/floors.cc
+===================================================================
+--- trunk/src/floors.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/floors.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -85,7 +85,7 @@
+         return ecl::V2();
+ }
+ 
+-void Floor::set_attrib (const string&amp; key, const Value &amp;val)
++void Floor::setAttr(const string&amp; key, const Value &amp;val)
+ {
+     if (key == &quot;mousefactor&quot;)
+         var_mousefactor = to_double(val);
+@@ -95,7 +95,7 @@
+         var_floorforce[0] = to_double(val);
+     else if (key == &quot;force_y&quot;)
+         var_floorforce[1] = to_double(val);
+-    Object::set_attrib (key, val);
++    Object::setAttr(key, val);
+ }
+ 
+ void Floor::get_sink_speed (double &amp;sinkspeed, double &amp;raisespeed) const {
+@@ -280,7 +280,7 @@
+                     if(has_firetype(flft_fastfire))
+                         return force_fire();
+                     else
+-                        this-&gt;set_attrib(&quot;burnable&quot;, Value(1.0));
++                        this-&gt;setAttr(&quot;burnable&quot;, Value(1.0));
+             }
+         }
+     }
+@@ -598,7 +598,7 @@
+         enum { MINTYPE=1, MAXTYPE=24 };
+ 
+         // Object interface
+-        virtual void set_attrib (const string&amp; key, const Value &amp;val);
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
+ 
+         // GridObject interface.
+         virtual void init_model();
+@@ -614,11 +614,11 @@
+   use_forcefac (false),
+   forcefac (1.0)
+ {
+-    set_attrib (&quot;type&quot;, Value(type_));
+-//    set_attrib (&quot;force&quot;, Value(1.0));
++    setAttr(&quot;type&quot;, Value(type_));
++//    setAttr (&quot;force&quot;, Value(1.0));
+ }
+ 
+-void Gradient::set_attrib (const string&amp; key, const Value &amp;val)
++void Gradient::setAttr(const string&amp; key, const Value &amp;val)
+ {
+     if (key == &quot;type&quot;) {
+         int t=to_int (val);
+@@ -632,7 +632,7 @@
+         use_forcefac = true;
+         forcefac = to_double (val);
+     }
+-    Floor::set_attrib (key, val);
++    Floor::setAttr(key, val);
+ }
+ 
+ 
+@@ -731,7 +731,7 @@
+ 
+ Bridge::Bridge(bool open) : Floor(&quot;fl-bridge&quot;, 5, 1)
+ {
+-    set_attrib(&quot;type&quot;, &quot;a&quot;);
++    setAttr(&quot;type&quot;, &quot;a&quot;);
+     state=open ? OPEN : CLOSED;
+ }
+ 
+
+Modified: trunk/src/floors.hh
+===================================================================
+--- trunk/src/floors.hh	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/floors.hh	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -95,7 +95,7 @@
+         Floor *clone();
+         void dispose();
+         virtual Value message(const Message &amp;m);
+-        virtual void set_attrib (const string&amp; key, const Value &amp;val);
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
+ 
+         // Floor interface
+         virtual ecl::V2 process_mouseforce (Actor *a, ecl::V2 force);
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/items.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -180,7 +180,7 @@
+     protected:
+         OnOffItem (bool onoff = false)
+         {
+-            set_attrib(&quot;on&quot;, onoff);
++            setAttr(&quot;on&quot;, onoff);
+         }
+ 
+         bool is_on() const {
+@@ -189,7 +189,7 @@
+ 
+         void set_on (bool newon) {
+             if (newon != is_on()) {
+-                set_attrib(&quot;on&quot;, Value(newon));
++                setAttr(&quot;on&quot;, Value(newon));
+                 init_model();
+                 notify_onoff(newon);
+             }
+@@ -457,7 +457,7 @@
+     	Key(SubType type = KEY1)
+         : subtype(type)
+         {
+-            set_attrib(&quot;keycode&quot;, subtype+1);
++            setAttr(&quot;keycode&quot;, subtype+1);
+         }
+     };
+ 
+@@ -563,7 +563,7 @@
+ 
+     public:
+         Coin1() {
+-            set_attrib (&quot;value&quot;, 3.0);
++            setAttr(&quot;value&quot;, 3.0);
+         }
+     };
+     DEF_TRAITS(Coin1, &quot;it-coin1&quot;, it_coin1);
+@@ -583,7 +583,7 @@
+ 
+     public:
+         Coin2() {
+-            set_attrib(&quot;value&quot;, 6.0);
++            setAttr(&quot;value&quot;, 6.0);
+         }
+     };
+     DEF_TRAITS(Coin2, &quot;it-coin2&quot;, it_coin2);
+@@ -598,7 +598,7 @@
+         }
+     public:
+         Coin4() {
+-            set_attrib(&quot;value&quot;, 12.0);
++            setAttr(&quot;value&quot;, 12.0);
+         }
+     };
+     DEF_TRAITS(Coin4, &quot;it-coin4&quot;, it_coin4);
+@@ -861,7 +861,7 @@
+ }
+ 
+ void Hollow::setup_successor(Item *newitem) {
+-    newitem-&gt;set_attrib(&quot;essential&quot;, getAttr(&quot;essential&quot;));
++    newitem-&gt;setAttr(&quot;essential&quot;, getAttr(&quot;essential&quot;));
+ }
+ 
+ 
+@@ -1095,7 +1095,7 @@
+         }
+     public:
+         Document() {
+-            set_attrib(&quot;text&quot;, &quot;&quot;);
++            setAttr(&quot;text&quot;, &quot;&quot;);
+         }
+     };
+     DEF_TRAITSF(Document, &quot;it-document&quot;, it_document, itf_inflammable);
+@@ -1362,7 +1362,7 @@
+     DEF_TRAITSF(Trigger, &quot;it_trigger&quot;, it_trigger, itf_static | itf_indestructible);
+     
+     Trigger::Trigger() {
+-        set_attrib(&quot;invisible&quot;, false);
++        setAttr(&quot;invisible&quot;, false);
+     }
+     
+     Value Trigger::message (const Message &amp;m) {
+@@ -1960,10 +1960,10 @@
+ }
+ 
+ Vortex::Vortex(bool open) : state(open ? OPEN : CLOSED) {
+-    set_attrib(&quot;autoclose&quot;, !open);
+-    set_attrib(&quot;$dest_idx&quot;, 0);
+-    set_attrib(&quot;$dest_vortex&quot;, (Object *)NULL);
+-    set_attrib(&quot;$grabbed_actor&quot;, (Object *)NULL);
++    setAttr(&quot;autoclose&quot;, !open);
++    setAttr(&quot;$dest_idx&quot;, 0);
++    setAttr(&quot;$dest_vortex&quot;, (Object *)NULL);
++    setAttr(&quot;$grabbed_actor&quot;, (Object *)NULL);
+ }
+ 
+ Vortex::~Vortex() {
+@@ -1983,8 +1983,8 @@
+ 
+ void Vortex::prepare_for_warp (Actor *actor) {
+     SendMessage(actor, &quot;fallvortex&quot;);
+-    set_attrib(&quot;$dest_idx&quot;, 0);
+-    set_attrib(&quot;$grabbed_actor&quot;, actor);
++    setAttr(&quot;$dest_idx&quot;, 0);
++    setAttr(&quot;$grabbed_actor&quot;, actor);
+     state = SWALLOWING;
+ 
+     GameTimer.set_alarm(this, 0.4, false);
+@@ -2113,7 +2113,7 @@
+     if (this != destVortex)
+         performAction(getAttr(&quot;$grabbed_actor&quot;));
+ 
+-    set_attrib(&quot;$grabbed_actor&quot;, (Object *)NULL);
++    setAttr(&quot;$grabbed_actor&quot;, (Object *)NULL);
+ }
+ 
+ void Vortex::warp_to(const V2 &amp;target) {
+@@ -2131,7 +2131,7 @@
+         close();
+ 
+     performAction(getAttr(&quot;$grabbed_actor&quot;));
+-    set_attrib(&quot;$grabbed_actor&quot;, (Object *)NULL);
++    setAttr(&quot;$grabbed_actor&quot;, (Object *)NULL);
+ }
+ 
+ void Vortex::perform_warp() {
+@@ -2155,7 +2155,7 @@
+ 
+             if (st &amp;&amp; !st-&gt;is_floating()) {
+                 // is destination vortex blocked? redirect
+-                set_attrib(&quot;$dest_idx&quot;, dest_idx + 1);
++                setAttr(&quot;$dest_idx&quot;, dest_idx + 1);
+                 client::Msg_Sparkle(v_target);
+                 WarpActor(actor, v_target[0], v_target[1], false);
+                 GameTimer.set_alarm(this, 0.4, false);
+@@ -2172,7 +2172,7 @@
+                     case CLOSING:
+                         // destination is closed
+                         SendMessage(v, &quot;open&quot;);
+-                        set_attrib(&quot;$dest_vortex&quot;, v);
++                        setAttr(&quot;$dest_vortex&quot;, v);
+                         state = EMITTING;
+                         GameTimer.set_alarm(this, 0.4, false);
+                         break;
+@@ -2370,8 +2370,8 @@
+         Crack(int type=0)
+         : state(IDLE), anim_end(false)
+             {
+-                set_attrib(&quot;type&quot;, type);
+-                set_attrib(&quot;fixed&quot;, 0.0);
++                setAttr(&quot;type&quot;, type);
++                setAttr(&quot;fixed&quot;, 0.0);
+              }
+ 
+         enum State { IDLE, CRACKING1, CRACKING2 } state;
+@@ -2441,7 +2441,7 @@
+             if (m.message == &quot;crack&quot; &amp;&amp; state==IDLE &amp;&amp; !is_fixed()) {
+                 int type = get_type();
+                 if ((type == 0 &amp;&amp; do_crack()) || (type &gt; 0)) {
+-                    set_attrib(&quot;type&quot;, Value((int)getAttr(&quot;type&quot;) + 1));
++                    setAttr(&quot;type&quot;, Value((int)getAttr(&quot;type&quot;) + 1));
+                     sound_event (&quot;crack&quot;);
+                     init_model();
+                 return Value();
+@@ -2593,11 +2593,11 @@
+ 
+     private:
+         Extinguisher (int load) {
+-    	    set_attrib(&quot;load&quot;, load);
++    	    setAttr(&quot;load&quot;, load);
+         }
+ 
+         int get_load() const { return ecl::Clamp&lt;int&gt;(getAttr(&quot;load&quot;),0,2); }
+-        void set_load (int load) { set_attrib(&quot;load&quot;, ecl::Clamp&lt;int&gt;(load,0,2)); }
++        void set_load (int load) { setAttr(&quot;load&quot;, ecl::Clamp&lt;int&gt;(load,0,2)); }
+ 
+         void extinguish (GridPos p) {
+             if (Item *it = GetItem(p)) {
+@@ -2914,7 +2914,7 @@
+         SetStone(get_pos(), st);
+         transferIdentity(st);
+         if (Value v = getAttr(&quot;autoclose&quot;))
+-            st-&gt;set_attrib(&quot;autoclose&quot;, v); 
++            st-&gt;setAttr(&quot;autoclose&quot;, v); 
+         SendMessage(st, &quot;_performaction&quot;);
+         kill();
+     }
+@@ -3009,9 +3009,9 @@
+         
+         virtual Value message(const Message &amp;m) {
+             if (m.message == &quot;hit&quot;) {   // door knocking forward to black/whitballstone
+-                set_attrib(&quot;$hitactor&quot;, m.value);
++                setAttr(&quot;$hitactor&quot;, m.value);
+                 performAction(true);
+-                set_attrib(&quot;$hitactor&quot;, (Object *)NULL);
++                setAttr(&quot;$hitactor&quot;, (Object *)NULL);
+                 return Value();
+             } else if (m.message == &quot;_hitactor&quot;) {
+                 return getAttr(&quot;$hitactor&quot;);
+@@ -3658,18 +3658,18 @@
+                 // Kill ALL rubberbands connected with the actor:
+                 KillRubberBands (a);
+                 Actor *rotor = MakeActor (ac_rotor);
+-                rotor-&gt;set_attrib (&quot;mouseforce&quot;, Value (1.0));
+-                rotor-&gt;set_attrib (&quot;controllers&quot;, Value (iplayer+1));
+-                rotor-&gt;set_attrib (&quot;player&quot;, Value (iplayer));
+-                rotor-&gt;set_attrib (&quot;gohome&quot;, Value (0.0));
+-                rotor-&gt;set_attrib (&quot;essential&quot;, a-&gt;getAttr(&quot;essential&quot;));
++                rotor-&gt;setAttr(&quot;mouseforce&quot;, Value (1.0));
++                rotor-&gt;setAttr(&quot;controllers&quot;, Value (iplayer+1));
++                rotor-&gt;setAttr(&quot;player&quot;, Value (iplayer));
++                rotor-&gt;setAttr(&quot;gohome&quot;, Value (0.0));
++                rotor-&gt;setAttr(&quot;essential&quot;, a-&gt;getAttr(&quot;essential&quot;));
+                 std::string essId;
+                 if (Value v = a-&gt;getAttr(&quot;essential_id&quot;)) {
+                     essId = v.to_string();
+                 } else {
+                     essId = a-&gt;get_traits().name;
+                 }
+-                rotor-&gt;set_attrib (&quot;essential_id&quot;, Value(essId));
++                rotor-&gt;setAttr(&quot;essential_id&quot;, Value(essId));
+ 
+                 replace_actor (a, rotor);
+ 
+
+Modified: trunk/src/laser.cc
+===================================================================
+--- trunk/src/laser.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/laser.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -392,7 +392,7 @@
+ LaserStone::LaserStone (Direction dir)
+ : OnOffStone(&quot;st-laser&quot;)
+ {
+-    set_attrib(&quot;dir&quot;, Value(dir));
++    setAttr(&quot;dir&quot;, Value(dir));
+ }
+ 
+ DirectionBits
+@@ -451,7 +451,7 @@
+ 
+         bool is_transparent() const { return getAttr(&quot;transparent&quot;) != 0; }
+ 
+-        void set_orientation(int o) { set_attrib(&quot;orientation&quot;, o); }
++        void set_orientation(int o) { setAttr(&quot;orientation&quot;, o); }
+         int get_orientation() { return getAttr(&quot;orientation&quot;); }
+ 
+         void emit_light(Direction dir) {
+@@ -463,7 +463,7 @@
+         }
+ 
+         void init_model();
+-        void set_attrib(const string&amp; key, const Value &amp;val);
++        void setAttr(const string&amp; key, const Value &amp;val);
+ 
+     private:
+ 
+@@ -500,15 +500,15 @@
+ MirrorStone::MirrorStone(const char *name, bool movable, bool transparent)
+ : Stone(name), outdirs(NODIRBIT)
+ {
+-    set_attrib(&quot;transparent&quot;, transparent);
+-    set_attrib(&quot;movable&quot;, movable);
+-    set_attrib(&quot;orientation&quot;, Value(1));
++    setAttr(&quot;transparent&quot;, transparent);
++    setAttr(&quot;movable&quot;, movable);
++    setAttr(&quot;orientation&quot;, Value(1));
+     traits.name = &quot;st-mirror&quot;;
+     traits.id = st_INVALID;
+     traits.flags = stf_none;
+     traits.material = material_stone;
+     traits.restitution = 1.0;
+-    //traits.movable is already set via set_attrib(&quot;movable&quot;, ...);
++    //traits.movable is already set via setAttr(&quot;movable&quot;, ...);
+ }
+ 
+ void MirrorStone::init_model() {
+@@ -584,8 +584,8 @@
+     sound_event (&quot;mirrorturn&quot;);
+ }
+ 
+-void MirrorStone::set_attrib(const string&amp; key, const Value &amp;val) {
+-    Stone::set_attrib(key, val);
++void MirrorStone::setAttr(const string&amp; key, const Value &amp;val) {
++    Stone::setAttr(key, val);
+     if (key == &quot;movable&quot;)
+         traits.movable = to_bool(val) ? MOVABLE_STANDARD : MOVABLE_PERSISTENT;
+ }
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/lua.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -1877,7 +1877,7 @@
+         std::string name = lua_tostring(L, 2);
+         // TODO check string
+         
+-        WorldProxy::instance()-&gt;set_attrib(name, to_value(L, 3));
++        WorldProxy::instance()-&gt;setAttr(name, to_value(L, 3));
+         return 0;
+     } else if ((is_object(L, 2) || is_position(L, 2) || is_table(L, 2) || is_group(L, 2)) &amp;&amp; 
+             ((is_table(L, 3)) || is_tile(L, 3))) {
+
+Modified: trunk/src/oxyd.cc
+===================================================================
+--- trunk/src/oxyd.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/oxyd.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -271,7 +271,7 @@
+         string lasername(&quot;st-laser&quot;);
+         lasername += to_suffix(dir);
+         st         = MakeStone(lasername.c_str());
+-        st-&gt;set_attrib(&quot;on&quot;, Value(on)); // OnOffStone attribute
++        st-&gt;setAttr(&quot;on&quot;, Value(on)); // OnOffStone attribute
+     }
+     return st;
+ }
+@@ -280,15 +280,15 @@
+ {
+     const OscillatorMap &amp;oscillators = level.getOscillators(config.gamemode);
+     Stone *st = MakeStone (&quot;st-timer&quot;);
+-    st-&gt;set_attrib(&quot;interval&quot;, Value(0.2));
++    st-&gt;setAttr(&quot;interval&quot;, Value(0.2));
+ 
+     Block block(x, y);
+     OscillatorMap::const_iterator i = oscillators.find(block);
+     if (i != oscillators.end()) {
+         const Oscillator &amp;o = i-&gt;second;
+-        st-&gt;set_attrib(&quot;on&quot;, Value(o.getOn()));
++        st-&gt;setAttr(&quot;on&quot;, Value(o.getOn()));
+         double interval = (1 + o.getPeriod()) * config.timer_factor;
+-        st-&gt;set_attrib(&quot;interval&quot;, Value(interval));
++        st-&gt;setAttr(&quot;interval&quot;, Value(interval));
+     }
+     return st;
+ }
+@@ -306,8 +306,8 @@
+         color[0] += (type-1) / 2; 
+ 
+         st = MakeStone(&quot;st_oxyd&quot;);
+-        st-&gt;set_attrib(&quot;oxydcolor&quot;, color);
+-        st-&gt;set_attrib(&quot;flavor&quot;, config.oxyd_flavor);
++        st-&gt;setAttr(&quot;oxydcolor&quot;, color);
++        st-&gt;setAttr(&quot;flavor&quot;, config.oxyd_flavor);
+     }
+     else if (type == config.id_timer) {
+         st = make_timer (x, y);
+@@ -321,7 +321,7 @@
+         if (name == 0) {
+             Log &lt;&lt; ecl::strf(&quot;Unknown stone %X\n&quot;, type);
+             st = MakeStone (&quot;st-dummy&quot;);
+-            st-&gt;set_attrib(&quot;code&quot;, type);
++            st-&gt;setAttr(&quot;code&quot;, type);
+         }
+         else if (name[0] != '\0') { // ignore if name==&quot;&quot;
+             st = MakeStone (name);
+@@ -378,14 +378,14 @@
+ 	{
+ 	    it = MakeItem (it_document);
+ 	    string text = convert_encoding(level.getNoteText(0, lang));
+-	    it-&gt;set_attrib (&quot;text&quot;, text.c_str());
++	    it-&gt;setAttr (&quot;text&quot;, text.c_str());
+ 	}
+         break;
+     case 0x03:                  // note 2
+ 	{
+ 	    it = MakeItem (it_document);
+ 	    string text = convert_encoding(level.getNoteText(1, lang));
+-	    it-&gt;set_attrib (&quot;text&quot;, text.c_str());
++	    it-&gt;setAttr (&quot;text&quot;, text.c_str());
+ 	}
+ 	break;
+     default:
+@@ -394,7 +394,7 @@
+             if (id == it_INVALID) {
+                 Log &lt;&lt; ecl::strf (&quot;Unknown item %X\n&quot;,type);
+                 it = MakeItem (it_dummy);
+-                it-&gt;set_attrib(&quot;code&quot;, type);
++                it-&gt;setAttr(&quot;code&quot;, type);
+             }
+             else
+                 it = MakeItem (id);
+@@ -417,7 +417,7 @@
+             if( name == 0) {
+                 Log &lt;&lt; ecl::strf (&quot;Unknown floor %X\n&quot;,code);
+                 fl = MakeFloor(&quot;fl-dummy&quot;);
+-                fl-&gt;set_attrib(&quot;code&quot;, code);
++                fl-&gt;setAttr(&quot;code&quot;, code);
+             }
+             else {
+                 fl = MakeFloor(name);
+@@ -487,47 +487,47 @@
+         switch (marble.getMarbleType()) {
+         case MarbleType_Black:
+             ac = MakeActor (ac_blackball);
+-            ac-&gt;set_attrib (&quot;player&quot;, Value(0.0));
++            ac-&gt;setAttr (&quot;player&quot;, Value(0.0));
+             break;
+         case MarbleType_White:
+             ac = MakeActor (ac_whiteball);
+-            ac-&gt;set_attrib (&quot;player&quot;, Value(1.0));
++            ac-&gt;setAttr (&quot;player&quot;, Value(1.0));
+             break;
+         case MarbleType_Meditation:
+             if (have_black_marble &amp;&amp; !level.getHarmlessMeditationMarbles()) {
+                 // # example: Oxyd Extra #28
+                 ac = MakeActor (ac_killerball);
+-//                ac-&gt;set_attrib (&quot;player&quot;, Value(0.0));
+-                ac-&gt;set_attrib (&quot;mouseforce&quot;, Value (1.0));
+-                ac-&gt;set_attrib (&quot;controllers&quot;, Value (3.0));
++//                ac-&gt;setAttr (&quot;player&quot;, Value(0.0));
++                ac-&gt;setAttr (&quot;mouseforce&quot;, Value (1.0));
++                ac-&gt;setAttr (&quot;controllers&quot;, Value (3.0));
+             }
+             else {
+                 ac = MakeActor (ac_meditation);
+                 nmeditationmarbles += 1;
+ 
+                 if (config.twoplayers &amp;&amp; (nmeditationmarbles % 2) == 0)
+-                    ac-&gt;set_attrib(&quot;player&quot;, Value(1.0));
++                    ac-&gt;setAttr(&quot;player&quot;, Value(1.0));
+                 else
+-                    ac-&gt;set_attrib (&quot;player&quot;, Value(0.0));
++                    ac-&gt;setAttr (&quot;player&quot;, Value(0.0));
+             }
+ 
+             if (minfo.is_default(MI_FORCE)) {
+-                ac-&gt;set_attrib(&quot;mouseforce&quot;, Value(1.0));
++                ac-&gt;setAttr(&quot;mouseforce&quot;, Value(1.0));
+             }
+             else {
+-                ac-&gt;set_attrib(&quot;mouseforce&quot;, Value(minfo.get_value(MI_FORCE) / 32.0)); // just a guess
++                ac-&gt;setAttr(&quot;mouseforce&quot;, Value(minfo.get_value(MI_FORCE) / 32.0)); // just a guess
+             }
+             break;
+         case MarbleType_Jack:
+             ac = MakeActor (ac_top);
+             if (!minfo.is_default(MI_FORCE)) {
+                 double force = minfo.get_value(MI_FORCE) / 4; // just a guess
+-                ac-&gt;set_attrib(&quot;force&quot;, Value(force) );
++                ac-&gt;setAttr(&quot;force&quot;, Value(force) );
+                 enigma::Log &lt;&lt; &quot;Set jack force to &quot; &lt;&lt; force &lt;&lt; endl;
+             }
+             if (!minfo.is_default(MI_RANGE)) {
+                 double range = minfo.get_value(MI_RANGE) / 32.0; // value seems to contain distance in pixels
+-                ac-&gt;set_attrib(&quot;range&quot;, Value(range) );
++                ac-&gt;setAttr(&quot;range&quot;, Value(range) );
+                 enigma::Log &lt;&lt; &quot;Set jack range to &quot; &lt;&lt; range &lt;&lt; endl;
+             }
+             break;
+@@ -539,9 +539,9 @@
+             double range = minfo.get_value (MI_RANGE, 100) / 32.0;
+             int gohome = minfo.get_value (MI_GOHOME, 1);
+ 
+-            ac-&gt;set_attrib (&quot;force&quot;, force);
+-            ac-&gt;set_attrib (&quot;range&quot;, range);
+-            ac-&gt;set_attrib (&quot;gohome&quot;, Value (gohome));
++            ac-&gt;setAttr (&quot;force&quot;, force);
++            ac-&gt;setAttr (&quot;range&quot;, range);
++            ac-&gt;setAttr (&quot;gohome&quot;, Value (gohome));
+ 
+             enigma::Log &lt;&lt; &quot;rotor force &quot; &lt;&lt; force &lt;&lt; endl;
+             enigma::Log &lt;&lt; &quot;rotor range &quot; &lt;&lt; range &lt;&lt; endl;
+@@ -554,25 +554,25 @@
+             int levelw = level.getWidth();
+             if (!minfo.is_default(MI_HORSETARGET1)) {
+                 int targetpos = minfo.get_value(MI_HORSETARGET1);
+-                ac-&gt;set_attrib(&quot;target1&quot;, ecl::strf(&quot;%d %d&quot;, 
++                ac-&gt;setAttr(&quot;target1&quot;, ecl::strf(&quot;%d %d&quot;, 
+                                                    targetpos % levelw, 
+                                                    int(targetpos / levelw)));
+             }
+             if (!minfo.is_default(MI_HORSETARGET2)) {
+                 int targetpos = minfo.get_value(MI_HORSETARGET2);
+-                ac-&gt;set_attrib(&quot;target2&quot;, ecl::strf(&quot;%d %d&quot;, 
++                ac-&gt;setAttr(&quot;target2&quot;, ecl::strf(&quot;%d %d&quot;, 
+                                                    targetpos % levelw, 
+                                                    int(targetpos / levelw)));
+             }
+             if (!minfo.is_default(MI_HORSETARGET3)) {
+                 int targetpos = minfo.get_value(MI_HORSETARGET3);
+-                ac-&gt;set_attrib(&quot;target3&quot;, ecl::strf(&quot;%d %d&quot;, 
++                ac-&gt;setAttr(&quot;target3&quot;, ecl::strf(&quot;%d %d&quot;, 
+                                                    targetpos % levelw, 
+                                                    int(targetpos / levelw)));
+             }
+             if (!minfo.is_default(MI_HORSETARGET4)) {
+                 int targetpos = minfo.get_value(MI_HORSETARGET4);
+-                ac-&gt;set_attrib(&quot;target4&quot;, ecl::strf(&quot;%d %d&quot;, 
++                ac-&gt;setAttr(&quot;target4&quot;, ecl::strf(&quot;%d %d&quot;, 
+                                                    targetpos % levelw, 
+                                                    int(targetpos / levelw)));
+             }
+
+Modified: trunk/src/st_switches.cc
+===================================================================
+--- trunk/src/st_switches.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/st_switches.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -195,7 +195,7 @@
+ LaserTimeSwitch::LaserTimeSwitch(const char *kind)
+     : LaserTimeSwitchBase(kind)
+ {
+-    set_attrib(&quot;delay&quot;, 1.8);
++    setAttr(&quot;delay&quot;, 1.8);
+ }
+ 
+ const char *LaserTimeSwitch::get_active_model() const { 
+
+Modified: trunk/src/stones/BlockerStone.cc
+===================================================================
+--- trunk/src/stones/BlockerStone.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/stones/BlockerStone.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -94,7 +94,7 @@
+                 SetItem(get_pos(), it);
+                 transferIdentity(it);
+                 if (Value v = getAttr(&quot;autoclose&quot;))
+-                    it-&gt;set_attrib(&quot;autoclose&quot;, v); 
++                    it-&gt;setAttr(&quot;autoclose&quot;, v); 
+                 SendMessage(it, &quot;_performaction&quot;);
+                 KillStone(get_pos());
+                 break;
+@@ -141,7 +141,7 @@
+                 state = newState;
+                 init_model();
+                 if (newState == SOLID) {
+-                    Object::set_attrib(&quot;kind&quot;, &quot;st_blocker&quot;);
++                    Object::setAttr(&quot;kind&quot;, &quot;st_blocker&quot;);
+                 }
+             }
+         }
+
+Modified: trunk/src/stones/BoulderStone.cc
+===================================================================
+--- trunk/src/stones/BoulderStone.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/stones/BoulderStone.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -27,18 +27,18 @@
+     BoulderStone::BoulderStone(Direction dir) {
+         state = INIT;
+         // do not use set_dir, because this will set the state to ACTIVE
+-        Object::set_attrib(&quot;direction&quot;, dir);
++        Object::setAttr(&quot;direction&quot;, dir);
+     }
+     
+-    void BoulderStone::set_attrib(const string&amp; key, const Value &amp;val) {
++    void BoulderStone::setAttr(const string&amp; key, const Value &amp;val) {
+         if (key == &quot;direction&quot;) {
+             if (isDisplayable())
+                 setDir(to_direction(val));
+             else
+-                Object::set_attrib(key, val);
++                Object::setAttr(key, val);
+             return;
+         }
+-        PhotoStone::set_attrib(key, val);
++        PhotoStone::setAttr(key, val);
+     }
+ 
+     Value BoulderStone::message(const Message &amp;m) {
+@@ -150,7 +150,7 @@
+     
+     void BoulderStone::setDir(Direction d) {
+         if (d != getDir() &amp;&amp; (state != FALLING)) {
+-            Object::set_attrib(&quot;direction&quot;, d);
++            Object::setAttr(&quot;direction&quot;, d);
+             state = ACTIVE;   // if turned by it-magicwand -&gt; allow triggering
+             triggerObstacle(getDir(), true);
+             init_model();
+
+Modified: trunk/src/stones/BoulderStone.hh
+===================================================================
+--- trunk/src/stones/BoulderStone.hh	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/stones/BoulderStone.hh	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -44,7 +44,7 @@
+         BoulderStone(Direction dir = NORTH);
+         
+         // Object interface
+-        virtual void set_attrib(const string&amp; key, const Value &amp;val);
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
+         virtual Value message(const Message &amp;m);
+         
+         // StateObject interface
+
+Modified: trunk/src/stones/ClusterStone.cc
+===================================================================
+--- trunk/src/stones/ClusterStone.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/stones/ClusterStone.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -22,19 +22,19 @@
+ 
+ namespace enigma {
+     ClusterStone::ClusterStone(std::string classname, std::string connections) : Stone(classname.c_str()) {
+-        set_attrib(&quot;connections&quot;, connections);
++        setAttr(&quot;connections&quot;, connections);
+     }
+     
+-    void ClusterStone::set_attrib(const string&amp; key, const Value &amp;val) {
++    void ClusterStone::setAttr(const string&amp; key, const Value &amp;val) {
+         if (key == &quot;connections&quot; || key == &quot;faces&quot; || key == &quot;cluster&quot;) {
+-            Stone::set_attrib(key, val);
++            Stone::setAttr(key, val);
+             if (isDisplayable()) {
+                 autoLeaveCluster();
+                 autoJoinCluster();
+             }
+             return;
+         }
+-        Stone::set_attrib(key, val);
++        Stone::setAttr(key, val);
+     }
+     
+     Value ClusterStone::message(const Message &amp;m) {
+@@ -68,21 +68,21 @@
+                 Value neighbourCluster = neighbour-&gt;getAttr(&quot;cluster&quot;);
+                 if (myCluster) {
+                     if (myCluster == neighbourCluster) {
+-                        set_attrib(&quot;$connections&quot;, getConnections() | to_bits(d));
+-                        neighbour-&gt;set_attrib(&quot;$connections&quot;, neighbour-&gt;getConnections() | to_bits(reverse(d)));
++                        setAttr(&quot;$connections&quot;, getConnections() | to_bits(d));
++                        neighbour-&gt;setAttr(&quot;$connections&quot;, neighbour-&gt;getConnections() | to_bits(reverse(d)));
+                     } else if (!neighbourCluster &amp;&amp; neighbour-&gt;getConnections() &amp; to_bits(reverse(d))) {
+-                        set_attrib(&quot;$connections&quot;, getConnections() | to_bits(d));
++                        setAttr(&quot;$connections&quot;, getConnections() | to_bits(d));
+                     } else {
+-                        set_attrib(&quot;$connections&quot;, getConnections() &amp; (ALL_DIRECTIONS ^ to_bits(d))); // clear connection
++                        setAttr(&quot;$connections&quot;, getConnections() &amp; (ALL_DIRECTIONS ^ to_bits(d))); // clear connection
+                     }
+                 } else if (neighbourCluster)  {// I have fixed connections -&gt; adapt neighbour
+                     if (getConnections() &amp; to_bits(d))
+-                        neighbour-&gt;set_attrib(&quot;$connections&quot;, neighbour-&gt;getConnections() | to_bits(reverse(d)));
++                        neighbour-&gt;setAttr(&quot;$connections&quot;, neighbour-&gt;getConnections() | to_bits(reverse(d)));
+                     else
+-                        neighbour-&gt;set_attrib(&quot;$connections&quot;, neighbour-&gt;getConnections() &amp; (ALL_DIRECTIONS ^ to_bits(reverse(d))));
++                        neighbour-&gt;setAttr(&quot;$connections&quot;, neighbour-&gt;getConnections() &amp; (ALL_DIRECTIONS ^ to_bits(reverse(d))));
+                 }
+             } else if (myCluster) { // no neighbour -&gt; no connection
+-                set_attrib(&quot;$connections&quot;, getConnections() &amp; (ALL_DIRECTIONS ^ to_bits(d))); // clear connection
++                setAttr(&quot;$connections&quot;, getConnections() &amp; (ALL_DIRECTIONS ^ to_bits(d))); // clear connection
+             }
+         }
+     }
+@@ -94,7 +94,7 @@
+             Stone *neighbour = GetStone(move(p, d));
+             if (neighbour != NULL &amp;&amp; std::string(neighbour-&gt;get_kind()) == get_kind() 
+                     &amp;&amp; neighbour-&gt;getAttr(&quot;cluster&quot;)) {
+-                neighbour-&gt;set_attrib(&quot;$connections&quot;, neighbour-&gt;getConnections() &amp; (ALL_DIRECTIONS ^ to_bits(reverse(d))));
++                neighbour-&gt;setAttr(&quot;$connections&quot;, neighbour-&gt;getConnections() &amp; (ALL_DIRECTIONS ^ to_bits(reverse(d))));
+             }
+         }
+     }
+
+Modified: trunk/src/stones/ClusterStone.hh
+===================================================================
+--- trunk/src/stones/ClusterStone.hh	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/stones/ClusterStone.hh	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -34,7 +34,7 @@
+         ClusterStone(std::string classname, std::string connections);
+         
+         // Object interface
+-        virtual void set_attrib(const string&amp; key, const Value &amp;val);
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
+         virtual Value message(const Message &amp;m);
+         // GridObject interface
+         virtual void on_creation(GridPos p);
+
+Modified: trunk/src/stones/ConnectiveStone.hh
+===================================================================
+--- trunk/src/stones/ConnectiveStone.hh	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/stones/ConnectiveStone.hh	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -31,10 +31,10 @@
+     class ConnectiveStone : public Stone {
+     public:
+         ConnectiveStone(const char *kind, int connections): Stone(kind) {
+-            set_attrib(&quot;connections&quot;, connections);
++            setAttr(&quot;connections&quot;, connections);
+         }
+         ConnectiveStone(int connections) {
+-            set_attrib(&quot;connections&quot;, connections);
++            setAttr(&quot;connections&quot;, connections);
+         }
+ 
+         DirectionBits get_connections() const {
+@@ -46,11 +46,11 @@
+         }
+ 
+         // temp. workarounds until this class gets eliminated
+-        virtual void set_attrib(const string&amp; key, const Value &amp;val) {
++        virtual void setAttr(const string&amp; key, const Value &amp;val) {
+             if (key == &quot;connections&quot;)
+-                Object::set_attrib(key, val);  // bypass GridObject
++                Object::setAttr(key, val);  // bypass GridObject
+             else
+-                Stone::set_attrib(key, val);
++                Stone::setAttr(key, val);
+         }
+         
+         virtual Value getAttr(const string &amp;key) const {
+
+Modified: trunk/src/stones/KeySwitch.cc
+===================================================================
+--- trunk/src/stones/KeySwitch.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/stones/KeySwitch.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -26,7 +26,7 @@
+ 
+ namespace enigma {
+     KeySwitch::KeySwitch() : Stone () {
+-        set_attrib(&quot;keycode&quot;, Value(1));
++        setAttr(&quot;keycode&quot;, Value(1));
+     }
+ 
+     void KeySwitch::setState(int extState) {
+@@ -61,7 +61,7 @@
+             if (state == ON) {
+                 if (!inv-&gt;is_full()) {
+                     Item *key = MakeItem(&quot;it-key&quot;);
+-                    key-&gt;set_attrib (&quot;keycode&quot;, getAttr(&quot;keycode&quot;));
++                    key-&gt;setAttr(&quot;keycode&quot;, getAttr(&quot;keycode&quot;));
+                     inv-&gt;add_item(key);
+                     toggle = true;
+                 }
+
+Modified: trunk/src/stones/OxydStone.cc
+===================================================================
+--- trunk/src/stones/OxydStone.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/stones/OxydStone.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -151,7 +151,7 @@
+         for (int i = 0; i &lt; numColors; i++) {
+             if (colorsUsageCount[i] % 2 == 1) {
+                 if (autocoloredOxyds.size() &gt; 0) {
+-                    autocoloredOxyds.back()-&gt;set_attrib(&quot;oxydcolor&quot;, i);
++                    autocoloredOxyds.back()-&gt;setAttr(&quot;oxydcolor&quot;, i);
+                     autocoloredOxyds.pop_back();
+                     colorsUsageCount[i]++;
+                 } else if (onlyPairs) {
+@@ -176,7 +176,7 @@
+             if (colorsUsageCount[c] &lt;= 2*(dc/2/numColors) + 1) {
+                 lastColor = c;
+                 lastObject = autocoloredOxyds.back();
+-                lastObject-&gt;set_attrib(&quot;oxydcolor&quot;, c);
++                lastObject-&gt;setAttr(&quot;oxydcolor&quot;, c);
+                 autocoloredOxyds.pop_back();
+                 colorsUsageCount[c]++;
+             }
+@@ -184,7 +184,7 @@
+         }
+         // substitute odd oxyd with a fake one
+         if (!onlyPairs &amp;&amp; lastObject != NULL) {
+-            lastObject-&gt;set_attrib(&quot;oxydcolor&quot;, FAKE);
++            lastObject-&gt;setAttr(&quot;oxydcolor&quot;, FAKE);
+             colorsUsageCount[lastColor]--;
+             shuffledFakeCount++;
+         } else {
+@@ -234,8 +234,8 @@
+     
+                 Value icolor = o1-&gt;getAttr(&quot;oxydcolor&quot;); 
+     
+-                o1-&gt;set_attrib(&quot;oxydcolor&quot;, o2-&gt;getAttr(&quot;oxydcolor&quot;));
+-                o2-&gt;set_attrib(&quot;oxydcolor&quot;, icolor);
++                o1-&gt;setAttr(&quot;oxydcolor&quot;, o2-&gt;getAttr(&quot;oxydcolor&quot;));
++                o2-&gt;setAttr(&quot;oxydcolor&quot;, icolor);
+             }
+         }
+     }
+@@ -676,13 +676,13 @@
+                     int i = IntegerRand(1, remainFakeCount + remainFartCount + remainBoldCount);  // use enigma's internal rand!
+                     if (i &lt;= remainFakeCount) {
+                         remainFakeCount--;
+-                        oxyd-&gt;set_attrib(&quot;oxydcolor&quot;, FAKE);
++                        oxyd-&gt;setAttr(&quot;oxydcolor&quot;, FAKE);
+                     } else if ( i &lt;= remainFakeCount + remainFartCount) {
+                         remainFartCount--;
+-                        oxyd-&gt;set_attrib(&quot;oxydcolor&quot;, FART);
++                        oxyd-&gt;setAttr(&quot;oxydcolor&quot;, FART);
+                     } else {
+                         remainBoldCount--;
+-                        oxyd-&gt;set_attrib(&quot;oxydcolor&quot;, BOLD);
++                        oxyd-&gt;setAttr(&quot;oxydcolor&quot;, BOLD);
+                     }
+                     (*itr).isColored = true;
+                 } else {
+@@ -700,13 +700,13 @@
+                     else if (to_bool(oxyd1-&gt;getAttr(&quot;noshuffle&quot;)) || oxyd1-&gt;state != CLOSED) {
+                         // a standard oxyd (pseudo is impossible) that requires a color
+                         c = oxyd1-&gt;getAttr(&quot;oxydcolor&quot;);
+-                        oxyd2-&gt;set_attrib(&quot;oxydcolor&quot;, c);
++                        oxyd2-&gt;setAttr(&quot;oxydcolor&quot;, c);
+                         colorsRemainCount[c] -= 2;
+                         (*itr).isColored = true;
+                     }
+                     else if (to_bool(oxyd2-&gt;getAttr(&quot;noshuffle&quot;)) || oxyd2-&gt;state != CLOSED) {
+                         c = oxyd2-&gt;getAttr(&quot;oxydcolor&quot;);
+-                        oxyd1-&gt;set_attrib(&quot;oxydcolor&quot;, c);
++                        oxyd1-&gt;setAttr(&quot;oxydcolor&quot;, c);
+                         colorsRemainCount[c] -= 2;
+                         (*itr).isColored = true;
+                     }
+@@ -733,8 +733,8 @@
+         int ci = 0;
+         for (std::list&lt;ShuffleFrame&gt;::iterator itr = shuffleStack.begin(); itr != shuffleStack.end(); ++itr) {
+             if (!(*itr).isColored &amp;&amp; (*itr).selOxyd1Mask != 0) {
+-                levelOxyds[oxydId((*itr).selOxyd1Mask)]-&gt;set_attrib(&quot;oxydcolor&quot;, colorPairs[ci]);
+-                levelOxyds[oxydId((*itr).selOxyd2Mask)]-&gt;set_attrib(&quot;oxydcolor&quot;, colorPairs[ci]);
++                levelOxyds[oxydId((*itr).selOxyd1Mask)]-&gt;setAttr(&quot;oxydcolor&quot;, colorPairs[ci]);
++                levelOxyds[oxydId((*itr).selOxyd2Mask)]-&gt;setAttr(&quot;oxydcolor&quot;, colorPairs[ci]);
+                 ci++;
+             }
+         }
+@@ -837,8 +837,8 @@
+     // Instance Methods
+     
+     OxydStone::OxydStone(std::string flavor) : PhotoStone(&quot;st_oxyd&quot;) {
+-        set_attrib(&quot;flavor&quot;, flavor);
+-        set_attrib(&quot;oxydcolor&quot;, AUTO);
++        setAttr(&quot;flavor&quot;, flavor);
++        setAttr(&quot;oxydcolor&quot;, AUTO);
+     }
+     
+     OxydStone * OxydStone::clone() { 
+@@ -874,14 +874,14 @@
+         return PhotoStone::message(m);
+     }
+     
+-    void OxydStone::set_attrib(const string&amp; key, const Value &amp;val) {
++    void OxydStone::setAttr(const string&amp; key, const Value &amp;val) {
+         if (key == &quot;oxydcolor&quot;) 
+             ASSERT(state == CLOSED, XLevelRuntime, &quot;OxydStone error - recoloring of an not closed stone&quot;);
+         else if (key == &quot;flavor&quot;) {
+             ASSERT(state == CLOSED, XLevelRuntime, &quot;OxydStone error - reflavoring of an not closed stone&quot;);
+         }
+         
+-        PhotoStone::set_attrib(key, val);   // do value checking
++        PhotoStone::setAttr(key, val);   // do value checking
+         
+         if (key == &quot;flavor&quot; &amp;&amp; IsInsideLevel(get_pos()))
+             set_model(string(&quot;st-oxyd&quot;)+(std::string)val);
+
+Modified: trunk/src/stones/OxydStone.hh
+===================================================================
+--- trunk/src/stones/OxydStone.hh	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/stones/OxydStone.hh	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -84,7 +84,7 @@
+         virtual OxydStone * clone();
+         virtual void dispose();
+         virtual Value message(const Message &amp;m);
+-        virtual void set_attrib(const string&amp; key, const Value &amp;val);
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
+ 
+         // StateObject interface
+         virtual int maxState();
+
+Modified: trunk/src/stones/Switch.cc
+===================================================================
+--- trunk/src/stones/Switch.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/stones/Switch.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -25,9 +25,9 @@
+ namespace enigma {
+     Switch::Switch(Value color, bool instant) : Stone () {
+         if (color.getType() != Value::NIL)
+-            set_attrib(&quot;color&quot;, color);
++            setAttr(&quot;color&quot;, color);
+         if (instant)
+-            set_attrib(&quot;instant&quot;, true);
++            setAttr(&quot;instant&quot;, true);
+         state = OFF;
+     }
+ 
+@@ -35,14 +35,14 @@
+         return &quot;st_switch&quot;;
+     }
+     
+-    void Switch::set_attrib(const string&amp; key, const Value &amp;val) {
++    void Switch::setAttr(const string&amp; key, const Value &amp;val) {
+         if (isDisplayable())
+             if (key == &quot;color&quot; &amp;&amp; state &lt;= ON) {   // recoloring of a switch
+-                Stone::set_attrib(key, val);
++                Stone::setAttr(key, val);
+                 init_model();
+                 return;
+             }
+-        Stone::set_attrib(key, val);
++        Stone::setAttr(key, val);
+     }
+     
+     Value Switch::message(const Message &amp;m) {
+
+Modified: trunk/src/stones/Switch.hh
+===================================================================
+--- trunk/src/stones/Switch.hh	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/stones/Switch.hh	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -51,7 +51,7 @@
+         
+         // Object interface
+         virtual std::string getClass() const;
+-        virtual void set_attrib(const string&amp; key, const Value &amp;val);
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
+         virtual Value message(const Message &amp;m);
+         
+         // StateObject interface
+
+Modified: trunk/src/stones/WindowStone.cc
+===================================================================
+--- trunk/src/stones/WindowStone.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/stones/WindowStone.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -25,7 +25,7 @@
+ 
+ namespace enigma {
+     WindowStone::WindowStone(std::string faces) : Stone(), breakingFaces(NODIRBIT) {
+-        set_attrib(&quot;faces&quot;, faces);
++        setAttr(&quot;faces&quot;, faces);
+     }
+     
+     Value WindowStone::message(const Message &amp;m) {
+@@ -55,7 +55,7 @@
+ 
+             else if (impulse &gt; 20) {
+                 DirectionBits remainigFaces = (DirectionBits)(getFaces() &amp; ~sc.faces);  // remove breaking face
+-                Object::set_attrib(&quot;$connections&quot;, ALL_DIRECTIONS ^ remainigFaces);     // avoid init of model
++                Object::setAttr(&quot;$connections&quot;, ALL_DIRECTIONS ^ remainigFaces);     // avoid init of model
+                 sound_event (&quot;shatter&quot;);
+                 state = (remainigFaces == NODIRBIT) ? FINALBREAK : BREAK;
+                 set_anim(&quot;st_window_anim&quot;);  // TODO anim with remaining unbroken faces
+@@ -101,7 +101,7 @@
+                     !has_dir(stone-&gt;getFaces(), reverse(dir)))) {
+                 DirectionBits remainigFaces = (DirectionBits)((faces &amp; ~to_bits(reverse(dir)))
+                         |to_bits(dir));  // move face
+-                Object::set_attrib(&quot;$connections&quot;, ALL_DIRECTIONS ^ remainigFaces);     // avoid init of model
++                Object::setAttr(&quot;$connections&quot;, ALL_DIRECTIONS ^ remainigFaces);     // avoid init of model
+                 init_model();
+                 return true;
+             }
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/stones.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -360,7 +360,7 @@
+         ChargeStone(const char *kind, double charge)
+         : Stone(kind)
+         {
+-            set_attrib(&quot;charge&quot;, charge);
++            setAttr(&quot;charge&quot;, charge);
+         }
+         virtual Value message(const Message &amp;m) {
+             if (server::GameCompatibility == enigma::GAMET_PEROXYD &amp;&amp; m.message == &quot;signal&quot;) {
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/stones_complex.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -363,7 +363,7 @@
+             return to_direction(getAttr(&quot;orientation&quot;));
+         }
+         void set_orientation(Direction dir) {
+-            set_attrib(&quot;orientation&quot;, Value(dir));
++            setAttr(&quot;orientation&quot;, Value(dir));
+         }
+ 
+         virtual bool actor_may_pass (Actor *a) = 0;
+@@ -737,7 +737,7 @@
+   state (IDLE), 
+   illumination (NODIRBIT)
+ {
+-    set_attrib(&quot;oxyd&quot;, int(oxyd1_compatible_));
++    setAttr(&quot;oxyd&quot;, int(oxyd1_compatible_));
+ }
+ 
+ 
+@@ -972,10 +972,10 @@
+         int cn = GetStone(c[size-1])-&gt;getAttr(&quot;connections&quot;);
+         for (size_t i=size-1; i&gt;0; --i) {
+             PuzzleStone *st = dynamic_cast&lt;PuzzleStone*&gt; (GetStone (c[i]));
+-            st-&gt;set_attrib (&quot;connections&quot;, GetStone(c[i-1])-&gt;getAttr(&quot;connections&quot;));
++            st-&gt;setAttr(&quot;connections&quot;, GetStone(c[i-1])-&gt;getAttr(&quot;connections&quot;));
+             st-&gt;init_model();
+         }
+-        GetStone(c[0])-&gt;set_attrib (&quot;connections&quot;, cn);
++        GetStone(c[0])-&gt;setAttr(&quot;connections&quot;, cn);
+         dynamic_cast&lt;PuzzleStone*&gt; (GetStone(c[0]))-&gt;init_model();
+     }
+ }
+@@ -1395,7 +1395,7 @@
+         Door(const char *type=&quot;h&quot;, bool open=false)
+         : DoorBase(&quot;st-door&quot;, open ? OPEN : CLOSED)
+         {
+-            set_attrib(&quot;type&quot;, type);
++            setAttr(&quot;type&quot;, type);
+         }
+     private:
+         virtual string opening_sound() const { return &quot;dooropen&quot;; }
+@@ -1498,7 +1498,7 @@
+ 
+         enum Holes { SMALL = 1, MEDIUM = 2, LARGE = 4};
+         static Holes smallest_hole(Holes s);
+-        void set_holes(Holes h) { set_attrib(&quot;holes&quot;, h); }
++        void set_holes(Holes h) { setAttr(&quot;holes&quot;, h); }
+ 
+     public:
+         ShogunStone(int holes=SMALL) {
+@@ -1517,7 +1517,7 @@
+         }
+ 
+         void add_hole(Holes h) {
+-            set_attrib(&quot;holes&quot;, get_holes() | h);
++            setAttr(&quot;holes&quot;, get_holes() | h);
+             init_model();
+             notify_item();
+         }
+@@ -2470,7 +2470,7 @@
+     public:
+         ChessStone (int color) {
+             newcolor = color;
+-            Stone::set_attrib(&quot;color&quot;, color);
++            Stone::setAttr(&quot;color&quot;, color);
+             destination = GridPos(0,0);
+             capture_retry = 0;
+             rememberFalling = false;
+@@ -2482,7 +2482,7 @@
+         }
+         void init_model();
+         void animcb();
+-        void set_attrib(const string&amp; key, const Value &amp;val);
++        void setAttr(const string&amp; key, const Value &amp;val);
+         virtual Value message(const Message &amp;m);
+         void actor_hit(const StoneContact &amp;sc);
+         void on_impulse(const Impulse&amp; impulse) {}
+@@ -2714,11 +2714,11 @@
+         return state == newstate;
+     }
+ 
+-    void ChessStone::set_attrib(const string&amp; key, const Value &amp;val) {
++    void ChessStone::setAttr(const string&amp; key, const Value &amp;val) {
+         if(key == &quot;color&quot;) {
+             set_color(to_int(val));
+         } else
+-            Stone::set_attrib(key, val);
++            Stone::setAttr(key, val);
+     }
+ 
+     void ChessStone::set_color(int color) {
+@@ -2726,7 +2726,7 @@
+             ASSERT(0, XLevelRuntime, &quot;ChessStone: argument to color not 0 or 1&quot;);
+         }
+         if(state == IDLE) {
+-            Stone::set_attrib(&quot;color&quot;, color);
++            Stone::setAttr(&quot;color&quot;, color);
+             newcolor = color;
+             init_model();
+         } else {
+
+Modified: trunk/src/stones_internal.hh
+===================================================================
+--- trunk/src/stones_internal.hh	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/stones_internal.hh	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -85,7 +85,7 @@
+         OnOffStone(const char *kind) 
+         : Stone (kind) 
+         { 
+-            set_attrib(&quot;on&quot;, 0.0); 
++            setAttr(&quot;on&quot;, 0.0); 
+         }
+ 
+         bool is_on() const { 
+@@ -94,7 +94,7 @@
+ 
+         virtual void set_on(bool newon) {
+             if (newon != is_on()) {
+-                set_attrib(&quot;on&quot;, enigma::Value(newon));
++                setAttr(&quot;on&quot;, enigma::Value(newon));
+                 init_model();
+                 notify_onoff(newon);
+             }
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/stones_simple.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -1218,8 +1218,8 @@
+         }
+     public:
+         RubberBandStone () {
+-            set_attrib(&quot;length&quot;, 1.0);
+-            set_attrib(&quot;strength&quot;, 10.0);
++            setAttr(&quot;length&quot;, 1.0);
++            setAttr(&quot;strength&quot;, 10.0);
+         }
+     };
+     DEF_TRAITSM(RubberBandStone, &quot;st-rubberband&quot;, st_rubberband, MOVABLE_STANDARD);
+@@ -1268,10 +1268,10 @@
+         CLONEOBJ(TimerStone);
+     public:
+         TimerStone() : OnOffStone(&quot;st-timer&quot;), m_signalvalue(1) {
+-            set_attrib(&quot;interval&quot;, 1.0);
+-            set_attrib(&quot;loop&quot;, true);
+-            set_attrib(&quot;on&quot;, 1.0);
+-            set_attrib(&quot;invisible&quot;, false);
++            setAttr(&quot;interval&quot;, 1.0);
++            setAttr(&quot;loop&quot;, true);
++            setAttr(&quot;on&quot;, 1.0);
++            setAttr(&quot;invisible&quot;, false);
+ 
+             // set_on(true);   DOESN'T WORK! calls init_model()
+         }
+@@ -1546,7 +1546,7 @@
+     class ActorImpulseBase : public Stone {
+     public:
+         ActorImpulseBase(const char *kind) : Stone(kind), state(IDLE) {
+-//             set_attrib(&quot;force&quot;, Value());
++//             setAttr(&quot;force&quot;, Value());
+         }
+ 
+     protected:
+@@ -1662,7 +1662,7 @@
+         CLONEOBJ(FakeOxydStone);
+     public:
+         FakeOxydStone() : Stone(&quot;st-fakeoxyd&quot;), state(IDLE) {
+-            set_attrib(&quot;blinking&quot;, 0.0);
++            setAttr(&quot;blinking&quot;, 0.0);
+         }
+     private:
+         enum State { IDLE, BLINKING } state;
+@@ -1671,7 +1671,7 @@
+                 set_anim(&quot;st-fakeoxyd-blink&quot;);
+                 sound_event (&quot;fakeoxyd&quot;);
+                 state = BLINKING;
+-                set_attrib(&quot;blinking&quot;, 1.0);
++                setAttr(&quot;blinking&quot;, 1.0);
+             }
+         }
+         const char *collision_sound() {
+@@ -1680,7 +1680,7 @@
+         void animcb() {
+             set_model(&quot;st-fakeoxyd&quot;);
+             state = IDLE;
+-            set_attrib(&quot;blinking&quot;, 0.0);
++            setAttr(&quot;blinking&quot;, 0.0);
+         }
+     };
+ }
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-02-08 17:30:00 UTC (rev 1032)
++++ trunk/src/world.cc	2008-02-09 18:41:37 UTC (rev 1033)
+@@ -359,7 +359,7 @@
+         unique_name = name + ecl::strf(&quot;%d&quot;,i);
+     }
+     m_objnames.insert(unique_name, obj); // [name] = obj;
+-    obj-&gt;set_attrib(&quot;name&quot;, unique_name);
++    obj-&gt;setAttr(&quot;name&quot;, unique_name);
+ }
+ 
+ void World::unname (Object *obj)
+@@ -367,7 +367,7 @@
+     ASSERT(obj, XLevelRuntime, &quot;unname: no object given&quot;);
+     if (Value v = obj-&gt;getAttr(&quot;name&quot;)) {
+         m_objnames.remove(v.to_string());
+-        obj-&gt;set_attrib(&quot;name&quot;, &quot;&quot;);   // TODO alist.hh add delete op
++        obj-&gt;setAttr(&quot;name&quot;, &quot;&quot;);   // TODO alist.hh add delete op
+     }
+ }
+ 
+@@ -1787,7 +1787,7 @@
+         if (src_id &gt;= it_wormhole_off &amp;&amp; src_id &lt;= it_wormhole_on) {
+ //            Log &lt;&lt; ecl::strf(&quot;AddSignal: Wormhole signal destination src=%i/%i-%d dest=%i/%i-%d msg='%s'\n&quot;,
+ //                srcloc.pos.x, srcloc.pos.y, srcloc.layer, dstloc.pos.x, dstloc.pos.y, dstloc.layer, msg.c_str());
+-            src-&gt;set_attrib(&quot;destination&quot;, GetFloor(dstloc.pos));  // use floor to guarantee existence
++            src-&gt;setAttr(&quot;destination&quot;, GetFloor(dstloc.pos));  // use floor to guarantee existence
+             return;
+         }
+     }
+@@ -1798,7 +1798,7 @@
+ //                srcloc.pos.x, srcloc.pos.y, srcloc.layer, dstloc.pos.x, dstloc.pos.y, dstloc.layer, msg.c_str());
+             TokenList tl = src-&gt;getAttr(&quot;destination&quot;);  // may be empty or may contain some tokens
+             tl.push_back(GetFloor(dstloc.pos));  // use floor to guarantee existence);
+-            src-&gt;set_attrib(&quot;destination&quot;, tl);
++            src-&gt;setAttr(&quot;destination&quot;, tl);
+             return;
+         }
+     }
+@@ -1832,7 +1832,7 @@
+         Log &lt;&lt; &quot;AddSignal for st-actorimpulse\n&quot;;
+         ObjectList ol = src-&gt;getDefaultedAttr(&quot;$!oxyd!destinations&quot;, Value(Value::GROUP));
+         ol.push_back(dstValue);
+-        src-&gt;set_attrib(&quot;$!oxyd!destinations&quot;, ol);
++        src-&gt;setAttr(&quot;$!oxyd!destinations&quot;, ol);
+         return;
+     }
+     
+@@ -1856,7 +1856,7 @@
+     if (src-&gt;getObjectType() == Object::ITEM) {
+         ItemID src_id = get_id(dynamic_cast&lt;Item *&gt;(src));
+         if (src_id &gt;= it_key_a &amp;&amp; src_id &lt;= it_key_c &amp;&amp; dst-&gt;is_kind(&quot;st_key&quot;)) {
+-            dst-&gt;set_attrib(&quot;keycode&quot;, src-&gt;getAttr(&quot;keycode&quot;));
++            dst-&gt;setAttr(&quot;keycode&quot;, src-&gt;getAttr(&quot;keycode&quot;));
+             return;
+         }
+     }
+@@ -1865,10 +1865,10 @@
+     // are not set by other means than this function:
+     TokenList targets = src-&gt;getDefaultedAttr(target_key, Value(Value::TOKENS));    
+     targets.push_back(dstValue);   // add this target to existing ones
+-    src-&gt;set_attrib(target_key, Value(targets));
++    src-&gt;setAttr(target_key, Value(targets));
+     TokenList actions = src-&gt;getDefaultedAttr(action_key, Value(Value::TOKENS));    
+     actions.push_back(Value(&quot;signal&quot;));   // add this target to existing ones
+-    src-&gt;set_attrib(action_key, Value(actions));
++    src-&gt;setAttr(action_key, Value(actions));
+ }
+ 
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000464.html">[Enigma-game-svn] r1032 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="000466.html">[Enigma-game-svn] r1034 - in trunk/src: . stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#465">[ date ]</a>
+              <a href="thread.html#465">[ thread ]</a>
+              <a href="subject.html#465">[ subject ]</a>
+              <a href="author.html#465">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

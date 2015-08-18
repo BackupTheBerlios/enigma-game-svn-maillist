@@ -1,0 +1,517 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1583 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1583%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200903092347.n29NlK8f003305%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001012.html">
+   <LINK REL="Next"  HREF="001014.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1583 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1583%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200903092347.n29NlK8f003305%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1583 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Mar 10 00:47:20 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001012.html">[Enigma-game-svn] r1582 - trunk/data/levels/enigma_experimental
+</A></li>
+        <LI>Next message: <A HREF="001014.html">[Enigma-game-svn] r1584 - in trunk: data src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1013">[ date ]</a>
+              <a href="thread.html#1013">[ thread ]</a>
+              <a href="subject.html#1013">[ subject ]</a>
+              <a href="author.html#1013">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-03-10 00:47:18 +0100 (Tue, 10 Mar 2009)
+New Revision: 1583
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/lua.cc
+   trunk/src/stones/PuzzleStone.cc
+Log:
+Trunk 1.1: new API
+- fix missing redraw of inventory on wo:add()
+- st_puzzle add messages:
+  - &quot;get_cluster&quot;: returns object group of all connected puzzle stones
+  - &quot;is_complete&quot;: returns bool, indicating if cluster is full connected
+- add group and positionlist operators:
+  - obj + grp = group of join of obj with group (same as &quot;grp + obj&quot;)
+  - po .. po = positionlist of the two positions
+  - polist +/- po/obj/tbl = new polist with offset added to all polist members
+  - grp1 == grp2 comparison
+  - negativ grp indices: grp[-1] = grp[#grp], ... grp[-#grp] = grp[1]
+- constant definitions:
+  - N,E,S,W,NE,NW,SE,SW as position vectors
+  - NEIGHBORS_4, NEIGHBORS_8, NEIGHBORS_CHESS as position lists
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2009-03-05 00:56:21 UTC (rev 1582)
++++ trunk/data/api2init.lua	2009-03-09 23:47:18 UTC (rev 1583)
+@@ -122,7 +122,7 @@
+ OXYD_QUAKE  = -3
+ OXYD_BOLD   = -4
+ 
+--- direction
++-- direction/orientations
+ NODIR = -1
+ WEST  = 0
+ SOUTH = 1
+@@ -139,16 +139,30 @@
+ SLASH      = 2
+ VERTICAL   = 3
+ 
+--- multidirections as used by st_chess
+-NNE = po(1, -2)
+-ENE = po(2, -1)
+-ESE = po(2, 1)
+-SSE = po(1, 2)
+-SSW = po(-1, 2)
+-WSW = po(-2, 1)
+-WNW = po(-2, -1)
+-NNW = po(-1, -2)
++-- direction offsets
++N = po(0, -1)
++E = po(1, 0)
++S = po(0, 1)
++W = po(-1, 0)
++NE = N + E
++NW = N + W
++SE = S + E
++SW = S + W
++NNE = N + NE
++ENE = E + NE
++ESE = E + SE
++SSE = S + SE
++SSW = S + SW
++WSW = W + SW
++WNW = W + NW
++NNW = N + NW
+ 
++-- neighbors
++
++NEIGHBORS_4     = W .. S .. E .. N
++NEIGHBORS_8     = NEIGHBORS_4 .. NW .. SW ..SE .. NE
++NEIGHBORS_CHESS = NNE .. ENE .. ESE .. SSE .. SSW .. WSW .. WNW .. NNW
++
+ -- essential
+ DISPENSIBLE   = 0
+ INDISPENSIBLE = 1
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2009-03-05 00:56:21 UTC (rev 1582)
++++ trunk/data/schemas/objects.xml	2009-03-09 23:47:18 UTC (rev 1583)
+@@ -106,6 +106,8 @@
+     &lt;msg name=&quot;flip&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;forcefire&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;get_adjacents&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;get_cluster&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;is_complete&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;grow&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;heat&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;hit&quot; type=&quot;object&quot;/&gt;
+@@ -1652,6 +1654,8 @@
+       &lt;attr name=&quot;intensity&quot; default=&quot;3&quot;/&gt;
+       &lt;attr name=&quot;state&quot; rw=&quot;r&quot;/&gt;
+       &lt;msg name=&quot;get_adjacents&quot;/&gt;
++      &lt;msg name=&quot;get_cluster&quot;/&gt;
++      &lt;msg name=&quot;is_complete&quot;/&gt;
+       &lt;msg name=&quot;pull_rotate&quot;/&gt;
+       &lt;msg name=&quot;push_rotate&quot;/&gt;
+       &lt;msg name=&quot;_scramble&quot;/&gt;
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2009-03-05 00:56:21 UTC (rev 1582)
++++ trunk/src/lua.cc	2009-03-09 23:47:18 UTC (rev 1583)
+@@ -343,7 +343,9 @@
+     lua_pushvalue(L, -3);
+     lua_rawseti(L, -2, 2);
+ 
+-    lua_setmetatable(L, -2);    
++    lua_setmetatable(L, -2);
++    
++    //TODO stack cleanup - remove x, y !? check usage first!
+     return 1;
+ }
+ 
+@@ -984,20 +986,21 @@
+     return 1;
+ }
+ 
+-static int newPosition(lua_State *L) {
++static int newPosition(lua_State *L, int idx =1) {
+     // (pos|obj|table|(num,num))
+-    if (is_table(L, 1)) {  // table 
+-        lua_rawgeti(L, 1, 1);
+-        lua_rawgeti(L, 1, 2);
+-    } else if (is_position(L, 1)) {
+-        lua_getmetatable(L, 1);
+-        lua_rawgeti(L, 2, 1);
+-        lua_rawgeti(L, 2, 2);
+-    } else if (is_object(L, 1)) {
++    if (is_table(L, idx)) {  // table 
++        lua_rawgeti(L, idx, 1);
++        lua_rawgeti(L, idx, 2);
++    } else if (is_position(L, idx)) {
++        lua_getmetatable(L, idx);
++        lua_rawgeti(L, -1, 1);
++        lua_rawgeti(L, -2, 2);
++        lua_remove(L, -3);     // remove metatable
++    } else if (is_object(L, idx)) {
+         lua_pushstring(L, &quot;x&quot;);
+-        lua_gettable(L, 1); 
++        lua_gettable(L, idx); 
+         lua_pushstring(L, &quot;y&quot;);
+-        lua_gettable(L, 1); 
++        lua_gettable(L, idx); 
+     }
+     
+     if ((lua_type(L, -2) != LUA_TNUMBER) || (lua_type(L, -1) != LUA_TNUMBER)) {
+@@ -1022,47 +1025,102 @@
+ }
+ 
+ static int addPositionsBase(lua_State *L, int factorArg2) {
+-    // (pos|obj|table) +|- (pos|obj|table)
+-    double x = 0;
+-    double y = 0;
+-    for (int i = 1; i&lt;=2; i++) {
+-        if (is_table(L, i)) {  // table
+-            lua_rawgeti(L, i, 1);
+-            lua_rawgeti(L, i, 2);
+-        } else if (is_position(L, i)) {
+-            lua_getmetatable(L, i);
+-            lua_rawgeti(L, -1, 1);
+-            lua_rawgeti(L, -2, 2);
+-            lua_remove(L, -3);
+-        } else if (is_object(L, i)) {
+-            lua_pushstring(L, &quot;x&quot;);
+-            lua_gettable(L, i); 
+-            lua_pushstring(L, &quot;y&quot;);
+-            lua_gettable(L, i); 
++    // (pos|obj|table|polist) +|- (pos|obj|table|polist)
++    if (!(is_polist(L, 1) || is_polist(L, 2) )) {
++        // add two positions resulting a new position
++        double x = 0;
++        double y = 0;
++        for (int i = 1; i&lt;=2; i++) {
++            if (is_table(L, i)) {  // table
++                lua_rawgeti(L, i, 1);
++                lua_rawgeti(L, i, 2);
++            } else if (is_position(L, i)) {
++                lua_getmetatable(L, i);
++                lua_rawgeti(L, -1, 1);
++                lua_rawgeti(L, -2, 2);
++                lua_remove(L, -3);
++            } else if (is_object(L, i)) {
++                lua_pushstring(L, &quot;x&quot;);
++                lua_gettable(L, i); 
++                lua_pushstring(L, &quot;y&quot;);
++                lua_gettable(L, i); 
++            } else {
++                throwLuaError(L, &quot;Invalid add position value type&quot;);
++            }
++            if ((lua_type(L, -2) != LUA_TNUMBER) || (lua_type(L, -1) != LUA_TNUMBER)) {
++                throwLuaError(L, &quot;Invalid add position value type&quot;);
++                return 0;
++            }            
++            x += (i == 1 ? 1 : factorArg2) *  lua_tonumber(L, -2);
++            y += (i == 1 ? 1 : factorArg2) *  lua_tonumber(L, -1);
++            lua_pop(L, 2);
++        }
++    
++        lua_pushnumber(L, x);
++        lua_pushnumber(L, y);
++    } else {
++        // add a position to a list of postions resulting a list of positions
++        PositionList pl;
++        PositionList newpl;
++        bool found = false;
++        if (is_polist(L, 1)) {
++            pl = toPositionList(L, 1);
++            found = true;
+         } else {
+-            throwLuaError(L, &quot;Invalid add position value type&quot;);
++            newPosition(L, 1);
+         }
+-        if ((lua_type(L, -2) != LUA_TNUMBER) || (lua_type(L, -1) != LUA_TNUMBER)) {
+-            throwLuaError(L, &quot;Invalid add position value type&quot;);
+-            return 0;
+-        }            
+-        x += (i == 1 ? 1 : factorArg2) *  lua_tonumber(L, -2);
+-        y += (i == 1 ? 1 : factorArg2) *  lua_tonumber(L, -1);
+-        lua_pop(L, 2);
++        if (is_polist(L, 2)) {
++            if (found)
++                throwLuaError(L, &quot;Addition of two position lists not supported&quot;);                
++            pl = toPositionList(L, 2);
++        } else {
++            newPosition(L, 2);
++        }
++        ecl::V2 offset = toPosition(L, -1);
++        lua_pop(L, 1);
++        for (PositionList::iterator itr = pl.begin(); itr != pl.end(); ++itr) {
++             ecl::V2 newpos = offset + factorArg2 * (ecl::V2)(*itr);
++             newpl.push_back(newpos);
++        }
++        return pushNewPolist(L, newpl);
+     }
+-
+-    lua_pushnumber(L, x);
+-    lua_pushnumber(L, y);
+     return pushNewPosition(L);
+ }
+ 
++static int joinGroup(lua_State *L) {
++    // (grp|obj) + (grp|obj)
++    if (!((is_group(L, 1) || is_object(L, 1)) &amp;&amp;  (is_group(L, 2) || is_object(L, 2)))) {
++        throwLuaError(L, &quot;Join Group - argument is no object or group&quot;);
++        return 0;
++    }
++    std::list&lt;Object *&gt; objects;
++    for (int j = 1; j &lt;= 2; j++) {
++        if (is_group(L, j)) {
++            lua_getmetatable(L, j);
++            int numObjects = lua_objlen(L, -1);
++            for (int i = 1; i &lt;= numObjects; ++i) {
++                lua_rawgeti(L, -1, i);  // the object
++                objects.push_back(to_object(L, -1));
++                lua_pop(L, 1);          // the object        
++            }
++            lua_pop(L, 1);          // the metatable        
++        } else {
++            objects.push_back(to_object(L, j));
++        }
++    }
++    return pushNewGroup(L, objects);    
++}
++
+ static int addPositions(lua_State *L) {
+-    // (pos|obj|table) + (pos|obj|table)
+-    return addPositionsBase(L, 1);
++    if (!(is_group(L, 1) || is_group(L, 2) ))
++        // (pos|obj|table|polist) + (pos|obj|table|polist)
++        return addPositionsBase(L, 1);
++    else
++        return joinGroup(L);
+ }
+     
+ static int subPositions(lua_State *L) {
+-    // (pos|obj|table) - (pos|obj|table)
++    // (pos|obj|table|polist) - (pos|obj|table|polist)
+     return addPositionsBase(L, -1);
+ }
+ 
+@@ -1405,7 +1463,7 @@
+     }
+     lua_pushnumber(L, double(p.x));
+     lua_pushnumber(L, double(p.y));
+-    return 2;    
++    return 2;
+ }
+ 
+ static int objectEquality(lua_State *L) {
+@@ -1580,31 +1638,7 @@
+     return pushNewGroup(L, objects);
+ }
+ 
+-static int joinGroup(lua_State *L) {
+-    // (grp|obj) + (grp|obj)
+-    if (!((is_group(L, 1) || is_object(L, 1)) &amp;&amp;  (is_group(L, 2) || is_object(L, 2)))) {
+-        throwLuaError(L, &quot;Join Group - argument is no object or group&quot;);
+-        return 0;
+-    }
+-    std::list&lt;Object *&gt; objects;
+-    for (int j = 1; j &lt;= 2; j++) {
+-        if (is_group(L, j)) {
+-            lua_getmetatable(L, j);
+-            int numObjects = lua_objlen(L, -1);
+-            for (int i = 1; i &lt;= numObjects; ++i) {
+-                lua_rawgeti(L, -1, i);  // the object
+-                objects.push_back(to_object(L, -1));
+-                lua_pop(L, 1);          // the object        
+-            }
+-            lua_pop(L, 1);          // the metatable        
+-        } else {
+-            objects.push_back(to_object(L, j));
+-        }
+-    }
+-    return pushNewGroup(L, objects);    
+-}
+-
+-static int intersectGroupBase(lua_State *L, bool isIntersect) {
++static int intersectGroupBase(lua_State *L, bool isIntersect, bool equal =false) {
+     // (grp|obj) (*|-) (grp|obj)
+     if (!((is_group(L, 1) || is_object(L, 1)) &amp;&amp;  (is_group(L, 2) || is_object(L, 2)))) {
+         throwLuaError(L, &quot;Intersect or Diff Group - argument is no object or group&quot;);
+@@ -1644,7 +1678,15 @@
+                 (!isIntersect &amp;&amp; objSet.find(obj) == objSet.end()))
+             objects.push_back(obj);
+     }
+-    return pushNewGroup(L, objects);    
++    if (!equal)
++        return pushNewGroup(L, objects);
++    else {
++        // check on equality
++        // remove NULL objects first
++        pushNewGroup(L, objects);
++        objects = toObjectList(L, -1);
++        return !objects.size();
++    }    
+ }
+ 
+ static int intersectGroup(lua_State *L) {
+@@ -1657,23 +1699,20 @@
+     return intersectGroupBase(L, false);    
+ }
+ 
++static int groupEquality(lua_State *L) {
++    lua_pushboolean(L, intersectGroupBase(L, false, true));
++    return 1;
++}
++
+ static int newPolist(lua_State *L) {
+-    // (grp | table | (obj | pos [,obj | pos]))
++    // (grp )
+     PositionList positions;
+     if (is_group(L, 1)) {
+         ObjectList ol = toObjectList(L, 1);
+         for (ObjectList::iterator itr = ol.begin(); itr != ol.end(); ++itr) {
++            // eliminate invalid object references and add every object as value of its own
+             if (*itr != NULL) {
+-                switch ((*itr)-&gt;getObjectType()) {
+-                    case Object::STONE :
+-                    case Object::FLOOR :
+-                    case Object::ITEM  :
+-                        positions.push_back(dynamic_cast&lt;GridObject *&gt;(*itr)-&gt;get_pos());
+-                        break;
+-                    case Object::ACTOR :
+-                        positions.push_back(dynamic_cast&lt;Actor *&gt;(*itr)-&gt;get_pos());
+-                        break;
+-                } 
++                positions.push_back(*itr);
+             }
+         }
+     } else {
+@@ -1690,7 +1729,6 @@
+         return 0;
+     }
+     PositionList positions;
+-    std::list&lt;Object *&gt; objects;
+     for (int j = 1; j &lt;= 2; j++) {
+         if (is_polist(L, j)) {
+             PositionList addList = toPositionList(L, j);
+@@ -2166,8 +2204,11 @@
+             if (it-&gt;isStatic()) {
+                 DisposeObject(obj);
+                 throwLuaError(L, &quot;Attempt to add a static item to a bag or inventory&quot;);
+-            } else
++            } else {
+                 itemHolder-&gt;add_item(it);
++                // just in case itemholder is displayed
++                player::RedrawInventory(player::GetInventory(player::CurrentPlayer())); 
++            }
+         }
+     } else {
+         switch (obj-&gt;getObjectType()) {
+@@ -2960,6 +3001,8 @@
+         int i = lua_tointeger(L, 2);
+         lua_getmetatable(L, 1);
+         int size = lua_objlen(L, -1);
++        if (i &lt; 0)  // backward indices
++            i = size + 1 + i;
+         if (i &gt;= 1 &amp;&amp; i &lt;= size)
+             lua_rawgeti(L, -1, i);
+         else
+@@ -3343,6 +3386,7 @@
+     {dividePositions,               &quot;__div&quot;},      //  obj / obj
+     {centerPosition,                &quot;__len&quot;},      //  #obj
+     {minusPosition,                 &quot;__unm&quot;},      //  -obj
++    {joinPolist,                    &quot;__concat&quot;},   //  obj .. obj
+     {0,0}
+ };
+ 
+@@ -3423,6 +3467,7 @@
+     {joinGroup,                     &quot;__add&quot;},      //  obj + obj
+     {intersectGroup,                &quot;__mul&quot;},      //  obj * obj
+     {differenceGroup,               &quot;__sub&quot;},      //  obj - obj
++    {groupEquality,                 &quot;__eq&quot;},       //  ==
+     {iteratorGroup,                 &quot;__call&quot;},
+     {0,0}
+ };
+@@ -3441,6 +3486,8 @@
+     {dispatchPolistWriteAccess,     &quot;__newindex&quot;}, //  obj[key]=value
+     {dispatchPolistReadAccess,      &quot;__index&quot;},    //  obj[key]
+     {lengthPolist,                  &quot;__len&quot;},      //  #obj
++    {addPositions,                  &quot;__add&quot;},      //  obj + obj
++    {subPositions,                  &quot;__sub&quot;},      //  obj - obj
+     {joinPolist,                    &quot;__concat&quot;},   //  obj .. obj
+     {0,0}
+ };
+
+Modified: trunk/src/stones/PuzzleStone.cc
+===================================================================
+--- trunk/src/stones/PuzzleStone.cc	2009-03-05 00:56:21 UTC (rev 1582)
++++ trunk/src/stones/PuzzleStone.cc	2009-03-09 23:47:18 UTC (rev 1583)
+@@ -94,6 +94,18 @@
+             for (PuzzleList::iterator itr = huddle.begin(); itr != huddle.end(); ++itr)
+                 adj.push_back(*itr);
+             return adj;
++        } else if (m.message == &quot;get_cluster&quot;) {
++            // need a message instead of getAttr as we write mark puzzles what contradicts &quot;const&quot;
++            PuzzleList fragment;
++            findFragment(fragment);
++            ObjectList adj;
++            for (PuzzleList::iterator itr = fragment.begin(); itr != fragment.end(); ++itr)
++                adj.push_back(*itr);
++            return adj;
++        } else if (m.message == &quot;is_complete&quot;) {
++            // need a message instead of getAttr as we write mark puzzles what contradicts &quot;const&quot;
++            PuzzleList fragment;
++            return findFragment(fragment);
+         } else if (m.message == &quot;pull_rotate&quot;) {
+             rotateLine(to_direction(m.value), false);
+             return Value();
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001012.html">[Enigma-game-svn] r1582 - trunk/data/levels/enigma_experimental
+</A></li>
+	<LI>Next message: <A HREF="001014.html">[Enigma-game-svn] r1584 - in trunk: data src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1013">[ date ]</a>
+              <a href="thread.html#1013">[ thread ]</a>
+              <a href="subject.html#1013">[ subject ]</a>
+              <a href="author.html#1013">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

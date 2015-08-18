@@ -1,0 +1,940 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1258 - in trunk/data: . levels/lib
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-August/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1258%20-%20in%20trunk/data%3A%20.%20levels/lib&In-Reply-To=%3C200808072227.m77MRniX023934%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000691.html">
+   <LINK REL="Next"  HREF="000693.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1258 - in trunk/data: . levels/lib</H1>
+    <B>andreasl at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1258%20-%20in%20trunk/data%3A%20.%20levels/lib&In-Reply-To=%3C200808072227.m77MRniX023934%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1258 - in trunk/data: . levels/lib">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Fri Aug  8 00:27:49 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000691.html">[Enigma-game-svn] r1257 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000693.html">[Enigma-game-svn] r1259 - in team_levelpacks: . team_test_new_api	team_test_physics
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#692">[ date ]</a>
+              <a href="thread.html#692">[ thread ]</a>
+              <a href="subject.html#692">[ subject ]</a>
+              <a href="author.html#692">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2008-08-08 00:27:47 +0200 (Fri, 08 Aug 2008)
+New Revision: 1258
+
+Added:
+   trunk/data/levels/lib/libmap.xml
+Modified:
+   trunk/data/api2init.lua
+   trunk/data/levels/lib/libluatools.xml
+Log:
+Trunk (Libraries):
+ - New map handling library libmap.xml with methods:
+    - wo:newMap(defaultKey, arg1, arg2)
+    - lib.map.concat_horizontally(map1, map2)  aka. map1 .. map2
+    - lib.map.concat_vertically(map1, map2)    aka. map1 + map2
+    - lib.map.fuse(arg1, arg2)                 aka. map1 * map2
+    - lib.map.transform(map, op)               aka. map ^ op
+    - lib.map.get(map, key)               aka. map[key]
+    - lib.map.set(map, key, value)        aka. map[key] = value
+    - lib.map.extend(map, key)            aka. map:extend(key)
+    - lib.map.sub(map, arg1, arg2)        aka. map:sub(arg1, arg2)
+    - lib.map.covers(map, pos)            aka. map:covers(pos)
+    - lib.map.setDefaultKey(map, newkey)  aka. map:setDefaultKey(newkey)
+    - lib.map.print(map, withXYCounts, left_separator, right_separator)
+ - Removed (now obsolete) map handling functions from
+   libluatools (only split_map_layers doesn't have
+   a libmap-equivalent).
+Note:
+ - Maps are guaranteed to be complete, i.e. of
+   rectangular shape. libluatools.complete_map
+   hence became obsolete.
+Todo:
+ - Further differentiate libluatools.xml into
+   liblua.xml and libmath.xml, possibly also
+   libpermutations.xml
+ - All levels using the map handling functions
+   are temporarily broken.
+ - drawMap etc. shall understand maps.
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2008-08-07 12:34:17 UTC (rev 1257)
++++ trunk/data/api2init.lua	2008-08-07 22:27:47 UTC (rev 1258)
+@@ -131,7 +131,6 @@
+ SPOT_LIGHTPASSENGER =  16
+ SPOT_TRAP           =  32
+ 
+-
+ -- Follower
+ FOLLOW_NO     = 0
+ FOLLOW_SCROLL = 1
+@@ -140,13 +139,23 @@
+ FOLLOW_FULLSCREEN = po(19, 12)
+ FOLLOW_HALFSCREEN = po(9.5, 6)
+ 
++-- Read directions for maps
++MAP_DEFAULT = 0
++MAP_CW = 1
++MAP_180 = 2
++MAP_CCW = 3
++MAP_MIRROR_HORIZONTAL = 4
++MAP_MIRROR_VERTICAL = 5
++MAP_MIRROR_SLASH = 6
++MAP_MIRROR_BACKSLASH = 7
++
+ ---------------------
+ -- Utility Methods --
+ ---------------------
+ 
+ wo:_register(&quot;drawMap&quot;, 
+     function (world, resolver, origin, ignore, map)
+-        -- TODO check validity of arguements
++        -- TODO check validity of arguments
+         local len = string.len(ignore)
+         for y=1, #map do
+             local linelen = string.len(map[y])
+@@ -173,7 +182,7 @@
+             dest = po(origin.x + arg2 - 1, origin.y + arg3 - 1)
+             tile = arg4
+         end
+-        -- TODO check validity of arguements
++        -- TODO check validity of arguments
+         for x = origin.x, dest.x do
+             wo[{x, origin.y}] = tile
+             if origin.y ~= dest.y then
+@@ -197,7 +206,7 @@
+             dest = po(origin.x + arg2 - 1, origin.y + arg3 - 1)
+             tile = arg4
+         end
+-        -- TODO check validity of arguements
++        -- TODO check validity of arguments
+         for x = origin.x, dest.x do
+             for y = origin.y, dest.y do
+                 wo[{x, y}] = tile
+
+Modified: trunk/data/levels/lib/libluatools.xml
+===================================================================
+--- trunk/data/levels/lib/libluatools.xml	2008-08-07 12:34:17 UTC (rev 1257)
++++ trunk/data/levels/lib/libluatools.xml	2008-08-07 22:27:47 UTC (rev 1258)
+@@ -5,7 +5,7 @@
+       &lt;el:identity el:title=&quot;&quot; el:id=&quot;lib/libluatools&quot;/&gt;
+       &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;3&quot; el:status=&quot;released&quot;/&gt;
+       &lt;el:author  el:name=&quot;Enigma Team&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
+-      &lt;el:copyright&gt;Copyright &#169; 2007 Enigma Team&lt;/el:copyright&gt;
++      &lt;el:copyright&gt;Copyright &#169; 2007, 2008 Enigma Team&lt;/el:copyright&gt;
+       &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
+       &lt;el:compatibility el:enigma=&quot;1.00&quot;&gt;
+       &lt;/el:compatibility&gt;
+@@ -333,353 +333,6 @@
+   return result
+ end
+ 
+----------------------------------------------------------------------
+---  MAP  HANDLING
+----------------------------------------------------------------------
+-
+--- A &quot;map&quot; is a table of strings, like it's used in most
+--- graphical ways to describe a level, including API 2.
+-
+--- fuse_map_layers takes a list of maps or a table of maps
+--- and returns a map, which is constructed from the others
+--- in the following way:
+---  Map1:  {&quot;abc&quot;, &quot;def&quot;}
+---  Map2:  {&quot;ABC&quot;, &quot;DEF&quot;}
+---  Map3:  {&quot;123&quot;, &quot;456&quot;}
+---  fuse_map_layers(Map1, Map2, Map3):
+---         {&quot;aA1bB2cC3&quot;, &quot;dD4eE5fF6&quot;}
+--- Missing letters are replaced by &quot; &quot;.
+--- This function can be used to combine several layers
+--- (e.g. floors, stones, items, actors) into a common
+--- (typically very large) map.
+--- fuse_map_layers assumes that the input maps are all
+--- using a key length of 1. Otherwise you should use
+--- split_map_layers before applying fuse_map_layers.
+-function luatools.fuse_map_layers(layer1, ...)
+-  -- Understand arguments
+-  local layers = {layer1, ...}
+-  if table.getn(layers) == 1 then
+-    layers = layer1
+-  end
+-  if type(layers) ~= &quot;table&quot; then
+-    error(&quot;fuse_map_layers: Argument is not a table (map).&quot;)
+-  end
+-  -- Calculate new height and width
+-  local max_lines, max_length = 0, 0
+-  for _, layer in pairs(layers) do
+-    if type(layer) ~= &quot;table&quot; then
+-      error(&quot;fuse_map_layers: Argument is not a table.&quot;)
+-    end
+-    max_lines = math.max(max_lines, table.getn(layer))
+-    for _, line in pairs(layer) do
+-      if type(line) ~= &quot;string&quot; then
+-        error(&quot;fuse_map_layers: Line in table (map) is not a string.&quot;)
+-      end
+-      max_length = math.max(max_length, string.len(line))
+-    end
+-  end
+-  local result = {}
+-  -- Create result
+-  local result = {}
+-  for y = 1, max_lines do
+-    result[y] = &quot;&quot;
+-    for x = 1, max_length do
+-      for _, layer in pairs(layers) do
+-        if layer[y] and (string.len(layer[y]) &gt;= x ) then
+-          result[y] = result[y] .. string.sub(layer[y], x, x)
+-        else
+-          result[y] = result[y] .. &quot; &quot;
+-        end
+-      end
+-    end
+-  end
+-  return result
+-end
+-
+--- split_map_layers takes a map, splits it into KEYLENGTH
+--- layers and returns a table of layers. It's the opposite
+--- to fuse_map_layers.
+-function luatools.split_map_layers(keylength, map)
+-  -- Analyse arguments
+-  if type(keylength) ~= &quot;number&quot; then
+-    error(&quot;split_map_layers: First argument should be a number (key length).&quot;)
+-  end
+-  if type(map) ~= &quot;table&quot; then
+-    error(&quot;split_map_layers: Second argument should be a table (map).&quot;)
+-  end
+-  -- Split layers
+-  local layers = {}
+-  for j = 1, keylength do
+-    layers[j] = {}
+-  end
+-  for y, line in pairs(map) do
+-    if type(line) ~= &quot;string&quot; then
+-      error(&quot;print_map: Line is not a string.&quot;)
+-    end
+-    for j = 1, keylength do
+-      layers[j][y] = &quot;&quot;
+-    end
+-    for x = 1, string.len(line) do
+-      local j = luatools.mod(x - 1, keylength) + 1
+-      layers[j][y] = layers[j][y]..string.sub(line, x, x)
+-    end
+-  end
+-  return layers
+-end
+-
+--- concat_maps_horizontally takes a list of maps or a table of
+--- maps and returns a map, which is constructed from the others
+--- in the following way:
+---  Map1:  {&quot;abc&quot;, &quot;def&quot;}
+---  Map2:  {&quot;ABC&quot;, &quot;DEF&quot;}
+---  Map3:  {&quot;123&quot;, &quot;456&quot;}
+---  concat_maps_horizontally(Map1, Map2, Map3):
+---         {&quot;abcABC123&quot;, &quot;defDEF456&quot;}
+--- Missing letters are replaced by &quot; &quot;.
+--- This function can be used to combine several rooms
+--- or areas of a map to build a larger map.
+--- Note that concat_maps_horizontally doesn't take an
+--- offset value for a vertical shift of the maps!
+-function luatools.concat_maps_horizontally(map1, ...)
+-  -- Understand arguments
+-  local maps = {map1, ...}
+-  if table.getn(maps) == 1 then
+-    maps = map1
+-  end
+-  if type(maps) ~= &quot;table&quot; then
+-    error(&quot;concat_maps_horizontally: Argument is not a table (map).&quot;)
+-  end
+-  -- Find maximal line lengths and height
+-  local lengths = {}
+-  local height = 0
+-  for j, map in pairs(maps) do
+-    lengths[j] = 0
+-    for y, line in pairs(map) do
+-      lengths[j] = math.max(lengths[j], string.len(line))
+-      height = math.max(height, y)
+-    end
+-  end
+-  -- Concat to result
+-  local result = {}
+-  for y = 1, height do
+-    result[y] = &quot;&quot;
+-    for j, map in pairs(maps) do
+-      result[y] = result[y] .. (map[y] or &quot;&quot;)
+-                    .. string.rep(&quot; &quot;, lengths[j] - string.len(map[y] or &quot;&quot;)) 
+-    end
+-  end
+-  return result
+-end
+-
+--- concat_maps_vertically takes a list of maps or a table of
+--- maps and returns a map, which is constructed from the others
+--- in the following way:
+---  Map1:  {&quot;abc&quot;, &quot;def&quot;}
+---  Map2:  {&quot;ABC&quot;, &quot;DEF&quot;}
+---  Map3:  {&quot;123&quot;, &quot;456&quot;}
+---  concat_maps_vertically(Map1, Map2, Map3):
+---         {&quot;abc&quot;, &quot;def&quot;, &quot;ABC&quot;, &quot;DEF&quot;, &quot;123&quot;, &quot;456&quot;}
+--- This function can be used to combine several rooms
+--- or areas of a map to build a larger map.
+--- Note that concat_maps_vertically doesn't take an
+--- offset value for a horizontal shift of the maps!
+-function luatools.concat_maps_vertically(map1, ...)
+-  -- Understand arguments
+-  local maps = {map1, ...}
+-  if table.getn(maps) == 1 then
+-    maps = map1
+-  end
+-  if type(maps) ~= &quot;table&quot; then
+-    error(&quot;concat_maps_vertically: Argument is not a table (map).&quot;)
+-  end
+-  -- Create result
+-  local result = {}
+-  for j, map in pairs(maps) do
+-    for y, line in pairs(map) do
+-      table.insert(result, line)
+-    end
+-  end
+-  return result
+-end
+-  
+--- get_key_in_map returns the key of MAP at position POSARG.
+--- KEYLENGTH can be a number or a string (then its length is
+--- considered to be the keylength). Returns nil if POSARG is
+--- not described in map.
+-function luatools.get_key_in_map(map, keylength, posarg)
+-  if type(map) ~= &quot;table&quot; then
+-    error(&quot;get_key_in_map: First argument is not a table (map).&quot;)
+-  end
+-  if ((type(keylength) ~= &quot;string&quot;) and (type(keylength) ~= &quot;number&quot;))
+-      or ((type(keylength) == &quot;number&quot;) and (keylength ~= math.floor(keylength))) then
+-    error(&quot;get_key_in_map: Second argument is not an integer or string (keylength).&quot;)
+-  end
+-  local kl = keylength
+-  if type(kl) == &quot;string&quot; then
+-    kl = string.len(kl)
+-  end
+-  local pos = posarg
+-  if type(pos) ~= &quot;userdata&quot; then
+-    pos = po(posarg)
+-  end
+-  local px, py = math.floor(pos.x), math.floor(pos.y)
+-  if (type(px) ~= &quot;number&quot;) and (type(py) ~= &quot;number&quot;) then
+-    error(&quot;get_key_in_map: Can't interpret third argument as position.&quot;)
+-  end
+-  if not map[py] then
+-    return nil
+-  end
+-  if string.len(map[py]) &lt; kl * px then
+-    return nil
+-  end
+-  return string.sub(map[py], kl * (px - 1) + 1, kl * px)  
+-end
+-
+--- insert_key_in_map inserts key KEY at position POSARG
+--- into the map MAP, which is assumed to be a table of
+--- strings, and returns the result. The key length of the
+--- map is assumed to be the length of KEY, so partial keys
+--- are not supported. Missing entries are filled with a
+--- neccessary number of spaces.
+-function luatools.insert_key_in_map(map, key, posarg)
+-  if type(map) ~= &quot;table&quot; then
+-    error(&quot;insert_key_in_map: First argument is not a table (map).&quot;)
+-  end
+-  if type(key) ~= &quot;string&quot; then
+-    error(&quot;insert_key_in_map: Second argument is not a string (key).&quot;)
+-  end
+-  if key == &quot;&quot; then
+-    error(&quot;insert_key_in_map: Second argument (key) is empty.&quot;)
+-  end
+-  local pos = posarg
+-  if type(pos) ~= &quot;userdata&quot; then
+-    pos = po(posarg)
+-  end
+-  local px, py = math.floor(pos.x), math.floor(pos.y)
+-  if (type(px) ~= &quot;number&quot;) and (type(py) ~= &quot;number&quot;) then
+-    error(&quot;insert_key_in_map: Can't interpret third argument as position.&quot;)
+-  end
+-  local keylength = string.len(key)
+-  local result = {}
+-  for y = 1, math.max(#map, py) do
+-    if y ~= py then
+-      result[y] = map[y] or &quot;&quot;
+-    else
+-      local delta = keylength * (px - 1) - string.len(map[y])
+-      if delta &gt;= 0 then
+-        -- Line of map has to be expanded.
+-        result[y] = (map[y] or &quot;&quot;) .. string.rep(&quot; &quot;, delta) .. key
+-      else
+-        -- Insert key into map (old key is deleted).
+-        result[y] = string.sub(map[y], 1, keylength * (px - 1)) .. key ..
+-                      string.sub(map[y], keylength * px + 1, string.len(map[y]))
+-      end
+-    end
+-  end
+-  return result  
+-end
+-
+--- complete_map returns a rectangularly completed version
+--- of MAP, with &quot; &quot; as fillers.
+-function luatools.complete_map(map)
+-  if type(map) ~= &quot;table&quot; then
+-    error(&quot;complete_map: Argument is not a table (map).&quot;)
+-  end
+-  local width = 0
+-  local height = 0
+-  local result = {}
+-  for key, entry in pairs(map) do
+-    height = math.max(height, tonumber(key) or 0)
+-    if type(entry) == &quot;string&quot; then
+-      width = math.max(width, string.len(entry))
+-    else
+-      -- Odd entry. Report if key is a number
+-      -- (i.e. non-number user keys are allowed).
+-      if type(key) == &quot;number&quot; then
+-        error(&quot;complete_map: Line &quot; .. key .. &quot; in map is not a string, but &quot;
+-              .. type(entry) .. &quot;.&quot;)
+-      else
+-        result[key] = luatools.deep_copy(entry)
+-      end
+-    end
+-  end
+-  for y = 1, height do
+-    result[y] = map[y] or &quot;&quot;
+-    result[y] = result[y] .. string.rep(&quot; &quot;, width - string.len(result[y]))
+-  end
+-  return result
+-end
+-
+--- mirror_map_vertically returns MAP, mirrored along a
+--- horizontal axis (i.e. North and South are inverted).
+--- Missing entries are replaced with &quot; &quot;.
+-function luatools.mirror_map_vertically(map)
+-  if type(map) ~= &quot;table&quot; then
+-    error(&quot;mirror_map_vertically: Argument is not a table (map).&quot;)
+-  end
+-  local completed = luatools.complete_map(map)
+-  local result = {}
+-  for key, entry in pairs(completed) do
+-    if type(key) == &quot;number&quot; then
+-      result[table.getn(completed) - key + 1] = entry
+-    else
+-      result[key] = luatools.deep_copy(entry)
+-    end
+-  end  
+-  return result
+-end
+-
+--- mirror_map_horizontally returns MAP, mirrored along
+--- a vertical axis (i.e. East and West are inverted).
+--- The keylength given by KEY (example tile key or number)
+--- is respected.
+-function luatools.mirror_map_horizontally(map, keylength)
+-  if type(map) ~= &quot;table&quot; then
+-    error(&quot;mirror_map_horizontally: Argument is not a table (map).&quot;)
+-  end
+-  if ((type(keylength) ~= &quot;string&quot;) and (type(keylength) ~= &quot;number&quot;))
+-      or ((type(keylength) == &quot;number&quot;) and (keylength ~= math.floor(keylength))) then
+-    error(&quot;mirror_map_horizontally: Second argument is not an integer or string (keylength).&quot;)
+-  end
+-  local kl = keylength
+-  if type(kl) == &quot;string&quot; then
+-    kl = string.len(kl)
+-  end
+-  local completed = luatools.complete_map(map)
+-  local map_width = string.len(completed[1] or &quot;&quot;) / kl
+-  if math.ceil(map_width) ~= map_width then
+-    error(&quot;mirror_map_horizontally: Map is odd (broken key length).&quot;)
+-  end
+-  local result = {}
+-  for v, entry in pairs(completed) do
+-    if type(v) == &quot;number&quot; then
+-      for j = 1, map_width do
+-        local x = kl * (map_width - j)
+-        result[v] = (result[v] or &quot;&quot;) .. string.sub(entry, x + 1, x + kl)
+-      end
+-    else
+-      result[v] = luatools.deep_copy(entry)
+-    end
+-  end  
+-  return result
+-end
+-
+--- print_map uses the print command to print a map.
+--- It should be used for debug reasons only.
+--- SEP can be a separator like &quot;|&quot; to encase the map
+--- on the left and on the right.
+-function luatools.print_map(map, sep)
+-  if type(map) ~= &quot;table&quot; then
+-    error(&quot;print_map: Argument is not a table (map).&quot;)
+-  end
+-  for _, line in pairs(map) do
+-    if type(line) ~= &quot;string&quot; then
+-      error(&quot;print_map: Line is not a string.&quot;)
+-    end
+-    print((sep or &quot;&quot;)..line..(sep or &quot;&quot;))
+-  end
+-end
+-
+     ]]&gt;&lt;/el:luamain&gt;
+     &lt;el:i18n&gt;
+     &lt;/el:i18n&gt;
+
+Added: trunk/data/levels/lib/libmap.xml
+===================================================================
+--- trunk/data/levels/lib/libmap.xml	2008-08-07 12:34:17 UTC (rev 1257)
++++ trunk/data/levels/lib/libmap.xml	2008-08-07 22:27:47 UTC (rev 1258)
+@@ -0,0 +1,409 @@
++&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;no&quot; ?&gt;
++&lt;el:level xmlns:xsi=&quot;<A HREF="http://www.w3.org/2001/XMLSchema-instance">http://www.w3.org/2001/XMLSchema-instance</A>&quot; xsi:schemaLocation=&quot;<A HREF="http://enigma-game.org/schema/level/1">http://enigma-game.org/schema/level/1</A> level.xsd&quot; xmlns:el=&quot;<A HREF="http://enigma-game.org/schema/level/1">http://enigma-game.org/schema/level/1</A>&quot;&gt;
++  &lt;el:protected&gt;
++    &lt;el:info el:type=&quot;library&quot;&gt;
++      &lt;el:identity el:title=&quot;&quot; el:id=&quot;lib/libmap&quot;/&gt;
++      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;1&quot; el:status=&quot;released&quot;/&gt;
++      &lt;el:author  el:name=&quot;Enigma Team&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
++      &lt;el:copyright&gt;Copyright &#169; 2008 Enigma Team&lt;/el:copyright&gt;
++      &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
++      &lt;el:compatibility el:enigma=&quot;1.10&quot;&gt;
++      &lt;/el:compatibility&gt;
++      &lt;el:modes el:easy=&quot;false&quot; el:single=&quot;false&quot; el:network=&quot;false&quot;/&gt;
++      &lt;el:comments&gt;
++      &lt;/el:comments&gt;
++      &lt;el:score el:easy=&quot;-&quot; el:difficult=&quot;-&quot;/&gt;
++    &lt;/el:info&gt;
++    &lt;el:luamain&gt;&lt;![CDATA[
++
++---------------------------------------------------------------------
++-- libmap provides a metatable for maps, thus some general utilities
++-- for working with maps. It includes functions for joining maps
++-- in several ways, for queries and manipulation of single entries
++-- in the map.
++---------------------------------------------------------------------
++--
++-- libmap provides the following functions:
++--   wo:newMap(defaultKey, arg1, arg2)
++--   lib.map.concat_horizontally(map1, map2)  aka. map1 .. map2
++--   lib.map.concat_vertically(map1, map2)    aka. map1 + map2
++--   lib.map.fuse(arg1, arg2)                 aka. map1 * map2
++--   lib.map.transform(map, op)               aka. map ^ op
++--   lib.map.get(map, key)                    aka. map[key]
++--   lib.map.set(map, key, value)             aka. map[key] = value
++--   lib.map.extend(map, key)                 aka. map:extend(key)
++--   lib.map.sub(map, arg1, arg2)             aka. map:sub(arg1, arg2)
++--   lib.map.covers(map, pos)                 aka. map:covers(pos)
++--   lib.map.setDefaultKey(map, newkey)       aka. map:setDefaultKey(newkey)
++--   lib.map.print(map, withXYCounts, left_separator, right_separator)
++--                                            aka. map:print(...)
++-- Please consult the reference manual for details.
++--
++
++if not lib then
++  lib = {}
++end
++
++lib.map = {}
++
++function lib.map.concat_horizontally(map1, map2)
++  if    (type(map1) ~= &quot;table&quot;) or (rawget(map1, &quot;__type&quot;) ~= &quot;map&quot;)
++     or (type(map2) ~= &quot;table&quot;) or (rawget(map2, &quot;__type&quot;) ~= &quot;map&quot;) then
++    error(&quot;lib.map.concat_horizontally: Can only work on maps.&quot;)
++  end
++  if string.len(map1.defaultkey) ~= string.len(map2.defaultkey) then
++    error(&quot;lib.map.concat_horizontally: Default keys differ in length.&quot;)
++  end
++  local result = {}
++  for y = 1, math.max(map1.height, map2.height) do
++    result[y] = (rawget(map1, y) or string.rep(map1.defaultkey, map1.width))
++             .. (rawget(map2, y) or string.rep(map2.defaultkey, map2.width))
++  end
++  return wo:newMap(map1.defaultkey, result)  
++end
++
++function lib.map.concat_vertically(map1, map2)
++  if    (type(map1) ~= &quot;table&quot;) or (rawget(map1, &quot;__type&quot;) ~= &quot;map&quot;)
++     or (type(map2) ~= &quot;table&quot;) or (rawget(map2, &quot;__type&quot;) ~= &quot;map&quot;) then
++    error(&quot;lib.map.concat_vertically: Can only work on maps.&quot;)
++  end
++  if string.len(map1.defaultkey) ~= string.len(map2.defaultkey) then
++    error(&quot;lib.map.concat_vertically: Default keys differ in length.&quot;)
++  end
++  local result = {}
++  for y = 1, map1.height do
++    result[y] = rawget(map1, y)  -- rest of line will be filled by wo:newMap
++  end
++  -- As the default key for result will be set to the first
++  -- default key, we have to attach the missing lines of the
++  -- second map here now.
++  local rest = string.rep(map2.defaultkey, math.max(0, map1.width - map2.width))
++  for y = 1, map2.height do
++    result[y + map1.height] = rawget(map2, y) .. rest
++  end
++  return wo:newMap(map1.defaultkey, result)
++end
++
++function lib.map.fuse(arg1, arg2)
++  local map1, map2 = arg1, arg2
++  if type(arg1) == &quot;string&quot; then
++    map1 = wo:newMap(arg1)
++  end
++  if type(arg2) == &quot;string&quot; then
++    map2 = wo:newMap(arg2)
++  end
++  if    (type(map1) ~= &quot;table&quot;) or (rawget(map1, &quot;__type&quot;) ~= &quot;map&quot;)
++     or (type(map2) ~= &quot;table&quot;) or (rawget(map2, &quot;__type&quot;) ~= &quot;map&quot;) then
++    error(&quot;lib.map.fuse: Can only work on maps.&quot;)
++  end
++  local result = {}
++  for y = 1, math.max(map1.height, map2.height) do
++    result[y] = &quot;&quot;
++    for x = 1, math.max(map1.width, map2.width) do
++      result[y] = result[y] .. map1[{x - 1, y - 1}] .. map2[{x - 1, y - 1}]
++    end
++  end
++  return wo:newMap(map1.defaultkey .. map2.defaultkey, result)  
++end
++
++function lib.map.transform(map, op)
++  if (type(map) ~= &quot;table&quot;) or (rawget(map, &quot;__type&quot;) ~= &quot;map&quot;) then
++    error(&quot;lib.map.transform: Can only work on maps.&quot;)
++  end
++  if (type(op) ~= &quot;number&quot;) or (op &lt; 0) or (op &gt; 7) or (op ~= math.floor(op)) then
++    error(&quot;lib.map.transform: Unknown transformation request&quot;)
++  end
++  local w, h = map.width, map.height
++  local function rot(pos)
++    return ({
++      [MAP_DEFAULT]           = po({pos.x,         pos.y}),
++      [MAP_CW]                = po({pos.y,         h - 1 - pos.x}), --
++      [MAP_180]               = po({w - 1 - pos.x, h - 1 - pos.y}),
++      [MAP_CCW]               = po({w - 1 - pos.y, pos.x}),         --
++      [MAP_MIRROR_HORIZONTAL] = po({w - 1 - pos.x, pos.y}),
++      [MAP_MIRROR_VERTICAL]   = po({pos.x,         h - 1 - pos.y}),
++      [MAP_MIRROR_SLASH]      = po({pos.y,         pos.x}),
++      [MAP_MIRROR_BACKSLASH]  = po({w - 1 - pos.y, h - 1 - pos.x})  --
++    })[op]
++  end
++  local new_w, new_h = w, h
++  if    (op == MAP_CW) or (op == MAP_CCW) or (op == MAP_MIRROR_SLASH)
++     or (op == MAP_MIRROR_BACKSLASH) then
++    new_w, new_h = h, w
++  end
++  local result = {}
++  for y = 1, new_h do
++    result[y] = &quot;&quot;
++    for x = 1, new_w do
++      result[y] = result[y] .. map[rot(po({x - 1, y - 1}))]
++    end
++  end
++  return wo:newMap(map.defaultkey, result)  
++end
++
++function lib.map.sub(map, arg1, arg2)
++  if (type(map) ~= &quot;table&quot;) or (rawget(map, &quot;__type&quot;) ~= &quot;map&quot;) then
++    error(&quot;lib.map.sub: Can only work on maps.&quot;)
++  end
++  local pos1, pos2 = arg1, arg2
++  if type(pos1) == &quot;table&quot; then
++    pos1 = po(pos1)
++  end
++  if type(pos2) == &quot;table&quot; then
++    pos2 = po(pos2)
++  end
++  pos1 = pos1:grid()
++  pos2 = pos2:grid()
++  if (pos2.x &lt; 0) or (pos2.y &lt; 0) then
++    error(&quot;lib.map.sub: Second position must be positive.&quot;)
++  end
++  local result = {}
++  for y = 1, pos2.y do
++    result[y] = string.sub(rawget(map, pos1.y + y) or &quot;&quot;,
++                  pos1.x * map.keylength + 1,
++                  (pos1.x + pos2.x) * map.keylength) or &quot;&quot;
++    result[y] = result[y] .. string.rep(map.defaultkey,
++                  math.max(0, pos2.x - string.len(result[y]) / map.keylength))
++  end
++  return wo:newMap(map.defaultkey, result)  
++end
++
++function lib.map.covers(map, pos)
++  return (pos.x &gt;= 0) and (pos.y &gt;= 0)
++      and (pos.x &lt; map.width) and (pos.y &lt; map.height)
++end
++
++function lib.map.get(map, key)
++  if type(key) == &quot;string&quot; then
++    if (key == &quot;type&quot;) or (key == &quot;width&quot;) or (key == &quot;height&quot;)
++       or (key == &quot;defaultkey&quot;) or (key == &quot;keylength&quot;) then
++      return rawget(map, &quot;__&quot;..key)
++    else  
++      return map.user_attributes[key]
++    end
++  else
++    local pos = key
++    if type(pos) == &quot;table&quot; then
++      pos = po(pos)
++    end
++    pos = pos:grid()
++    if map:covers(pos) then
++      local kl = rawget(map, &quot;__keylength&quot;)
++      return string.sub(rawget(map, pos.y + 1), kl * pos.x + 1, (pos.x + 1) * kl)
++    else
++      return rawget(map, &quot;__defaultkey&quot;)
++    end
++  end
++end
++
++function lib.map.set(map, key, value)
++  if type(key) == &quot;string&quot; then
++    if (key == &quot;type&quot;) then
++      if tostring(value) ~= &quot;map&quot; then
++        error(&quot;lib.map.set: A map is a map is a map is a map, and not a &quot;
++            .. tostring(value) .. &quot;!&quot;)
++      else
++        return
++      end
++    elseif (key == &quot;width&quot;) or (key == &quot;height&quot;) then
++      error(&quot;lib.map.set: Use extend or sub to change the size of a map.&quot;)
++    elseif (key == &quot;keylength&quot;) then
++      error(&quot;lib.map.set: Can't change keylength without default key.&quot;)
++    elseif (key == &quot;defaultkey&quot;) then
++      map:setDefaultKey(value)
++      return
++    end
++    map.user_attributes[key] = value
++  else
++    if type(value) ~= &quot;string&quot; then
++      error(&quot;lib.map.set: Key must be of type string, is &quot;..type(value)..&quot;.&quot;)
++    end
++    local kl = rawget(map, &quot;__keylength&quot;)
++    if string.len(value) ~= kl then
++      error(&quot;lib.map.set: Key must be of the same length as default key &quot;
++          ..&quot;(should be &quot;..kl.. &quot;, is &quot;..string.len(value)..&quot;).&quot;)
++    end
++    local pos = key
++    if type(pos) == &quot;table&quot; then
++      pos = po(pos)
++    end
++    pos = pos:grid()
++    if (pos.x &lt; 0) or (pos.y &lt; 0) then
++      error(&quot;lib.map.set: Negative positions are not supported.&quot;)
++    end
++    map:extend(pos)
++    rawset(map, pos.y + 1,
++           string.sub(rawget(map, pos.y + 1), 1, pos.x * kl)
++        .. value
++        .. string.sub(rawget(map, pos.y + 1), (pos.x + 1) * kl + 1, -1))
++  end
++end
++
++function lib.map.extend(map, key)
++  if (type(map) ~= &quot;table&quot;) or (rawget(map, &quot;__type&quot;) ~= &quot;map&quot;) then
++    error(&quot;lib.map.extend: Can only work on maps.&quot;)
++  end
++  local pos = key
++  if type(pos) == &quot;table&quot; then
++    pos = po(pos)
++  end
++  pos = pos:grid()
++  local w, h = rawget(map, &quot;__width&quot;), rawget(map, &quot;__height&quot;)
++  local dk = rawget(map, &quot;__defaultkey&quot;)
++  if pos.x &gt;= w then
++    local attach = string.rep(dk, pos.x - w + 1)
++    for y = 1, h do
++      rawset(map, y, rawget(map, y) .. attach)
++    end
++    w = pos.x + 1
++  end
++  if pos.y &gt;= h then
++    local line = string.rep(dk, w)
++    for y = h + 1, pos.y + 1 do
++      rawset(map, y, line)
++    end
++    h = pos.y + 1
++  end
++  rawset(map, &quot;__width&quot;, w)
++  rawset(map, &quot;__height&quot;, h)
++end
++
++function lib.map.print(map, withXYCounts, left_separator, right_separator)
++  if (type(map) ~= &quot;table&quot;) or (rawget(map, &quot;__type&quot;) ~= &quot;map&quot;) then
++    error(&quot;lib.map.print: Can only print maps, sorry.&quot;)
++  end
++  local w, h = map.width, map.height
++  local kl = rawget(map, &quot;__keylength&quot;)
++  if withXYCounts then
++    local line = string.rep(&quot; &quot;, kl) .. (left_separator or &quot;&quot;)
++    for x = 0, w - 1 do
++      line = line .. string.rep(&quot; &quot;, math.max(0, kl - string.len(x)))
++                  .. string.sub(x, math.max(0, string.len(x) - kl) + 1, string.len(x))
++    end
++    line = line .. (right_separator or &quot;&quot;)
++    print(line)
++  end
++  for y = 0, h - 1 do
++    local line = &quot;&quot;
++    if withXYCounts then
++      line =    string.rep(&quot; &quot;, math.max(0, kl - string.len(y)))
++             .. string.sub(y, math.max(0, string.len(y) - kl) + 1, string.len(y))      
++    end
++    line = line .. (left_separator or &quot;&quot;) .. map[y + 1] .. (right_separator or &quot;&quot;)
++    print(line)
++  end
++end
++
++function lib.map.setDefaultKey(map, newkey)
++  if (type(map) ~= &quot;table&quot;) or (rawget(map, &quot;__type&quot;) ~= &quot;map&quot;) then
++    error(&quot;lib.map.setDefaultKey: Can only set default key of maps, sorry.&quot;)
++  end
++  if type(newkey) ~= &quot;string&quot; then
++    error(&quot;lib.map.setDefaultKey: Default key must be string, is &quot;..type(newkey)..&quot;.&quot;)
++  end
++  if newkey == &quot;&quot; then
++    error(&quot;lib.map.setDefaultKey: Default key can't be empty.&quot;)
++  end
++  local new_width = map.width * map.keylength / string.len(newkey)
++  if new_width ~= math.ceil(new_width) then
++    error(&quot;lib.map.setDefaultKey: Map width doesn't fit to new default key.&quot;)
++  end
++  rawset(map, &quot;__defaultkey&quot;, newkey)
++  rawset(map, &quot;__keylength&quot;, string.len(newkey))
++  rawset(map, &quot;__width&quot;, new_width)
++end
++
++lib.map.metatable = {
++  __concat = lib.map.concat_horizontally,
++  __add = lib.map.concat_vertically,
++  __mul = lib.map.fuse,
++  __pow = lib.map.transform,
++  __index = lib.map.get,
++  __newindex = lib.map.set,
++}
++
++wo:_register(&quot;newMap&quot;,
++  function(world, defaultKey, arg1, arg2)
++    local newmap = {user_attributes = {}}
++    -- Check arguments, create map if necessary.
++    if type(defaultKey) ~= &quot;string&quot; then
++      error(&quot;newMap: Default key is not of type string, but &quot;..type(defaultKey)..&quot;.&quot;)
++    end
++    if defaultKey == &quot;&quot; then
++      error(&quot;newMap: Default key can't be empty.&quot;)
++    end
++    local width = 0
++    local height = 0
++    local kl = string.len(defaultKey)
++    if (type(arg1) == &quot;table&quot;) and (type(arg2) == &quot;nil&quot;) then
++      -- Interpret table as map.
++      for key, entry in pairs(arg1) do
++        if type(key) == &quot;number&quot; then
++          -- This line is going to be a real map entry.
++          height = math.max(height, key)
++          if type(entry) ~= &quot;string&quot; then
++            error(&quot;newMap: Line &quot; .. key .. &quot; is not a string, but &quot;
++                  .. type(entry) .. &quot;.&quot;)
++          end
++          local line_width = string.len(entry) / kl
++          if line_width ~= math.floor(line_width) then
++            error(&quot;newMap: Line &quot; .. key .. &quot; doesn't fit to key length.&quot;)
++          end
++          width = math.max(width, line_width)
++          newmap[key] = entry
++        elseif type(key) == &quot;string&quot; then
++          newmap.user_attributes[key] = entry
++        else
++          error(&quot;newMap: Strange type for a table key: &quot; .. type(key) .. &quot;.&quot;)
++        end
++      end
++      -- Now complete the map, make it rectangular.
++      for y = 1, height do
++        newmap[y] = newmap[y] or &quot;&quot;
++        newmap[y] = newmap[y]
++            .. string.rep(defaultKey, width - string.len(newmap[y]) / kl)
++      end
++    elseif type(arg1) == &quot;number&quot; and type(arg2) == &quot;number&quot; then
++      -- Create map from scratch.
++      if (arg1 &lt; 1) or (arg2 &lt; 1) or (arg1 ~= math.floor(arg1))
++          or (arg2 ~= math.floor(arg2)) then
++        error(&quot;newMap: Width or Height out of range (&quot;..arg1..&quot;, &quot;..arg2..&quot;).&quot;)
++      end
++      local line = string.rep(defaultKey, arg1)
++      for y = 1, arg2 do      
++        newmap[y] = line
++      end
++      width = arg1
++      height = arg2
++    elseif type(arg1) == &quot;nil&quot; and type(arg2) == &quot;nil&quot; then
++      -- Create 1x1-map from scratch.
++      return wo:newMap(defaultKey, 1, 1)
++    --elseif type(arg2) == &quot;nil&quot; then
++    --  -- Interpret arg1 as position.
++    --  return wo:newMap(defaultKey, pos.x + 1, pos.y + 1)
++    else
++      error(&quot;newMap: Syntax error. Can't understand arguments.&quot;)
++    end
++    -- Set additional values.
++    newmap.__type = &quot;map&quot;
++    newmap.__width = width
++    newmap.__height = height
++    newmap.__defaultkey = defaultKey
++    newmap.__keylength = string.len(defaultKey)
++    -- Set methods and finally metatable.
++    newmap.print = lib.map.print
++    newmap.covers = lib.map.covers
++    newmap.setDefaultKey = lib.map.setDefaultKey
++    newmap.extend = lib.map.extend
++    newmap.sub = lib.map.sub
++    setmetatable(newmap, lib.map.metatable)
++    return newmap
++  end
++)
++
++    ]]&gt;&lt;/el:luamain&gt;
++    &lt;el:i18n&gt;
++    &lt;/el:i18n&gt;
++  &lt;/el:protected&gt;
++&lt;/el:level&gt;
++
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000691.html">[Enigma-game-svn] r1257 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000693.html">[Enigma-game-svn] r1259 - in team_levelpacks: . team_test_new_api	team_test_physics
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#692">[ date ]</a>
+              <a href="thread.html#692">[ thread ]</a>
+              <a href="subject.html#692">[ subject ]</a>
+              <a href="author.html#692">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

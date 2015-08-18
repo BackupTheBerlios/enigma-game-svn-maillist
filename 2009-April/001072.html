@@ -1,0 +1,357 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1643 - in trunk/src: . items lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1643%20-%20in%20trunk/src%3A%20.%20items%20lev&In-Reply-To=%3C200904212209.n3LM9nTm029325%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001071.html">
+   <LINK REL="Next"  HREF="001073.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1643 - in trunk/src: . items lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1643%20-%20in%20trunk/src%3A%20.%20items%20lev&In-Reply-To=%3C200904212209.n3LM9nTm029325%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1643 - in trunk/src: . items lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Apr 22 00:09:49 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001071.html">[Enigma-game-svn] r1641 - in homepage/input: . lotm
+</A></li>
+        <LI>Next message: <A HREF="001073.html">[Enigma-game-svn] r1642
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1072">[ date ]</a>
+              <a href="thread.html#1072">[ thread ]</a>
+              <a href="subject.html#1072">[ subject ]</a>
+              <a href="author.html#1072">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-04-22 00:09:47 +0200 (Wed, 22 Apr 2009)
+New Revision: 1643
+
+Modified:
+   trunk/src/items.cc
+   trunk/src/items.hh
+   trunk/src/items/Bomb.cc
+   trunk/src/items/Bomb.hh
+   trunk/src/items/BurnableItem.cc
+   trunk/src/items/Magnet.cc
+   trunk/src/items/Meditation.cc
+   trunk/src/items/ShogunDot.cc
+   trunk/src/items/SimpleItems.cc
+   trunk/src/items/StripItem.cc
+   trunk/src/lev/PersistentIndex.cc
+   trunk/src/lua.cc
+Log:
+Trunk 1.1:
+- separation of item flags:
+  - &quot;static&quot; - item is not liftable, no pickup
+  - &quot;portable&quot; - item can be added to inventory
+  - &quot;freezable&quot; - item can be frozen by st_ice
+- it_springboard, it_bomb (but not it_bomb_burning) as portable
+- fix potential crash on addition of current level to history
+
+Modified: trunk/src/items/Bomb.cc
+===================================================================
+--- trunk/src/items/Bomb.cc	2009-04-20 23:34:35 UTC (rev 1642)
++++ trunk/src/items/Bomb.cc	2009-04-21 22:09:47 UTC (rev 1643)
+@@ -122,7 +122,14 @@
+         replace(&quot;it_explosion_debris&quot;);
+     }
+ 
+-    DEF_ITEMTRAITSF(Bomb, &quot;it_bomb&quot;, it_bomb, itf_static | itf_indestructible | itf_fireproof);
++    int Bomb::traitsIdx() const {
++        return state;
++    }
++    
++    ItemTraits Bomb::traits[2] = {
++        {&quot;it_bomb&quot;, it_bomb, itf_static | itf_indestructible | itf_fireproof | itf_portable | itf_freezable, 0.0},
++        {&quot;it_bomb_burning&quot;, it_bomb_burning, itf_static | itf_indestructible | itf_fireproof | itf_freezable, 0.0},
++    };
+ 
+     BOOT_REGISTER_START
+         BootRegister(new Bomb(0), &quot;it_bomb&quot;);
+
+Modified: trunk/src/items/Bomb.hh
+===================================================================
+--- trunk/src/items/Bomb.hh	2009-04-20 23:34:35 UTC (rev 1642)
++++ trunk/src/items/Bomb.hh	2009-04-21 22:09:47 UTC (rev 1643)
+@@ -30,7 +30,7 @@
+ 
+     class Bomb : public Item {
+         CLONEOBJ(Bomb);
+-        DECL_ITEMTRAITS;
++        DECL_ITEMTRAITS_ARRAY(2, traitsIdx());
+ 
+     private:
+         enum iState {
+@@ -63,6 +63,7 @@
+     private:
+         void burn();
+         void explode();
++        int traitsIdx() const;
+     };
+    
+ } // namespace enigma
+
+Modified: trunk/src/items/BurnableItem.cc
+===================================================================
+--- trunk/src/items/BurnableItem.cc	2009-04-20 23:34:35 UTC (rev 1642)
++++ trunk/src/items/BurnableItem.cc	2009-04-21 22:09:47 UTC (rev 1643)
+@@ -76,7 +76,7 @@
+     
+     ItemTraits BurnableItem::traits[6] = {
+         {&quot;it_burnable_invisible&quot;, it_burnable_invisible, itf_static, 0.0},
+-        {&quot;it_burnable_oil&quot;,       it_burnable_oil,       itf_static, 0.0},
++        {&quot;it_burnable_oil&quot;,       it_burnable_oil,       itf_static | itf_freezable, 0.0},
+         {&quot;it_burnable_ignited&quot;,   it_burnable_ignited,   itf_static | itf_animation | itf_fireproof, 0.0},
+         {&quot;it_burnable_burning&quot;,   it_burnable_burning,   itf_static | itf_animation | itf_fireproof, 0.0},
+         {&quot;it_burnable_ash&quot;,       it_burnable_ash,       itf_static | itf_fireproof, 0.0},
+
+Modified: trunk/src/items/Magnet.cc
+===================================================================
+--- trunk/src/items/Magnet.cc	2009-04-20 23:34:35 UTC (rev 1642)
++++ trunk/src/items/Magnet.cc	2009-04-21 22:09:47 UTC (rev 1643)
+@@ -88,8 +88,8 @@
+     }
+     
+     ItemTraits Magnet::traits[2] = {
+-        { &quot;it_magnet_off&quot;, it_magnet_off, itf_static | itf_indestructible, 0.0 },
+-        { &quot;it_magnet_on&quot;,  it_magnet_on,  itf_static | itf_indestructible, 0.0 },
++        { &quot;it_magnet_off&quot;, it_magnet_off, itf_static | itf_indestructible | itf_freezable, 0.0 },
++        { &quot;it_magnet_on&quot;,  it_magnet_on,  itf_static | itf_indestructible | itf_freezable, 0.0 },
+     };
+     
+     BOOT_REGISTER_START
+
+Modified: trunk/src/items/Meditation.cc
+===================================================================
+--- trunk/src/items/Meditation.cc	2009-04-20 23:34:35 UTC (rev 1642)
++++ trunk/src/items/Meditation.cc	2009-04-21 22:09:47 UTC (rev 1643)
+@@ -244,12 +244,12 @@
+     }
+ 
+     ItemTraits Meditation::traits[6] = {
+-        {&quot;it_meditation_caldera&quot;,  it_meditation_caldera,  itf_static | itf_fireproof},
+-        {&quot;it_meditation_hollow&quot;,  it_meditation_hollow,  itf_static | itf_fireproof},
+-        {&quot;it_meditation_dent&quot;,  it_meditation_dent,  itf_static | itf_fireproof},
+-        {&quot;it_meditation_bump&quot;,  it_meditation_bump,  itf_static | itf_fireproof},
+-        {&quot;it_meditation_hill&quot;,  it_meditation_hill,  itf_static | itf_fireproof},
+-        {&quot;it_meditation_volcano&quot;,  it_meditation_volcano,  itf_static | itf_fireproof},
++        {&quot;it_meditation_caldera&quot;,  it_meditation_caldera,  itf_static | itf_fireproof | itf_freezable},
++        {&quot;it_meditation_hollow&quot;,  it_meditation_hollow,  itf_static | itf_fireproof | itf_freezable},
++        {&quot;it_meditation_dent&quot;,  it_meditation_dent,  itf_static | itf_fireproof | itf_freezable},
++        {&quot;it_meditation_bump&quot;,  it_meditation_bump,  itf_static | itf_fireproof | itf_freezable},
++        {&quot;it_meditation_hill&quot;,  it_meditation_hill,  itf_static | itf_fireproof | itf_freezable},
++        {&quot;it_meditation_volcano&quot;,  it_meditation_volcano,  itf_static | itf_fireproof | itf_freezable},
+     };
+ 
+     BOOT_REGISTER_START
+
+Modified: trunk/src/items/ShogunDot.cc
+===================================================================
+--- trunk/src/items/ShogunDot.cc	2009-04-20 23:34:35 UTC (rev 1642)
++++ trunk/src/items/ShogunDot.cc	2009-04-21 22:09:47 UTC (rev 1643)
+@@ -110,9 +110,9 @@
+     
+ 
+     ItemTraits ShogunDot::traits[3] = {
+-        { &quot;it_shogun_s&quot;, it_shogun_s, itf_static | itf_indestructible, 0.0 },
+-        { &quot;it_shogun_m&quot;, it_shogun_m, itf_static | itf_indestructible, 0.0 },
+-        { &quot;it_shogun_l&quot;, it_shogun_l, itf_static | itf_indestructible, 0.0 }
++        { &quot;it_shogun_s&quot;, it_shogun_s, itf_static | itf_indestructible | itf_freezable, 0.0 },
++        { &quot;it_shogun_m&quot;, it_shogun_m, itf_static | itf_indestructible | itf_freezable, 0.0 },
++        { &quot;it_shogun_l&quot;, it_shogun_l, itf_static | itf_indestructible | itf_freezable, 0.0 }
+     };
+ 
+     BOOT_REGISTER_START
+
+Modified: trunk/src/items/SimpleItems.cc
+===================================================================
+--- trunk/src/items/SimpleItems.cc	2009-04-20 23:34:35 UTC (rev 1642)
++++ trunk/src/items/SimpleItems.cc	2009-04-21 22:09:47 UTC (rev 1643)
+@@ -363,7 +363,7 @@
+         set_model(&quot;it_springboard&quot;);
+     }
+ 
+-    DEF_ITEMTRAITSF(Springboard, &quot;it_springboard&quot;, it_springboard, itf_static);
++    DEF_ITEMTRAITSF(Springboard, &quot;it_springboard&quot;, it_springboard, itf_static | itf_portable | itf_freezable);
+     
+ /* -------------------- Squashed Cherry -------------------- */
+ 
+@@ -380,7 +380,7 @@
+         return Item::message(m);
+     }
+ 
+-    DEF_ITEMTRAITSF(Squashed, &quot;it_squashed&quot;, it_squashed, itf_static);
++    DEF_ITEMTRAITSF(Squashed, &quot;it_squashed&quot;, it_squashed, itf_static | itf_freezable);
+ 
+ /* -------------------- Weight item -------------------- */
+     Weight::Weight() {
+
+Modified: trunk/src/items/StripItem.cc
+===================================================================
+--- trunk/src/items/StripItem.cc	2009-04-20 23:34:35 UTC (rev 1642)
++++ trunk/src/items/StripItem.cc	2009-04-21 22:09:47 UTC (rev 1643)
+@@ -98,22 +98,22 @@
+     }
+ 
+     ItemTraits StripItem::traits[16] = {
+-        {&quot;it_strip&quot;,  it_strip,  itf_static},
+-        {&quot;it_strip_w&quot;,  it_strip_w,  itf_static},
+-        {&quot;it_strip_s&quot;,  it_strip_s,  itf_static},
+-        {&quot;it_strip_sw&quot;,  it_strip_sw,  itf_static},
+-        {&quot;it_strip_e&quot;,  it_strip_e,  itf_static},
+-        {&quot;it_strip_ew&quot;,  it_strip_ew,  itf_static},
+-        {&quot;it_strip_es&quot;,  it_strip_es,  itf_static},
+-        {&quot;it_strip_esw&quot;,  it_strip_esw,  itf_static},
+-        {&quot;it_strip_n&quot;,  it_strip_n,  itf_static},
+-        {&quot;it_strip_nw&quot;,  it_strip_nw,  itf_static},
+-        {&quot;it_strip_ns&quot;,  it_strip_ns,  itf_static},
+-        {&quot;it_strip_nsw&quot;,  it_strip_nsw,  itf_static},
+-        {&quot;it_strip_ne&quot;,  it_strip_ne,  itf_static},
+-        {&quot;it_strip_new&quot;,  it_strip_new,  itf_static},
+-        {&quot;it_strip_nes&quot;,  it_strip_nes,  itf_static},
+-        {&quot;it_strip_nesw&quot;,  it_strip_nesw,  itf_static}
++        {&quot;it_strip&quot;,  it_strip,  itf_static | itf_freezable},
++        {&quot;it_strip_w&quot;,  it_strip_w,  itf_static | itf_freezable},
++        {&quot;it_strip_s&quot;,  it_strip_s,  itf_static | itf_freezable},
++        {&quot;it_strip_sw&quot;,  it_strip_sw,  itf_static | itf_freezable},
++        {&quot;it_strip_e&quot;,  it_strip_e,  itf_static | itf_freezable},
++        {&quot;it_strip_ew&quot;,  it_strip_ew,  itf_static | itf_freezable},
++        {&quot;it_strip_es&quot;,  it_strip_es,  itf_static | itf_freezable},
++        {&quot;it_strip_esw&quot;,  it_strip_esw,  itf_static | itf_freezable},
++        {&quot;it_strip_n&quot;,  it_strip_n,  itf_static | itf_freezable},
++        {&quot;it_strip_nw&quot;,  it_strip_nw,  itf_static | itf_freezable},
++        {&quot;it_strip_ns&quot;,  it_strip_ns,  itf_static | itf_freezable},
++        {&quot;it_strip_nsw&quot;,  it_strip_nsw,  itf_static | itf_freezable},
++        {&quot;it_strip_ne&quot;,  it_strip_ne,  itf_static | itf_freezable},
++        {&quot;it_strip_new&quot;,  it_strip_new,  itf_static | itf_freezable},
++        {&quot;it_strip_nes&quot;,  it_strip_nes,  itf_static | itf_freezable},
++        {&quot;it_strip_nesw&quot;,  it_strip_nesw,  itf_static | itf_freezable}
+     };
+     
+     BOOT_REGISTER_START
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2009-04-20 23:34:35 UTC (rev 1642)
++++ trunk/src/items.cc	2009-04-21 22:09:47 UTC (rev 1643)
+@@ -132,6 +132,10 @@
+     return get_traits().flags &amp; itf_static;
+ }
+ 
++bool Item::isPortable() const {
++    return !isStatic() || (get_traits().flags &amp; itf_portable);
++}
++
+ void Item::add_force(Actor *, V2 &amp;) {
+ }
+ 
+
+Modified: trunk/src/items.hh
+===================================================================
+--- trunk/src/items.hh	2009-04-20 23:34:35 UTC (rev 1642)
++++ trunk/src/items.hh	2009-04-21 22:09:47 UTC (rev 1643)
+@@ -32,6 +32,7 @@
+         it_bag,
+         it_banana,
+         it_bomb,
++        it_bomb_burning,
+         it_blocker,
+         it_bottle_idle,
+         it_bottle_broken,
+@@ -167,13 +168,15 @@
+ 
+     enum ItemFlags {
+         itf_none   = 0,
+-        itf_static = 1,         //!&lt; Cannot be picked up
+-        itf_indestructible = 2, //!&lt; Cannot be destroyed by explosions etc.
++        itf_static = 1,         //!&lt; Cannot be picked up - not liftable
++        itf_indestructible = 2, //!&lt; Non standard handling of explosions - may well be destructible!
+         itf_animation = 4,      //!&lt; Use set_anim() instead of set_model()
+         itf_invisible = 8,      //!&lt; Item has no visible model
+         itf_inflammable = 16,   //!&lt; Burns when hit by laser beam
+         itf_norespawn = 32,     //!&lt; Don't respawn balls on top of this item
+         itf_fireproof = 64,     //!&lt; This item can't burn by fire
++        itf_portable = 128,     //!&lt; This static item can be added to the inventory
++        itf_freezable = 256,    //!&lt; This static item can be frozen and carried by an st_ice
+     };
+ 
+     struct ItemTraits {
+@@ -205,7 +208,8 @@
+ 
+         virtual const ItemTraits &amp;get_traits() const = 0;
+         
+-        virtual bool isStatic() const;
++        virtual bool isStatic() const;   // not liftable
++        virtual bool isPortable() const;
+ 
+         /*! Return true if item completely covers the floor. In this
+           case the Floor::actor_contact() will not be called
+
+Modified: trunk/src/lev/PersistentIndex.cc
+===================================================================
+--- trunk/src/lev/PersistentIndex.cc	2009-04-20 23:34:35 UTC (rev 1642)
++++ trunk/src/lev/PersistentIndex.cc	2009-04-21 22:09:47 UTC (rev 1643)
+@@ -262,7 +262,7 @@
+         Variation var;
+         Proxy * curProxy = Index::getCurrentProxy();
+         // remember all but commandline absolute and relative paths
+-        if (curProxy-&gt;getNormPathType() != Proxy::pt_absolute) {
++        if (curProxy != NULL &amp;&amp; curProxy-&gt;getNormPathType() != Proxy::pt_absolute) {
+             PersistentIndex * curIndex = dynamic_cast&lt;PersistentIndex *&gt;(Index::getCurrentIndex());
+             if (curIndex != NULL)
+                 var = curIndex-&gt;getVariation(curIndex-&gt;getCurrentPosition());
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2009-04-20 23:34:35 UTC (rev 1642)
++++ trunk/src/lua.cc	2009-04-21 22:09:47 UTC (rev 1643)
+@@ -2213,9 +2213,9 @@
+             throwLuaError(L, &quot;Attempt to add an object to a bag or inventory that is no item&quot;);
+         } else {
+             Item * it = dynamic_cast&lt;Item *&gt;(obj);
+-            if (it-&gt;isStatic()) {
++            if (!it-&gt;isPortable()) {
+                 DisposeObject(obj);
+-                throwLuaError(L, &quot;Attempt to add a static item to a bag or inventory&quot;);
++                throwLuaError(L, &quot;Attempt to add an item to a bag or inventory that is not portable&quot;);
+             } else {
+                 itemHolder-&gt;add_item(it);
+                 // just in case itemholder is displayed
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001071.html">[Enigma-game-svn] r1641 - in homepage/input: . lotm
+</A></li>
+	<LI>Next message: <A HREF="001073.html">[Enigma-game-svn] r1642
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1072">[ date ]</a>
+              <a href="thread.html#1072">[ thread ]</a>
+              <a href="subject.html#1072">[ subject ]</a>
+              <a href="author.html#1072">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

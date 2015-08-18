@@ -1,0 +1,318 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1785 - in trunk/data: . levels/lib
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-August/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1785%20-%20in%20trunk/data%3A%20.%20levels/lib&In-Reply-To=%3C200908271940.n7RJebX0018795%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001213.html">
+   <LINK REL="Next"  HREF="001215.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1785 - in trunk/data: . levels/lib</H1>
+    <B>andreasl at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1785%20-%20in%20trunk/data%3A%20.%20levels/lib&In-Reply-To=%3C200908271940.n7RJebX0018795%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1785 - in trunk/data: . levels/lib">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Thu Aug 27 21:40:37 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001213.html">[Enigma-game-svn] r1784 - trunk/data/levels/pentomino_i
+</A></li>
+        <LI>Next message: <A HREF="001215.html">[Enigma-game-svn] r1786 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1214">[ date ]</a>
+              <a href="thread.html#1214">[ thread ]</a>
+              <a href="subject.html#1214">[ subject ]</a>
+              <a href="author.html#1214">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2009-08-27 21:40:35 +0200 (Thu, 27 Aug 2009)
+New Revision: 1785
+
+Modified:
+   trunk/data/api2init.lua
+   trunk/data/levels/lib/libmap.xml
+   trunk/data/levels/lib/libsoko.xml
+Log:
+Trunk:
+ - Speedup of remaining cases in lib.map.fuse (factor 30).
+ - Speedup of lib.map.defuse.
+ - Slight speedup of lib.map.set (factor 3 if positional argument is a table).
+ - Fixed bug in libsoko (incorrect classification of some walls as
+   type-two-walls, which resulted in wrongly set oxyds).
+
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2009-08-26 23:55:44 UTC (rev 1784)
++++ trunk/data/api2init.lua	2009-08-27 19:40:35 UTC (rev 1785)
+@@ -276,10 +276,11 @@
+         end
+         -- Draw map
+         for y=1, #map do
+-            local linelen = string.len(map[y])
++            local line = map[y]
++            local linelen = string.len(line)
+             assert_bool(math.fmod(linelen, len) == 0, &quot;wo:drawMap: Map line &quot;.. y .. &quot; with odd length.&quot;, 2)
+             for x = 1, linelen/len do
+-                local key = string.sub(map[y], len*(x-1)+1, len*x)
++                local key = string.sub(line, len*(x-1)+1, len*x)
+                 if key ~= ignore then
+                     local p = {origin.x - 1, origin.y - 1}
+                     if readdir == MAP_IDENT then
+
+Modified: trunk/data/levels/lib/libmap.xml
+===================================================================
+--- trunk/data/levels/lib/libmap.xml	2009-08-26 23:55:44 UTC (rev 1784)
++++ trunk/data/levels/lib/libmap.xml	2009-08-27 19:40:35 UTC (rev 1785)
+@@ -86,54 +86,86 @@
+     return wo:newMap(map1.defaultkey, result)
+ end
+ 
+-function lib.map.fuse(arg1, arg2)
+-    local map1, map2 = arg1, arg2
+-    if type(arg1) == &quot;string&quot; then
+-        map1 = wo:newMap(arg1)
+-    end
+-    if type(arg2) == &quot;string&quot; then
+-        map2 = wo:newMap(arg2)
+-    end
+-    assert_type(map1, &quot;lib.map.fuse first argument&quot;, 2, &quot;map&quot;)
+-    assert_type(map2, &quot;lib.map.fuse second argument&quot;, 2, &quot;map&quot;)
++function lib.map.fuse(map1, map2)
++    assert_type(map1, &quot;lib.map.fuse first argument&quot;, 2, &quot;map&quot;, &quot;string&quot;)
++    assert_type(map2, &quot;lib.map.fuse second argument&quot;, 2, &quot;map&quot;, &quot;string&quot;)
++    assert_bool((etype(map1) == &quot;map&quot;) or (etype(map2) == &quot;map&quot;),
++                &quot;lib.map.fuse: At least one argument must be a map, but both are strings.&quot;, 2)
+     local result = {}
+-    if type(arg1) == &quot;string&quot; and string.len(arg1) == 1 and map2.__keylength == 1 then
+---        print (&quot;map fuse optimizer&quot;)
++    if type(map1) == &quot;string&quot; then
++        local width = map2.width
++        local kl = map2.__keylength
+         for y = 1, map2.height do
+             local line2 = map2[y]
+             local line = &quot;&quot;
+-            for x = 1, string.len(line2) do
+-                line = line .. arg1 .. string.sub(line2, x, x)
++            for x = 1, width*kl, kl do
++                line = line .. map1 .. string.sub(line2, x, x + kl - 1)
+             end
+             result[y] = line
+         end
++        return wo:newMap(map1 .. map2.defaultkey, result)  
++    elseif type(map2) == &quot;string&quot; then
++        local width = map1.width
++        local kl = map1.__keylength
++        for y = 1, map1.height do
++            local line1 = map1[y]
++            local line = &quot;&quot;
++            for x = 1, width*kl, kl do
++                line = line .. string.sub(line1, x, x + kl - 1) .. map2
++            end
++            result[y] = line
++        end        
++        return wo:newMap(map1.defaultkey .. map2, result)  
+     else
+-    for y = 1, math.max(map1.height, map2.height) do
+-        result[y] = &quot;&quot;
+-        for x = 1, math.max(map1.width, map2.width) do
+-            result[y] = result[y] .. map1[{x - 1, y - 1}] .. map2[{x - 1, y - 1}]
++        local width = math.max(map1.width, map2.width)
++        local kl1 = map1.__keylength
++        local kl2 = map2.__keylength
++        local dk1 = map1.defaultkey
++        local dk2 = map2.defaultkey
++        for y = 1, math.max(map1.height, map2.height) do
++            local line1 = map1[y] or &quot;&quot;
++            local line2 = map2[y] or &quot;&quot;
++            local line = &quot;&quot;
++            for x = 1, width do
++                local p1 = string.sub(line1, x*kl1 - kl1 + 1, x*kl1)
++                local p2 = string.sub(line2, x*kl2 - kl2 + 1, x*kl2)
++                if p1 == &quot;&quot; then
++                    line = line .. dk1
++                else
++                    line = line .. p1
++                end
++                if p2 == &quot;&quot; then
++                    line = line .. dk2
++                else
++                    line = line .. p2
++                end
++            end
++            result[y] = line
+         end
++        return wo:newMap(map1.defaultkey .. map2.defaultkey, result)  
+     end
+-    end
+-    return wo:newMap(map1.defaultkey .. map2.defaultkey, result)  
+ end
+ 
+ function lib.map.defuse(map)
+     assert_type(map, &quot;lib.map.defuse first argument&quot;, 2, &quot;map&quot;)
+     local kl = rawget(map, &quot;__keylength&quot;)
+     local dk = rawget(map, &quot;__defaultkey&quot;)
+-    local result = {}
++    local premap = {}
+     for j = 1, kl do
+-        result[j] = wo:newMap(string.sub(dk, j, j), map.width, map.height)
++        premap[j] = {}
+     end
+-    for y = 0, map.height - 1 do
+-        for x = 0, map.width - 1 do
+-            local key = map[{x,y}]
+-            for j = 1, kl do
+-                result[j][{x,y}] = string.sub(key, j, j)
+-            end
++    for y = 1, rawget(map, &quot;__height&quot;) do
++        local line = map[y]
++        local j = 1
++        for x = 1, string.len(line) do
++            premap[j][y] = (premap[j][y] or &quot;&quot;) .. string.sub(line, x, x)
++            j = (j % kl) + 1
+         end
+     end
++    local result = {}
++    for j = 1, kl do
++        result[j] = wo:newMap(string.sub(dk, j, j), premap[j])
++    end
+     return result
+ end
+ 
+@@ -448,15 +480,15 @@
+                 ..&quot;(should be &quot;..kl.. &quot;, is &quot;..string.len(value)..&quot;).&quot;, 2)
+         end
+         if (usertype(posarg) == &quot;position&quot;) or (usertype(posarg) == &quot;object&quot;) then
+-            local pos = posarg:grid()
+-            if (pos.x &lt; 0) or (pos.y &lt; 0) then
+-                error(&quot;lib.map.set: Negative positions are not supported.&quot;, 2)
++            local x, y = (posarg:grid()):xy()
++            assert_bool((x &gt;= 0) and (y &gt;= 0), &quot;lib.map.set: Negative positions are not supported.&quot;, 2)
++            if (x &gt;= rawget(map, &quot;__width&quot;)) or (y &gt;= rawget(map, &quot;__height&quot;)) then
++                map:extend({x, y})
+             end
+-            map:extend(pos)
+-            rawset(map, pos.y + 1,
+-                   string.sub(rawget(map, pos.y + 1), 1, pos.x * kl)
++            rawset(map, y + 1,
++                   string.sub(rawget(map, y + 1), 1, x * kl)
+                 .. value
+-                .. string.sub(rawget(map, pos.y + 1), (pos.x + 1) * kl + 1, -1))
++                .. string.sub(rawget(map, y + 1), (x + 1) * kl + 1, -1))
+         elseif usertype(posarg) == &quot;group&quot; then
+             for obj in posarg do
+                 map:extend(obj)
+@@ -474,7 +506,17 @@
+                   .. string.sub(rawget(map, posarg[j].y + 1), (posarg[j].x + 1) * kl + 1, -1))
+             end
+         elseif type(posarg) == &quot;table&quot; then
+-            lib.map.set(map, po(posarg), value)
++            local x, y = posarg[1], posarg[2]
++            assert_bool(type(x) == &quot;number&quot;, &quot;lib.map.set second argument (position): Conversion to position failed.&quot;, 2)
++            assert_bool(type(y) == &quot;number&quot;, &quot;lib.map.set second argument (position): Conversion to position failed.&quot;, 2)
++            assert_bool((x &gt;= 0) and (y &gt;= 0), &quot;lib.map.set: Negative positions are not supported.&quot;, 2)
++            if (x &gt;= rawget(map, &quot;__width&quot;)) or (y &gt;= rawget(map, &quot;__height&quot;)) then
++                map:extend({x, y})
++            end
++            rawset(map, y + 1,
++                   string.sub(rawget(map, y + 1), 1, x * kl)
++                .. value
++                .. string.sub(rawget(map, y + 1), (x + 1) * kl + 1, -1))
+         end
+     end
+ end
+
+Modified: trunk/data/levels/lib/libsoko.xml
+===================================================================
+--- trunk/data/levels/lib/libsoko.xml	2009-08-26 23:55:44 UTC (rev 1784)
++++ trunk/data/levels/lib/libsoko.xml	2009-08-27 19:40:35 UTC (rev 1785)
+@@ -410,35 +410,34 @@
+             local delta = NEIGHBORS_8[j]
+             outside = outside or lib.soko.area[pos + delta].is_outf
+         end
+-        if outside then
+-            local count = 0
+-            local last_orientation
+-            for _, dir in ipairs({{N, NORTH}, {S, SOUTH}, {E, EAST}, {W, WEST}}) do
+-                if lib.soko.area[pos + dir[1]].is_way then
+-                    count = count + 1
+-                    last_orientation = dir[2]
+-                end
++        local count = 0
++        local last_orientation
++        for _, dir in ipairs({{N, NORTH}, {S, SOUTH}, {E, EAST}, {W, WEST}}) do
++            if lib.soko.area[pos + dir[1]].is_way then
++                count = count + 1
++                last_orientation = dir[2]
+             end
+-            if count &gt; 0 then
+-                mark_as(pos, &quot;wall_one&quot;)
+-                lib.soko.area[pos].ways = count
+-                if count == 1 then
+-                    lib.soko.area[pos].orientation = last_orientation
+-                end
++        end
++        lib.soko.area[pos].ways = count
++        if outside and (count &gt; 0) then
++            mark_as(pos, &quot;wall_one&quot;)
++            if count == 1 then
++                lib.soko.area[pos].orientation = last_orientation
+             end
+         end
+     end
+     -- polist.wall_two
+-    -- There are three conditions for an element of polist.wall_two:
++    -- There are four conditions for an element of polist.wall_two:
+     -- (i) it's near a wall_one, (ii) it's not a wall_one,
+-    -- (iii) it's wall or outside. In addition, the neighboring
+-    -- wall_one are added into the list.
++    -- (iii) it's wall or outside, (iii) it's not near a way.
++    -- In addition, the neighboring wall_one are added into the list.
+     for i = 1, #lib.soko.polist.wall_one do
+         local wall_one = lib.soko.polist.wall_one[i]
+         for j = 1, #NEIGHBORS_4 do
+             local delta = NEIGHBORS_4[j]
+             local check = wall_one + delta
+-            if not (lib.soko.area[check].is_way or lib.soko.area[check].is_wall_one) then
++            if not (lib.soko.area[check].is_way or lib.soko.area[check].is_wall_one
++                    or ((lib.soko.area[check].ways or 0) &gt; 0)) then
+                 mark_as(check, &quot;wall_two&quot;)
+                 lib.soko.area[check].wall_one =
+                     (lib.soko.area[check].wall_one or po(grp())) .. wall_one
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001213.html">[Enigma-game-svn] r1784 - trunk/data/levels/pentomino_i
+</A></li>
+	<LI>Next message: <A HREF="001215.html">[Enigma-game-svn] r1786 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1214">[ date ]</a>
+              <a href="thread.html#1214">[ thread ]</a>
+              <a href="subject.html#1214">[ subject ]</a>
+              <a href="author.html#1214">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

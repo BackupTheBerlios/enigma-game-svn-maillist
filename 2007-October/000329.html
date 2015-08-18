@@ -1,0 +1,439 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r897 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-October/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r897%20-%20trunk/src&In-Reply-To=%3C200710072023.l97KNQ5X010340%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000328.html">
+   <LINK REL="Next"  HREF="000330.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r897 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r897%20-%20trunk/src&In-Reply-To=%3C200710072023.l97KNQ5X010340%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r897 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Oct  7 22:23:26 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000328.html">[Enigma-game-svn] r896 - in trunk: doc/reference src
+</A></li>
+        <LI>Next message: <A HREF="000330.html">[Enigma-game-svn] r898 - homepage/input
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#329">[ date ]</a>
+              <a href="thread.html#329">[ thread ]</a>
+              <a href="subject.html#329">[ subject ]</a>
+              <a href="author.html#329">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-10-07 22:23:25 +0200 (Sun, 07 Oct 2007)
+New Revision: 897
+
+Modified:
+   trunk/src/WorldProxy.cc
+   trunk/src/enigma.cc
+   trunk/src/enigma.hh
+   trunk/src/lua.cc
+   trunk/src/objects_decl.hh
+Log:
+Trunk 1.1: Lua API Reengineering part II
+- Value add types BOOL and OBJECT
+- switch engine to use new BOOL values instead of 1/nil
+- 1.10 levels convert BOOL Value to Lua 5 booleans
+- &lt;1.10 levels  convert BOOL Value to Lua 4 1/nil style
+- wo[&quot;FollowMode&quot;] added
+- checkboard tile support added
+Note:
+- action callback values are affected, too
+
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2007-10-07 12:18:57 UTC (rev 896)
++++ trunk/src/WorldProxy.cc	2007-10-07 20:23:25 UTC (rev 897)
+@@ -19,6 +19,7 @@
+ 
+ #include &quot;WorldProxy.hh&quot;
+ #include &quot;server.hh&quot;
++#include &quot;display.hh&quot;
+ 
+ using namespace enigma;
+ 
+@@ -43,6 +44,8 @@
+     Value WorldProxy::getAttr(const string&amp; key) const {
+         if (key == &quot;AllowTogglePlayer&quot;) {
+             return server::AllowTogglePlayer;
++        } else if (key == &quot;ConserveLevel&quot;) {
++            return server::ConserveLevel;
+         } else if (key == &quot;CreatingPreview&quot;) {
+             return server::CreatingPreview;  // read only
+         } else if (key == &quot;IsDifficult&quot;) {
+@@ -90,6 +93,8 @@
+             server::AllowTogglePlayer = val;
+         } else if (key == &quot;ConserveLevel&quot;) {
+             server::ConserveLevel = val.to_bool();
++        } else if (key == &quot;FollowMode&quot;) {
++            display::SetFollowMode((display::FollowMode)((int)val));
+         } else if (key == &quot;ShowMoves&quot;) {
+             server::ShowMoves = val.to_bool();
+             STATUSBAR-&gt;show_move_counter (server::ShowMoves);
+
+Modified: trunk/src/enigma.cc
+===================================================================
+--- trunk/src/enigma.cc	2007-10-07 12:18:57 UTC (rev 896)
++++ trunk/src/enigma.cc	2007-10-07 20:23:25 UTC (rev 897)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -21,6 +22,7 @@
+ #include &quot;enigma.hh&quot;
+ #include &quot;ecl.hh&quot;
+ #include &quot;main.hh&quot;
++#include &quot;objects_decl.hh&quot;
+ 
+ #include &lt;iostream&gt;
+ #include &lt;ctime&gt;
+@@ -30,7 +32,6 @@
+ using namespace ecl;
+ using namespace enigma;
+ 
+-
+ /* -------------------- Game Type -------------------- */
+ 
+ static const char *versionName[GAMET_COUNT+1] = {
+@@ -107,7 +108,6 @@
+     return sfx[d+1];
+ }
+ 
+-
+ /* -------------------- DirectionBits -------------------- */
+ 
+ DirectionBits
+@@ -140,14 +140,17 @@
+      val.dval = i;
+ }
+ 
+-Value::Value(bool b) {
+-     if (b) {
+-        type = DOUBLE;
+-        val.dval = 1;
+-     } else
+-        type = NIL;
++Value::Value(bool b) : type (BOOL) {
++     val.dval = b;
+ }
+ 
++Value::Value(Object *obj) : type (OBJECT) {
++     if (obj != NULL)
++         val.dval = obj-&gt;getId();
++     else
++         val.dval = 0;
++}
++
+ Value::Value(Type t) : type (t) {
+     switch (t) {
+         case DOUBLE :
+@@ -157,8 +160,11 @@
+             val.str = new char[1];
+             val.str[0] = 0;
+             break;
++        case BOOL :
++            val.dval = false;
++            break;
+         case OBJECT :
+-            // tbd
++            val.dval = (double) NULL;
+             break;
+     }
+ }
+@@ -196,11 +202,11 @@
+     else
+         switch (type) {
+             case DOUBLE :
++            case BOOL :
++            case OBJECT :
+                 return val.dval == other.val.dval;
+             case STRING :
+                 return strcmp(val.str, other.val.str) == 0;
+-            case OBJECT :
+-                return false; // tbd
+         }
+     return true;
+ }
+@@ -227,6 +233,7 @@
+ Value::operator double() const {
+     switch (type) {
+         case DOUBLE: 
++        case BOOL: 
+             return val.dval;
+         case STRING:
+             return atof(val.str);  // TODO use strtod and eval remaining part of string
+@@ -238,13 +245,22 @@
+ Value::operator int() const {
+     switch (type) {
+         case DOUBLE:
++        case BOOL: 
+             return round_nearest&lt;int&gt;(val.dval);
+         case STRING: 
+             return atoi(val.str);  //TODO use strtol and eval remaining part of string
+-    default: return 0;
++        default: return 0;
+     }
+ }
+ 
++Value::operator Object *() const {
++    switch (type) {
++        case OBJECT:
++            return Object::getObject(round_nearest&lt;int&gt;(val.dval));
++        default: return NULL;
++    }
++}
++
+ Value::operator const char*() const {
+     static std::string s;
+     switch (type) {
+@@ -302,6 +318,8 @@
+ 
+ bool Value::to_bool() const {
+     switch (type) {
++        case BOOL :
++            return val.dval;
+         case NIL :
+         case DEFAULT :
+             return false;
+
+Modified: trunk/src/enigma.hh
+===================================================================
+--- trunk/src/enigma.hh	2007-10-07 12:18:57 UTC (rev 896)
++++ trunk/src/enigma.hh	2007-10-07 20:23:25 UTC (rev 897)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2002,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -36,7 +37,9 @@
+ 
+ namespace enigma
+ {
+-
++    using namespace world;
++    class world::Object;
++    
+ /* -------------------- Various types -------------------- */
+ 
+     enum Difficulty {
+@@ -177,25 +180,28 @@
+             DEFAULT,  ///&lt; Pseudotype for a not existing attribute that should
+                       ///&lt; cause the default behaviour of the object
+             NIL,      ///&lt; Value that is equivalent to Lua &quot;nil&quot;. It represents
+-                      ///&lt; the bool &quot;false&quot;
++                      ///&lt; an invalid value
++            BOOL,     ///&lt; Value that represents bool values &quot;true&quot; and &quot;false&quot;.
+             DOUBLE,   ///&lt; Value is numerical and can take a &quot;double&quot;. It is used
+                       ///&lt; for other numericals values like &quot;int&quot;, too.
+             STRING,   ///&lt; Value is a string. Such a string may encode another
+                       ///&lt; type that has no native representation in Value
+-            OBJECT    ///&lt; Value is an object id. The id is a persistent object
++            OBJECT,    ///&lt; Value is an object id. The id is a persistent object
+                       ///&lt; identifier.
++            GROUP     ///&lt; Value is a group of objects.
+         };
+ 
+         Value();                       ///&lt; Constructor for NIL value that 
+-                                       ///&lt; represents boolean &quot;false&quot;, too 
++                                       ///&lt; represents an invalid value
+         Value(double d);               ///&lt; Constructor for DOUBLE value
+         Value(const char* str);        ///&lt; Constructor for STRING value. The
+                                        ///&lt; given string is duplicated
+         Value(const std::string&amp; str); ///&lt; Constructor for STRING value. The
+                                        ///&lt; given string is duplicated
+         Value(int i);                  ///&lt; Constructor for DOUBLE value
+-        Value(bool b);                 ///&lt; Constructor for a value that properly
+-                                       ///&lt; represents the given bool
++        Value(bool b);                 ///&lt; Constructor for BOOL value
++        Value(Object *obj);            ///&lt; Constructor for OBJECT value that properly
++                                       ///&lt; represents a persistent reference to an object
+         Value(Type t);                 ///&lt; Constructor for a given type. The
+                                        ///&lt; value defaults to 0.0 or &quot;&quot;
+         ~Value();
+@@ -251,6 +257,12 @@
+         operator int() const;
+         
+         /**
++         * Conversion of a value to an object reference. All values besides valid
++         * object values default to a NULL reference.
++         */
++        operator Object *() const;
++        
++        /**
+          * Conversion of a value to a &lt;code&gt;char *&lt;/code&gt; just for initialization
+          * of a std::string. Numerical values are converted to a string like it
+          * id done by LUA. All other values default to an empty string.
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2007-10-07 12:18:57 UTC (rev 896)
++++ trunk/src/lua.cc	2007-10-07 20:23:25 UTC (rev 897)
+@@ -140,32 +140,6 @@
+     lua_pop (L, 1);
+ }
+ 
+-static void push_value(lua_State *L, const Value &amp;val) {
+-    switch (val.getType()) {
+-        case Value::NIL:
+-        case Value::DEFAULT :
+-            lua_pushnil(L);
+-            break;
+-        case Value::DOUBLE:
+-            lua_pushnumber(L, val.get_double());
+-            break;
+-        case Value::STRING:
+-            lua_pushstring(L, val.get_string());
+-            break;
+-    }
+-}
+-
+-static Value to_value(lua_State *L, int idx) {
+-    switch (lua_type(L, idx)) {
+-        case LUA_TNIL: return Value();
+-        case LUA_TNUMBER: return Value(lua_tonumber(L,idx));
+-        case LUA_TSTRING: return Value(lua_tostring(L,idx));
+-        case LUA_TBOOLEAN: return (lua_toboolean(L,idx)) ? Value(1) : Value();
+-        default: throwLuaError(L,&quot;Cannot convert type to Value.&quot;);
+-    }
+-    return Value();
+-}
+-
+ static bool checkMetadata (lua_State *L, int idx, const char *name) {
+     bool result = false;
+     if (lua_getmetatable(L, idx)) {  // does it have a metatable?
+@@ -228,7 +202,7 @@
+     return obj;  // NULL if object does no longer exist
+ }
+ 
+-static void pushobject (lua_State *L, Object *obj) {
++static void pushobject(lua_State *L, Object *obj) {
+     int *udata;
+     /* Lua does not allow NULL pointers in userdata variables, so
+        convert them manually to `nil' values. */
+@@ -245,7 +219,54 @@
+     }
+ }
+ 
++static void push_value(lua_State *L, const Value &amp;val) {
++    switch (val.getType()) {
++        case Value::NIL:
++        case Value::DEFAULT :
++            lua_pushnil(L);
++            break;
++        case Value::DOUBLE:
++            lua_pushnumber(L, val.get_double());
++            break;
++        case Value::STRING:
++            lua_pushstring(L, val.get_string());
++            break;
++        case Value::BOOL:
++            if (server::EnigmaCompatibility &lt; 1.10) {
++                if (val.to_bool())
++                    lua_pushnumber(L, 1);
++                else
++                    lua_pushnil(L);
++            } else {
++                lua_pushboolean(L, val.to_bool());
++            }
++            break;
++        case Value::OBJECT:
++            pushobject(L, (Object *)val);
++            break;
++    }
++}
+ 
++static Value to_value(lua_State *L, int idx) {
++    switch (lua_type(L, idx)) {
++        case LUA_TNIL: 
++            return Value();
++        case LUA_TNUMBER: 
++            return Value(lua_tonumber(L,idx));
++        case LUA_TSTRING: 
++            return Value(lua_tostring(L,idx));
++        case LUA_TBOOLEAN: 
++            return Value((bool)lua_toboolean(L,idx));
++        case LUA_TUSERDATA:
++            if (is_object(L, idx))
++                return Value(to_object(L, idx));
++        default: 
++            throwLuaError(L,&quot;Cannot convert type to Value.&quot;);
++    }
++    return Value();
++}
++
++
+ /* -------------------- Interface routines -------------------- */
+ 
+ 
+@@ -1559,6 +1580,10 @@
+     setObjectAttributes(obj, L);
+     switch (obj-&gt;getObjectType()) {
+         case Object::FLOOR :
++            if (Value odd = obj-&gt;getAttr(&quot;checkerboard&quot;)) {
++                if ((xi+yi)%2 != (int)odd)
++                    break;
++            }
+             world::SetFloor(GridPos(xi,yi), dynamic_cast&lt;Floor *&gt;(obj));
+             break;
+         case Object::STONE :
+
+Modified: trunk/src/objects_decl.hh
+===================================================================
+--- trunk/src/objects_decl.hh	2007-10-07 12:18:57 UTC (rev 896)
++++ trunk/src/objects_decl.hh	2007-10-07 20:23:25 UTC (rev 897)
+@@ -56,7 +56,7 @@
+             FLOOR,
+             ITEM,
+             ACTOR
+-            };
++        };
+             
+         Object();
+         Object(const char *kind);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000328.html">[Enigma-game-svn] r896 - in trunk: doc/reference src
+</A></li>
+	<LI>Next message: <A HREF="000330.html">[Enigma-game-svn] r898 - homepage/input
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#329">[ date ]</a>
+              <a href="thread.html#329">[ thread ]</a>
+              <a href="subject.html#329">[ subject ]</a>
+              <a href="author.html#329">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

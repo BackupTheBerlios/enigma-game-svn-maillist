@@ -1,0 +1,628 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1240 - in trunk: data/schemas src src/lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1240%20-%20in%20trunk%3A%20data/schemas%20src%20src/lev&In-Reply-To=%3C200807201729.m6KHTNqc009116%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000673.html">
+   <LINK REL="Next"  HREF="000675.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1240 - in trunk: data/schemas src src/lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1240%20-%20in%20trunk%3A%20data/schemas%20src%20src/lev&In-Reply-To=%3C200807201729.m6KHTNqc009116%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1240 - in trunk: data/schemas src src/lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Jul 20 19:29:23 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000673.html">[Enigma-game-svn] r1239 - in trunk: data data/schemas src src/stones
+</A></li>
+        <LI>Next message: <A HREF="000675.html">[Enigma-game-svn] r1241 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#674">[ date ]</a>
+              <a href="thread.html#674">[ thread ]</a>
+              <a href="subject.html#674">[ subject ]</a>
+              <a href="author.html#674">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-07-20 19:29:21 +0200 (Sun, 20 Jul 2008)
+New Revision: 1240
+
+Modified:
+   trunk/data/schemas/objects.xml
+   trunk/src/WorldProxy.cc
+   trunk/src/actors.cc
+   trunk/src/items.cc
+   trunk/src/items.hh
+   trunk/src/lev/Proxy.cc
+   trunk/src/player.cc
+   trunk/src/player.hh
+   trunk/src/server.cc
+   trunk/src/server.hh
+   trunk/src/world.cc
+Log:
+Trunk 1.1: new API reengineering
+- rename attribute 'mousefactor' to 'adhesion' (it_strip)
+- fix it_strip: ensure up to speed 50 grid/s that a large marble does not
+  touch floor on hit of neighboring stone
+- add attribute 'movable' support for st_turnstilearm
+- add global attribute 'ProvideExtralifes': defaults to true - must be set
+  befor world init
+- add global attribute 'SurviveFinish': defaults to true for 1.10, but false
+  for earlier releases. Actor must be alive when finish conditions are met.
+- fix: ensure that lasered marble shatter within same tick
+
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-07-14 23:01:33 UTC (rev 1239)
++++ trunk/data/schemas/objects.xml	2008-07-20 17:29:21 UTC (rev 1240)
+@@ -2,6 +2,7 @@
+ &lt;objects xmlns:xsi=&quot;<A HREF="http://www.w3.org/2001/XMLSchema-instance">http://www.w3.org/2001/XMLSchema-instance</A>&quot; xsi:noNamespaceSchemaLocation=&quot;objects.xsd&quot;&gt;
+   &lt;attributes&gt;
+     &lt;attr name=&quot;action&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;adhesion&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;anchor1&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;anchor2&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;autoclose&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+@@ -34,7 +35,6 @@
+     &lt;attr name=&quot;loop&quot; type=&quot;bool&quot; default=&quot;true&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;max&quot; type=&quot;double&quot; default=&quot;0&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;min&quot; type=&quot;double&quot; default=&quot;0&quot; rw=&quot;rw&quot;/&gt;
+-    &lt;attr name=&quot;mousefactor&quot; type=&quot;double&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;movable&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;name&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;nopaction&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+@@ -180,7 +180,7 @@
+     &lt;object name=&quot;it_strip&quot;&gt;
+       &lt;attr name=&quot;connections&quot;/&gt;
+       &lt;attr name=&quot;friction&quot;/&gt;
+-      &lt;attr name=&quot;mousefactor&quot;/&gt;
++      &lt;attr name=&quot;adhesion&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;it_strip_w&quot;&gt;
+       &lt;attr name=&quot;connections&quot; value=&quot;w&quot;/&gt;
+@@ -701,6 +701,7 @@
+       &lt;attr name=&quot;state&quot; max=&quot;3&quot;/&gt;
+       &lt;attr name=&quot;connections&quot;/&gt;
+       &lt;attr name=&quot;orientation&quot;/&gt;
++      &lt;attr name=&quot;movable&quot; default=&quot;true&quot; rw=&quot;r&quot;/&gt;
+       &lt;msg name=&quot;orientate&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;st_turnstilearm_n&quot;&gt;
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2008-07-14 23:01:33 UTC (rev 1239)
++++ trunk/src/WorldProxy.cc	2008-07-20 17:29:21 UTC (rev 1240)
+@@ -66,8 +66,12 @@
+             return (server::GetDifficulty() == DIFFICULTY_HARD);  // read only
+         } else if (key == &quot;LevelTime&quot;) {   
+             return server::LevelTime;    // read only
++        } else if (key == &quot;ProvideExtralifes&quot;) {
++            return server::ProvideExtralifes;
+         } else if (key == &quot;ShowMoves&quot;) {
+             return server::ShowMoves;
++        } else if (key == &quot;SurviveFinish&quot;) {
++            return server::SurviveFinish;
+         } else if (key == &quot;Width&quot;) {
+             return Width();
+         } else if (key == &quot;Brittleness&quot;) {
+@@ -145,9 +149,17 @@
+         } else if (key == &quot;FollowThreshold&quot;) {
+             server::FollowThreshold = val;
+             display::UpdateFollowMode();
++        } else if (key == &quot;ProvideExtralifes&quot;) {
++            bool newFlag = val.to_bool();
++            ASSERT(server::ProvideExtralifes || !newFlag, XLevelRuntime, 
++                &quot;Attribute 'ProvideExtralifes': toggling from false to true not allowed&quot;);
++            server::ProvideExtralifes = newFlag;
++            
+         } else if (key == &quot;ShowMoves&quot;) {
+             server::ShowMoves = val.to_bool();
+             STATUSBAR-&gt;show_move_counter (server::ShowMoves);
++        } else if (key == &quot;SurviveFinish&quot;) {
++            server::SurviveFinish = val.to_bool();
+         } else if (key == &quot;Brittleness&quot;) {
+             server::Brittleness = val;
+         } else if (key == &quot;ActorimpulseStrength&quot;) {
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2008-07-14 23:01:33 UTC (rev 1239)
++++ trunk/src/actors.cc	2008-07-20 17:29:21 UTC (rev 1240)
+@@ -140,7 +140,7 @@
+     if (m_actorinfo.field) {
+         Floor *fl = m_actorinfo.field-&gt;floor;
+         Item *it = m_actorinfo.field-&gt;item;
+-        bool item_covers_floor = (it &amp;&amp; it-&gt;covers_floor(m_actorinfo.pos));
++        bool item_covers_floor = (it &amp;&amp; it-&gt;covers_floor(m_actorinfo.pos, this));
+         if (!item_covers_floor &amp;&amp; fl &amp;&amp; this-&gt;is_on_floor())
+             fl-&gt;actor_contact(this);
+     }
+@@ -802,6 +802,12 @@
+                 handled = true;
+             }
+             break;
++        case SHATTERING:
++            if (m.message == &quot;_levelfinish&quot;) {
++                change_state(DEAD);
++                handled = true;
++            }
++            break;
+         case DEAD:
+             if (m.message == &quot;resurrect&quot;) {
+                 change_state(RESURRECTED);
+@@ -918,7 +924,7 @@
+ 
+     Floor *fl = m_actorinfo.field-&gt;floor;
+     Item *it = m_actorinfo.field-&gt;item;
+-    if (!(it != NULL &amp;&amp; it-&gt;covers_floor(get_pos())) &amp;&amp; fl != NULL)
++    if (!(it != NULL &amp;&amp; it-&gt;covers_floor(get_pos(), this)) &amp;&amp; fl != NULL)
+         fl-&gt;get_sink_speed (sink_speed, raise_speed);
+     
+     if (sink_speed == 0.0 || has_shield()) {
+@@ -1107,11 +1113,11 @@
+         break;
+     case DISAPPEARING:
+         GrabActor(this);
+-	disable_shield();
++        disable_shield();
+         set_anim(kind+&quot;-disappear&quot;);
+         break;
+     case RESURRECTED:
+-	disable_shield();
++        disable_shield();
+         sinkDepth = minSinkDepth;
+ 	break;
+     default:
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-07-14 23:01:33 UTC (rev 1239)
++++ trunk/src/items.cc	2008-07-20 17:29:21 UTC (rev 1240)
+@@ -142,7 +142,7 @@
+         GridObject::processLight(d);
+ }
+ 
+-double Item::getFriction(ecl::V2 pos, double defaultFriction) {
++double Item::getFriction(ecl::V2 pos, double defaultFriction, Actor *a) {
+     return defaultFriction;
+ }
+ 
+@@ -3905,8 +3905,8 @@
+         virtual void init_model();
+                 
+         // Items interface
+-        virtual bool covers_floor(ecl::V2 pos) const;
+-        virtual double getFriction(ecl::V2 pos, double defaultFriction);
++        virtual bool covers_floor(ecl::V2 pos, Actor *a) const;
++        virtual double getFriction(ecl::V2 pos, double defaultFriction, Actor *a);
+         virtual ecl::V2 calcMouseforce(Actor *a, ecl::V2 mouseForce, ecl::V2 floorForce);
+         
+     private:
+@@ -3954,11 +3954,26 @@
+         GridObject::init_model();
+     }
+ 
+-    bool StripItem::covers_floor(ecl::V2 pos) const {
++    bool StripItem::covers_floor(ecl::V2 pos, Actor *a) const {
+         if (GridPos(pos) != get_pos())
+             return false;
+ 
+-        const double MAXDIST = 6.0/32;
++        double velocity = 0;
++        if (a != NULL) 
++            velocity = ecl::length(a-&gt;get_actorinfo()-&gt;vel);
++            
++        // calculate the maximal horizontal or vertical distance from the center:
++        // gurantee that a large marble can touch a neighboring stone at speed 0,
++        // and a fast marble does not step off the strip on hitting a neighbor stone.
++        // A fast marble might not reach the stone in one timestep while being
++        // on top of the strip and is afterwards moved forward off the strip.
++        // Thus we must expand the strip with increasing speed of the actor - call
++        // it a relativistic effect :-)
++        // d = 1/2 - 19/64 - 0.02 + velocity/400 
++        //  = 1/2 - radius large marble - epsilon + velocity/(1/2.5 ms)
++        // we need to limit the speed to avoid a fast marble traversing the gap in
++        // two timesteps! 
++        double MAXDIST = 0.183125 + ecl::Clamp(velocity/400, 0.0, 0.125);
+         
+         double ycenter = get_pos().y + 0.5;
+         double xcenter = get_pos().x + 0.5;
+@@ -3971,17 +3986,17 @@
+                 ? true : false;
+     }
+     
+-    double StripItem::getFriction(ecl::V2 pos, double defaultFriction) {
++    double StripItem::getFriction(ecl::V2 pos, double defaultFriction, Actor *a) {
+         Value v = getAttr(&quot;friction&quot;);
+-        if (v &amp;&amp; covers_floor(pos))
++        if (v &amp;&amp; covers_floor(pos, a))
+             return v;
+         else
+             return defaultFriction;
+     }
+     
+     ecl::V2 StripItem::calcMouseforce(Actor *a, ecl::V2 mouseForce, ecl::V2 floorForce) {
+-        Value v = getAttr(&quot;mousefactor&quot;);
+-        if (v &amp;&amp; covers_floor(a-&gt;get_pos()))
++        Value v = getAttr(&quot;adhesion&quot;);
++        if (v &amp;&amp; covers_floor(a-&gt;get_pos(), a))
+             return mouseForce * (double)v ;
+         else
+             return floorForce;        
+
+Modified: trunk/src/items.hh
+===================================================================
+--- trunk/src/items.hh	2008-07-14 23:01:33 UTC (rev 1239)
++++ trunk/src/items.hh	2008-07-20 17:29:21 UTC (rev 1240)
+@@ -191,7 +191,7 @@
+         const char *get_kind() const;
+         void init_model();
+         virtual void processLight(Direction d);
+-        virtual double getFriction(ecl::V2 pos, double defaultFriction);
++        virtual double getFriction(ecl::V2 pos, double defaultFriction, Actor *a);
+         virtual ecl::V2 calcMouseforce(Actor *a, ecl::V2 mouseForce, ecl::V2 floorForce);
+ 
+         /* ---------- Item interface ---------- */
+@@ -206,7 +206,7 @@
+           case the Floor::actor_contact() will not be called
+           automatically; this must be done from `Item::actor_hit' (if
+           at all). */
+-        virtual bool covers_floor(ecl::V2 pos) const { return false; }
++        virtual bool covers_floor(ecl::V2 pos, Actor *a) const { return false; }
+ 
+         /*! Return the force an item exerts on actor `a'.  This is
+           used by sloped and hills for force fields that are local to
+
+Modified: trunk/src/lev/Proxy.cc
+===================================================================
+--- trunk/src/lev/Proxy.cc	2008-07-14 23:01:33 UTC (rev 1239)
++++ trunk/src/lev/Proxy.cc	2008-07-20 17:29:21 UTC (rev 1240)
+@@ -625,8 +625,10 @@
+             server::SetCompatibility(this);
+             server::EnigmaCompatibility = getEnigmaCompatibility();
+             server::LevelStatus = getLevelStatus();
+-            if (server::EnigmaCompatibility &lt; 1.10)
++            if (server::EnigmaCompatibility &lt; 1.10) {
+                 server::AllowSingleOxyds = true;
++                server::SurviveFinish = false;
++            }
+             server::PrepareLua();
+         }
+         processDependencies();
+
+Modified: trunk/src/player.cc
+===================================================================
+--- trunk/src/player.cc	2008-07-14 23:01:33 UTC (rev 1239)
++++ trunk/src/player.cc	2008-07-20 17:29:21 UTC (rev 1240)
+@@ -154,13 +154,13 @@
+ 
+ /* -------------------- Functions -------------------- */
+ 
+-void player::NewGame (bool isRestart) {
++void player::NewGame() {
+     int nplayers = 2;           // Always prepare for two players
+     std::vector&lt;int&gt; extralives(2);
+ 
+     // calculate number of extralives
+     for (int i=0; i&lt;nplayers; ++i) {
+-        if (isRestart) {
++        if (server::IsLevelRestart) {
+             // count existing number of extralives
+             int idxLife = -1;
+             extralives[i] = -1;
+@@ -170,7 +170,7 @@
+             } while (idxLife != -1);
+         } else {
+             // new game provides 2 extralives
+-            extralives[i] = 2;
++            extralives[i] = (server::ProvideExtralifes) ? 2 : 0;
+         }
+     }
+ 
+@@ -225,13 +225,17 @@
+     leveldat = LevelLocalData();
+ }
+ 
+-void player::LevelFinished() 
++void player::LevelFinished(int stage) 
+ {
+     for (unsigned i=0; i&lt;players.size(); ++i) {
+         for (unsigned j=0; j&lt;players[i].actors.size(); ++j) {
+             Actor *a = players[i].actors[j];
+-            SendMessage(a, &quot;disappear&quot;);
+-            SendMessage(a, &quot;disconnect&quot;);
++            if (stage == 0) {
++                SendMessage(a, &quot;_levelfinish&quot;);
++            } else {
++                SendMessage(a, &quot;disappear&quot;);
++                SendMessage(a, &quot;disconnect&quot;);
++            }
+         }
+     }
+ }
+@@ -402,8 +406,7 @@
+     unassignedActors.push_back(a);
+ }
+ 
+-static void CheckDeadActors() 
+-{
++void player::CheckDeadActors() {
+     bool           toggle_player    = false;
+     const unsigned NO_PLAYER        = UINT_MAX;
+     unsigned       toggle_to_player = NO_PLAYER;
+
+Modified: trunk/src/player.hh
+===================================================================
+--- trunk/src/player.hh	2008-07-14 23:01:33 UTC (rev 1239)
++++ trunk/src/player.hh	2008-07-20 17:29:21 UTC (rev 1240)
+@@ -37,7 +37,7 @@
+     namespace player {
+ 
+         /*! Start a new game for two virtual players. */
+-        void NewGame(bool isRestart);
++        void NewGame();
+ 
+         /*! This is called whenever a new level is reached in a running
+           game.  The inventories of all players are cleaned up, i.e., all
+@@ -53,7 +53,7 @@
+ 
+         /*! Called as soon as the current level is finished; it removes
+           the actors of all players from the level. */
+-        void LevelFinished();
++        void LevelFinished(int stage);
+ 
+         /* This function is only used by the YinYang items to exchange the
+            two players. */
+@@ -96,6 +96,7 @@
+         ItemAction ActivateItem (Item *it);
+ 
+         void Tick (double dtime);
++        void CheckDeadActors();
+         void PlayerShutdown();
+ 
+     } // namespace player
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2008-07-14 23:01:33 UTC (rev 1239)
++++ trunk/src/server.cc	2008-07-20 17:29:21 UTC (rev 1240)
+@@ -56,6 +56,7 @@
+         sv_paused,
+         sv_restart_level,
+         sv_restart_game,
++        sv_finishing,
+         sv_finished,
+     };
+ 
+@@ -82,6 +83,9 @@
+ bool     server::AllowTogglePlayer;
+ bool     server::CreatingPreview = false;   // read only for Lua
+ bool     server::ConserveLevel;
++bool     server::IsLevelRestart;            // no Lua access
++bool     server::ProvideExtralifes;
++bool     server::SurviveFinish;
+ 
+ Value    server::FollowAction;
+ bool     server::FollowGrid;
+@@ -136,9 +140,10 @@
+ {
+     try {
+         server::PrepareLevel();
++        IsLevelRestart = isRestart;
+ 
+         // clear inventory before level load and give us 2 extralives
+-        player::NewGame(isRestart);
++        player::NewGame();
+ 
+         levelProxy-&gt;loadLevel();  // sets the compatibility mode
+ 
+@@ -243,6 +248,8 @@
+     server::WorldInitialized  = false;
+     server::LevelTime         = 0.0;
+     server::ConserveLevel     = true;
++    server::ProvideExtralifes = true;
++    server::SurviveFinish     = true;
+     server::TwoPlayerGame     = false;
+     server::SingleComputerGame= true;
+     server::AllowSingleOxyds  = false;
+@@ -297,7 +304,7 @@
+ 
+ void server::RestartLevel() 
+ {
+-    if (state == sv_running || state == sv_finished) {
++    if (state == sv_running || state == sv_finished || state == sv_finishing) {
+         state = sv_restart_level;
+         current_state_dtime = 0;
+     }
+@@ -309,57 +316,60 @@
+ 
+ void server::Msg_RestartGame() 
+ {
+-    if (state == sv_running || state == sv_finished) {
++    if (state == sv_running || state == sv_finished || state == sv_finishing) {
+         state = sv_restart_game;
+         current_state_dtime = 0;
+     }
+ }
+ 
+-void server::FinishLevel()
+-{
++void server::FinishLevel() {
+     if (state == sv_running) {
+-        state = sv_finished;
+-        current_state_dtime = 0;
+-        player::LevelFinished(); // remove player-controlled actors
+-        client::Msg_Command(&quot;level_finished&quot;);
++        state = sv_finishing;
+     }
+-    else {
+-        // XXX server internal error: should only be called while game is running
+-    }
+ }
+ 
+-
+-void server::Tick (double dtime) 
+-{
++void server::Tick (double dtime) {
+     switch (state) {
+-    case sv_idle:
+-        break;
+-    case sv_paused:
+-        break;
+-    case sv_waiting_for_clients:
+-        break;
+-    case sv_running: 
+-        gametick (dtime);
+-        break;
+-    case sv_restart_level:
+-    case sv_restart_game:
+-        current_state_dtime += dtime;
+-        if (current_state_dtime &gt;= 1.0) {
+-            lev::Index *ind = lev::Index::getCurrentIndex();
+-            load_level(ind-&gt;getCurrent(), (state == sv_restart_level));
+-        } else {
+-            gametick(dtime);
+-        }
+-        break;
+-    case sv_finished:
+-        current_state_dtime += dtime;
+-        if (current_state_dtime &lt;= 2.5)
+-            gametick(dtime);
+-        else {
+-            client::Msg_AdvanceLevel (lev::ADVANCE_NEXT_MODE);
+-            state = sv_waiting_for_clients;
+-        }
+-        break;
++        case sv_idle:
++            break;
++        case sv_paused:
++            break;
++        case sv_waiting_for_clients:
++            break;
++        case sv_running: 
++            gametick (dtime);
++            break;
++        case sv_restart_level:
++        case sv_restart_game:
++            current_state_dtime += dtime;
++            if (current_state_dtime &gt;= 1.0) {
++                lev::Index *ind = lev::Index::getCurrentIndex();
++                load_level(ind-&gt;getCurrent(), (state == sv_restart_level));
++            } else {
++                gametick(dtime);
++            }
++            break;
++        case sv_finishing:
++            if (server::SurviveFinish) {
++                player::LevelFinished(0);     // mark all shattered actors as dead
++                player::CheckDeadActors();    // restart level or game if actors are dead!
++            }
++            if (state == sv_finishing) {
++                state = sv_finished;
++                current_state_dtime = 0;
++                player::LevelFinished(1); // remove player-controlled actors
++                client::Msg_Command(&quot;level_finished&quot;);
++            }
++            break;
++        case sv_finished:
++            current_state_dtime += dtime;
++            if (current_state_dtime &lt;= 2.5)
++                gametick(dtime);
++            else {
++                client::Msg_AdvanceLevel (lev::ADVANCE_NEXT_MODE);
++                state = sv_waiting_for_clients;
++            }
++            break;
+     }
+ }
+ 
+
+Modified: trunk/src/server.hh
+===================================================================
+--- trunk/src/server.hh	2008-07-14 23:01:33 UTC (rev 1239)
++++ trunk/src/server.hh	2008-07-20 17:29:21 UTC (rev 1240)
+@@ -58,6 +58,9 @@
+     // True: do not reset level when player dies
+     extern bool     ConserveLevel;
+ 
++    extern bool     IsLevelRestart;
++    extern bool     ProvideExtralifes;
++    extern bool     SurviveFinish;
+     extern bool     TwoPlayerGame;
+ 
+     extern bool     SingleComputerGame;
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-07-14 23:01:33 UTC (rev 1239)
++++ trunk/src/world.cc	2008-07-20 17:29:21 UTC (rev 1240)
+@@ -418,6 +418,13 @@
+     GameTimer.tick(dtime);
+ 
+     PerformRecalcLight(false);   // recalculate laser beams if necessary
++    // do kill lasered actors in same time step
++    for (unsigned i=0; i &lt; actorlist.size(); ++i) {
++        Item *it = actorlist[i]-&gt;get_actorinfo()-&gt;field-&gt;item;
++        if (it != NULL &amp;&amp; get_id(it) == it_laserbeam) {
++            it-&gt;actor_hit(actorlist[i]);
++        }
++    }
+ }
+ 
+ /* ---------- Puzzle scrambling -------------------- */
+@@ -502,7 +509,7 @@
+         }
+ 
+         if (Item *item = a-&gt;m_actorinfo.field-&gt;item) {
+-            friction = item-&gt;getFriction(a-&gt;get_pos(), friction);
++            friction = item-&gt;getFriction(a-&gt;get_pos(), friction, a);
+             if (a-&gt;get_controllers() != 0) {
+                 m = item-&gt;calcMouseforce(a, m_mouseforce.get_force(a), m);
+             }
+@@ -1518,6 +1525,7 @@
+     level.reset (new World(w,h));
+     display::NewWorld(w, h);
+     server::WorldSized = true;
++    player::NewGame();
+ }
+ 
+ int Width() {
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000673.html">[Enigma-game-svn] r1239 - in trunk: data data/schemas src src/stones
+</A></li>
+	<LI>Next message: <A HREF="000675.html">[Enigma-game-svn] r1241 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#674">[ date ]</a>
+              <a href="thread.html#674">[ thread ]</a>
+              <a href="subject.html#674">[ subject ]</a>
+              <a href="author.html#674">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

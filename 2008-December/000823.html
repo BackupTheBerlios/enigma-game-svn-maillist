@@ -1,0 +1,506 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1394 - in trunk: data data/schemas src src/floors
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-December/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1394%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/floors&In-Reply-To=%3C200812141256.mBECuHQL016156%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000822.html">
+   <LINK REL="Next"  HREF="000824.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1394 - in trunk: data data/schemas src src/floors</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1394%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/floors&In-Reply-To=%3C200812141256.mBECuHQL016156%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1394 - in trunk: data data/schemas src src/floors">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Dec 14 13:56:17 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000822.html">[Enigma-game-svn] r1393 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000824.html">[Enigma-game-svn] r1395 - in trunk/src: . gui lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#823">[ date ]</a>
+              <a href="thread.html#823">[ thread ]</a>
+              <a href="subject.html#823">[ subject ]</a>
+              <a href="author.html#823">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-12-14 13:56:16 +0100 (Sun, 14 Dec 2008)
+New Revision: 1394
+
+Added:
+   trunk/src/floors/SimpleFloors.cc
+   trunk/src/floors/SimpleFloors.hh
+Modified:
+   trunk/data/api2init.lua
+   trunk/data/schemas/objects.xml
+   trunk/data/startup.lua
+   trunk/src/Makefile.am
+   trunk/src/floors.cc
+   trunk/src/floors/FloodStream.cc
+   trunk/src/ox_oxyd1.cc
+   trunk/src/ox_peroxyd.cc
+Log:
+- remove superceeded &quot;fl-stwood&quot;
+- add state constant FLOODING
+- adjust flood interval default value to 0.2 seconds
+- reengineering of abyss, ice, space, swamp - collect these small classes in
+  a single file &quot;SimpleFloors.cc/hh&quot;
+  - combine space and space_force in one class
+
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2008-12-13 14:38:34 UTC (rev 1393)
++++ trunk/data/api2init.lua	2008-12-14 12:56:16 UTC (rev 1394)
+@@ -72,6 +72,7 @@
+ LIGHT    = 0
+ MEDIUM   = 1
+ DARK     = 2
++FLOODING = 1
+ 
+ -- color
+ BLACK  = 0
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-12-13 14:38:34 UTC (rev 1393)
++++ trunk/data/schemas/objects.xml	2008-12-14 12:56:16 UTC (rev 1394)
+@@ -163,7 +163,7 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;fl_floodstream&quot; abstract=&quot;true&quot;&gt;
+       &lt;attr name=&quot;faces&quot;/&gt;
+-      &lt;attr name=&quot;interval&quot; default=&quot;0.5&quot;/&gt;
++      &lt;attr name=&quot;interval&quot; default=&quot;0.2&quot;/&gt;
+       &lt;msg name=&quot;_init&quot;/&gt;
+       &lt;msg name=&quot;_checkflood&quot;/&gt;
+     &lt;/object&gt;
+@@ -203,6 +203,7 @@
+     &lt;object name=&quot;fl_ice&quot;&gt;
+       &lt;attr name=&quot;friction&quot; default=&quot;0.1&quot;/&gt;
+       &lt;attr name=&quot;adhesion&quot; default=&quot;0.1&quot;/&gt;
++      &lt;attr name=&quot;$heattransform&quot; default=&quot;fl_water&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;fl_rock&quot; super=&quot;fl_floodstream&quot;&gt;
+       &lt;attr name=&quot;friction&quot; default=&quot;6.5&quot;/&gt;
+@@ -218,6 +219,7 @@
+     &lt;object name=&quot;fl_swamp&quot;&gt;
+       &lt;attr name=&quot;friction&quot; default=&quot;13.0&quot;/&gt;
+       &lt;attr name=&quot;adhesion&quot; default=&quot;1.0&quot;/&gt;
++      &lt;attr name=&quot;$heattransform&quot; default=&quot;fl-dunes&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;fl_water&quot; super=&quot;fl_floodstream&quot;&gt;
+       &lt;attr name=&quot;friction&quot; default=&quot;5.0&quot;/&gt;
+
+Modified: trunk/data/startup.lua
+===================================================================
+--- trunk/data/startup.lua	2008-12-13 14:38:34 UTC (rev 1393)
++++ trunk/data/startup.lua	2008-12-14 12:56:16 UTC (rev 1394)
+@@ -234,12 +234,8 @@
+ def_floor(&quot;fl-samba1&quot;,       6.0,   2.0,    true,   &quot;fl_abyss&quot;, true)
+ def_floor(&quot;fl-samba2&quot;,       6.0,   2.0,    true,   &quot;fl_abyss&quot;, true)
+ def_floor(&quot;fl-sand&quot;,         6.0,   2.0,   false,   &quot;&quot;,         true)
+-def_floor(&quot;fl_space&quot;,        0.0,   0.0,   false,   &quot;&quot;,         false)
+ def_floor(&quot;fl-springboard&quot;,  4.0,   2.0,   false,   &quot;&quot;,         true)
+ def_floor(&quot;fl-stone&quot;,        1.4,   1.0,   false,   &quot;&quot;,         true)
+-def_floor(&quot;fl-stwood&quot;,       6.4,   2.0,    true,   &quot;fl_abyss&quot;, true)
+-def_floor(&quot;fl-stwood1&quot;,      6.4,   2.0,    true,   &quot;fl_abyss&quot;, true)
+-def_floor(&quot;fl-stwood2&quot;,      6.4,   2.0,    true,   &quot;fl_abyss&quot;, true)
+ def_floor(&quot;fl-tigris&quot;,       6.0,   2.0,    true,   &quot;&quot;,         true)
+ def_floor(&quot;fl-woven&quot;,        6.5,   3.0,    true,   &quot;&quot;,         true)
+ def_floor(&quot;fl-nomouse&quot;,      2.5,   0.0,    true,   &quot;&quot;,         false)
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-12-13 14:38:34 UTC (rev 1393)
++++ trunk/src/Makefile.am	2008-12-14 12:56:16 UTC (rev 1394)
+@@ -148,6 +148,8 @@
+ 	floors/BridgeFloor.hh	\
+ 	floors/FloodStream.cc	\
+ 	floors/FloodStream.hh	\
++	floors/SimpleFloors.cc	\
++	floors/SimpleFloors.hh	\
+ 	gui/ErrorMenu.cc	\
+ 	gui/ErrorMenu.hh	\
+ 	gui/GameMenu.cc		\
+
+Modified: trunk/src/floors/FloodStream.cc
+===================================================================
+--- trunk/src/floors/FloodStream.cc	2008-12-13 14:38:34 UTC (rev 1393)
++++ trunk/src/floors/FloodStream.cc	2008-12-14 12:56:16 UTC (rev 1394)
+@@ -19,9 +19,8 @@
+ 
+ #include &quot;floors/FloodStream.hh&quot;
+ 
+-#include &quot;errors.hh&quot;
+-#include &quot;main.hh&quot;
+-#include &quot;stones.hh&quot;
++//#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
+ #include &quot;world.hh&quot;
+ 
+ namespace enigma {
+
+Added: trunk/src/floors/SimpleFloors.cc
+===================================================================
+--- trunk/src/floors/SimpleFloors.cc	2008-12-13 14:38:34 UTC (rev 1393)
++++ trunk/src/floors/SimpleFloors.cc	2008-12-14 12:56:16 UTC (rev 1394)
+@@ -0,0 +1,100 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;floors/SimpleFloors.hh&quot;
++
++//#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++    
++/* -------------------- Abyss -------------------- */
++
++    Abyss::Abyss() : Floor(&quot;fl_abyss&quot;, 0.0, 0.0, flf_indestructible) {
++    }
++    
++    std::string Abyss::getClass() const {
++        return &quot;fl_abyss&quot;;
++    }
++    
++    bool Abyss::is_destructible() const {
++        return false;
++    }
++
++    void Abyss::actor_contact (Actor* a) {
++        SendMessage(a, &quot;fall&quot;);
++    }
++    
++/* -------------------- Ice -------------------- */
++
++
++    IceFloor::IceFloor() : Floor (&quot;fl_ice&quot;) {
++    }
++    
++    std::string IceFloor::getClass() const {
++        return &quot;fl_ice&quot;;
++    }
++    
++/* -------------------- Space -------------------- */
++
++    
++    Space::Space(bool withForce) : Floor(&quot;fl_space&quot;) {
++        if (withForce)
++            objFlags |= OBJBIT_FORCETYP;
++    }
++    
++    std::string Space::getClass() const {
++        return &quot;fl_space&quot;;
++    }
++    
++    void Space::add_force (Actor *a, V2 &amp;f) {
++        if (objFlags &amp; OBJBIT_FORCETYP)
++            f[1] -= server::FlatForce;
++        Floor::add_force(a, f);
++    }
++    
++/* -------------------- Swamp -------------------- */
++
++    Swamp::Swamp() : Floor(&quot;fl_swamp&quot;, 0.0, 0.0, flf_indestructible) {
++    }
++    
++    std::string Swamp::getClass() const {
++        return &quot;fl_swamp&quot;;
++    }
++    
++    bool Swamp::is_destructible() const {
++        return false;
++    }
++
++    void Swamp::get_sink_speed (double &amp;sink_speed, double &amp;raise_speed) const { 
++        sink_speed = server::SwampSinkSpeed;
++        raise_speed = 6.0;
++    }
++    
++    BOOT_REGISTER_START
++        BootRegister(new Abyss(), &quot;fl_abyss&quot;);
++        BootRegister(new IceFloor(), &quot;fl_ice&quot;);
++        BootRegister(new Space(), &quot;fl_space&quot;);
++        BootRegister(new Space(true), &quot;fl_space_force&quot;);
++        BootRegister(new Swamp(), &quot;fl_swamp&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/floors/SimpleFloors.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/floors/SimpleFloors.hh
+===================================================================
+--- trunk/src/floors/SimpleFloors.hh	2008-12-13 14:38:34 UTC (rev 1393)
++++ trunk/src/floors/SimpleFloors.hh	2008-12-14 12:56:16 UTC (rev 1394)
+@@ -0,0 +1,96 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef SIMPLEFLOORS_HH
++#define SIMPLEFLOORS_HH
++
++#include &quot;floors.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * Abyss
++     */
++    class Abyss : public Floor {
++        CLONEOBJ(Abyss);
++        
++    public:
++        Abyss();
++
++        // Object interface
++        virtual std::string getClass() const;
++
++        // Floor interface
++        virtual bool is_destructible() const;
++        virtual void actor_contact(Actor *);
++    };
++
++    /** 
++     * IceFloor
++     */
++    class IceFloor : public Floor {
++        CLONEOBJ(IceFloor);
++        
++    public:
++        IceFloor();
++
++        // Object interface
++        virtual std::string getClass() const;
++    };
++
++    /** 
++     * Space
++     */
++    class Space : public Floor {
++        CLONEOBJ(Space);
++
++    private:
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_FORCETYP  =   1&lt;&lt;24   ///&lt; apply flat force on space
++        };
++        
++    public:
++        Space(bool withForce = false);
++ 
++        // Object interface
++        virtual std::string getClass() const;
++
++        // Floor interface
++        virtual void add_force(Actor *a, ecl::V2 &amp;);  // Note: actor = 0 must be allowed!
++    };
++
++    /** 
++     * Swamp
++     */
++    class Swamp : public Floor {
++        CLONEOBJ(Swamp);
++        
++    public:
++        Swamp();
++
++        // Object interface
++        virtual std::string getClass() const;
++
++        // Floor interface
++        virtual bool is_destructible() const;
++        virtual void get_sink_speed (double &amp;sinkspeed, double &amp;raisespeed) const;        
++    };
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/floors/SimpleFloors.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/floors.cc
+===================================================================
+--- trunk/src/floors.cc	2008-12-13 14:38:34 UTC (rev 1393)
++++ trunk/src/floors.cc	2008-12-14 12:56:16 UTC (rev 1394)
+@@ -486,59 +486,6 @@
+ namespace
+ {
+ 
+-/* -------------------- Abyss -------------------- */
+-
+-    class Abyss : public Floor {
+-        CLONEOBJ(Abyss);
+-    public:
+-        Abyss() : Floor(&quot;fl_abyss&quot;, 2.0, 1, flf_indestructible, flft_noash) {}
+-    private:
+-//         void actor_enter(Actor* a) {SendMessage(a, &quot;fall&quot;);}
+-        void actor_contact (Actor* a) {SendMessage(a, &quot;fall&quot;);}
+-	bool is_destructible() const {return false;}
+-    };
+-
+-/* -------------------- Ice -------------------- */
+-
+-    class Ice : public Floor {
+-        CLONEOBJ (Ice);
+-    public:
+-        Ice() : Floor (&quot;fl_ice&quot;, 0.1, 0.1, flf_default, flft_default, &quot;&quot;,
+-            &quot;fl_water&quot;) { }
+-
+-    };
+-
+-/* -------------------- Swamp -------------------- */
+-
+-    class Swamp : public Floor {
+-        CLONEOBJ(Swamp);
+-    public:
+-        Swamp() : Floor(&quot;fl_swamp&quot;, 13, 1.0, flf_indestructible, flft_default,
+-            &quot;&quot;, &quot;fl-dunes&quot;) {}
+-    private:
+-        bool is_destructible() const {return false;}
+-        
+-        void get_sink_speed (double &amp;sink_speed, double &amp;raise_speed) const { 
+-            sink_speed = server::SwampSinkSpeed;
+-            raise_speed = 6.0;
+-        }
+-    };
+-
+-/* -------------------- Space with force -------------------- */
+-
+-    class SpaceForce : public Floor {
+-        CLONEOBJ (SpaceForce);
+-
+-        // Floor interface
+-        void add_force (Actor *, V2 &amp;f) {
+-            f[1] -= server::FlatForce;
+-        }
+-
+-    public:
+-        SpaceForce() : Floor(&quot;fl-space-force&quot;, 0, 0) {
+-        }
+-    };
+-
+ /* -------------------- DummyFloor -------------------- */
+ 
+     class DummyFloor : public Floor {
+@@ -828,14 +775,10 @@
+ void InitFloors()
+ {
+     // Floors (most floors are defined in init.lua)
+-    Register(new Abyss);
+-    Register(new Ice);
+-    Register(new Swamp);
+     Register(new DummyFloor);
+     Register(new Thief);
+     Register(new WhiteTile);
+     Register(new BlackTile);
+-    Register(new SpaceForce);
+ 
+     Register(new Gradient);
+     Register(&quot;fl-gradient1&quot;, new Gradient(1));
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2008-12-13 14:38:34 UTC (rev 1393)
++++ trunk/src/ox_oxyd1.cc	2008-12-14 12:56:16 UTC (rev 1394)
+@@ -100,7 +100,7 @@
+     UNUSED,                     // Oxyd1 floor 0x1e
+     UNUSED,                     // Oxyd1 floor 0x1f
+     &quot;fl_space&quot;,                 // Oxyd1 floor 0x20
+-    &quot;fl-space-force&quot;,           // Oxyd1 floor 0x21
++    &quot;fl_space_force&quot;,           // Oxyd1 floor 0x21
+     &quot;fl_space&quot;,                 // Oxyd1 floor 0x22
+     &quot;fl-gradient1&quot;,             // Oxyd1 floor 0x23
+     &quot;fl-gradient2&quot;,             // Oxyd1 floor 0x24
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-12-13 14:38:34 UTC (rev 1393)
++++ trunk/src/ox_peroxyd.cc	2008-12-14 12:56:16 UTC (rev 1394)
+@@ -136,7 +136,7 @@
+     UNUSED,                     // PerOxyd floor 0x1e
+     UNUSED,                     // PerOxyd floor 0x1f
+     UNUSED,                     // PerOxyd floor 0x20
+-    &quot;fl-space-force&quot;,           // PerOxyd floor 0x21 (flat force)
++    &quot;fl_space_force&quot;,           // PerOxyd floor 0x21 (flat force)
+     UNUSED,                     // PerOxyd floor 0x22
+     &quot;fl-gradient1&quot;,             // PerOxyd floor 0x23
+     &quot;fl-gradient2&quot;,             // PerOxyd floor 0x24
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000822.html">[Enigma-game-svn] r1393 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000824.html">[Enigma-game-svn] r1395 - in trunk/src: . gui lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#823">[ date ]</a>
+              <a href="thread.html#823">[ thread ]</a>
+              <a href="subject.html#823">[ subject ]</a>
+              <a href="author.html#823">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

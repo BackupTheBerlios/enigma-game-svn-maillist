@@ -1,0 +1,247 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r692 - in branches/1.0/src: gui lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r692%20-%20in%20branches/1.0/src%3A%20gui%20lev&In-Reply-To=%3C200704172246.l3HMkT86008120%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000129.html">
+   <LINK REL="Next"  HREF="000131.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r692 - in branches/1.0/src: gui lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r692%20-%20in%20branches/1.0/src%3A%20gui%20lev&In-Reply-To=%3C200704172246.l3HMkT86008120%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r692 - in branches/1.0/src: gui lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Apr 18 00:46:29 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000129.html">[Enigma-game-svn] r691 - in trunk: . attic/gfx-templates data	data/gfx32 data/gfx40 data/gfx48 data/gfx64
+</A></li>
+        <LI>Next message: <A HREF="000131.html">[Enigma-game-svn] r693 - in branches/1.0: data doc/reference src	src/gui src/lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#130">[ date ]</a>
+              <a href="thread.html#130">[ thread ]</a>
+              <a href="subject.html#130">[ subject ]</a>
+              <a href="author.html#130">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-04-18 00:46:27 +0200 (Wed, 18 Apr 2007)
+New Revision: 692
+
+Modified:
+   branches/1.0/src/gui/widgets.cc
+   branches/1.0/src/gui/widgets.hh
+   branches/1.0/src/lev/PersistentIndex.cc
+Log:
+Branch 1.0: 
+- enable mouse wheel for most buttons like ratings, lang, volume,...
+- eliminate duplicate level entries in auto in case of xml + invalid lua file
+
+
+Modified: branches/1.0/src/gui/widgets.cc
+===================================================================
+--- branches/1.0/src/gui/widgets.cc	2007-04-15 21:45:05 UTC (rev 691)
++++ branches/1.0/src/gui/widgets.cc	2007-04-17 22:46:27 UTC (rev 692)
+@@ -710,9 +710,16 @@
+ 
+     case SDL_KEYUP:
+         if (e.key.keysym.sym != SDLK_RETURN &amp;&amp;
+-            e.key.keysym.sym != SDLK_SPACE) break;
+-        // fall-through
++            e.key.keysym.sym != SDLK_SPACE &amp;&amp;
++            e.key.keysym.sym != SDLK_PAGEDOWN &amp;&amp;
++            e.key.keysym.sym != SDLK_PAGEUP) break;
++        lastUpSym = e.key.keysym.sym;
++        lastUpBotton = 0;
++        m_pressedp = false;
++        break;
+     case SDL_MOUSEBUTTONUP:
++        lastUpSym = SDLK_UNKNOWN;
++        lastUpBotton = e.button.button;
+         m_pressedp = false;
+         break;
+     }
+@@ -721,7 +728,8 @@
+     if (changed) {
+         invalidate();
+         if (!m_pressedp) {
+-            sound::SoundEvent (&quot;menuok&quot;);
++            if (soundOk())
++                sound::SoundEvent(&quot;menuok&quot;);
+             invoke_listener();
+         }
+     }
+@@ -731,10 +739,23 @@
+ 
+ void PushButton::deactivate() {
+     m_pressedp = false;
++    lastUpSym = SDLK_UNKNOWN;
++    lastUpBotton = 0;
+     invalidate();
+     Button::deactivate();
+ }
+ 
++SDLKey PushButton::getLastUpSym() {
++    return lastUpSym;
++}
++
++Uint8 PushButton::getLastUpButton() {
++    return lastUpBotton;
++}
++
++bool PushButton::soundOk() {
++    return true;
++}
+ 
+ /* -------------------- TextButton -------------------- */
+ 
+@@ -859,34 +880,38 @@
+     return false;
+ }
+ 
+-bool ValueButton::on_event (const SDL_Event &amp;e) {
+-    // handles button movement and
+-    bool handled = PushButton::on_event(e);
+ 
+-    if (e.type == SDL_KEYDOWN) {
+-        bool keyhandled   = true;
+-        bool changed = false;
+-
+-        switch (e.key.keysym.sym) {
+-        case SDLK_PAGEUP: changed = inc_value(1); break;
+-        case SDLK_PAGEDOWN:  changed = inc_value(-1); break;
+-        default : keyhandled = false; break;
++void ValueButton::on_action(Widget *) {
++    int incr = 1;
++    bool stop = false;
++    if (getLastUpSym() == SDLK_PAGEDOWN || getLastUpButton() == SDL_BUTTON_RIGHT ||
++            getLastUpButton() == 5) {  // wheel down
++        incr = -1;
++    }
++    if (getLastUpSym() == SDLK_PAGEDOWN || getLastUpSym() == SDLK_PAGEUP ||
++            getLastUpButton() == SDL_BUTTON_RIGHT ||
++            getLastUpButton() ==  4 || getLastUpButton() == 5) {
++        stop = true;
++    }
++    if (inc_value(incr)) {
++        sound::SoundEvent(&quot;menuswitch&quot;);
++    } else {
++        if (stop) {
++            sound::SoundEvent(&quot;menustop&quot;);
++        } else {
++            sound::SoundEvent(&quot;menuswitch&quot;);
++            if (incr == 1)
++                update_value(get_value(), min_value);
++            else
++                update_value(get_value(), max_value);
+         }
+-
+-        if (keyhandled) {
+-            handled = true;
+-            sound::SoundEvent (changed ? &quot;menuswitch&quot; : &quot;menustop&quot;);
+-        }
+     }
+-    return handled;
+ }
+ 
+-void ValueButton::on_action(Widget *) {
+-    if (!inc_value(1))
+-        update_value(get_value(), min_value);
++bool ValueButton::soundOk() {
++    return false;
+ }
+ 
+-
+ /* -------------------- ImageButton -------------------- */
+ 
+ ImageButton::ImageButton(const string &amp;unselected,
+
+Modified: branches/1.0/src/gui/widgets.hh
+===================================================================
+--- branches/1.0/src/gui/widgets.hh	2007-04-15 21:45:05 UTC (rev 691)
++++ branches/1.0/src/gui/widgets.hh	2007-04-17 22:46:27 UTC (rev 692)
+@@ -347,11 +347,17 @@
+         PushButton();
+ 
+         bool is_pressed() { return m_pressedp; }
++        
+     protected:
+         bool on_event(const SDL_Event &amp;e);
+         void deactivate();
++        SDLKey getLastUpSym();
++        Uint8 getLastUpButton();
++        virtual bool soundOk(); 
+     private:
+         bool m_pressedp;
++        SDLKey lastUpSym;
++        Uint8 lastUpBotton;
+     };
+ 
+ /* -------------------- TextButton -------------------- */
+@@ -429,10 +435,10 @@
+         virtual std::string get_text() const;
+ 
+         // Widget interface.
+-        virtual bool on_event(const SDL_Event &amp;e);
+         virtual void on_action(Widget *w);
+     protected:
+         void init(); // called in ctor of derived
++        virtual bool soundOk(); 
+     private:
+         int min_value;
+         int max_value;
+
+Modified: branches/1.0/src/lev/PersistentIndex.cc
+===================================================================
+--- branches/1.0/src/lev/PersistentIndex.cc	2007-04-15 21:45:05 UTC (rev 691)
++++ branches/1.0/src/lev/PersistentIndex.cc	2007-04-17 22:46:27 UTC (rev 692)
+@@ -193,9 +193,10 @@
+                     if (newProxy != NULL) {
+                         // first check that the proxy is not in the index
+                         //  - may occur if the level is stored as .xml and .lua in the folder
+-                        
+-                        // is it is new, add it
+-                        autoIndex-&gt;appendProxy(newProxy);
++                        if (!autoIndex-&gt;containsProxy(newProxy)) {
++                            // it is new, add it
++                            autoIndex-&gt;appendProxy(newProxy);
++                        }
+                     }
+                 }
+             }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000129.html">[Enigma-game-svn] r691 - in trunk: . attic/gfx-templates data	data/gfx32 data/gfx40 data/gfx48 data/gfx64
+</A></li>
+	<LI>Next message: <A HREF="000131.html">[Enigma-game-svn] r693 - in branches/1.0: data doc/reference src	src/gui src/lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#130">[ date ]</a>
+              <a href="thread.html#130">[ thread ]</a>
+              <a href="subject.html#130">[ subject ]</a>
+              <a href="author.html#130">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,164 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r563 - in branches/1.0/src: gui lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r563%20-%20in%20branches/1.0/src%3A%20gui%20lev&In-Reply-To=%3C200701032211.l03MBtcP022959%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000001.html">
+   <LINK REL="Next"  HREF="000003.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r563 - in branches/1.0/src: gui lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r563%20-%20in%20branches/1.0/src%3A%20gui%20lev&In-Reply-To=%3C200701032211.l03MBtcP022959%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r563 - in branches/1.0/src: gui lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Jan  3 23:11:55 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000001.html">[Enigma-game-svn] r561 - in branches/1.0: data/levels/enigma_iii src
+</A></li>
+        <LI>Next message: <A HREF="000003.html">[Enigma-game-svn] r564 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2">[ date ]</a>
+              <a href="thread.html#2">[ thread ]</a>
+              <a href="subject.html#2">[ subject ]</a>
+              <a href="author.html#2">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-01-03 23:11:55 +0100 (Wed, 03 Jan 2007)
+New Revision: 563
+
+Modified:
+   branches/1.0/src/gui/OptionsMenu.cc
+   branches/1.0/src/lev/ScoreManager.cc
+   branches/1.0/src/lev/ScoreManager.hh
+Log:
+Fixes:
+- ensure save of enigma.score after Username and Userpath changes
+- limit 0.92 scores to SCORE_MAX that fit into a XML short
+
+
+Modified: branches/1.0/src/gui/OptionsMenu.cc
+===================================================================
+--- branches/1.0/src/gui/OptionsMenu.cc	2007-01-03 21:04:23 UTC (rev 562)
++++ branches/1.0/src/gui/OptionsMenu.cc	2007-01-03 22:11:55 UTC (rev 563)
+@@ -20,6 +20,7 @@
+ #include &quot;gui/OptionsMenu.hh&quot;
+ #include &quot;ecl.hh&quot;
+ #include &quot;enigma.hh&quot;
++#include &quot;lev/ScoreManager.hh&quot;
+ #include &quot;LocalToXML.hh&quot;
+ #include &quot;main.hh&quot;
+ #include &quot;nls.hh&quot;
+@@ -364,8 +365,6 @@
+         leftlabels.add (new Label(N_(&quot;Video mode: &quot;), HALIGN_RIGHT));
+         leftlabels.add (new Label(N_(&quot;Gamma correction: &quot;), HALIGN_RIGHT));
+         leftlabels.add (new Label(N_(&quot;Mouse speed: &quot;), HALIGN_RIGHT));
+-//        leftlabels.add (new Label(N_(&quot;Skip solved levels: &quot;), HALIGN_RIGHT));
+-//        leftlabels.add (new Label(N_(&quot;Time hunt: &quot;), HALIGN_RIGHT));
+     
+         language = new LanguageButton(this);
+         left.add (language);
+@@ -373,8 +372,6 @@
+         left.add (new VideoModeButton);
+         left.add (new GammaButton);
+         left.add (new MouseSpeedButton);
+-//        left.add (new SkipSolvedButton);
+-//        left.add (new TimeHuntButton);
+     
+         rightlabels.add (new Label(N_(&quot;Sound volume: &quot;), HALIGN_RIGHT));
+         rightlabels.add (new Label(N_(&quot;Sound set: &quot;), HALIGN_RIGHT));
+@@ -429,8 +426,14 @@
+ //    }
+     
+     void OptionsMenu::quit() {
++        std::string tfUserPathLocal = XMLtoLocal(Utf8ToXML(userPathTF-&gt;getText().c_str()).x_str()).c_str(); 
++        if ((app.state-&gt;getString(&quot;UserName&quot;) != userNameTF-&gt;getText())
++                || (app.userPath != tfUserPathLocal)) {
++            // ensure that enigma.score is saved with new Username or to new location
++            lev::ScoreManager::instance()-&gt;markModified();
++        }
+         app.state-&gt;setProperty(&quot;UserName&quot;, userNameTF-&gt;getText());
+-        app.setUserPath(XMLtoLocal(Utf8ToXML(userPathTF-&gt;getText().c_str()).x_str()).c_str());
++        app.setUserPath(tfUserPathLocal.c_str());
+         app.setUserImagePath(XMLtoLocal(Utf8ToXML(userImagePathTF-&gt;getText().c_str()).x_str()).c_str());
+         Menu::quit();
+     }
+
+Modified: branches/1.0/src/lev/ScoreManager.cc
+===================================================================
+--- branches/1.0/src/lev/ScoreManager.cc	2007-01-03 21:04:23 UTC (rev 562)
++++ branches/1.0/src/lev/ScoreManager.cc	2007-01-03 22:11:55 UTC (rev 563)
+@@ -265,6 +265,10 @@
+             shutdown();
+     }
+ 
++    void ScoreManager::markModified() {
++        isModified = true;
++    }
++    
+     void ScoreManager::finishUserId(unsigned id3) {
+         unsigned i1, i2, i3, i4; 
+         std::istringstream s1(userId.substr(0, 4));
+@@ -887,6 +891,12 @@
+                     bool solvedEasy = (levelstat.finished &amp; DIFFICULTY_EASY) &amp;&amp;
+                             easyScore != SCORE_UNSOLVED;
+                     
++                    // limit scores to 99*60+59 - they need to fit in a short for XML
++                    if (diffScore &gt; SCORE_MAX)
++                        diffScore = SCORE_MAX;
++                    if (easyScore &gt; SCORE_MAX)
++                        easyScore = SCORE_MAX;
++                    
+                     std::map&lt;std::string,  DOMElement *&gt;::iterator itx;
+                     // do we have to update a score entry for a higher version ?
+                     itx = curLevelScores.find(*it);
+
+Modified: branches/1.0/src/lev/ScoreManager.hh
+===================================================================
+--- branches/1.0/src/lev/ScoreManager.hh	2007-01-03 21:04:23 UTC (rev 562)
++++ branches/1.0/src/lev/ScoreManager.hh	2007-01-03 22:11:55 UTC (rev 563)
+@@ -51,6 +51,7 @@
+     public:
+         static ScoreManager *instance();
+         ~ScoreManager();
++        void markModified();
+         virtual bool save();
+         void shutdown();
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000001.html">[Enigma-game-svn] r561 - in branches/1.0: data/levels/enigma_iii src
+</A></li>
+	<LI>Next message: <A HREF="000003.html">[Enigma-game-svn] r564 - trunk/src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2">[ date ]</a>
+              <a href="thread.html#2">[ thread ]</a>
+              <a href="subject.html#2">[ subject ]</a>
+              <a href="author.html#2">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,156 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r2061 - in trunk: doc/reference src src/items
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2010-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2061%20-%20in%20trunk%3A%20doc/reference%20src%20src/items&In-Reply-To=%3C201004251105.o3PB5wrC004557%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001484.html">
+   <LINK REL="Next"  HREF="001486.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r2061 - in trunk: doc/reference src src/items</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2061%20-%20in%20trunk%3A%20doc/reference%20src%20src/items&In-Reply-To=%3C201004251105.o3PB5wrC004557%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r2061 - in trunk: doc/reference src src/items">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Apr 25 13:05:58 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001484.html">[Enigma-game-svn] r2060 - in trunk: attic/images-stones data/gfx16	data/gfx32 data/gfx40 data/gfx48 data/gfx64
+</A></li>
+        <LI>Next message: <A HREF="001486.html">[Enigma-game-svn] r2062 - in trunk: attic/images-items data/gfx16	data/gfx32 data/gfx40 data/gfx48 data/gfx64
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1485">[ date ]</a>
+              <a href="thread.html#1485">[ thread ]</a>
+              <a href="subject.html#1485">[ subject ]</a>
+              <a href="author.html#1485">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2010-04-25 13:05:56 +0200 (Sun, 25 Apr 2010)
+New Revision: 2061
+
+Modified:
+   trunk/doc/reference/enigma-ref.texi
+   trunk/src/Object.cc
+   trunk/src/StateObject.cc
+   trunk/src/items/Sensor.cc
+Log:
+sensor with actor as action value
+
+- sensor reports causing actor instead of true value
+- signal interpreting of other values as true
+- invert flag causing bool convertion
+Note:
+- do not compare action values in Lua with true/false,
+  just evaluate the expressions
+- the changes may are critical - please test
+
+Modified: trunk/doc/reference/enigma-ref.texi
+===================================================================
+--- trunk/doc/reference/enigma-ref.texi	2010-04-24 21:14:47 UTC (rev 2060)
++++ trunk/doc/reference/enigma-ref.texi	2010-04-25 11:05:56 UTC (rev 2061)
+@@ -14046,9 +14046,9 @@
+ 
+ The sensor item is a switch on top of a floor that reacts on actors passing it.
+ It performs actions on actors either entering or exiting the sensors grid
+-depending on its attribute @samp{exit}. It will send an action value of
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{true} but of course the @ref{inverse} attribute can be used to send an
+-action value of @samp{false} instead.
++depending on its attribute @samp{exit}. It will send the causing actor as action
++value, which evaluates like @samp{true} in Lua, but nevertheless the @ref{inverse}
++attribute can be used to send an action value of @samp{false} instead.
+ 
+ Any actors passing the grid, either on the floor or jumping over it will be
+ detected.
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2010-04-24 21:14:47 UTC (rev 2060)
++++ trunk/src/Object.cc	2010-04-25 11:05:56 UTC (rev 2061)
+@@ -381,9 +381,7 @@
+     }
+     
+     Value Object::invertActionValue(const Value &amp;val) const {
+-        if (val.getType() == Value::BOOL)   // bool values may be inverted
+-            return !val.to_bool();  // invert value
+-        return val;
++        return !val.to_bool();  // invert and convert value to bool
+     }
+     
+     /* Send an impulse to position 'dest' into direction dir.  If 'dest'
+
+Modified: trunk/src/StateObject.cc
+===================================================================
+--- trunk/src/StateObject.cc	2010-04-24 21:14:47 UTC (rev 2060)
++++ trunk/src/StateObject.cc	2010-04-25 11:05:56 UTC (rev 2061)
+@@ -35,7 +35,11 @@
+         if (m.message == &quot;toggle&quot;) {
+             toggleState();
+         } else if (m.message == &quot;signal&quot;) {
+-            int v = m.value;    // action bools are converted to int
++            int v;
++            if (m.value.getType() == Value::DOUBLE || m.value.getType() == Value::STRING)
++                v = m.value;
++            else  // convert object and other types to true
++                v = (m.value.to_bool()) ? 1 : 0; 
+             if (v &gt;= 0)
+                 setState(v % 2);  // allow fourswitches to send dir as signal value
+             return Value();
+
+Modified: trunk/src/items/Sensor.cc
+===================================================================
+--- trunk/src/items/Sensor.cc	2010-04-24 21:14:47 UTC (rev 2060)
++++ trunk/src/items/Sensor.cc	2010-04-25 11:05:56 UTC (rev 2061)
+@@ -93,7 +93,7 @@
+         if (!(objFlags &amp; OBJBIT_EXIT) &amp;&amp; !a-&gt;is_dead()) {        
+             if (!(objFlags &amp; OBJBIT_INVISIBLE))
+                 set_anim(&quot;it_sensor_hit&quot;);
+-            performAction(true);
++            performAction(a);
+         }
+     }
+     
+@@ -101,7 +101,7 @@
+         if ((objFlags &amp; OBJBIT_EXIT) &amp;&amp; !a-&gt;is_dead()) {        
+             if (!(objFlags &amp; OBJBIT_INVISIBLE))
+                 set_anim(&quot;it_sensor_exit_hit&quot;);
+-            performAction(true);
++            performAction(a);
+         }
+     }
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001484.html">[Enigma-game-svn] r2060 - in trunk: attic/images-stones data/gfx16	data/gfx32 data/gfx40 data/gfx48 data/gfx64
+</A></li>
+	<LI>Next message: <A HREF="001486.html">[Enigma-game-svn] r2062 - in trunk: attic/images-items data/gfx16	data/gfx32 data/gfx40 data/gfx48 data/gfx64
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1485">[ date ]</a>
+              <a href="thread.html#1485">[ thread ]</a>
+              <a href="subject.html#1485">[ subject ]</a>
+              <a href="author.html#1485">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

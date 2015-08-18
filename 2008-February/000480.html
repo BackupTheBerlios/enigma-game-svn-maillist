@@ -1,0 +1,938 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1048 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1048%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200802241933.m1OJXGeH005437%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000479.html">
+   <LINK REL="Next"  HREF="000481.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1048 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1048%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200802241933.m1OJXGeH005437%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1048 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Feb 24 20:33:16 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000479.html">[Enigma-game-svn] r1047 - in trunk: data data/schemas src src/lev
+</A></li>
+        <LI>Next message: <A HREF="000481.html">[Enigma-game-svn] r1049 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#480">[ date ]</a>
+              <a href="thread.html#480">[ thread ]</a>
+              <a href="subject.html#480">[ subject ]</a>
+              <a href="author.html#480">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-02-24 20:33:14 +0100 (Sun, 24 Feb 2008)
+New Revision: 1048
+
+Added:
+   trunk/src/stones/LaserStone.cc
+   trunk/src/stones/LaserStone.hh
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/StateObject.cc
+   trunk/src/items.cc
+   trunk/src/laser.cc
+   trunk/src/laser.hh
+   trunk/src/util.hh
+Log:
+Trunk 1.1: new API reengineering laser stone
+- rename st-laser-* to st_laser_*
+- laser stone as StateObject instead of OnOff (toggle instead onoff,...)
+- laser attribute &quot;dir&quot; renamed to &quot;orientation&quot;
+- laser new messsage &quot;orientate&quot;
+- laser latency of 0.2 seconds to fix infinit loop bug #11112 of a laser
+  that in toggled due to its own light. 0.2s are necessary to keep the
+  flickering laser visible
+- small fixes of wormhole
+Note:
+- fix of bug #11112 needs additional move of &quot;light_recalc_scheduled = false&quot;
+  in RecalcLightNow() - see source comment. We need to fix Photo* and items
+  like hammer, sword first to be able to move this line of code finally
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-02-23 20:50:03 UTC (rev 1047)
++++ trunk/data/api1init.lua	2008-02-24 19:33:14 UTC (rev 1048)
+@@ -63,6 +63,10 @@
+     st_coinslot = &quot;st-coinslot&quot;,
+     st_floppy = &quot;st-floppy&quot;,
+     st_fourswitch = &quot;st-fourswitch&quot;,
++    st_laser_w = &quot;st-laser-w&quot;,
++    st_laser_s = &quot;st-laser-s&quot;,
++    st_laser_e = &quot;st-laser-e&quot;,
++    st_laser_n = &quot;st-laser-n&quot;,
+     st_oxyd = &quot;st-oxyd&quot;,
+     st_switch = &quot;st-switch&quot;,
+     st_switch_black = &quot;st-switch_black&quot;,
+@@ -115,6 +119,11 @@
+     end
+ 
+     newname = RenamingObjectsOld2New[name]
++    
++    if name == &quot;st-laser&quot; then
++        newname = &quot;st_laser_e&quot;
++    end
++    
+     if newname ~= nil then
+         return enigma._MakeObject(newname)
+     else
+@@ -140,6 +149,9 @@
+             return &quot;st-key&quot;
+         end
+     end
++    if string.sub(_newname, 1, 8) == &quot;st_laser&quot; then
++        return &quot;st-laser&quot;
++    end
+     if _oldname ~= nil then
+         return _oldname
+     else
+@@ -168,6 +180,12 @@
+ 	     _key = &quot;state&quot;   -- new attr name
+ 	 end
+      end
++     if key == &quot;dir&quot; then
++         _key = &quot;orientation&quot;
++     end
++     if key == &quot;on&quot; then
++         _key = &quot;state&quot;
++     end
+      if key == &quot;targetx&quot; then
+          local d = enigma._GetAttrib(obj, &quot;destination&quot;)
+          if (en.usertype(d) == &quot;position&quot;) then
+@@ -232,6 +250,12 @@
+      if _obj_name == &quot;st-oxyd&quot; then
+          _key = &quot;oxydcolor&quot;
+      end
++     if key == &quot;dir&quot; then
++         _key = &quot;orientation&quot;
++     end
++     if key == &quot;on&quot; then
++         _key = &quot;state&quot;
++     end
+ 
+      local val = enigma._GetAttrib(obj, _key)
+      
+@@ -305,6 +329,7 @@
+     st_fourswitch__trigger = &quot;toggle&quot;,
+     st_floppy__onoff = &quot;toggle&quot;,
+     st_key__onoff = &quot;toggle&quot;,
++    st_laser__onoff = &quot;toggle&quot;,
+     [&quot;st-stoneimpulse__trigger&quot;] = &quot;signal&quot;,
+     [&quot;st-stoneimpulse-hollow__trigger&quot;] = &quot;signal&quot;,
+     [&quot;st-stoneimpulse_movable__trigger&quot;] = &quot;signal&quot;,
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-02-23 20:50:03 UTC (rev 1047)
++++ trunk/data/schemas/objects.xml	2008-02-24 19:33:14 UTC (rev 1048)
+@@ -10,6 +10,7 @@
+     &lt;attr name=&quot;interval&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;inverse&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;name&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;orientation&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;3&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;range&quot; type=&quot;double&quot; default=&quot;1.0&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;scissor&quot; type=&quot;bool&quot; default=&quot;true&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;state&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+@@ -109,6 +110,24 @@
+       &lt;msg name=&quot;signal&quot;/&gt;
+       &lt;msg name=&quot;_trigger&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_laser&quot;&gt;
++      &lt;attr name=&quot;orientation&quot;/&gt;
++      &lt;msg name=&quot;on&quot;/&gt;
++      &lt;msg name=&quot;off&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_laser_w&quot;&gt;
++      &lt;attr name=&quot;orientation&quot; value=&quot;0&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_laser_s&quot;&gt;
++      &lt;attr name=&quot;orientation&quot; value=&quot;1&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_laser_e&quot;&gt;
++      &lt;attr name=&quot;orientation&quot; value=&quot;2&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_laser_n&quot;&gt;
++      &lt;attr name=&quot;orientation&quot; value=&quot;3&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_switch&quot;&gt;
+       &lt;attr name=&quot;color&quot;/&gt;
+       &lt;attr name=&quot;instant&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-02-23 20:50:03 UTC (rev 1047)
++++ trunk/src/Makefile.am	2008-02-24 19:33:14 UTC (rev 1048)
+@@ -211,6 +211,8 @@
+ 	stones/FourSwitch.hh	\
+ 	stones/KeySwitch.cc	\
+ 	stones/KeySwitch.hh	\
++	stones/LaserStone.cc	\
++	stones/LaserStone.hh	\
+ 	stones/OxydStone.cc	\
+ 	stones/OxydStone.hh	\
+ 	stones/Switch.cc	\
+
+Modified: trunk/src/StateObject.cc
+===================================================================
+--- trunk/src/StateObject.cc	2008-02-23 20:50:03 UTC (rev 1047)
++++ trunk/src/StateObject.cc	2008-02-24 19:33:14 UTC (rev 1048)
+@@ -71,6 +71,7 @@
+     int StateObject::minState() {
+         return 0;  // default 2 state
+     }
++    
+     void StateObject::toggleState() {
+         // default round robin on external states
+         int extState = externalState();
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-02-23 20:50:03 UTC (rev 1047)
++++ trunk/src/items.cc	2008-02-24 19:33:14 UTC (rev 1048)
+@@ -1682,7 +1682,7 @@
+ */
+ 
+ 
+-    class WormHole : public Item, public ForceField, public enigma::TimeHandler {
++    class WormHole : public Item, public ForceField, public TimeHandler {
+     private:
+         /**
+          * warping as bit 2 of state
+@@ -1699,7 +1699,6 @@
+         DECL_TRAITS_ARRAY(2, state &amp; 1);
+         
+         WormHole(bool isOn);
+-        virtual ~WormHole();
+         
+         // Object interface
+         virtual std::string getClass() const;
+@@ -1734,10 +1733,6 @@
+         state = isOn ? ON_IDLE : OFF_IDLE;    // includes warping false
+     }
+     
+-    WormHole::~WormHole() {
+-        GameTimer.remove_alarm(this);
+-    }
+-    
+     std::string WormHole::getClass() const {
+         return &quot;it_wormhole&quot;;
+     }
+@@ -1776,6 +1771,8 @@
+     }
+ 
+     void WormHole::on_removal(GridPos p) {
++        GameTimer.remove_alarm(this);
++        state &amp;= ~2;  // remove teleport engaged flag
+         if (state % 2 == 1)
+             RemoveForceField(this);
+         Item::on_removal(p);
+
+Modified: trunk/src/laser.cc
+===================================================================
+--- trunk/src/laser.cc	2008-02-23 20:50:03 UTC (rev 1047)
++++ trunk/src/laser.cc	2008-02-24 19:33:14 UTC (rev 1048)
+@@ -22,6 +22,7 @@
+ #include &quot;sound.hh&quot;
+ #include &quot;stones_internal.hh&quot;
+ #include &quot;server.hh&quot;
++#include &quot;stones/LaserStone.hh&quot;
+ #include &lt;algorithm&gt;
+ #include &lt;cassert&gt;
+ #include &lt;map&gt;
+@@ -34,45 +35,6 @@
+ 
+ /* -------------------- LaserBeam -------------------- */
+ 
+-    class LaserBeam : public Item, public LaserEmitter {
+-    public:
+-        static void emit_from(GridPos p, Direction d);
+-        static void kill_all();
+-        static void all_emitted();
+-
+-	// LaserEmitter interface
+-        DirectionBits emission_directions() const { return directions; }
+-        static ItemTraits traits;
+-
+-        const ItemTraits &amp;get_traits() const {
+-            return traits;
+-        }
+-    private:
+-        LaserBeam(Direction dir) {
+-            directions = to_bits(dir);
+-        }
+-
+-        // Item interface.
+-        void on_laserhit(Direction dir);
+-        void on_creation (GridPos p);
+-        void init_model();
+-        bool actor_hit(Actor *actor);
+-
+-        Item *clone() {
+-            // new LaserBeams may only created inside `emit_from'.
+-            assert(0);
+-            return 0;
+-        }
+-        void dispose();
+-
+-        // Variables
+-        DirectionBits directions;
+-        
+-        static list&lt;LaserBeam *&gt; beamList1;
+-        static list&lt;LaserBeam *&gt; beamList2;
+-        static list&lt;LaserBeam *&gt; *gridBeams;
+-        static list&lt;LaserBeam *&gt; *lastBeams;
+-    };
+     ItemTraits LaserBeam::traits = {&quot;it-laserbeam&quot;, it_laserbeam, 
+                                     itf_static | itf_indestructible, 0.0 };
+ 
+@@ -101,48 +63,48 @@
+ \ref st-pmirror, \ref st-3mirror
+ 
+ */
+-    class LaserStone : public LaserEmitter, public OnOffStone {
+-    public:
+-        LaserStone (Direction dir=EAST);
+-        static void reemit_all();
++//    class LaserStone : public LaserEmitter, public OnOffStone {
++//    public:
++//        LaserStone (Direction dir=EAST);
++//        static void reemit_all();
++//
++//    private:
++//
++////        INSTANCELISTOBJ(LaserStone);
++//
++//// We can't use this macro here: g++ can't handle multiple inheritance
++//// and covariant return types at the same time (&quot;sorry, not
++//// implemented: ...&quot; first time I ever saw this error message :-)
++//
++//        typedef std::vector&lt;LaserStone*&gt; InstanceList;
++//        static InstanceList instances;
++//        Stone *clone() {
++//            LaserStone *o = new LaserStone(*this);
++//            instances.push_back(o);
++//            return o;
++//        }
++//        void dispose() {
++//            instances.erase(find(instances.begin(), instances.end(), this));
++//            delete this;
++//        }
++//
++//        // LaserEmitter interface
++//        DirectionBits emission_directions() const;
++//
++//        // OnOffStone interface.
++//        void notify_onoff(bool on);
++//
++//        // Private methods.
++//        void emit_light();
++//        Direction get_dir() const {return to_direction(getAttr(&quot;dir&quot;));}
++//
++//        // Stone interface.
++//        void on_creation (GridPos p);
++//        void init_model();
++//    };
++//
++//
+ 
+-    private:
+-
+-//        INSTANCELISTOBJ(LaserStone);
+-
+-// We can't use this macro here: g++ can't handle multiple inheritance
+-// and covariant return types at the same time (&quot;sorry, not
+-// implemented: ...&quot; first time I ever saw this error message :-)
+-
+-        typedef std::vector&lt;LaserStone*&gt; InstanceList;
+-        static InstanceList instances;
+-        Stone *clone() {
+-            LaserStone *o = new LaserStone(*this);
+-            instances.push_back(o);
+-            return o;
+-        }
+-        void dispose() {
+-            instances.erase(find(instances.begin(), instances.end(), this));
+-            delete this;
+-        }
+-
+-        // LaserEmitter interface
+-        DirectionBits emission_directions() const;
+-
+-        // OnOffStone interface.
+-        void notify_onoff(bool on);
+-
+-        // Private methods.
+-        void emit_light();
+-        Direction get_dir() const {return to_direction(getAttr(&quot;dir&quot;));}
+-
+-        // Stone interface.
+-        void on_creation (GridPos p);
+-        void init_model();
+-    };
+-
+-
+-
+ /* -------------------- PhotoCell -------------------- */
+ 
+ vector&lt;void*&gt; PhotoCell::instances;
+@@ -392,59 +354,59 @@
+ //----------------------------------------
+ // Laser stone
+ //----------------------------------------
+-LaserStone::InstanceList LaserStone::instances;
++//LaserStone::InstanceList LaserStone::instances;
++//
++//LaserStone::LaserStone (Direction dir)
++//: OnOffStone(&quot;st-laser&quot;)
++//{
++//    setAttr(&quot;dir&quot;, Value(dir));
++//}
++//
++//DirectionBits
++//LaserStone::emission_directions() const
++//{
++//    if (is_on()) {
++//        return to_bits(get_dir());
++//    }
++//    return NODIRBIT;
++//}
++//
++//
++//void LaserStone::reemit_all()
++//{
++//    for (unsigned i=0; i&lt;instances.size(); ++i)
++//    {
++//        LaserStone *ls = (LaserStone*) instances[i];
++//        ls-&gt;emit_light();
++//    }
++//}
++//
++//void LaserStone::notify_onoff(bool /*on*/)
++//{
++//    RecalcLight();
++//}
++//
++//void LaserStone::emit_light()
++//{
++//    if (is_on())
++//        LaserBeam::emit_from(get_pos(), get_dir());
++//}
++//
++//void LaserStone::on_creation (GridPos p)
++//{
++//    if (is_on())
++//        RecalcLight();
++//    Stone::on_creation(p);
++//}
++//
++//void LaserStone::init_model()
++//{
++//    string mname = is_on() ? &quot;st-laseron&quot; : &quot;st-laser&quot;;
++//    mname += to_suffix(get_dir());
++//    set_model(mname);
++//}
++//
+ 
+-LaserStone::LaserStone (Direction dir)
+-: OnOffStone(&quot;st-laser&quot;)
+-{
+-    setAttr(&quot;dir&quot;, Value(dir));
+-}
+-
+-DirectionBits
+-LaserStone::emission_directions() const
+-{
+-    if (is_on()) {
+-        return to_bits(get_dir());
+-    }
+-    return NODIRBIT;
+-}
+-
+-
+-void LaserStone::reemit_all()
+-{
+-    for (unsigned i=0; i&lt;instances.size(); ++i)
+-    {
+-        LaserStone *ls = (LaserStone*) instances[i];
+-        ls-&gt;emit_light();
+-    }
+-}
+-
+-void LaserStone::notify_onoff(bool /*on*/)
+-{
+-    RecalcLight();
+-}
+-
+-void LaserStone::emit_light()
+-{
+-    if (is_on())
+-        LaserBeam::emit_from(get_pos(), get_dir());
+-}
+-
+-void LaserStone::on_creation (GridPos p)
+-{
+-    if (is_on())
+-        RecalcLight();
+-    Stone::on_creation(p);
+-}
+-
+-void LaserStone::init_model()
+-{
+-    string mname = is_on() ? &quot;st-laseron&quot; : &quot;st-laser&quot;;
+-    mname += to_suffix(get_dir());
+-    set_model(mname);
+-}
+-
+-
+ /* -------------------- MirrorStone -------------------- */
+ namespace
+ {
+@@ -750,11 +712,11 @@
+ }
+ 
+ void InitLasers() {
+-    Register (new LaserStone);
+-    Register (&quot;st-laser-n&quot;, new LaserStone(NORTH));
+-    Register (&quot;st-laser-e&quot;, new LaserStone(EAST));
+-    Register (&quot;st-laser-s&quot;, new LaserStone(SOUTH));
+-    Register (&quot;st-laser-w&quot;, new LaserStone(WEST));
++//    Register (new LaserStone);
++//    Register (&quot;st-laser-n&quot;, new LaserStone(NORTH));
++//    Register (&quot;st-laser-e&quot;, new LaserStone(EAST));
++//    Register (&quot;st-laser-s&quot;, new LaserStone(SOUTH));
++//    Register (&quot;st-laser-w&quot;, new LaserStone(WEST));
+ 
+     Register (new TriangleMirror);
+     Register (&quot;st-mirror-3v&quot;, new TriangleMirror('v'));
+@@ -816,6 +778,7 @@
+ 
+ void RecalcLightNow() {
+     if (light_recalc_scheduled) {
++//        light_recalc_scheduled = false;    // this is the right place - but we have first to fix some object like hammer,...
+         PhotoCell::notify_start();
+         LaserBeam::kill_all();
+         LaserStone::reemit_all();
+
+Modified: trunk/src/laser.hh
+===================================================================
+--- trunk/src/laser.hh	2008-02-23 20:50:03 UTC (rev 1047)
++++ trunk/src/laser.hh	2008-02-24 19:33:14 UTC (rev 1048)
+@@ -24,6 +24,8 @@
+ 
+ #include &quot;GridObject.hh&quot;
+ #include &quot;stones.hh&quot;
++#include &quot;items.hh&quot;
++#include &lt;list&gt;
+ 
+ namespace enigma {
+     /**
+@@ -101,8 +103,49 @@
+         virtual void notify_laseron() = 0;
+         virtual void notify_laseroff() = 0;
+     };
++    
++/* -------------------- LaserBeam -------------------- */
+ 
++    class LaserBeam : public Item, public LaserEmitter {
++    public:
++        static void emit_from(GridPos p, Direction d);
++        static void kill_all();
++        static void all_emitted();
+ 
++    // LaserEmitter interface
++        DirectionBits emission_directions() const { return directions; }
++        static ItemTraits traits;
++
++        const ItemTraits &amp;get_traits() const {
++            return traits;
++        }
++    private:
++        LaserBeam(Direction dir) {
++            directions = to_bits(dir);
++        }
++
++        // Item interface.
++        void on_laserhit(Direction dir);
++        void on_creation (GridPos p);
++        void init_model();
++        bool actor_hit(Actor *actor);
++
++        Item *clone() {
++            // new LaserBeams may only created inside `emit_from'.
++//            assert(0);
++            return 0;
++        }
++        void dispose();
++
++        // Variables
++        DirectionBits directions;
++        
++        static std::list&lt;LaserBeam *&gt; beamList1;
++        static std::list&lt;LaserBeam *&gt; beamList2;
++        static std::list&lt;LaserBeam *&gt; *gridBeams;
++        static std::list&lt;LaserBeam *&gt; *lastBeams;
++    };
++
+ /* -------------------- Functions -------------------- */
+     void InitLasers();
+ 
+
+Added: trunk/src/stones/LaserStone.cc
+===================================================================
+--- trunk/src/stones/LaserStone.cc	2008-02-23 20:50:03 UTC (rev 1047)
++++ trunk/src/stones/LaserStone.cc	2008-02-24 19:33:14 UTC (rev 1048)
+@@ -0,0 +1,185 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/LaserStone.hh&quot;
++
++#include &quot;main.hh&quot;
++#include &quot;util.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++
++    LaserStone::InstanceList LaserStone::instances;
++    
++    void LaserStone::reemit_all() {
++        for (InstanceList::iterator it = instances.begin(); it != instances.end(); ++it) {
++            (*it)-&gt;emit_light();
++        }
++    }
++
++    LaserStone::LaserStone (Direction dir) : Stone(&quot;st_laser&quot;) {
++        setAttr(&quot;orientation&quot;, Value(dir));
++    }
++    
++    std::string LaserStone::getClass() const {
++        return &quot;st_laser&quot;;
++    }
++    
++    LaserStone *LaserStone::clone() {
++        LaserStone *o = new LaserStone(*this);
++        instances.push_back(o);
++        return o;
++    }
++    
++    void LaserStone::dispose() {
++        instances.erase(find(instances.begin(), instances.end(), this));
++        delete this;
++    }
++    
++    void LaserStone::setAttr(const string&amp; key, const Value &amp;val) {
++        if (isDisplayable())
++            if (key == &quot;orientation&quot;) {
++                Stone::setAttr(key, val);
++                init_model();
++                return;
++            }
++        Stone::setAttr(key, val);
++    }
++    
++    Value LaserStone::message(const Message &amp;m) {
++        if (m.message == &quot;orientate&quot;) {
++            Stone::setAttr(&quot;orientation&quot;, m.value);
++            return Value();
++        }
++        return Stone::message(m);
++    }
++    
++    int LaserStone::externalState() const {
++        return state % 2;
++    }
++    
++    void LaserStone::setState(int extState) {
++        if (isDisplayable()) {
++            switch (state) {
++                case OFF:
++                case ON:
++                    if (state != extState) {
++                        state = extState + 2;
++                        GameTimer.set_alarm(this, 0.2, false);
++                        RecalcLight();
++                        init_model();
++                    }
++                    break;
++                case NEW_OFF:
++                case NEW_ON:
++                    if (state != extState + 2)
++                        state += 2;   // remember pending other state 
++                    break;
++                case NEW_OFF_PENDING_ON:
++                case NEW_ON_PENDING_OFF:
++                    if (state == extState + 4)
++                        state -= 2;   // remember pending other state
++                    break; 
++            }
++        } else  // object initialisation
++            state = extState;
++    }
++    
++    void LaserStone::toggleState() {
++        switch (state) {
++            case OFF:
++            case NEW_OFF:
++            case NEW_ON_PENDING_OFF:
++                setState(ON);
++                break;
++            case ON:
++            case NEW_ON:
++            case NEW_OFF_PENDING_ON:
++                setState(OFF);
++                break;
++        }
++    }
++
++    void LaserStone::init_model()  {
++        string mname = externalState() == 1 ? &quot;st-laseron&quot; : &quot;st-laser&quot;;
++        mname += to_suffix(getOrientation());
++        set_model(mname);
++    }
++    
++    void LaserStone::on_creation (GridPos p) {
++        if (state == ON)
++            RecalcLight();
++        Stone::on_creation(p);
++    }
++    
++    void LaserStone::on_removal(GridPos p) {
++        GameTimer.remove_alarm(this);
++        state &amp;= 1;
++    }
++    
++    void LaserStone::alarm() {
++        int oldExtState = externalState();
++        switch (state) {
++                case NEW_OFF:
++                    state = OFF;
++                    break;
++                case NEW_ON:
++                    state = ON;
++                    break;
++                case NEW_OFF_PENDING_ON:
++                    state = NEW_ON;
++                    GameTimer.set_alarm(this, 0.2, false);
++                    break;
++                case NEW_ON_PENDING_OFF:
++                    state = NEW_OFF;
++                    GameTimer.set_alarm(this, 0.2, false);
++                    break;
++        }
++        if (oldExtState != externalState()) {
++            RecalcLight();
++            init_model();
++        }
++    }
++    
++    DirectionBits LaserStone::emission_directions() const {
++        if (externalState() == 1) {
++            return to_bits(getOrientation());
++        }
++        return NODIRBIT;
++    }
++
++    void LaserStone::emit_light() {
++        if (externalState() == 1)
++            LaserBeam::emit_from(get_pos(), getOrientation());
++    }
++    
++    Direction LaserStone::getOrientation() const {
++        return to_direction(getAttr(&quot;orientation&quot;));
++    }
++
++    BOOT_REGISTER_START
++        BootRegister(new LaserStone(EAST), &quot;st_laser&quot;);
++        BootRegister(new LaserStone(NORTH), &quot;st_laser_n&quot;);
++        BootRegister(new LaserStone(SOUTH), &quot;st_laser_s&quot;);
++        BootRegister(new LaserStone(EAST), &quot;st_laser_e&quot;);
++        BootRegister(new LaserStone(WEST), &quot;st_laser_w&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/LaserStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/LaserStone.hh
+===================================================================
+--- trunk/src/stones/LaserStone.hh	2008-02-23 20:50:03 UTC (rev 1047)
++++ trunk/src/stones/LaserStone.hh	2008-02-24 19:33:14 UTC (rev 1048)
+@@ -0,0 +1,85 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef LASERSTONE_HH
++#define LASERSTONE_HH
++
++#include &quot;laser.hh&quot;
++#include &lt;list&gt;
++
++namespace enigma {
++
++    /** 
++     * 
++     * 
++     * When a laser is switched on or off this may directly cause an action. 
++     * A part of such an action can be another laser switching of the same laser.
++     * To break infinit loops and to avoid laser flickering at a frequency that
++     * the user cannot recognize laser switching is limited. After a switching
++     * a laser stays in a NEW* state where further switch requests are delayed.
++     */
++    class LaserStone : public Stone, public LaserEmitter, public TimeHandler {
++    private:
++        enum iState {
++            OFF, 
++            ON, 
++            NEW_OFF,
++            NEW_ON,
++            NEW_OFF_PENDING_ON,
++            NEW_ON_PENDING_OFF
++        };
++        typedef std::list&lt;LaserStone*&gt; InstanceList;
++        static InstanceList instances;
++
++    public:
++        static void reemit_all();
++
++        LaserStone(Direction dir=EAST);
++
++        // Object interface
++        virtual std::string getClass() const;
++        virtual LaserStone *clone();
++        virtual void dispose();
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual int externalState() const;
++        virtual void setState(int extState);
++        virtual void toggleState();
++
++        // GridObject interface
++        virtual void init_model();
++        virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
++        
++        // TimeHandler interface
++        virtual void alarm();
++
++        // LaserEmitter interface
++        virtual DirectionBits emission_directions() const;
++        
++    private:
++        // Private methods.
++        void emit_light();
++        Direction getOrientation() const;
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/LaserStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/util.hh
+===================================================================
+--- trunk/src/util.hh	2008-02-23 20:50:03 UTC (rev 1047)
++++ trunk/src/util.hh	2008-02-24 19:33:14 UTC (rev 1048)
+@@ -15,6 +15,10 @@
+  * with this program; if not, write to the Free Software Foundation, Inc.,
+  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+  */
++
++#ifndef UTIL_HH
++#define UTIL_HH
++
+ #include &quot;enigma.hh&quot;
+ 
+ namespace enigma
+@@ -43,3 +47,5 @@
+         Rep &self;
+     };
+ }
++
++#endif
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000479.html">[Enigma-game-svn] r1047 - in trunk: data data/schemas src src/lev
+</A></li>
+	<LI>Next message: <A HREF="000481.html">[Enigma-game-svn] r1049 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#480">[ date ]</a>
+              <a href="thread.html#480">[ thread ]</a>
+              <a href="subject.html#480">[ subject ]</a>
+              <a href="author.html#480">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

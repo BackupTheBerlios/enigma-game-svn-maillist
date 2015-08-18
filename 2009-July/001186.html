@@ -1,0 +1,167 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1757 - trunk/src/others
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1757%20-%20trunk/src/others&In-Reply-To=%3C200907142101.n6EL1IU3018642%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001185.html">
+   <LINK REL="Next"  HREF="001187.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1757 - trunk/src/others</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1757%20-%20trunk/src/others&In-Reply-To=%3C200907142101.n6EL1IU3018642%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1757 - trunk/src/others">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Jul 14 23:01:18 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001185.html">[Enigma-game-svn] r1756 - branches/1.01/src
+</A></li>
+        <LI>Next message: <A HREF="001187.html">[Enigma-game-svn] r1758 - in trunk/src: lev others
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1186">[ date ]</a>
+              <a href="thread.html#1186">[ thread ]</a>
+              <a href="subject.html#1186">[ subject ]</a>
+              <a href="author.html#1186">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-07-14 23:01:17 +0200 (Tue, 14 Jul 2009)
+New Revision: 1757
+
+Modified:
+   trunk/src/others/Rubberband.cc
+   trunk/src/others/Rubberband.hh
+Log:
+Trunk 1.1:
+- Rubberband: kill existing rubberband between two anchors when a new one
+    is established between same anchors:
+    - the user can't see two rubbers
+    - danger of automatic addition of infinte rubberbands
+    - danger of contradicting min, max values
+
+
+Modified: trunk/src/others/Rubberband.cc
+===================================================================
+--- trunk/src/others/Rubberband.cc	2009-07-12 20:50:02 UTC (rev 1756)
++++ trunk/src/others/Rubberband.cc	2009-07-14 21:01:17 UTC (rev 1757)
+@@ -38,9 +38,9 @@
+             anchor1 = dynamic_cast&lt;Actor *&gt;((Object *)val);
+             ASSERT(anchor1 != NULL, XLevelRuntime, &quot;Rubberband: 'anchor1' is no actor&quot;);
+             ASSERT(anchor1 != anchor2.ac, XLevelRuntime, &quot;Rubberband: 'anchor1' is identical to 'anchor2'&quot;);
+-            switchAnchor(old, anchor1, (objFlags &amp; OBJBIT_STONE) ? (Object *)anchor2.st : (Object *)anchor2.ac);
++            switchAnchor(old, anchor1, anchor2Object());
+         } else if (key == &quot;anchor2&quot;) {
+-            Object * old = (objFlags &amp; OBJBIT_STONE) ? (Object *)anchor2.st : (Object *)anchor2.ac;
++            Object * old = anchor2Object();
+             Object * obj = val;
+             if (obj != NULL &amp;&amp; obj-&gt;getObjectType() == Object::ACTOR) {
+                 anchor2.ac = dynamic_cast&lt;Actor *&gt;((Object *)val);
+@@ -75,7 +75,7 @@
+         if (key == &quot;anchor1&quot;) {
+             return anchor1;
+         } else if (key == &quot;anchor2&quot;) {
+-            return (objFlags &amp; OBJBIT_STONE) ? (Object *)anchor2.st : (Object *)anchor2.ac;
++            return anchor2Object();
+         } else if (key == &quot;strength&quot;) {
+             return strength;
+         } else if (key == &quot;length&quot;) {
+@@ -122,8 +122,8 @@
+     
+     void Rubberband::preRemoval() {
+         model.kill();
+-        switchAnchor(anchor1, NULL, (objFlags &amp; OBJBIT_STONE) ? (Object *)anchor2.st : (Object *)anchor2.ac);
+-        switchAnchor((objFlags &amp; OBJBIT_STONE) ? (Object *)anchor2.st : (Object *)anchor2.ac, NULL, anchor1);        
++        switchAnchor(anchor1, NULL, anchor2Object());
++        switchAnchor(anchor2Object(), NULL, anchor1);        
+     }
+     
+     void Rubberband::tick(double dt) {
+@@ -277,7 +277,11 @@
+ 
+     }
+     
+-    ecl::V2 Rubberband::posAnchor2() {
++    Object * Rubberband::anchor2Object() const {
++        return (objFlags &amp; OBJBIT_STONE) ? (Object *)anchor2.st : (Object *)anchor2.ac;
++    }
++    
++    ecl::V2 Rubberband::posAnchor2() const {
+         return (objFlags &amp; OBJBIT_STONE) ? anchor2.st-&gt;getOwnerPos().center() : anchor2.ac-&gt;get_pos();
+     }
+     
+@@ -307,6 +311,24 @@
+             olist.push_back(this);
+             newAnchor-&gt;setAttr(&quot;rubbers&quot;, olist);
+             if (otherAnchor != NULL) {
++                // check on existing rubberbands between anchors
++                olist = newAnchor-&gt;getAttr(&quot;fellows&quot;);
++                ObjectList::iterator it = find(olist.begin(), olist.end(), otherAnchor);
++                if (it != olist.end()) {
++                    // we do not allow two rubberbands between identical anchors!
++                    // - the user can't see it
++                    // - danger of automatic addition of infinte rubberbands, that cause the engine to stop
++                    // - danger of contradicting min, max values
++                    olist = newAnchor-&gt;getAttr(&quot;rubbers&quot;);
++                    for (it = olist.begin(); it != olist.end(); ++it) {
++                        Rubberband *oldRubber = dynamic_cast&lt;Rubberband *&gt;(*it);
++                        if (otherAnchor == oldRubber-&gt;anchor1 || otherAnchor == oldRubber-&gt;anchor2Object()) {
++                            KillOther(oldRubber);
++                            break;
++                        }
++                    }
++                }
++                
+                 // add both anchors to each others fellows list
+                 olist = newAnchor-&gt;getAttr(&quot;fellows&quot;);
+                 olist.push_back(otherAnchor);
+
+Modified: trunk/src/others/Rubberband.hh
+===================================================================
+--- trunk/src/others/Rubberband.hh	2009-07-12 20:50:02 UTC (rev 1756)
++++ trunk/src/others/Rubberband.hh	2009-07-14 21:01:17 UTC (rev 1757)
+@@ -67,7 +67,8 @@
+         double maxLength;
+         display::RubberHandle model;
+         
+-        ecl::V2 posAnchor2();
++        Object * anchor2Object() const;
++        ecl::V2 posAnchor2() const;
+         void switchAnchor(Object *oldAnchor, Object *newAnchor, Object *otherAnchor);
+     };
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001185.html">[Enigma-game-svn] r1756 - branches/1.01/src
+</A></li>
+	<LI>Next message: <A HREF="001187.html">[Enigma-game-svn] r1758 - in trunk/src: lev others
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1186">[ date ]</a>
+              <a href="thread.html#1186">[ thread ]</a>
+              <a href="subject.html#1186">[ subject ]</a>
+              <a href="author.html#1186">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

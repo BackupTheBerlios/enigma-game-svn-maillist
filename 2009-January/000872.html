@@ -1,0 +1,171 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1443 - in trunk: data src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1443%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200901100110.n0A1ADfG007318%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000871.html">
+   <LINK REL="Next"  HREF="000873.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1443 - in trunk: data src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1443%20-%20in%20trunk%3A%20data%20src&In-Reply-To=%3C200901100110.n0A1ADfG007318%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1443 - in trunk: data src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Jan 10 02:10:13 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000871.html">[Enigma-game-svn] r1442 - in feature_branches/hp_lotm:	images/articles images/lotm input input/articles input/lotm	input/news
+</A></li>
+        <LI>Next message: <A HREF="000873.html">[Enigma-game-svn] r1444 - in trunk: data data/schemas src	src/floors src/items
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#872">[ date ]</a>
+              <a href="thread.html#872">[ thread ]</a>
+              <a href="subject.html#872">[ subject ]</a>
+              <a href="author.html#872">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-01-10 02:10:10 +0100 (Sat, 10 Jan 2009)
+New Revision: 1443
+
+Modified:
+   trunk/data/models-2d.lua
+   trunk/src/lua.cc
+Log:
+Trunk 1.1: new API reengineering
+- fix missing backward compatibility fl_metal_7n model alias 
+- add group method sort():
+  - group:sort() without argument returns a new group sorted lexical by object
+      names
+  - group:sort(&quot;circular&quot;) returns a new group with objects sorted around their
+      geometrical center. This allows authors to simply add circular oxyd
+      shuffle rules like:
+      wo:shuffleOxyd({no[&quot;o#*&quot;]:sort(&quot;circular&quot;), circular = true})
+      Note: 
+        - just Grid based objects like stones, items, floors are supported,
+        - no two objects should be at the same angle from the common center
+	- concave aligned objects can always be sorted circular
+	- in case of violations to these rules the resulting group may miss
+	  objects
+
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2009-01-09 16:16:37 UTC (rev 1442)
++++ trunk/data/models-2d.lua	2009-01-10 01:10:10 UTC (rev 1443)
+@@ -377,6 +377,7 @@
+     DefAlias(&quot;fl_metal_5&quot;, &quot;fl_metal5&quot;)
+     DefAlias(&quot;fl_metal_6&quot;, &quot;fl_metal6&quot;)
+     DefAlias(&quot;fl_metal_7&quot;, &quot;fl-normal&quot;)
++    DefAlias(&quot;fl_metal_7n&quot;, &quot;fl-normal&quot;)
+     DefAlias(&quot;fl_metal_1_framed&quot;, &quot;fl_metal1_framed&quot;)
+     DefAlias(&quot;fl_metal_2_framed&quot;, &quot;fl_metal2_framed&quot;)
+     DefAlias(&quot;fl_metal_3_framed&quot;, &quot;fl_metal3_framed&quot;)
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2009-01-09 16:16:37 UTC (rev 1442)
++++ trunk/src/lua.cc	2009-01-10 01:10:10 UTC (rev 1443)
+@@ -2984,6 +2984,58 @@
+     return pushNewGroup(L, newSort);
+ }
+ 
++static int sortGroup(lua_State *L) {
++    // group
++    if (lua_gettop(L) &lt; 1 || !is_group(L, 1)) {
++        throwLuaError(L, &quot;Syntax error - usage of '.' instead of ':'&quot;);
++        return 0;        
++    }
++    std::string command;
++    if (lua_gettop(L) == 2 &amp;&amp; lua_isstring(L, 2)) {
++        command = lua_tostring(L, 2);
++    }
++    ObjectList oldSort = toObjectList(L, 1);
++    ObjectList newSort;
++    if (command == &quot;circular&quot;) {
++        std::map&lt;double, Object *&gt; sortMap;
++        double cx = 0;
++        double cy = 0;  // center
++        int num = 0;
++        for (ObjectList::iterator itr = oldSort.begin(); itr != oldSort.end(); ++itr) {
++            GridObject *go = dynamic_cast&lt;GridObject *&gt;(*itr);
++            if (go != NULL) {
++                GridPos p = go-&gt;get_pos();
++                cx += p.x;
++                cy += p.y;
++                num++;
++            } 
++        }
++        if (num &gt; 0) {
++            cx = cx/num;
++            cy = cy/num;
++            for (ObjectList::iterator itr = oldSort.begin(); itr != oldSort.end(); ++itr) {
++                GridObject *go = dynamic_cast&lt;GridObject *&gt;(*itr);
++                if (go != NULL) {
++                    GridPos p = go-&gt;get_pos();
++                    double alpha = std::atan2(p.y - cy, p.x - cx); 
++                    sortMap[alpha] = *itr;
++                }
++            }
++            for (std::map&lt;double, Object *&gt;::iterator itr = sortMap.begin(); itr != sortMap.end(); ++itr) {
++                newSort.push_back(itr-&gt;second);
++            }
++        }
++    } else {
++        // default sort lexical by name
++        std::map&lt;std::string, Object *&gt; sortMap;
++        for (ObjectList::iterator itr = oldSort.begin(); itr != oldSort.end(); ++itr)
++            sortMap[((*itr)-&gt;getAttr(&quot;name&quot;)).to_string()] = *itr;
++        for (std::map&lt;std::string, Object *&gt;::iterator itr = sortMap.begin(); itr != sortMap.end(); ++itr)
++            newSort.push_back(itr-&gt;second);
++    }
++    return pushNewGroup(L, newSort);
++}
++
+ MethodMap polistMethodeMap;
+ 
+ static int dispatchPolistWriteAccess(lua_State *L) {
+@@ -3237,6 +3289,7 @@
+     {groupMessage,                  &quot;message&quot;},
+     {killObject,                    &quot;kill&quot;},
+     {shuffleGroup,                  &quot;shuffle&quot;},
++    {sortGroup,                     &quot;sort&quot;},
+     {0,0}
+ };
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000871.html">[Enigma-game-svn] r1442 - in feature_branches/hp_lotm:	images/articles images/lotm input input/articles input/lotm	input/news
+</A></li>
+	<LI>Next message: <A HREF="000873.html">[Enigma-game-svn] r1444 - in trunk: data data/schemas src	src/floors src/items
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#872">[ date ]</a>
+              <a href="thread.html#872">[ thread ]</a>
+              <a href="subject.html#872">[ subject ]</a>
+              <a href="author.html#872">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

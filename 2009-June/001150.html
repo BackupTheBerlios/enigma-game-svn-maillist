@@ -1,0 +1,305 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1721 - in trunk/src: . items
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1721%20-%20in%20trunk/src%3A%20.%20items&In-Reply-To=%3C200906142222.n5EMM7KF016738%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001149.html">
+   <LINK REL="Next"  HREF="001151.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1721 - in trunk/src: . items</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1721%20-%20in%20trunk/src%3A%20.%20items&In-Reply-To=%3C200906142222.n5EMM7KF016738%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1721 - in trunk/src: . items">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon Jun 15 00:22:07 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001149.html">[Enigma-game-svn] r1720 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="001151.html">[Enigma-game-svn] r1722 - in trunk/data/levels: enigma_cross	enigma_i enigma_ii enigma_ix enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1150">[ date ]</a>
+              <a href="thread.html#1150">[ thread ]</a>
+              <a href="subject.html#1150">[ subject ]</a>
+              <a href="author.html#1150">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-06-15 00:22:06 +0200 (Mon, 15 Jun 2009)
+New Revision: 1721
+
+Modified:
+   trunk/src/WorldProxy.cc
+   trunk/src/items/Magnet.cc
+   trunk/src/items/Magnet.hh
+   trunk/src/items/WormHole.cc
+   trunk/src/items/WormHole.hh
+   trunk/src/player.cc
+   trunk/src/server.cc
+   trunk/src/server.hh
+   trunk/src/world.cc
+   trunk/src/world.hh
+Log:
+Trunk 1.1:
+- fix wormhole, magnet: for actors on same grid the doubled force had been 
+    applied due to a name clash between force fields and item forces
+- new global attribute &quot;InfiniteReincarnation&quot;, default false, resurrect
+    actors without removal of extralife, but extralife must be present
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2009-06-13 23:55:35 UTC (rev 1720)
++++ trunk/src/WorldProxy.cc	2009-06-14 22:22:06 UTC (rev 1721)
+@@ -70,6 +70,8 @@
+             return server::LevelTime;    // read only
+         } else if (key == &quot;ProvideExtralifes&quot;) {
+             return server::ProvideExtralifes;
++        } else if (key == &quot;InfiniteReincarnation&quot;) {
++            return server::InfiniteReincarnation;
+         } else if (key == &quot;ShowMoves&quot;) {
+             return server::ShowMoves;
+         } else if (key == &quot;SurviveFinish&quot;) {
+@@ -172,7 +174,8 @@
+             ASSERT(server::ProvideExtralifes || !newFlag, XLevelRuntime, 
+                 &quot;Attribute 'ProvideExtralifes': toggling from false to true not allowed&quot;);
+             server::ProvideExtralifes = newFlag;
+-            
++        } else if (key == &quot;InfiniteReincarnation&quot;) {
++            server::InfiniteReincarnation = val.to_bool();            
+         } else if (key == &quot;ShowMoves&quot;) {
+             server::ShowMoves = val.to_bool();
+             STATUSBAR-&gt;show_move_counter (server::ShowMoves);
+
+Modified: trunk/src/items/Magnet.cc
+===================================================================
+--- trunk/src/items/Magnet.cc	2009-06-13 23:55:35 UTC (rev 1720)
++++ trunk/src/items/Magnet.cc	2009-06-14 22:22:06 UTC (rev 1721)
+@@ -56,6 +56,20 @@
+         }
+         return Item::message(m);
+     }
++    
++    void Magnet::setState(int extState) {
++        // switch force on and off
++        if (extState != state) {          // react only on force changes
++            state = extState;
++            if (isDisplayable()) {
++                if (extState == 1)
++                    AddForceField(this);
++                else
++                    RemoveForceField(this);
++            }
++        }
++    }
++    
+     void Magnet::init_model() {
+         set_model(ecl::strf(&quot;it_magnet_%s&quot;, state == ON ? &quot;on&quot; : &quot;off&quot;));
+     }
+@@ -68,23 +82,25 @@
+             correctedStrength = 0.6 * server::MagnetForce;
+         }
+ 
+-        AddForceField(this);
++        if (state == ON)
++            AddForceField(this);
++            
+         Item::on_creation(p);
+     }
+     
+     void Magnet::on_removal(GridPos p) {
+         Item::on_removal(p);
+-        RemoveForceField(this);
++        if (state == ON)
++            RemoveForceField(this);
+     }
+     
+-    void Magnet::add_force(Actor *a, V2 &amp;f) {
+-        if (state == ON) {
+-            V2 dv = get_pos().center() - a-&gt;get_pos_force();
+-            double squareDist = square(dv);
++    ecl::V2 Magnet::globalForce(Actor *a) {
++        // only switched on magnets are registered
++        ecl::V2 dv = get_pos().center() - a-&gt;get_pos_force();
++        double squareDist = square(dv);
+ 
+-            if (squareDist &gt;= 0.04 &amp;&amp; squareDist &lt; squareRange)
+-                f += (correctedStrength / squareDist) * dv;
+-        }
++        return (squareDist &gt;= 0.04 &amp;&amp; squareDist &lt; squareRange) ?
++                (correctedStrength / squareDist) * dv : ecl::V2();
+     }
+     
+     ItemTraits Magnet::traits[2] = {
+
+Modified: trunk/src/items/Magnet.hh
+===================================================================
+--- trunk/src/items/Magnet.hh	2009-06-13 23:55:35 UTC (rev 1720)
++++ trunk/src/items/Magnet.hh	2009-06-14 22:22:06 UTC (rev 1721)
+@@ -43,13 +43,16 @@
+         virtual void setAttr(const std::string &amp;key, const Value &amp;val);
+         virtual Value message(const Message &amp;m);
+ 
++        // StateObject interface
++        virtual void setState(int extState);
++
+         // GridObject interface
+         virtual void on_creation(GridPos p);
+         virtual void on_removal(GridPos p);
+         virtual void init_model();
+ 
+         // ForceField interface
+-        virtual void add_force(Actor *a, V2 &amp;f);
++        virtual ecl::V2 globalForce(Actor *a);
+         
+     private:
+         double correctedStrength;     // 0.6 * strength
+
+Modified: trunk/src/items/WormHole.cc
+===================================================================
+--- trunk/src/items/WormHole.cc	2009-06-13 23:55:35 UTC (rev 1720)
++++ trunk/src/items/WormHole.cc	2009-06-14 22:22:06 UTC (rev 1721)
+@@ -135,12 +135,13 @@
+         return results;
+     }
+     
+-    void WormHole::add_force(Actor *a, V2 &amp;f) {
+-        V2 dv = get_pos().center() - a-&gt;get_pos_force();
++    ecl::V2 WormHole::globalForce(Actor *a) {
++        // only switched on wormholes are registered
++        ecl::V2 dv = get_pos().center() - a-&gt;get_pos_force();
+         double squareDist = square(dv);
+ 
+-        if (squareDist &gt;= 0.025 &amp;&amp; squareDist &lt; squareRange)
+-            f += (correctedStrength / squareDist) * dv;
++        return (squareDist &gt;= 0.025 &amp;&amp; squareDist &lt; squareRange) ?
++                (correctedStrength / squareDist) * dv : ecl::V2();
+     }
+     
+     void WormHole::alarm() {
+
+Modified: trunk/src/items/WormHole.hh
+===================================================================
+--- trunk/src/items/WormHole.hh	2009-06-13 23:55:35 UTC (rev 1720)
++++ trunk/src/items/WormHole.hh	2009-06-14 22:22:06 UTC (rev 1721)
+@@ -64,7 +64,7 @@
+         virtual std::list&lt;GridPos&gt; warpSpreadPos(bool isWater);
+ 
+         // ForceField interface
+-        virtual void add_force(Actor *a, V2 &amp;f);
++        virtual ecl::V2 globalForce(Actor *a);
+         
+         // TimeHandler interface
+         virtual void alarm();
+
+Modified: trunk/src/player.cc
+===================================================================
+--- trunk/src/player.cc	2009-06-13 23:55:35 UTC (rev 1720)
++++ trunk/src/player.cc	2009-06-14 22:22:06 UTC (rev 1721)
+@@ -116,7 +116,8 @@
+ 
+ //    a-&gt;find_respawnpos();
+     SendMessage(a, &quot;_resurrect&quot;);
+-    remove_extralife(a);
++    if (!server::InfiniteReincarnation)
++        remove_extralife(a);
+     respawn_list.push_back(RespawnInfo(a, RESPAWN_TIME));
+ }
+ 
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2009-06-13 23:55:35 UTC (rev 1720)
++++ trunk/src/server.cc	2009-06-14 22:22:06 UTC (rev 1721)
+@@ -88,6 +88,7 @@
+ bool     server::IsDifficult;               // read only for Lua
+ bool     server::IsLevelRestart;            // no Lua access
+ bool     server::ProvideExtralifes;
++bool     server::InfiniteReincarnation;
+ bool     server::SurviveFinish;
+ 
+ Value    server::FollowAction;
+@@ -257,6 +258,7 @@
+     server::LevelTime         = 0.0;
+     server::ConserveLevel     = true;
+     server::ProvideExtralifes = true;
++    server::InfiniteReincarnation = false;
+     server::SurviveFinish     = true;
+     server::TwoPlayerGame     = false;
+     server::SingleComputerGame= true;
+
+Modified: trunk/src/server.hh
+===================================================================
+--- trunk/src/server.hh	2009-06-13 23:55:35 UTC (rev 1720)
++++ trunk/src/server.hh	2009-06-14 22:22:06 UTC (rev 1721)
+@@ -64,6 +64,7 @@
+     extern bool     IsDifficult;
+     extern bool     IsLevelRestart;
+     extern bool     ProvideExtralifes;
++    extern bool     InfiniteReincarnation;  // do not remove extralife on respawn
+     extern bool     SurviveFinish;
+     extern bool     TwoPlayerGame;
+ 
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2009-06-13 23:55:35 UTC (rev 1720)
++++ trunk/src/world.cc	2009-06-14 22:22:06 UTC (rev 1721)
+@@ -644,7 +644,7 @@
+ 
+     // All other force fields.
+     for (ForceList::iterator i=forces.begin(); i != forces.end(); ++i) 
+-        (*i)-&gt;add_force(a, f);
++        f += (*i)-&gt;globalForce(a);
+ 
+     return f;
+ }
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2009-06-13 23:55:35 UTC (rev 1720)
++++ trunk/src/world.hh	2009-06-14 22:22:06 UTC (rev 1721)
+@@ -128,7 +128,7 @@
+     class ForceField {
+     public:
+         virtual ~ForceField() {}
+-        virtual void add_force(Actor *a, V2 &amp;force) = 0;
++        virtual ecl::V2 globalForce(Actor *a) = 0;
+         virtual void tick(double /*dtime*/) {}
+     };
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001149.html">[Enigma-game-svn] r1720 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="001151.html">[Enigma-game-svn] r1722 - in trunk/data/levels: enigma_cross	enigma_i enigma_ii enigma_ix enigma_viii
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1150">[ date ]</a>
+              <a href="thread.html#1150">[ thread ]</a>
+              <a href="subject.html#1150">[ subject ]</a>
+              <a href="author.html#1150">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

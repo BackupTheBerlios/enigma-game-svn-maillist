@@ -1,0 +1,498 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1061 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-March/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1061%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200803091336.m29DakvM027128%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000492.html">
+   <LINK REL="Next"  HREF="000494.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1061 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1061%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200803091336.m29DakvM027128%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1061 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Mar  9 14:36:46 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000492.html">[Enigma-game-svn] r1060 - homepage/input
+</A></li>
+        <LI>Next message: <A HREF="000494.html">[Enigma-game-svn] r1062 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#493">[ date ]</a>
+              <a href="thread.html#493">[ thread ]</a>
+              <a href="subject.html#493">[ subject ]</a>
+              <a href="author.html#493">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-03-09 14:36:45 +0100 (Sun, 09 Mar 2008)
+New Revision: 1061
+
+Added:
+   trunk/src/stones/LaserSwitch.cc
+   trunk/src/stones/LaserSwitch.hh
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/Object.cc
+   trunk/src/ObjectValidator.cc
+   trunk/src/laser.cc
+   trunk/src/st_switches.cc
+   trunk/src/stones/LaserStone.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1: new API reengineering LaserSwitch
+- reengineering laserswitch:
+  - rename to st_laserswitch
+  - made full StateObject instead of LaserTimeSwitchBase
+  - added support for setting a laserswitch into a laser beam
+- finalize fix bug #11112 - recursive laser/laserswitch
+- add support of state dependent target/action in ObjectValidator
+- add lua hook &quot;postinit()&quot; that is called after complete initialization
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-03-05 21:27:12 UTC (rev 1060)
++++ trunk/data/api1init.lua	2008-03-09 13:36:45 UTC (rev 1061)
+@@ -69,6 +69,7 @@
+     st_laser_s = &quot;st-laser-s&quot;,
+     st_laser_e = &quot;st-laser-e&quot;,
+     st_laser_n = &quot;st-laser-n&quot;,
++    st_laserswitch = &quot;st-laserswitch&quot;,
+     st_polarswitch = &quot;st-polarswitch&quot;,
+     st_oxyd = &quot;st-oxyd&quot;,
+     st_switch = &quot;st-switch&quot;,
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-03-05 21:27:12 UTC (rev 1060)
++++ trunk/data/schemas/objects.xml	2008-03-09 13:36:45 UTC (rev 1061)
+@@ -132,6 +132,11 @@
+     &lt;object name=&quot;st_laser_n&quot;&gt;
+       &lt;attr name=&quot;orientation&quot; value=&quot;3&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_laserswitch&quot;&gt;
++      &lt;attr name=&quot;state&quot; rw=&quot;r&quot;/&gt;
++      &lt;msg name=&quot;_init&quot;/&gt;
++      &lt;msg name=&quot;_model_reanimated&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_polarswitch&quot;&gt;
+       &lt;msg name=&quot;on&quot;/&gt;
+       &lt;msg name=&quot;off&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-03-05 21:27:12 UTC (rev 1060)
++++ trunk/src/Makefile.am	2008-03-09 13:36:45 UTC (rev 1061)
+@@ -213,6 +213,8 @@
+ 	stones/KeySwitch.hh	\
+ 	stones/LaserStone.cc	\
+ 	stones/LaserStone.hh	\
++	stones/LaserSwitch.cc	\
++	stones/LaserSwitch.hh	\
+ 	stones/OxydStone.cc	\
+ 	stones/OxydStone.hh	\
+ 	stones/PolarSwitchStone.cc	\
+
+Modified: trunk/src/Object.cc
+===================================================================
+--- trunk/src/Object.cc	2008-03-05 21:27:12 UTC (rev 1060)
++++ trunk/src/Object.cc	2008-03-09 13:36:45 UTC (rev 1061)
+@@ -237,8 +237,9 @@
+         TokenList actions = getAttr(&quot;action&quot;);
+         if (Value state = getAttr(&quot;state&quot;)) {
+             int s = state;
+-            if (Value stateTargets = getAttr(ecl::strf(&quot;target_%d&quot;, s)))
++            if (Value stateTargets = getAttr(ecl::strf(&quot;target_%d&quot;, s))) {
+                 targets = stateTargets;
++            }
+             if (Value actionTargets = getAttr(ecl::strf(&quot;action_%d&quot;, s)))
+                 actions = actionTargets;
+         }
+@@ -254,7 +255,7 @@
+                         &amp;&amp; lua::IsFunc(lua::LevelState(), tit-&gt;get_string())) {
+                     // it is an existing callback function
+                     if (lua::CallFunc(lua::LevelState(), tit-&gt;get_string(), messageValue, this) != lua::NO_LUAERROR) {
+-                        throw XLevelRuntime(string(&quot;callback '&quot;) + tit-&gt;get_string() + &quot;' failed:\n&quot;+lua::LastError(lua::LevelState()));
++                        throw XLevelRuntime(std::string(&quot;callback '&quot;) + tit-&gt;get_string() + &quot;' failed:\n&quot;+lua::LastError(lua::LevelState()));
+                     }
+                 }
+                 // else ignore this no longer valid target
+
+Modified: trunk/src/ObjectValidator.cc
+===================================================================
+--- trunk/src/ObjectValidator.cc	2008-03-05 21:27:12 UTC (rev 1060)
++++ trunk/src/ObjectValidator.cc	2008-03-09 13:36:45 UTC (rev 1061)
+@@ -181,7 +181,12 @@
+         if (kind == NULL) {
+             return true;    // object is not under validator control - allow write
+         }
+-        // TODO search specific sub kind if necessary
++        // state dependent target/action support
++        if (key.find(&quot;target_&quot;) == 0)
++            key = &quot;target&quot;;
++        else if (key.find(&quot;action_&quot;) == 0)
++            key = &quot;action&quot;;
++
+         return kind-&gt;validateAttributeWrite(key, val);
+     }
+     
+@@ -190,7 +195,12 @@
+         if (kind == NULL) {
+             return true;    // object is not under validator control
+         }
+-        // TODO search specific sub kind if necessary
++        // state dependent target/action support
++        if (key.find(&quot;target_&quot;) == 0)
++            key = &quot;target&quot;;
++        else if (key.find(&quot;action_&quot;) == 0)
++            key = &quot;action&quot;;
++
+         return kind-&gt;validateAttributeRead(key);
+     }
+     
+@@ -208,7 +218,13 @@
+         if (kind == NULL) {
+             return Value(Value::DEFAULT);    // object is not under validator control
+         }
+-        // TODO search specific sub kind if necessary
++        
++        // state dependent target/action support
++        if (key.find(&quot;target_&quot;) == 0)
++            key = &quot;target&quot;;
++        else if (key.find(&quot;action_&quot;) == 0)
++            key = &quot;action&quot;;
++
+         return kind-&gt;getDefaultValue(key);
+     }
+     
+
+Modified: trunk/src/laser.cc
+===================================================================
+--- trunk/src/laser.cc	2008-03-05 21:27:12 UTC (rev 1060)
++++ trunk/src/laser.cc	2008-03-09 13:36:45 UTC (rev 1061)
+@@ -663,7 +663,7 @@
+ 
+ void PerformRecalcLight(bool isInit) {
+     if (light_recalc_scheduled) {
+-//        light_recalc_scheduled = false;    // this is the right place - but we have first to fix some object like hammer,...
++        light_recalc_scheduled = false;    // this is the right place - but we have first to fix some object like hammer,...
+         PhotoCell::notify_start();
+         GridObject::preLaserRecalc();
+         LaserBeam::kill_all();
+@@ -673,7 +673,7 @@
+             // do not cause actions on initial laser beam generation
+             GridObject::postLaserRecalc();
+         PhotoCell::notify_finish();
+-        light_recalc_scheduled = false;
++//        light_recalc_scheduled = false;
+     }
+ }
+ 
+
+Modified: trunk/src/st_switches.cc
+===================================================================
+--- trunk/src/st_switches.cc	2008-03-05 21:27:12 UTC (rev 1060)
++++ trunk/src/st_switches.cc	2008-03-09 13:36:45 UTC (rev 1061)
+@@ -65,19 +65,6 @@
+         void change_state(State newstate);
+     };
+ 
+-
+-    class LaserSwitch : public LaserTimeSwitchBase {
+-        CLONEOBJ(LaserSwitch);
+-    public:
+-        LaserSwitch();
+-        virtual Value message(const Message &amp;m);
+-    private:
+-        // LaserTimeSwitchBase interface
+-        const char *get_active_model() const;
+-        const char *get_inactive_model() const;
+-    };
+-
+-
+     class LaserTimeSwitch : public LaserTimeSwitchBase {
+         CLONEOBJ(LaserTimeSwitch);
+     public:
+@@ -169,27 +156,6 @@
+     return -1; // we have no timer delay
+ }
+ 
+-/* ---------- LaserSwitch ---------- */
+-
+-LaserSwitch::LaserSwitch()
+-: LaserTimeSwitchBase(&quot;st-laserswitch&quot;)
+-{}
+-
+-Value LaserSwitch::message(const Message &amp;m) {
+-    if (m.message == &quot;_model_reanimated&quot;) {
+-        RecalcLight(); // we may be swapped out of a laser beam
+-    }
+-    return LaserTimeSwitchBase::message(m);
+-}
+-
+-const char *LaserSwitch::get_active_model() const { 
+-    return &quot;st-laserswitch1&quot;; 
+-}
+-
+-const char *LaserSwitch::get_inactive_model() const { 
+-    return &quot;st-laserswitch0&quot;; 
+-}
+-
+ /* ---------- LaserTimeSwitch ---------- */
+ 
+ LaserTimeSwitch::LaserTimeSwitch(const char *kind)
+@@ -237,7 +203,6 @@
+ 
+ void InitSwitches()
+ {
+-    Register (new LaserSwitch);
+     Register (new LaserTimeSwitch);
+     Register (new TimeSwitch);
+ }
+
+Modified: trunk/src/stones/LaserStone.cc
+===================================================================
+--- trunk/src/stones/LaserStone.cc	2008-03-05 21:27:12 UTC (rev 1060)
++++ trunk/src/stones/LaserStone.cc	2008-03-09 13:36:45 UTC (rev 1061)
+@@ -34,7 +34,7 @@
+         }
+     }
+ 
+-    LaserStone::LaserStone (Direction dir) : Stone(&quot;st_laser&quot;) {
++    LaserStone::LaserStone(Direction dir) : Stone(&quot;st_laser&quot;) {
+         setAttr(&quot;orientation&quot;, Value(dir));
+     }
+     
+
+Added: trunk/src/stones/LaserSwitch.cc
+===================================================================
+--- trunk/src/stones/LaserSwitch.cc	2008-03-05 21:27:12 UTC (rev 1060)
++++ trunk/src/stones/LaserSwitch.cc	2008-03-09 13:36:45 UTC (rev 1061)
+@@ -0,0 +1,92 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/LaserSwitch.hh&quot;
++
++#include &quot;main.hh&quot;
++#include &quot;util.hh&quot;
++#include &quot;world.hh&quot;
++
++namespace enigma {
++
++    LaserSwitch::LaserSwitch() : Stone(&quot;st_laserswitch&quot;) {
++        state = NEW;
++    }
++
++    std::string LaserSwitch::getClass() const {
++        return &quot;st_laserswitch&quot;;
++    }
++
++    Value LaserSwitch::message(const Message &amp;m) {
++        if (m.message == &quot;_model_reanimated&quot;) {
++            // we are swapped in or out of a laser beam
++            init_model();  // replace bogus model
++        } else if (m.message == &quot;_init&quot;) {
++            if (updateCurrentLightDirs() != NODIRBIT) {
++                state = ON;
++                init_model();
++            }
++        }
++        return Stone::message(m);
++    }
++    
++    int LaserSwitch::externalState() const {
++        return state % 2;     // report initial state as OFF
++    }
++    
++    void LaserSwitch::setState(int extState) {
++        // the state cannot be set externally - just by laserlight
++    }
++    
++    void LaserSwitch::init_model() {
++        set_model(ecl::strf(&quot;st-laserswitch%d&quot;, state == ON ? 1 : 0));
++    }
++    
++    void LaserSwitch::on_creation(GridPos p) {
++        int newState = (updateCurrentLightDirs() != NODIRBIT) ? ON : OFF;
++        if (state == NEW) {
++            // no actions on initial grid positioning of a laserswitch, just set state
++            state = newState;
++        } else if (newState != state) {
++            lightDirChanged(NODIRBIT, NODIRBIT);  // perform actions and init model
++        }
++        activatePhoto();
++
++        Stone::on_creation(p);
++    }
++    
++    void LaserSwitch::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
++        if (state == OFF &amp;&amp; oldDirs == 0) {
++            state = ON;
++            init_model();
++//            sound_event (&quot;?&quot;);
++            performAction(true);
++        } else if (state == ON &amp;&amp; newDirs == 0) {
++            state = OFF;
++            init_model();
++//            sound_event (&quot;?&quot;);
++            performAction(false);
++        }
++    }
++
++    BOOT_REGISTER_START
++        BootRegister(new LaserSwitch(), &quot;st_laserswitch&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/LaserSwitch.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/LaserSwitch.hh
+===================================================================
+--- trunk/src/stones/LaserSwitch.hh	2008-03-05 21:27:12 UTC (rev 1060)
++++ trunk/src/stones/LaserSwitch.hh	2008-03-09 13:36:45 UTC (rev 1061)
+@@ -0,0 +1,59 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef LASERSWITCH_HH
++#define LASERSWITCH_HH
++
++#include &quot;stones.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     * 
++     * 
++     */
++    class LaserSwitch : public Stone {
++        CLONEOBJ(LaserSwitch);
++    private:
++        enum iState {
++            OFF, 
++            ON,
++            NEW      ///&lt; initial off LaserSwitch
++        };
++
++    public:
++        LaserSwitch();
++
++        // Object interface
++        virtual std::string getClass() const;
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual int externalState() const;
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        virtual void on_creation(GridPos p);
++        virtual void lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/LaserSwitch.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-03-05 21:27:12 UTC (rev 1060)
++++ trunk/src/world.cc	2008-03-09 13:36:45 UTC (rev 1061)
+@@ -1619,6 +1619,13 @@
+     level-&gt;preparing_level = false;
+     server::WorldInitialized = true;
+ 
++    if (lua::IsFunc(lua::LevelState(), &quot;postinit&quot;)) {
++        // it is an existing callback function
++        if (lua::CallFunc(lua::LevelState(), &quot;postinit&quot;, Value(), NULL) != lua::NO_LUAERROR) {
++            throw XLevelRuntime(std::string(&quot;callback 'postinit' failed:\n&quot;) + lua::LastError(lua::LevelState()));
++        }
++    }
++
+     return true;
+ }
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000492.html">[Enigma-game-svn] r1060 - homepage/input
+</A></li>
+	<LI>Next message: <A HREF="000494.html">[Enigma-game-svn] r1062 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#493">[ date ]</a>
+              <a href="thread.html#493">[ thread ]</a>
+              <a href="subject.html#493">[ subject ]</a>
+              <a href="author.html#493">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

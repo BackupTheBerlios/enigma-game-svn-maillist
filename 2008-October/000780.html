@@ -1,0 +1,175 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1351 - in trunk: data data/gfx32 data/gfx40	data/gfx48 src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-October/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1351%20-%20in%20trunk%3A%20data%20data/gfx32%20data/gfx40%0A%09data/gfx48%20src/stones&In-Reply-To=%3C200810012205.m91M5sx3009484%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000779.html">
+   <LINK REL="Next"  HREF="000781.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1351 - in trunk: data data/gfx32 data/gfx40	data/gfx48 src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1351%20-%20in%20trunk%3A%20data%20data/gfx32%20data/gfx40%0A%09data/gfx48%20src/stones&In-Reply-To=%3C200810012205.m91M5sx3009484%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1351 - in trunk: data data/gfx32 data/gfx40	data/gfx48 src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Oct  2 00:05:54 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000779.html">[Enigma-game-svn] r1350 - homepage/input
+</A></li>
+        <LI>Next message: <A HREF="000781.html">[Enigma-game-svn] r1352 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#780">[ date ]</a>
+              <a href="thread.html#780">[ thread ]</a>
+              <a href="subject.html#780">[ subject ]</a>
+              <a href="author.html#780">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-10-02 00:05:53 +0200 (Thu, 02 Oct 2008)
+New Revision: 1351
+
+Modified:
+   trunk/data/gfx32/st-stoneimpulse.png
+   trunk/data/gfx40/st-stoneimpulse.png
+   trunk/data/gfx48/st-stoneimpulse.png
+   trunk/data/models-2d.lua
+   trunk/src/stones/StoneImpulse.cc
+Log:
+Trunk 1.1: new API reengineering Stoneimpulse
+- add image for steady stoneimpulse
+- add support for steady movable stoneimpulse
+- let dynamite explode stoneimpulse in non Enigma modes
+- let dynamite explode enlighted stoneimpulse in Enigma mode
+
+
+Modified: trunk/data/gfx32/st-stoneimpulse.png
+===================================================================
+(Binary files differ)
+
+Modified: trunk/data/gfx40/st-stoneimpulse.png
+===================================================================
+(Binary files differ)
+
+Modified: trunk/data/gfx48/st-stoneimpulse.png
+===================================================================
+(Binary files differ)
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-10-01 19:29:44 UTC (rev 1350)
++++ trunk/data/models-2d.lua	2008-10-01 22:05:53 UTC (rev 1351)
+@@ -1092,8 +1092,9 @@
+ -- (anim2) is longer than the opening animation (anim1). Otherwise
+ -- impulse stones do not work properly!
+ do
+-   local images = DefSubimages(&quot;st-stoneimpulse&quot;, {h=4})
++   local images = DefSubimages(&quot;st-stoneimpulse&quot;, {h=6})
+    DefRoundStone(&quot;st-stoneimpulse&quot;, images[1])
++   DefRoundStone(&quot;st-stoneimpulse-steady&quot;, images[6])
+    local frames = {}
+    for i=1,4 do table.insert(frames, images[i]) end
+    DefAnim(&quot;stoneimpulse-anim1&quot;, BuildFrames(frames, 55))
+
+Modified: trunk/src/stones/StoneImpulse.cc
+===================================================================
+--- trunk/src/stones/StoneImpulse.cc	2008-10-01 19:29:44 UTC (rev 1350)
++++ trunk/src/stones/StoneImpulse.cc	2008-10-01 22:05:53 UTC (rev 1351)
+@@ -20,6 +20,8 @@
+ #include &quot;stones/StoneImpulse.hh&quot;
+ #include &quot;main.hh&quot;
+ #include &quot;player.hh&quot;
++#include &quot;server.hh&quot;
++#include &quot;world.hh&quot;
+ 
+ namespace enigma {
+     StoneImpulse::StoneImpulse(bool isSteady, bool isHollow, bool isMovable, bool isActive) : Stone () {
+@@ -49,14 +51,12 @@
+             if (val.to_bool()) {
+                 objFlags |= OBJBIT_MOVABLE;
+                 objFlags &amp;= ~OBJBIT_HOLLOW;
+-                objFlags &amp;= ~OBJBIT_STEADY;
+             } else
+                 objFlags &amp;= ~OBJBIT_MOVABLE;
+         } else if (key == &quot;steady&quot;) {
+             if (val.to_bool()) {
+                 objFlags |= OBJBIT_STEADY;
+                 objFlags &amp;= ~OBJBIT_HOLLOW;
+-                objFlags &amp;= ~OBJBIT_MOVABLE;
+             } else
+                 objFlags &amp;= ~OBJBIT_STEADY;
+         } else if (key == &quot;orientation&quot;) {
+@@ -108,6 +108,9 @@
+             updateCurrentLightDirs();
+             if (state == IDLE &amp;&amp; (objFlags &amp; OBJBIT_STEADY) &amp;&amp; (objFlags &amp; OBJBIT_LIGHTNEWDIRS))
+                setIState(EXPANDING);     // replace potential bogus model
++        } else if (m.message == &quot;ignite&quot;) {
++            if (server::GameCompatibility != GAMET_ENIGMA || (objFlags &amp; OBJBIT_LIGHTNEWDIRS))
++                KillStone(get_pos());
+         } else
+             return Stone::message(m);
+     }
+@@ -119,7 +122,7 @@
+ 
+     void StoneImpulse::init_model() {
+         if (state == IDLE)
+-            set_model(ecl::strf(&quot;st-stoneimpulse%s&quot;, (objFlags &amp; OBJBIT_HOLLOW) ? &quot;-hollow&quot; : &quot;&quot;));
++            set_model(ecl::strf(&quot;st-stoneimpulse%s&quot;, (objFlags &amp; OBJBIT_HOLLOW) ? &quot;-hollow&quot; : ((objFlags &amp; OBJBIT_STEADY) ? &quot;-steady&quot; : &quot;&quot;)));
+         else
+             set_anim(ecl::strf(&quot;st-stoneimpulse%s-anim%d&quot;, (objFlags &amp; OBJBIT_HOLLOW) ? &quot;-hollow&quot; : &quot;&quot;,
+                     state == EXPANDING ? 1 : 2));
+@@ -181,7 +184,9 @@
+         if ((objFlags &amp; OBJBIT_MOVABLE) &amp;&amp; (impulse.dir != NODIR)) {
+             // move stone without disturbing a running animation
+             display::Model *yieldedModel = display::YieldModel(GridLoc(GRID_STONES, get_pos()));
++            int oldState = state;
+             bool didMove = move_stone(impulse.dir);
++            state = oldState;
+             display::SetModel(GridLoc(GRID_STONES, get_pos()), yieldedModel);
+             
+             // pulse only if not pushed with a wand
+@@ -192,7 +197,8 @@
+                 else if (didMove &amp;&amp; state != EXPANDING)
+                     // ensure that an impulse to neighbors will be emitted when moved
+                     objFlags |= OBJBIT_REPULSE;
+-            }
++            } else if (((objFlags &amp; OBJBIT_STEADY) &amp;&amp; (objFlags &amp; OBJBIT_LIGHTNEWDIRS) &amp;&amp; state == IDLE))
++                setIState(EXPANDING);
+         } else {
+             setIState(EXPANDING, impulse.dir);
+         }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000779.html">[Enigma-game-svn] r1350 - homepage/input
+</A></li>
+	<LI>Next message: <A HREF="000781.html">[Enigma-game-svn] r1352 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#780">[ date ]</a>
+              <a href="thread.html#780">[ thread ]</a>
+              <a href="subject.html#780">[ subject ]</a>
+              <a href="author.html#780">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

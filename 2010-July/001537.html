@@ -1,0 +1,474 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r2113 - in trunk: data/levels/lib doc/reference
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2010-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2113%20-%20in%20trunk%3A%20data/levels/lib%20doc/reference&In-Reply-To=%3C20100716235840.2C26248038F%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001536.html">
+   
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r2113 - in trunk: data/levels/lib doc/reference</H1>
+    <B>andreasl at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r2113%20-%20in%20trunk%3A%20data/levels/lib%20doc/reference&In-Reply-To=%3C20100716235840.2C26248038F%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r2113 - in trunk: data/levels/lib doc/reference">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Sat Jul 17 01:58:39 CEST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001536.html">[Enigma-game-svn] r2112 - trunk/src/lev
+</A></li>
+        
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1537">[ date ]</a>
+              <a href="thread.html#1537">[ thread ]</a>
+              <a href="subject.html#1537">[ subject ]</a>
+              <a href="author.html#1537">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2010-07-17 01:58:39 +0200 (Sat, 17 Jul 2010)
+New Revision: 2113
+
+Modified:
+   trunk/data/levels/lib/libmath.xml
+   trunk/data/levels/lib/libsoko.xml
+   trunk/doc/reference/enigma-ref.texi
+Log:
+Fix three bugs in libsoko. Add path-component calculation to libmath.
+
+Trunk:
+ - Fix sokobans which do not leave enough room for oxyds.
+ - Fix a logic error in libsoko when polist.wall_two is calculated.
+ - Fix sokobans which are not path-connected (this happens in real life
+   as a matter of design and might appear in connection with chessobans).
+   Those sokobans will always use the &quot;circle&quot;-game at the end.
+ - For the above bugfix, an already existing check for connected components
+   has been extended and outsourced to libmath: lib.math.mark_components.
+   It includes two different algorithms.
+ - Add refman section about lib.math.mark_components.
+ - Fix typo in refman in section 5.2.7.
+
+Note:
+ - Points 1 and 3 are those bugs mentioned in r2047.
+
+
+Modified: trunk/data/levels/lib/libmath.xml
+===================================================================
+--- trunk/data/levels/lib/libmath.xml	2010-07-14 21:56:14 UTC (rev 2112)
++++ trunk/data/levels/lib/libmath.xml	2010-07-16 23:58:39 UTC (rev 2113)
+@@ -30,6 +30,7 @@
+ --   lib.math.permutation(n)
+ --   lib.math.cyclic_permutation(n)  
+ --   lib.math.random_vector(number, ...)
++--   lib.math.mark_components(group, attribute_name, neighborhood, exclusive_attribute)
+ -- Additional mathematically relevant functions are part of liblua and api2init:
+ --   lib.lua.mod(value, modul)
+ --   cond(condition, iftrue, iffalse)
+@@ -247,6 +248,83 @@
+     return result
+ end
+ 
++-- Analyze the connected components of a group GROUP of floors.
++-- Two floors are directly connected if their difference is in the polist
++-- NEIGHBORHOOD, which has to be symmetric. A table is returned holding a
++-- list of groups, each group is a complete connected component of GROUP.
++-- In turn, each object in GROUP is attached an attribute with title
++-- ATTRIBUTE_NAME, which holds the number of its component.
++-- Note that any prior information in this attribute is lost.
++-- If the attribute is not used by any other floor of the level, you may
++-- set EXCLUSIVE_ATTRIBUTE to &quot;true&quot;, which will result in a faster
++-- algorithm.
++-- Default NEIGHBORHOOD is NEIGHBORS_4.
++function lib.math.mark_components(group, attribute_name, neighborhood, exclusive_attribute)
++    assert_type(group, &quot;lib.math.mark_components first argument (object group)&quot;, 2, &quot;group&quot;)
++    assert_type(attribute_name, &quot;lib.math.mark_components second argument (attribute name)&quot;, 2, &quot;non-empty string&quot;)
++    assert_type(neighborhood, &quot;lib.math.mark_components third argument (neighborhood)&quot;, 2, &quot;polist&quot;, &quot;nil&quot;)
++    assert_type(exclusive_attribute, &quot;lib.math.mark_components fourth argument (attribute name is exclusive)&quot;,
++                2, &quot;boolean&quot;, &quot;nil&quot;)
++    -- Check that GROUP is a group of floors.
++    for obj in group do
++        if not obj:is(&quot;fl&quot;) then
++            error(&quot;lib.math.mark_components first argument must be a group of &quot;
++             .. &quot;floors, but contains &quot; .. obj:kind() .. &quot;.&quot;, 2)
++        end
++    end
++    -- Check that NEIGHBORHOOD is symmetric.
++    if neighborhood and (neighborhood ~= NEIGHBORS_8) and (neighborhood ~= NEIGHBORS_CHESS) then
++        for j = 1, #neighborhood do
++            local found = false
++            for k = 1, #neighborhood do
++                found = found or (neighborhood[j] == -neighborhood[k])
++            end
++            if not found then
++                error(&quot;lib.math.mark_components second argument must be a &quot;
++                      .. &quot;symmetric polist, i.e. each negative of each position must be in the &quot;
++                      .. &quot;polist as well.&quot;, 2)
++            end
++        end
++    end
++    local neigh = neighborhood or NEIGHBORS_4
++    -- Start analyzing the components.
++    local component = {}
++    group[attribute_name] = 0
++    -- Default recursive function.
++    local function mark_component(obj, current)
++        if (obj[attribute_name] or -1) == 0 then
++            obj[attribute_name] = current
++            component[current] = component[current] + obj
++            for next_obj in fl(neigh + po(obj)) * group do
++                mark_component(next_obj, current)
++            end
++        end
++    end
++    -- If we know that the attribute ATTRIBUTE_NAME is not used by any
++    -- other floor, we might choose another, faster algorithm.
++    local function mark_component_use_exclusiveness(obj, current)
++        obj[attribute_name] = current
++        component[current] = component[current] + obj
++        for next_obj in fl(neigh + po(obj)) do
++            if (next_obj[attribute_name] or -1) == 0 then
++                mark_component_use_exclusiveness(next_obj, current)
++            end
++        end
++    end
++    -- Now loop over all floors of the group.
++    for obj in group do
++        if obj[attribute_name] == 0 then
++            component[1 + #component] = grp()
++            if exclusive_attribute then
++                mark_component_use_exclusiveness(obj, #component)
++            else
++                mark_component(obj, #component)
++            end
++        end    
++    end
++    return component    
++end
++
+     ]]&gt;&lt;/el:luamain&gt;
+     &lt;el:i18n&gt;
+     &lt;/el:i18n&gt;
+
+Modified: trunk/data/levels/lib/libsoko.xml
+===================================================================
+--- trunk/data/levels/lib/libsoko.xml	2010-07-14 21:56:14 UTC (rev 2112)
++++ trunk/data/levels/lib/libsoko.xml	2010-07-16 23:58:39 UTC (rev 2113)
+@@ -369,6 +369,10 @@
+ ------------------------------------------------------------------------
+ 
+ function lib.soko.setup_attributes_and_polists(map)
++    -- Temporarily change the defaultkey of the map to the outf-key.
++    local current_defaultkey = map.defaultkey
++    map.defaultkey = &quot;- &quot;
++    -- Prepare position lists
+     lib.soko.polist = {}
+     for _, field in pairs({&quot;way&quot;, &quot;wall&quot;, &quot;outf&quot;, &quot;goal&quot;, &quot;wall_one&quot;, &quot;wall_two&quot;}) do
+         lib.soko.polist[field] = po(grp())
+@@ -377,8 +381,12 @@
+         lib.soko.polist[field] = lib.soko.polist[field] .. pos
+         lib.soko.area[pos][&quot;is_&quot;..field] = true
+     end
+-    for x = 0, map.width do
+-        for y = 0, map.height do
++    -- Traverse the complete map and analyze each position into which
++    -- polist it belongs. Additionally surround the map with outf-positions;
++    -- this is easily possible as map[...] returns an outf-key for these
++    -- positions, which are out of its scope.
++    for x = -1, map.width do
++        for y = -1, map.height do
+             local key = map[{x,y}]
+             local key1 = string.sub(key, 1, 1)
+             local key2 = string.sub(key, 2, 2)
+@@ -403,6 +411,7 @@
+             end
+         end
+     end
++    map.defaultkey = current_defaultkey
+     
+     lib.soko.polist.inf = lib.soko.polist.way .. lib.soko.polist.wall
+     
+@@ -439,17 +448,18 @@
+         end
+     end
+     -- polist.wall_two
+-    -- There are four conditions for an element of polist.wall_two:
++    -- There are five conditions for an element of polist.wall_two:
+     -- (i) it's near a wall_one, (ii) it's not a wall_one,
+-    -- (iii) it's wall or outside, (iii) it's not near a way.
+-    -- In addition, the neighboring wall_one are added into the list.
++    -- (iii) it's wall or outside, (iv) it's not near a way.
++    -- In addition, the neighboring wall_ones are added into the list.
+     for i = 1, #lib.soko.polist.wall_one do
+         local wall_one = lib.soko.polist.wall_one[i]
+         for j = 1, #NEIGHBORS_4 do
+             local delta = NEIGHBORS_4[j]
+             local check = wall_one + delta
+-            if not (lib.soko.area[check].is_way or lib.soko.area[check].is_wall_one
+-                    or ((lib.soko.area[check].ways or 0) &gt; 0)) then
++            if      map:covers(check)
++                and not (lib.soko.area[check].is_way or lib.soko.area[check].is_wall_one
++                         or ((lib.soko.area[check].ways or 0) &gt; 0)) then
+                 mark_as(check, &quot;wall_two&quot;)
+                 lib.soko.area[check].wall_one =
+                     (lib.soko.area[check].wall_one or po(grp())) .. wall_one
+@@ -468,10 +478,15 @@
+     assert_type(design.endp.alg, &quot;libsoko design endphase algorithm&quot;, 2, &quot;nil&quot;, &quot;string&quot;)
+     design.endp.alg = design.endp.alg or lib.lua.deep_copy(lib.soko_designlist.default.endp.alg)
+ 
++    -- if there is more than one connected component, choose endphase &quot;circle&quot;
++    if #lib.math.mark_components(fl(lib.soko.polist.way), &quot;_pathcomponent&quot;, NEIGHBORS_4, true) ~= 1 then
++        design.endp.alg = lib.lua.deep_copy(lib.soko_designlist.default.endp.alg)
++    end
++
+     -- save map and design for later
+     lib.soko.map = map
+     lib.soko.design = design
+-    
++
+     -- prepare oxyds and blockers (a &quot;blocker&quot; is a generalized door)
+     local alg = design.endp.alg
+     if       (alg == &quot;circle&quot;)
+@@ -552,7 +567,7 @@
+     elseif type(give) ~= &quot;nil&quot; then
+         error(&quot;libsoko: Error in design: Can't give something of type &quot;..type(v)..&quot;.&quot;, 2)
+     end
+-
++    
+     if alg == &quot;circle&quot; then
+         lib.soko.endphase_circle()
+     elseif alg == &quot;outside&quot; then
+@@ -670,8 +685,11 @@
+     -- Choose some appropriate subset
+     local number_pairs = lib.math.steps(#oxyds, {4, 8, 16, 28}) + 1
+     if number_pairs &lt; 2 then
+-        -- Not enough places? Choose &quot;circle&quot;-algorithm instead.
++        -- Not enough places? Choose &quot;circle&quot;-algorithm instead and set
++        -- remaining polists to empty groups (nec. for endphase_set_knocking).
+         lib.soko.design.endp.alg = &quot;circle&quot;
++        lib.soko.polist.oxyd = po(grp())
++        lib.soko.polist.blocker = po(grp())
+         return
+     end
+     if max_pairs and tonumber(max_pairs) and (tonumber(max_pairs) &gt;= 1) then
+@@ -741,6 +759,9 @@
+ end
+ 
+ function lib.soko.endphase_set_knocking()
++    -- If no suitable places for blockers were found, the algorithm has already
++    -- been changed to &quot;circle&quot; by endphase_set_block_oxyds. In this case,
++    -- polist.blocker is the empty group and nothing will happen.
+     local blockers = po(fl(lib.soko.polist.blocker):shuffle())
+     -- set attributes of doors
+     for j = 1, #blockers do
+@@ -815,32 +836,16 @@
+ function lib.soko.endphase_vortex()
+     local list_way = (fl(lib.soko.polist.way) + fl(lib.soko.polist.blocker))
+                                               - fl(lib.soko.polist.goal)
+-    local component = {}
+-    list_way._component = nil
+-    -- Analyse connected components of list_way
+-    local function mark_component(floor, current)
+-        if not floor._component then
+-            floor._component = current
+-            component[current].floors = component[current].floors + floor
+-            for next_floor in fl(NEIGHBORS_4 + po(floor)) * list_way do
+-                mark_component(next_floor, current)
+-            end
+-        end
+-    end
+-    for floor in list_way do
+-        if not floor._component then
+-            component[1 + #component] = {has_oxyds = false, floors = grp()}
+-            mark_component(floor, #component)
+-        end    
+-    end
++    local component = lib.math.mark_components(list_way, &quot;_component&quot;, NEIGHBORS_4, true)
+     -- If only one component, exit, player will find his or her way alone.
+     if #component &lt; 2 then
+         return
+     end
+     -- Analyse oxyds and to which components they belong to.
++    local component_has_oxyds = {}    
+     for floor in fl(lib.soko.polist.blocker) do
+         if floor._component then
+-            component[floor._component].has_oxyds = true
++            component_has_oxyds[floor._component] = true
+         else
+             error(&quot;lib.soko.endphase_vortes: Error in component calculation.&quot;)
+         end
+@@ -851,7 +856,7 @@
+     local u = {}  -- helper table: all components except t
+     local marble_component = fl(no[&quot;marble#*&quot;][1])._component
+     for j = 1, #component do
+-        if component[j].has_oxyds or (j == marble_component) then
++        if component_has_oxyds[j] or (j == marble_component) then
+             table.insert(t, component[j])
+         else
+             table.insert(u, component[j])
+@@ -867,16 +872,16 @@
+     local connect = lib.math.cyclic_permutation(#component)
+     -- Shuffle floors of each component.
+     for j = 1, #component do
+-        component[j].floors = (component[j].floors):shuffle()
++        component[j] = component[j]:shuffle()
+     end    
+     -- Now set and connect the vortices
+     for j = 1, #component do
+-        local dest = po(component[connect[j]].floors[1])
++        local dest = po(component[connect[j]][1])
+         -- Remember: We also allow (we need!) vortices at old blocker-positions.
+         -- There could still be a stone over this. This stone might be st_blocker,
+         -- which turns to it_blocker and has therefore to be removed.
+-        st(component[j].floors[1]):kill()
+-        wo[component[j].floors[1]] = {&quot;it_vortex_open&quot;, destination = dest}
++        st(component[j][1]):kill()
++        wo[component[j][1]] = {&quot;it_vortex_open&quot;, destination = dest}
+     end
+ end
+ 
+@@ -950,9 +955,15 @@
+     local small_map = lib.import.map_sokoban(multilevel, sublevel_number)
+     local design = lib.soko.design_from_description(small_map, designarg, maxdesignnumber)
+ 
+-    -- Extend map to 20x13 if possible
++    -- Extend map to 20x13 if possible, throw an error if level exceeds
++    -- MAX_HEIGHT. We add three additional rows, which are used to surround
++    -- the level with &quot;virtual&quot; positions in lib.soko.area; these are set
++    -- in lib.soko.setup_attributes_and_polists() below.
+     local final_width = math.max(20, small_map.width)
+     local final_height = math.max(13, small_map.height)
++    if small_map.height + 3 &gt; lib.soko.MAX_HEIGHT then
++        error(&quot;lib.soko: Level exceeds maximum height.&quot;, 2)
++    end
+     local map = wo:newMap(&quot;- &quot;, final_width, final_height)
+     local dx = math.floor((final_width - small_map.width) / 2)
+     local dy = math.floor((final_height - small_map.height) / 2)
+
+Modified: trunk/doc/reference/enigma-ref.texi
+===================================================================
+--- trunk/doc/reference/enigma-ref.texi	2010-07-14 21:56:14 UTC (rev 2112)
++++ trunk/doc/reference/enigma-ref.texi	2010-07-16 23:58:39 UTC (rev 2113)
+@@ -4926,7 +4926,7 @@
+ 
+ @item @b{Position List Members:}
+ @example
+-for @var{i} = 1, #@var{pogrp} do
++for @var{i} = 1, #@var{polist} do
+     @i{wo}[@var{polist}[@var{i}]] = @{&quot;@b{it_cherry}&quot;@}
+ end
+ @end example
+@@ -20712,6 +20712,7 @@
+ * lib.math.cyclic_permutation:: Random cyclic permutation.
+ * lib.math.digits::             Decomposes a number into digits for an arbitrary base.
+ * lib.math.manhattan_distance:: Calculates the Manhattan distance of positions.
++* lib.math.mark_components::    Calculate connected components of a group of floors.
+ * lib.math.permutation::        Random permutation.
+ * lib.math.random_vector::      A table with random entries.
+ * lib.math.steps::              A function to classify a number in intervals.
+@@ -20983,6 +20984,73 @@
+ @end example
+ @end table
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at c</A> ----------------- mark_components --------------------
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at node</A> lib.math.mark_components
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at subsection</A> lib.math.mark_components
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{mark_components} calculates the connected components of a group of
++floors. Two floors are directly connected if their difference is within a given
++polist (or @code{NEIGHBORS_4}, by default). A table is returned holding a
++list of groups, each group is a complete connected component.
++In turn, an attribute is attached to each floor of the group which holds the
++number of its component. The name of this attribute can be chosen freely.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Syntax:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at b</A>{lib.math.mark_components}(@i{group}, @i{attribute_name} [, @i{neighborhood} [, 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at i</A>{exclusive_attribute}]])
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at table</A> @asis
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{group}
++A group of floors.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{attribute_name}
++A non-empty string. Typically, this is the title of a user attribute, so it
++should start with an underscore @samp{_}, unless you want to feat the
++information directly to a non-user attribute which takes numerical values.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @i{neighborhood}
++A symmetric polist (see details). Defaults to @code{NEIGHBORS_4}, which results
++in a calculation of path-connected components.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A>  @i{exclusive_attribute}
++A boolean (@code{false} by default) which can be set to @code{true}, if there is
++no other floor which uses an attribute named @i{attribute_name}.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> table
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Syntax Samples:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++lib.math.mark_components(all_floors, &quot;_component&quot;)
++local number = #lib.math.mark_components(all_floors, &quot;_component&quot;, NEIGHBORS_CHESS .. NEIGHBORS_4)
++local lines = lib.math.mark_components(all_floors, &quot;_linenumber&quot;, po(-1, 0) .. po(1, 0), true)
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Details:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{mark_components} returns a Lua-table of groups, the table has natural numbers
++as indizes counting up starting from @code{1}, s.t. you can access the total
++number of components via @samp{#}. Each entry of the table is a subgroup of
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{group}, a complete connected component. The sequence of the components is
++determined by the sequence of the floors in @code{group}.
++
++You have to choose an attribute, as it is used during the calculation.
++Note that all prior information saved in this attribute is lost.
++Also note that choosing a read-only attribute results in an error.
++
++The chosen neighborhood has to be a symmetric polist, i.e. if it contains the
++position @code{po(x, y)} it also has to contain the position @code{po(-x, -y)}
++at some point. Mathematically speaking, we analyze the connected components of
++an undirected graph, not of a directed graph.
++
++If you know that there is no other floor which uses the attribute
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at code</A>{attribute_name}, you may set @samp{exclusive_attribute} to @samp{true}.
++This will result in a much faster algorithm.
++
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at item</A> @b{Full Example:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> table
++
+ @c ----------------- permutation --------------------
+ 
+ @node lib.math.permutation
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001536.html">[Enigma-game-svn] r2112 - trunk/src/lev
+</A></li>
+	
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1537">[ date ]</a>
+              <a href="thread.html#1537">[ thread ]</a>
+              <a href="subject.html#1537">[ subject ]</a>
+              <a href="author.html#1537">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

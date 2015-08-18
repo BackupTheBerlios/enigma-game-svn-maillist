@@ -1,0 +1,315 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1321 - in trunk: data/levels/lib doc/reference
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-September/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1321%20-%20in%20trunk%3A%20data/levels/lib%20doc/reference&In-Reply-To=%3C200809132232.m8DMW2xp006956%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000750.html">
+   <LINK REL="Next"  HREF="000752.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1321 - in trunk: data/levels/lib doc/reference</H1>
+    <B>andreasl at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1321%20-%20in%20trunk%3A%20data/levels/lib%20doc/reference&In-Reply-To=%3C200809132232.m8DMW2xp006956%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1321 - in trunk: data/levels/lib doc/reference">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Sun Sep 14 00:32:02 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000750.html">[Enigma-game-svn] r1320 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000752.html">[Enigma-game-svn] r1322 - feature_branches/hp_lotm/input/lotm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#751">[ date ]</a>
+              <a href="thread.html#751">[ thread ]</a>
+              <a href="subject.html#751">[ subject ]</a>
+              <a href="author.html#751">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2008-09-14 00:31:57 +0200 (Sun, 14 Sep 2008)
+New Revision: 1321
+
+Modified:
+   trunk/data/levels/lib/liblua.xml
+   trunk/data/levels/lib/libsoko-endphase.xml
+   trunk/doc/reference/enigma-ref.texi
+Log:
+Trunk:
+ - Replace lib.lua.shuffle_table by lib.lua.shuffle:
+   lib.lua.shuffle returns a shallow copy of the shuffled
+   table instead of shuffling the table inplace. The result
+   will have the same metatable as the source table.
+    - Corresponding refman and libsoko updates.
+ - Remove a print-message from libsoko-endphase (debugging).
+
+
+Modified: trunk/data/levels/lib/liblua.xml
+===================================================================
+--- trunk/data/levels/lib/liblua.xml	2008-09-13 22:23:08 UTC (rev 1320)
++++ trunk/data/levels/lib/liblua.xml	2008-09-13 22:31:57 UTC (rev 1321)
+@@ -3,7 +3,7 @@
+   &lt;el:protected&gt;
+     &lt;el:info el:type=&quot;library&quot;&gt;
+       &lt;el:identity el:title=&quot;&quot; el:id=&quot;lib/liblua&quot;/&gt;
+-      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;4&quot; el:status=&quot;released&quot;/&gt;
++      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;5&quot; el:status=&quot;released&quot;/&gt;
+       &lt;el:author  el:name=&quot;Enigma Team&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
+       &lt;el:copyright&gt;Copyright &#169; 2007, 2008 Enigma Team&lt;/el:copyright&gt;
+       &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
+@@ -25,7 +25,7 @@
+ -- liblua provides the following functions:
+ --   lib.lua.deep_copy(source)
+ --   lib.lua.combine_tables(arg1, ...)
+---   lib.lua.shuffle_table(t)
++--   lib.lua.shuffle(t)
+ --   lib.lua.print_table(t, prefix, depth)
+ --   lib.lua.mod(value, modul)
+ --   lib.lua.cond(condition, iftrue, iffalse)
+@@ -83,17 +83,29 @@
+   return result
+ end
+ 
+--- shuffle_table resorts the table T randomly. Note that only those entries
+--- of T can be sorted, that are indexed with integers from 1 to table.getn(T).
+--- No return value, the table itself is shuffled.
+-function lib.lua.shuffle_table(t)
+-  if table.getn(t) &lt; 2 then
+-    return
++-- shuffle resorts the table T randomly and returns a shallow copy of the
++-- shuffled table. Note that only those entries of T can be sorted, that
++-- are indexed with integers from 1 to table.getn(T), all other entries
++-- will be in the result, but will not be shuffled. Metatable will be
++-- that of the argument. Metamethods will be used during the copy
++-- (i.e. no rawget or rawset).
++function lib.lua.shuffle(t)
++  if type(t) ~= &quot;table&quot; then
++    error(&quot;lib.lua.shuffle: Argument is not a table.&quot;, 2)
+   end
+-  for n = table.getn(t), 2, -1 do
++  local result = {}
++  setmetatable(result, getmetatable(t))
++  for key, value in pairs(t) do
++    result[key] = value
++  end
++  if table.getn(result) &lt; 2 then
++    return result
++  end
++  for n = table.getn(result), 2, -1 do
+     local m = math.random(n)
+-    t[n], t[m] = t[m], t[n]
++    result[n], result[m] = result[m], result[n]
+   end
++  return result
+ end
+ 
+ -- print_table uses the print command to print all
+
+Modified: trunk/data/levels/lib/libsoko-endphase.xml
+===================================================================
+--- trunk/data/levels/lib/libsoko-endphase.xml	2008-09-13 22:23:08 UTC (rev 1320)
++++ trunk/data/levels/lib/libsoko-endphase.xml	2008-09-13 22:31:57 UTC (rev 1321)
+@@ -3,7 +3,7 @@
+   &lt;el:protected&gt;
+     &lt;el:info el:type=&quot;library&quot;&gt;
+       &lt;el:identity el:title=&quot;&quot; el:id=&quot;lib/libsoko-endphase&quot;/&gt;
+-      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;2&quot; el:status=&quot;experimental&quot;/&gt;
++      &lt;el:version el:score=&quot;1&quot; el:release=&quot;1&quot; el:revision=&quot;3&quot; el:status=&quot;experimental&quot;/&gt;
+       &lt;el:author el:name=&quot;Enigma Team&quot; el:email=&quot;&quot; el:homepage=&quot;&quot;/&gt;
+       &lt;el:copyright&gt;Copyright &#169; 2007, 2008 Enigma Team&lt;/el:copyright&gt;
+       &lt;el:license el:type=&quot;GPL v2.0 or above&quot; el:open=&quot;true&quot;/&gt;
+@@ -334,7 +334,7 @@
+     end    
+   end
+ 
+-  lib.lua.shuffle_table(places)
++  places = lib.lua.shuffle(places)
+ 
+   for j = 1, number_pairs do
+     set_oxyd(sokoarea_number, places[2*j-1], flavor, j - 1)
+@@ -399,7 +399,7 @@
+     end    
+   end
+ 
+-  lib.lua.shuffle_table(oxyds)
++  oxyds = lib.lua.shuffle(oxyds)
+ 
+   -- set oxyds and blockers
+   local function set_block(w)
+@@ -437,7 +437,7 @@
+   for p, v in pairs(sokoarea[nr].list_goal) do
+     table.insert(goal_table, v)
+   end
+-  lib.lua.shuffle_table(goal_table)
++  goal_table = lib.lua.shuffle(goal_table)
+   for j = 2, math.min(table.getn(goal_table), table.getn(oxyds)) do
+     sokoarea[nr].goal_to_blocker[goal_table[j].goal_number] = oxyds[j].blocker
+   end
+@@ -454,7 +454,7 @@
+     table.insert(places, v)
+   end
+ 
+-  lib.lua.shuffle_table(places)
++  places = lib.lua.shuffle(places)
+   
+   -- choose number of oxyds
+   local max = table.getn(places)
+@@ -503,7 +503,7 @@
+     end
+   end
+ 
+-  lib.lua.shuffle_table(places)
++  places = lib.lua.shuffle(places)
+ 
+   -- choose number of magnets
+   local number_magnets = math.floor(table.getn(places)/6)
+@@ -523,7 +523,7 @@
+     table.insert(places, v)
+   end
+ 
+-  lib.lua.shuffle_table(places)
++  places = lib.lua.shuffle(places)
+ 
+   -- choose number of fourswitchs/oxyds
+   local max = table.getn(places)
+@@ -726,7 +726,7 @@
+       table.insert(u, component[j])
+     end
+   end
+-  lib.lua.shuffle_table(u)
++  u = lib.lua.shuffle(u)
+   while (table.getn(t) &lt; 5) and (table.getn(u) &gt; 0) do
+     table.insert(t, u[table.getn(u)])
+     table.remove(u)
+@@ -766,7 +766,7 @@
+     table.insert(places, v)
+   end
+ 
+-  lib.lua.shuffle_table(places)
++  places = lib.lua.shuffle(places)
+ 
+   -- set attributes of door
+   for j, v in ipairs(places) do
+@@ -795,7 +795,6 @@
+   end
+   -- Open or close the neccessary doors given as attributes.
+   if sender._sokoarea == nr then
+-    print(po(sender).x..&quot;/&quot;..po(sender).y..&quot;/&quot;..sender:kind())
+     if wo:st(sender._close):is(&quot;st_door&quot;) then
+       wo:st(sender._close):close()
+     end
+
+Modified: trunk/doc/reference/enigma-ref.texi
+===================================================================
+--- trunk/doc/reference/enigma-ref.texi	2008-09-13 22:23:08 UTC (rev 1320)
++++ trunk/doc/reference/enigma-ref.texi	2008-09-13 22:31:57 UTC (rev 1321)
+@@ -9560,7 +9560,7 @@
+ * lib.lua.deep_copy::       Complete copies of Lua-tables.
+ * lib.lua.mod::             A modulo operation.
+ * lib.lua.print_table::     Print tables for debug reasons.
+-* lib.lua.shuffle_table::   Shuffle arbitrary anonymous Lua-tables.
++* lib.lua.shuffle::         Shuffle arbitrary anonymous Lua-tables.
+ @end menu
+ 
+ @c ----------------- combine_tables -------------------- 
+@@ -9784,38 +9784,54 @@
+ @end example
+ @end table
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at c</A> ----------------- shuffle_table -------------------- 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at c</A> ----------------- shuffle -------------------- 
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at node</A> lib.lua.shuffle_table
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at subsection</A> lib.lua.shuffle_table
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at node</A> lib.lua.shuffle
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at subsection</A> lib.lua.shuffle
+ 
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at samp</A>{shuffle_table} randomly resorts its argument.
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at samp</A>{shuffle} randomly resorts its argument, a numerical table.
+ 
+ @table @asis
+ @item @b{Syntax:}
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">- at b</A>{lib.lua.shuffle_table}(@i{source})
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at i</A>{result} = @b{lib.lua.shuffle}(@i{source})
+ 
+ @table @asis
+ @item @i{source}
+-The table to be shuffled.
++The table to be shuffled (only the numerical entries will be shuffled).
+ @end table
+ 
+ @item @b{Syntax Samples:}
+ @example
++directions = lib.lua.shuffle(@{NORTH, SOUTH, EAST, WEST@})
+ a = @{1, 2, 3, &quot;r&quot;, @{&quot;x&quot;, &quot;y&quot;, &quot;z&quot;@}, 4@}
+-lib.lua.shuffle_table(a)
++b = lib.lua.shuffle(a)
+ @end example
+ 
+-A typical result for @samp{a} would be
++A typical result for @samp{b} would be
+ @example
+-a = @{&quot;r&quot;, 4, 2, @{&quot;x&quot;, &quot;y&quot;, &quot;z&quot;@}, 1, 3@}
++b = @{&quot;r&quot;, 4, 2, @{&quot;x&quot;, &quot;y&quot;, &quot;z&quot;@}, 1, 3@}
+ @end example
+ 
+ @item @b{Details:}
+-The result is a permutation of the original table. The permutation restricts to
+-those entries with numerical keys, and of those only the ones between @samp{1}
+-and @samp{table.getn(@i{source})}. @samp{shuffle_table} has no return value.
++The result is a permutation of the numerical entries of the source table,
++starting with entry 1 and ending with entry @samp{table.getn(@i{source})}. All
++other entries will simply be copied into @samp{result}. All copies are shallow
++copies, i.e. table-valued and userdata-valued entries (like objects) are not
++copied, just references (pointers) to them. Use @ref{lib.lua.deep_copy} to
++create a deep copy of the shuffled table, if needed. @samp{result} will use the
++same metatable as @samp{source}, and metamethods will be used during the copy
++and shuffling process.
+ 
++Currently, @samp{lib.lua.shuffle} can shuffle only tables. To shuffle groups,
++use the group method of the same name:
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at example</A>
++mygroup:shuffle()
+<A HREF="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">+ at end</A> example
++
++Shuffling a @ref{libmap}-map results in a map with shuffled rows, i.e. the
++x-coordinates of all tile keys are kept constant. Use @ref{Rotating and
++Mirroring Maps} to shuffle the columns.
++
+ @item @b{Full Example:}
+ @example
+ @end example
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000750.html">[Enigma-game-svn] r1320 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000752.html">[Enigma-game-svn] r1322 - feature_branches/hp_lotm/input/lotm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#751">[ date ]</a>
+              <a href="thread.html#751">[ thread ]</a>
+              <a href="subject.html#751">[ subject ]</a>
+              <a href="author.html#751">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

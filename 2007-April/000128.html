@@ -1,0 +1,688 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r690 - in branches/1.0/src: . gui lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r690%20-%20in%20branches/1.0/src%3A%20.%20gui%20lev&In-Reply-To=%3C200704141511.l3EFBscC016544%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000127.html">
+   <LINK REL="Next"  HREF="000129.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r690 - in branches/1.0/src: . gui lev</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r690%20-%20in%20branches/1.0/src%3A%20.%20gui%20lev&In-Reply-To=%3C200704141511.l3EFBscC016544%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r690 - in branches/1.0/src: . gui lev">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Apr 14 17:11:54 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000127.html">[Enigma-game-svn] r689 - branches/1.0/src
+</A></li>
+        <LI>Next message: <A HREF="000129.html">[Enigma-game-svn] r691 - in trunk: . attic/gfx-templates data	data/gfx32 data/gfx40 data/gfx48 data/gfx64
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#128">[ date ]</a>
+              <a href="thread.html#128">[ thread ]</a>
+              <a href="subject.html#128">[ subject ]</a>
+              <a href="author.html#128">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-04-14 17:11:51 +0200 (Sat, 14 Apr 2007)
+New Revision: 690
+
+Modified:
+   branches/1.0/src/client.cc
+   branches/1.0/src/gui/LevelInspector.cc
+   branches/1.0/src/gui/LevelInspector.hh
+   branches/1.0/src/gui/LevelMenu.cc
+   branches/1.0/src/gui/LevelMenu.hh
+   branches/1.0/src/gui/widgets.cc
+   branches/1.0/src/gui/widgets.hh
+   branches/1.0/src/lev/RatingManager.cc
+   branches/1.0/src/lev/RatingManager.hh
+   branches/1.0/src/server.cc
+Log:
+Branch 1.0: 
+- WR hunt mode: eliminate restart of level after ESC menu
+- Level Developer Inspector by F2 in standard inspector
+- display level Id in Dev. Inspector and &quot;info&quot; command
+- shorten WR holder strings where necessary for a proper display
+
+
+Modified: branches/1.0/src/client.cc
+===================================================================
+--- branches/1.0/src/client.cc	2007-04-13 22:20:34 UTC (rev 689)
++++ branches/1.0/src/client.cc	2007-04-14 15:11:51 UTC (rev 690)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2004 Daniel Heck
++ * Copyright (C) 2006, 2007 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -533,9 +534,6 @@
+     server::Msg_Pause (false);
+     game::ResetGameTimer();
+ 
+-    if (app.state-&gt;getInt(&quot;NextLevelMode&quot;) == lev::NEXT_LEVEL_NOT_BEST) 
+-        server::Msg_Command (&quot;restart&quot;); // inhibit cheating
+-
+ }
+ 
+ void Client::draw_screen()
+@@ -657,7 +655,7 @@
+                     }
+ 
+                     client::Msg_PlaySound(&quot;shatter&quot;, 1.0);
+-                    Msg_ShowText(message, false, 2.0);
++                    Msg_ShowText(message, true, 2.0);
+                 }
+                 else {
+                     if (old_second&lt;second &amp;&amp; // tick every second
+@@ -823,7 +821,7 @@
+                     m_hunt_against_time%60);
+ //+ _(&quot; by &quot;) +hunted;
+ // makes the string too long in many levels
+-            Msg_ShowText (displayed_info, false, 4.0);
++            Msg_ShowText (displayed_info, true, 4.0);
+         }
+         else {
+             displayed_info = displayedLevelInfo(curProxy);
+
+Modified: branches/1.0/src/gui/LevelInspector.cc
+===================================================================
+--- branches/1.0/src/gui/LevelInspector.cc	2007-04-13 22:20:34 UTC (rev 689)
++++ branches/1.0/src/gui/LevelInspector.cc	2007-04-14 15:11:51 UTC (rev 690)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2006 Ronald Lamprecht
++ * Copyright (C) 2006, 2007 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -173,8 +173,8 @@
+          lev::Proxy *theLevel;        
+      };
+     
+-LevelInspector::LevelInspector(lev::Proxy *aLevel):
+-        levelProxy(aLevel), annotation (new TextField()),
++LevelInspector::LevelInspector(lev::Proxy *aLevel, bool showDeveloperInfo):
++        levelProxy(aLevel), isDeveloperMode(showDeveloperInfo), annotation (new TextField()),
+         back (new StaticTextButton(N_(&quot;Ok&quot;), this)),
+         screenshot (new StaticTextButton(N_(&quot;Screenshot&quot;), this))
+     {
+@@ -378,10 +378,11 @@
+         int levelPathLines = 0;
+         int annotationLines = 0; 
+         int compatibilityLines = 0; 
++        int idLines = 0; 
+         int vnext = vmargin+ (lowres?11:12)*25+(lowres?9:10)*vspacing+2*vspacing2;
+         int textwidth = vminfo-&gt;width-3*hmargin-110-10;
+         dispatchBottomLines(bestScoreHolderLines, creditsLines, dedicationLines,
+-                levelPathLines, annotationLines, compatibilityLines,
++                levelPathLines, annotationLines, compatibilityLines, idLines,
+                 (vminfo-&gt;height-vnext-vmargin-25-vspacing2)/27, textwidth);
+         if (bestScoreHolderLines == 1) {
+             add(new Label(N_(&quot;World Record Holders: &quot;), HALIGN_RIGHT),Rect(hmargin,vnext,200,25));
+@@ -396,7 +397,52 @@
+                 holders += &quot; -&quot;;
+             else
+                 holders += theRatingMgr-&gt;getBestScoreDifficultHolder(aLevel);
+-            add(new Label(holders, HALIGN_LEFT), Rect(hmargin+200+10,vnext,textwidth-90,25));
++            Label *wrLabel = new Label(holders, HALIGN_LEFT);
++            add(wrLabel, Rect(hmargin+200+10,vnext,textwidth-90,25));
++            if (!wrLabel-&gt;text_fits()) {
++                int cutEasy = 0;
++                int cutDiff = 0;
++                std::string diffHolders = theRatingMgr-&gt;getBestScoreDifficultHolder(aLevel);
++                if (withEasy) {
++                    std::string easyHolders = theRatingMgr-&gt;getBestScoreEasyHolder(aLevel);
++                    bool hasEasyHolders = !easyHolders.empty();
++                    bool hasDiffHolders = !diffHolders.empty();
++                    int limit = 10;
++                    do {
++                        std::string cutHolders;
++                        wrLabel-&gt;set_text(easyHolders);
++                        if (!wrLabel-&gt;text_fits(0.48)) {
++                            cutHolders = theRatingMgr-&gt;getBestScoreEasyHolder(aLevel, ++cutEasy);
++                            if (cutHolders.empty())
++                                cutEasy--;
++                            else
++                                easyHolders = cutHolders;
++                        }
++                        wrLabel-&gt;set_text(diffHolders);
++                        if (!wrLabel-&gt;text_fits(0.48)) {
++                            cutHolders = theRatingMgr-&gt;getBestScoreDifficultHolder(aLevel, ++cutDiff);
++                            if (cutHolders.empty())
++                                cutDiff--;
++                            else
++                                diffHolders = cutHolders;
++                        }
++                        holders = (hasEasyHolders ? easyHolders : std::string(&quot;  - &quot;))
++                            + &quot; / &quot; + (hasDiffHolders ? diffHolders : std::string(&quot; -&quot;));
++                        wrLabel-&gt;set_text(holders);
++                        limit--;
++                    } while (!wrLabel-&gt;text_fits() &amp;&amp; limit &gt; 0);
++                } else {
++                    std::string cutHolders;
++                    do {
++                        cutHolders = theRatingMgr-&gt;getBestScoreDifficultHolder(aLevel, ++cutDiff);
++                        wrLabel-&gt;set_text(cutHolders);
++                    } while (!wrLabel-&gt;text_fits());
++                    if (cutHolders.empty()) {
++                        // we did cut off to many holders, take last attempt even if it was too long
++                        wrLabel-&gt;set_text(theRatingMgr-&gt;getBestScoreDifficultHolder(aLevel, --cutDiff));
++                    }
++                }
++            }
+             vnext += 25 + vspacing;
+         }
+         if (creditsLines &gt;= 1) {
+@@ -441,6 +487,11 @@
+             }
+             vnext += (25 + vspacing);
+         }
++        if (idLines &gt;= 1) {
++            add(new Label(N_(&quot;Id: &quot;), HALIGN_RIGHT),Rect(hmargin,vnext,110,25));
++            add(new Label(levelProxy-&gt;getId(), HALIGN_LEFT),Rect(hmargin+110+10, vnext, textwidth, 25));
++            vnext += (25 + vspacing)*idLines;
++        }
+         if (compatibilityLines &gt;= 1) {
+             add(new Label(N_(&quot;Compatibility: &quot;), HALIGN_RIGHT),Rect(hmargin,vnext,110,25));
+             std::string compString = ecl::strf(&quot;Enigma v%.2f  /  &quot;, levelProxy-&gt;getEnigmaCompatibility()) +
+@@ -448,9 +499,9 @@
+             add(new Label(compString , HALIGN_LEFT),Rect(hmargin+110+10, vnext, textwidth, 25));
+             vnext += (25 + vspacing)*compatibilityLines;
+         }
++        annotation-&gt;set_text(app.state-&gt;getAnnotation(levelProxy-&gt;getId())); // field needs to initialized for saves
+         if (annotationLines &gt;= 1) {
+             add(new Label(N_(&quot;Annotation: &quot;), HALIGN_RIGHT),Rect(hmargin,vnext,110,25));
+-            annotation-&gt;set_text(app.state-&gt;getAnnotation(levelProxy-&gt;getId()));
+             add(annotation, Rect(hmargin+110+10, vnext, textwidth, 25));
+             vnext += (25 + vspacing)*annotationLines;
+         }
+@@ -464,8 +515,42 @@
+     LevelInspector::~LevelInspector () {
+     }
+     
++    bool LevelInspector::isEndDeveloperMode() {
++        return isDeveloperMode;
++    }
++    
+     bool LevelInspector::on_event (const SDL_Event &amp;e) {
+-        return false;
++        bool handled = false;
++        if (e.type == SDL_KEYDOWN) {
++            handled=true;
++            switch (e.key.keysym.sym) {
++            case SDLK_F2:
++                if (!isDeveloperMode) {
++                    if (!annotation-&gt;getText().empty() || 
++                            !app.state-&gt;getAnnotation(levelProxy-&gt;getId()).empty()) {
++                        app.state-&gt;setAnnotation(levelProxy-&gt;getId(), annotation-&gt;getText());
++                    }
++                    LevelInspector m(levelProxy, true);
++                    m.manage();
++                    if (m.isEndDeveloperMode()) {
++                        // reinit user input fields
++                        annotation-&gt;set_text(app.state-&gt;getAnnotation(levelProxy-&gt;getId()));
++                        invalidate_all();
++                    } else {
++                        Menu::quit();
++                    }
++                } else {
++                    if (!annotation-&gt;getText().empty() || 
++                            !app.state-&gt;getAnnotation(levelProxy-&gt;getId()).empty()) {
++                        app.state-&gt;setAnnotation(levelProxy-&gt;getId(), annotation-&gt;getText());
++                    }
++                    Menu::quit();
++                }
++                break;
++            default: handled=false; break;
++            }
++        }
++        return handled;
+     }
+     
+     void LevelInspector::on_action(gui::Widget *w) {
+@@ -475,6 +560,7 @@
+                     !app.state-&gt;getAnnotation(levelProxy-&gt;getId()).empty()) {
+                 app.state-&gt;setAnnotation(levelProxy-&gt;getId(), annotation-&gt;getText());
+             }
++            isDeveloperMode = false;
+             Menu::quit();
+         } else if (w == screenshot) {
+             ScreenshotViewer m(levelProxy);
+@@ -485,7 +571,8 @@
+     
+     void LevelInspector::draw_background(ecl::GC &amp;gc) {
+         const video::VMInfo *vminfo = video::GetInfo();
+-        video::SetCaption ((&quot;Enigma - Level Inspector&quot;));
++        video::SetCaption((std::string(&quot;Enigma - Level &quot;) + 
++            (isDeveloperMode ? &quot;Developer &quot; : &quot;&quot;) + &quot;Inspector&quot;).c_str());
+         blit(gc, 0,0, enigma::GetImage(&quot;menu_bg&quot;, &quot;.jpg&quot;));
+         blit(gc, vminfo-&gt;width-vminfo-&gt;thumbw-10-hmargin, vmargin, previewImage);
+         Surface *img_hard = enigma::GetImage(&quot;completed&quot;);
+@@ -555,12 +642,16 @@
+     
+     void LevelInspector::dispatchBottomLines(int &amp;bestScoreHolderLines, 
+             int &amp;creditsLines, int &amp;dedicationLines, int &amp;levelPathLines,
+-            int &amp;annotationLines, int &amp;compatibilityLines, int numLines, int width) {
+-        enum botType {holder, credits, dedication, path, annotation, compatibility};
++            int &amp;annotationLines, int &amp;compatibilityLines, int &amp;idLines, int numLines, int width) {
++        enum botType {holder, credits, dedication, path, annotation, compatibility, id};
+         const int sequenceSize = 13;
+-        botType sequence[sequenceSize] = {credits, dedication, annotation, path,
++        botType sequence1[sequenceSize] = {credits, dedication, annotation, path,
+                 holder, annotation, path, compatibility, credits, dedication, 
+                 annotation, credits, annotation};
++        botType sequence2[sequenceSize] = {id, path, compatibility, holder, path, 
++                annotation, annotation, credits, dedication,
++                credits, dedication, annotation, annotation};
++        botType *sequence = isDeveloperMode ? sequence2 : sequence1;
+         int j = 0;
+         std::string creditsString = levelProxy-&gt;getCredits(true);
+         std::string dedicationString = levelProxy-&gt;getDedication(true);
+@@ -606,6 +697,10 @@
+                         compatibilityLines++;
+                         assigned = true;
+                         break;
++                    case id: 
++                        idLines++;
++                        assigned = true;
++                        break;
+                 }
+                 
+             } while (!assigned &amp;&amp; j &lt; sequenceSize);
+
+Modified: branches/1.0/src/gui/LevelInspector.hh
+===================================================================
+--- branches/1.0/src/gui/LevelInspector.hh	2007-04-13 22:20:34 UTC (rev 689)
++++ branches/1.0/src/gui/LevelInspector.hh	2007-04-14 15:11:51 UTC (rev 690)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2006 Ronald Lamprecht
++ * Copyright (C) 2006, 2007 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -27,8 +27,9 @@
+ namespace enigma { namespace gui {
+     class LevelInspector : public gui::Menu {
+     public:
+-        LevelInspector (lev::Proxy *aLevel);
++        LevelInspector (lev::Proxy *aLevel, bool showDeveloperInfo = false);
+         ~LevelInspector ();
++        bool isEndDeveloperMode();
+     private:
+         // ActionListener interface.                    
+         bool on_event (const SDL_Event &amp;e);
+@@ -45,7 +46,7 @@
+         std::string scoreToString(int score, lev::Proxy *aLevel);
+         void dispatchBottomLines(int &amp;bestScoreHolderLines, 
+             int &amp;creditsLines, int &amp;dedicationLines, int &amp;levelPathLines,
+-            int &amp;annotationLines, int &amp;compatibilityLines, int numLines, int width);
++            int &amp;annotationLines, int &amp;compatibilityLines, int &amp;idLines, int numLines, int width);
+         // Variables.
+         gui::Widget *back;
+         gui::Widget *screenshot;
+@@ -59,6 +60,7 @@
+         int hmargin;
+         bool withEasy;
+         bool ratingInherited;
++        bool isDeveloperMode;
+     };
+ 
+ }} // namespace enigma::gui
+
+Modified: branches/1.0/src/gui/LevelMenu.cc
+===================================================================
+--- branches/1.0/src/gui/LevelMenu.cc	2007-04-13 22:20:34 UTC (rev 689)
++++ branches/1.0/src/gui/LevelMenu.cc	2007-04-14 15:11:51 UTC (rev 690)
+@@ -127,10 +127,10 @@
+         hl-&gt;add_back (lbl_lpinfo, List::TIGHT);
+         this-&gt;add (hl, Rect (5, Y2, vminfo.width - 10, 28));
+     
+-        hl = new HList;
+-        hl-&gt;add_back (lbl_levelinfo, List::EXPAND); //Rect (c.leftborder, Y2+20,305, 28));
+-        hl-&gt;add_back (lbl_statistics, List::TIGHT);
+-        this-&gt;add (hl, Rect (5, Y2+20, vminfo.width - 10, 28));
++        hl_info_stat = new HList;
++        hl_info_stat-&gt;add_back (lbl_levelinfo, List::EXPAND); //Rect (c.leftborder, Y2+20,305, 28));
++        hl_info_stat-&gt;add_back (lbl_statistics, List::TIGHT);
++        this-&gt;add (hl_info_stat, Rect (5, Y2+20, vminfo.width - 10, 28));
+     
+         // Prepare level selection widget
+         levelwidget = new LevelWidget();
+@@ -331,6 +331,7 @@
+                 bool is_par    = scm-&gt;parScoreReached(curProxy, difficulty);
+                 int best_user_time = scm-&gt;getBestUserScore(curProxy, difficulty);
+                 string wr_name = ratingMgr-&gt;getBestScoreHolder(curProxy, difficulty);
++                bool  wr_name_displayed = false;
+     
+                 string your_time;
+                 string wr_text;
+@@ -350,26 +351,34 @@
+                 }
+     
+                 if (wr_text.length() == 0 &amp;&amp; wr_time&gt;0) {
+-                    if (wr_name.length())
++                    if (wr_name.length()) {
++                        wr_name_displayed = true;
++                    } else
+                         if (is_par || par_time &lt; 0)
+-                            wr_text = strf(_(&quot;World record by %s: %d:%02d&quot;), 
+-                                    wr_name.c_str(), wr_time/60, wr_time%60);
+-                        else
+-                            wr_text = strf(_(&quot;Par: %d:%02d World record by %s: %d:%02d&quot;), 
+-                                    par_time/60, par_time%60, wr_name.c_str(), wr_time/60, wr_time%60);
+-                    else
+-                        if (is_par || par_time &lt; 0)
+                             wr_text = strf(_(&quot;World record: %d:%02d&quot;), wr_time/60, wr_time%60);
+                         else
+                             wr_text = strf(_(&quot;Par: %d:%02d World record: %d:%02d&quot;), 
+                                     par_time/60, par_time%60, wr_time/60, wr_time%60);
+                 }
+     
+-                string time_text;
+-                if (your_time.length()&gt;0)   time_text = your_time+&quot;  &quot;+wr_text;
+-                else                        time_text = your_time+wr_text;
+-    
+-                lbl_levelinfo-&gt;set_text(time_text.c_str());
++                if (!your_time.empty())
++                    your_time += &quot;  &quot;;
++
++                int wr_cut = 0;
++                do {
++                    if (wr_name_displayed) {
++                        std::string tmp = ratingMgr-&gt;getBestScoreHolder(curProxy, difficulty, wr_cut++);
++                        if (!tmp.empty())
++                            wr_name = tmp;
++                        if (is_par || par_time &lt; 0)
++                            wr_text = strf(_(&quot;World record by %s: %d:%02d&quot;), 
++                                    wr_name.c_str(), wr_time/60, wr_time%60);
++                        else
++                            wr_text = strf(_(&quot;Par: %d:%02d World record by %s: %d:%02d&quot;), 
++                                    par_time/60, par_time%60, wr_name.c_str(), wr_time/60, wr_time%60);
++                    }
++                    lbl_levelinfo-&gt;set_text(your_time + wr_text);
++                } while (!hl_info_stat-&gt;fits() &amp;&amp; wr_name_displayed &amp;&amp; (wr_cut &lt; 20));
+             }
+         }
+     }
+
+Modified: branches/1.0/src/gui/LevelMenu.hh
+===================================================================
+--- branches/1.0/src/gui/LevelMenu.hh	2007-04-13 22:20:34 UTC (rev 689)
++++ branches/1.0/src/gui/LevelMenu.hh	2007-04-14 15:11:51 UTC (rev 690)
+@@ -63,6 +63,7 @@
+         Widget      *but_back;          // &quot;Back&quot; button
+         Widget      *but_difficulty;        // &quot;Difficulty&quot; button
+         TextButton  *but_levelpack;     // &quot;Levelpack&quot; button
++        HList       *hl_info_stat;
+         Label       *lbl_lpinfo;        // Levelpack information
+         Label       *lbl_statistics;        // percentage solved
+         Label       *lbl_levelname;
+
+Modified: branches/1.0/src/gui/widgets.cc
+===================================================================
+--- branches/1.0/src/gui/widgets.cc	2007-04-13 22:20:34 UTC (rev 689)
++++ branches/1.0/src/gui/widgets.cc	2007-04-14 15:11:51 UTC (rev 690)
+@@ -405,7 +405,6 @@
+ 
+ 
+ 
+-
+ /* -------------------- HList -------------------- */
+ 
+ void HList::recalc()
+@@ -449,6 +448,12 @@
+     }
+ }
+ 
++bool HList::fits() {
++    int targetw = this-&gt;get_w(); // The available space
++    int naturalw= calc_minimum_width();
++    return targetw &gt;= naturalw;
++}
++
+ 
+ /* -------------------- VList -------------------- */
+ 
+@@ -493,6 +498,12 @@
+     }
+ }
+ 
++bool VList::fits() {
++    int targeth = this-&gt;get_h(); // The available space
++    int naturalh= calc_minimum_height();
++    return targeth &gt;= naturalh;
++}
++
+ 
+ /* -------------------- Label -------------------- */
+ 
+@@ -530,6 +541,12 @@
+     }
+ }
+ 
++bool Label::text_fits(double area_fraction) {
++    int w, h;
++    naturalsize (w, h);
++    return w &lt;= get_w()*area_fraction;
++}
++
+ void Label::draw (ecl::GC &amp;gc, const ecl::Rect &amp;) 
+ {
+     Font *f = m_font;
+
+Modified: branches/1.0/src/gui/widgets.hh
+===================================================================
+--- branches/1.0/src/gui/widgets.hh	2007-04-13 22:20:34 UTC (rev 689)
++++ branches/1.0/src/gui/widgets.hh	2007-04-14 15:11:51 UTC (rev 690)
+@@ -215,6 +215,7 @@
+ 
+         void set_default_size (int w, int h);
+         void set_alignment (HAlignment halign, VAlignment valign);
++        virtual bool fits() = 0;
+ 
+     protected:
+         List(int spacing=5);
+@@ -254,6 +255,7 @@
+     class HList : public List {
+     public:
+         HList() : List() {}
++        virtual bool fits();
+ 
+     private:
+         // List interface
+@@ -263,6 +265,7 @@
+     class VList : public List {
+     public:
+         VList() : List() {}
++        virtual bool fits();
+ 
+     private:
+         // List interface
+@@ -298,6 +301,7 @@
+         std::string getText() const;
+         void set_font (ecl::Font *font);
+         void set_alignment (HAlignment halign, VAlignment valign=VALIGN_CENTER);
++        bool text_fits(double area_fraction = 1.0);
+     protected:
+         // Variables.
+         std::string m_text;
+
+Modified: branches/1.0/src/lev/RatingManager.cc
+===================================================================
+--- branches/1.0/src/lev/RatingManager.cc	2007-04-13 22:20:34 UTC (rev 689)
++++ branches/1.0/src/lev/RatingManager.cc	2007-04-14 15:11:51 UTC (rev 690)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2006 Ronald Lamprecht
++ * Copyright (C) 2006, 2007 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -28,6 +28,7 @@
+ 
+ #include &lt;iostream&gt;
+ #include &lt;cstdlib&gt;
++#include &lt;sstream&gt;
+ #include &lt;xercesc/dom/DOM.hpp&gt;
+ #include &lt;xercesc/util/XercesVersion.hpp&gt;
+ #if _XERCES_VERSION &lt; 30000
+@@ -531,14 +532,37 @@
+                 
+     }
+     
+-    std::string RatingManager::getBestScoreHolder(Proxy *levelProxy, int difficulty) {
++    std::string RatingManager::cutHolders(std::string org, int factor) {
++        if (factor &lt;= 0)
++            return org;
++        
++        int others = 0;
++        if (org.rfind(&quot; others&quot;) == org.length() - 7) {
++            // ratings string is already cut
++            std::string::size_type lastPlus = org.rfind('+');
++            std::istringstream othersString(org.substr(lastPlus + 1));
++            othersString &gt;&gt; std::dec &gt;&gt; others;
++            org = org.substr(0, lastPlus);
++        }
++        std::string::size_type cutPlus;
++        for (int i=0; i&lt; factor; i++) {
++            cutPlus = org.rfind('+');
++            if (cutPlus == std::string::npos)
++                return &quot;&quot;;
++            org = org.substr(0, cutPlus);
++            others++;
++        }
++        return ecl::strf(&quot;%s+%d others&quot;, org.c_str(), others);
++    }
++    
++    std::string RatingManager::getBestScoreHolder(Proxy *levelProxy, int difficulty, int cut) {
+         if (difficulty == DIFFICULTY_EASY &amp;&amp; !levelProxy-&gt;hasEasymode())
+             difficulty = DIFFICULTY_HARD;
+         switch (difficulty) {
+             case DIFFICULTY_EASY:
+-                return getBestScoreEasyHolder(levelProxy);
++                return getBestScoreEasyHolder(levelProxy, cut);
+             case DIFFICULTY_HARD:
+-                return getBestScoreDifficultHolder(levelProxy);
++                return getBestScoreDifficultHolder(levelProxy, cut);
+             default:
+                 ecl::Assert &lt;XFrontend&gt; (false, &quot;RatingManager::getBestScoreHolder illegal difficulty&quot;);
+         }
+@@ -552,10 +576,10 @@
+         return -1;
+     }
+ 
+-    std::string RatingManager::getBestScoreEasyHolder(Proxy *levelProxy) {
++    std::string RatingManager::getBestScoreEasyHolder(Proxy *levelProxy, int cut) {
+         Rating * theRating = findRating(levelProxy);
+         if (theRating != NULL) {
+-            return theRating-&gt;bestScoreEasyHolder;
++            return cutHolders(theRating-&gt;bestScoreEasyHolder, cut);
+         }
+         return &quot;&quot;;
+     }
+@@ -568,10 +592,10 @@
+         return -1;
+     }
+ 
+-    std::string RatingManager::getBestScoreDifficultHolder(Proxy *levelProxy) {
++    std::string RatingManager::getBestScoreDifficultHolder(Proxy *levelProxy, int cut) {
+         Rating * theRating = findRating(levelProxy);
+         if (theRating != NULL) {
+-            return theRating-&gt;bestScoreDifficultHolder;
++            return cutHolders(theRating-&gt;bestScoreDifficultHolder, cut);
+         }
+         return &quot;&quot;;
+     }
+
+Modified: branches/1.0/src/lev/RatingManager.hh
+===================================================================
+--- branches/1.0/src/lev/RatingManager.hh	2007-04-13 22:20:34 UTC (rev 689)
++++ branches/1.0/src/lev/RatingManager.hh	2007-04-14 15:11:51 UTC (rev 690)
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 2006 Ronald Lamprecht
++ * Copyright (C) 2006, 2007 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -128,11 +128,11 @@
+         void setSpeed(Proxy *levelProxy, short speed);
+         short getDifficulty(Proxy *levelProxy);
+         short getBestScore(Proxy *levelProxy, int difficulty);
+-        std::string getBestScoreHolder(Proxy *levelProxy, int difficulty);
++        std::string getBestScoreHolder(Proxy *levelProxy, int difficulty, int cut = 0);
+         short getBestScoreEasy(Proxy *levelProxy);
+-        std::string getBestScoreEasyHolder(Proxy *levelProxy);
++        std::string getBestScoreEasyHolder(Proxy *levelProxy, int cut = 0);
+         short getBestScoreDifficult(Proxy *levelProxy);
+-        std::string getBestScoreDifficultHolder(Proxy *levelProxy);
++        std::string getBestScoreDifficultHolder(Proxy *levelProxy, int cut = 0);
+         short getParScore(Proxy *levelProxy, int difficulty);
+         short getParScoreEasy(Proxy *levelProxy);
+         short getParScoreDifficult(Proxy *levelProxy);
+@@ -157,6 +157,7 @@
+         short updateMinDelay;
+         Rating * findRating(Proxy * levelProxy);
+         Rating * registerNewRating(Proxy * levelProxy);
++        std::string cutHolders(std::string org, int factor);
+         
+         /**
+          * Loads the ratings from a given URI and updates the cached ratings.
+
+Modified: branches/1.0/src/server.cc
+===================================================================
+--- branches/1.0/src/server.cc	2007-04-13 22:20:34 UTC (rev 689)
++++ branches/1.0/src/server.cc	2007-04-14 15:11:51 UTC (rev 690)
+@@ -497,8 +497,10 @@
+     else if (cmd == &quot;info&quot;) {
+         string infotext       = 
+             ecl::strf(&quot;Level #%i of '&quot;, ind-&gt;getCurrentLevel()) + ind-&gt;getName()
+-            + &quot;' (&quot; + curProxy-&gt;getAbsLevelPath() + &quot;)  -  \&quot;&quot; + curProxy-&gt;getTitle() + &quot;\&quot; by &quot; + curProxy-&gt;getAuthor()
+-            + ecl::strf(&quot; (rev=%i)&quot;, curProxy-&gt;getReleaseVersion());
++            + &quot;' (&quot; + curProxy-&gt;getAbsLevelPath() + &quot;)  -  \&quot;&quot; + curProxy-&gt;getTitle() 
++            + &quot;\&quot; by &quot; + curProxy-&gt;getAuthor()
++            + ecl::strf(&quot; (rev=%i,&quot;, curProxy-&gt;getReleaseVersion())
++            + &quot;id=\&quot;&quot; + curProxy-&gt;getId() + &quot;\&quot;)&quot;;
+             
+         client::Msg_ShowText(infotext, true);
+     }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000127.html">[Enigma-game-svn] r689 - branches/1.0/src
+</A></li>
+	<LI>Next message: <A HREF="000129.html">[Enigma-game-svn] r691 - in trunk: . attic/gfx-templates data	data/gfx32 data/gfx40 data/gfx48 data/gfx64
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#128">[ date ]</a>
+              <a href="thread.html#128">[ thread ]</a>
+              <a href="subject.html#128">[ subject ]</a>
+              <a href="author.html#128">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

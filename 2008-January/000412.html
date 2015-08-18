@@ -1,0 +1,624 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r980 - in trunk: data src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r980%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200801102352.m0ANq345012984%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000411.html">
+   <LINK REL="Next"  HREF="000413.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r980 - in trunk: data src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r980%20-%20in%20trunk%3A%20data%20src%20src/stones&In-Reply-To=%3C200801102352.m0ANq345012984%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r980 - in trunk: data src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Fri Jan 11 00:52:03 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000411.html">[Enigma-game-svn] r979 - in trunk: data src
+</A></li>
+        <LI>Next message: <A HREF="000413.html">[Enigma-game-svn] r981 - in trunk: data src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#412">[ date ]</a>
+              <a href="thread.html#412">[ thread ]</a>
+              <a href="subject.html#412">[ subject ]</a>
+              <a href="author.html#412">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-01-11 00:51:58 +0100 (Fri, 11 Jan 2008)
+New Revision: 980
+
+Added:
+   trunk/src/stones/BlockerStone.cc
+   trunk/src/stones/BlockerStone.hh
+Modified:
+   trunk/data/init.lua
+   trunk/src/Makefile.am
+   trunk/src/items.cc
+   trunk/src/lua.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/stones_complex.cc
+   trunk/src/video.cc
+   trunk/src/world.cc
+Log:
+Trunk 1.1: Reengineering Blocker
+- renaming st-blocker to st_blocker, st-blocker-growing to st_blocker_new
+- blocker as StateObject: make use of state default support
+- add old to new API message renaming on lua SendMessage
+- fix old lua send message to check value existance prior access
+- switch 320x240 fullscreen active
+Note:
+- blocker identity transfer between stone and item not yet complete
+
+
+Modified: trunk/data/init.lua
+===================================================================
+--- trunk/data/init.lua	2008-01-10 11:51:52 UTC (rev 979)
++++ trunk/data/init.lua	2008-01-10 23:51:58 UTC (rev 980)
+@@ -44,6 +44,8 @@
+ }
+ 
+ RenamingObjectsNew2Old = {
++    st_blocker = &quot;st-blocker&quot;,
++    st_blocker_new = &quot;st-blocker-growing&quot;,
+     st_boulder = &quot;st-bolder&quot;,
+     st_boulder_n = &quot;st-bolder-n&quot;,
+     st_boulder_e = &quot;st-bolder-e&quot;,
+@@ -165,8 +167,10 @@
+     [&quot;st-black2__trigger&quot;] = &quot;signal&quot;,
+     [&quot;st-black3__trigger&quot;] = &quot;signal&quot;,
+     [&quot;st-black4__trigger&quot;] = &quot;signal&quot;,
+-    [&quot;st-blocker__trigger&quot;] = &quot;toggle&quot;,
+-    [&quot;st-blocker-growing__trigger&quot;] = &quot;toggle&quot;,
++    st_blocker__openclose = &quot;toggle&quot;,
++    st_blocker__trigger = &quot;toggle&quot;,
++    st_blocker_new__openclose = &quot;toggle&quot;,
++    st_blocker_new__trigger = &quot;toggle&quot;,
+     st_boulder__direction = &quot;orientate&quot;,
+     [&quot;st-fart__trigger&quot;] = &quot;toggle&quot;,
+     st_fourswitch__trigger = &quot;toggle&quot;,
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-01-10 11:51:52 UTC (rev 979)
++++ trunk/src/Makefile.am	2008-01-10 23:51:58 UTC (rev 980)
+@@ -188,6 +188,8 @@
+ 	lev/ScoreManager.hh	\
+ 	lev/VolatileIndex.cc	\
+ 	lev/VolatileIndex.hh	\
++	stones/BlockerStone.cc	\
++	stones/BlockerStone.hh	\
+ 	stones/BoulderStone.cc	\
+ 	stones/BoulderStone.hh	\
+ 	stones/ConnectiveStone.cc	\
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-01-10 11:51:52 UTC (rev 979)
++++ trunk/src/items.cc	2008-01-10 23:51:58 UTC (rev 980)
+@@ -2725,7 +2725,7 @@
+ 
+ void Blocker::grow()
+ {
+-    Stone *st = MakeStone(&quot;st-blocker-growing&quot;);
++    Stone *st = MakeStone(&quot;st_blocker_new&quot;);
+     SetStone(get_pos(), st);
+     TransferObjectName(this, st);
+     kill();
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-01-10 11:51:52 UTC (rev 979)
++++ trunk/src/lua.cc	2008-01-10 23:51:58 UTC (rev 980)
+@@ -564,12 +564,16 @@
+ {
+     Object     *obj = to_object(L, 1);
+     const char *msg = lua_tostring(L, 2);
+-    Value v;
++    Value result;  // nil
++    Value v;  // nil
++    if (lua_gettop(L) &gt;= 3)
++        v = to_value(L, 3);
+     if (!msg)
+         throwLuaError(L,&quot;Illegal message&quot;);
+     else if (obj) {
++        std::string new_msg = lua::NewMessageName(L, obj, msg);
+         try {
+-            v = SendMessage (obj, msg, to_value(L, 3));
++            result = SendMessage (obj, new_msg, v);
+         }
+         catch (const XLevelRuntime &amp;e) {
+             throwLuaError (L, e.what());
+@@ -578,7 +582,7 @@
+             throwLuaError (L, &quot;uncaught exception&quot;);
+         }
+     }
+-    push_value(L, v);
++    push_value(L, result);
+     return 0;
+ }
+ 
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-01-10 11:51:52 UTC (rev 979)
++++ trunk/src/ox_peroxyd.cc	2008-01-10 23:51:58 UTC (rev 980)
+@@ -347,7 +347,7 @@
+     &quot;st-rubberband&quot;,            // PerOxyd stone 0x96
+     &quot;st-scissors&quot;,              // PerOxyd stone 0x97
+     &quot;st-grate3&quot;,                // PerOxyd stone 0x98
+-    &quot;st-blocker&quot;,               // PerOxyd stone 0x99
++    &quot;st_blocker&quot;,               // PerOxyd stone 0x99
+     &quot;st-grate1&quot;,                // PerOxyd stone 0x9a
+     &quot;st-metal_hole&quot;,            // PerOxyd stone 0x9b
+     &quot;st-stone1&quot;,                // PerOxyd stone 0x9c
+
+Added: trunk/src/stones/BlockerStone.cc
+===================================================================
+--- trunk/src/stones/BlockerStone.cc	2008-01-10 11:51:52 UTC (rev 979)
++++ trunk/src/stones/BlockerStone.cc	2008-01-10 23:51:58 UTC (rev 980)
+@@ -0,0 +1,140 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/BlockerStone.hh&quot;
++#include &quot;errors.hh&quot;
++#include &quot;server.hh&quot;
++//#include &quot;main.hh&quot;
++
++namespace enigma {
++    
++    BlockerStone::BlockerStone(bool solid) : Stone (solid ? &quot;st_blocker&quot; : &quot;st_blocker_new&quot;) {
++        state = solid ? SOLID : GROWING; 
++    }
++
++    Value BlockerStone::message(const Message &amp;m) {
++        if (m.message == &quot;_trigger&quot;) {
++            setIState(SHRINKING);    // same as &quot;open&quot; -- no toggle to avoid race condition of boulders
++            return Value();
++        }
++        return Stone::message(m);
++    }
++    
++    void BlockerStone::toggleState() {
++        if (state == SHRINKING) {  // revert shrinking for door like behaviour
++            setIState(GROWING);
++        }
++        else {
++            setIState(SHRINKING);
++        }
++    }
++    
++    int BlockerStone::externalState() const {
++        return 0;   // always closed -- it_blocker is open
++    }
++    
++    void BlockerStone::setState(int extState) {
++        if (extState == 1) {    // -&gt; open (shrink)
++            setIState(SHRINKING);
++        }
++        else {          // value == 0 -&gt; close (grow)
++            if (state == SHRINKING)
++                setIState(GROWING);
++        }
++    }
++    
++    void BlockerStone::init_model() {
++        switch (state) {
++            case SOLID:
++                set_model(&quot;st-blocker&quot;);
++                break;
++            case SHRINKING:
++                set_anim(&quot;st-blocker-shrinking&quot;);
++                break;
++            case GROWING:
++                set_anim(&quot;st-blocker-growing&quot;);
++                break;
++        }
++    }
++
++    void BlockerStone::animcb() {
++        switch (state) {
++            case SHRINKING: {
++                Item *it = MakeItem(&quot;it-blocker-new&quot;);
++                SetItem(get_pos(), it);
++                TransferObjectName(this, it);   // TODO transfer user attr., target, action
++                KillStone(get_pos());
++                break;
++            }
++            case GROWING:
++                setIState(SOLID);
++                break;
++            default :
++                ASSERT(false, XLevelRuntime, &quot;BlockerStone: animcb called with inconsistent state&quot;);
++                break;
++        }
++    }
++    
++    StoneResponse BlockerStone::collision_response(const StoneContact &amp;sc) {
++        return (server::GameCompatibility == GAMET_PEROXYD &amp;&amp; state == GROWING || state == SHRINKING)
++                ? STONE_PASS : STONE_REBOUND;
++    }
++
++    void BlockerStone::actor_contact(Actor *a) {
++        if ((state == GROWING &amp;&amp; server::GameCompatibility != GAMET_PEROXYD) ||
++                (state == SOLID &amp;&amp; server::GameCompatibility == GAMET_PEROXYD)) {
++            SendMessage(a, &quot;shatter&quot;);
++        }
++    }
++    void BlockerStone::actor_inside(Actor *a) {
++        if ((state == GROWING &amp;&amp; server::GameCompatibility != GAMET_PEROXYD) ||
++                (state == SOLID &amp;&amp; server::GameCompatibility == GAMET_PEROXYD)) {
++            SendMessage(a, &quot;shatter&quot;);
++        }
++    }
++    
++    void BlockerStone::setIState(iState newState) {
++        if (state != newState) {
++            if (state == GROWING &amp;&amp; newState == SHRINKING) {
++                state = SHRINKING;
++                get_model()-&gt;reverse();
++            }
++            else if (state == SHRINKING &amp;&amp; newState == GROWING) {
++                state = GROWING;
++                get_model()-&gt;reverse();
++            }
++            else {
++                state = newState;
++                init_model();
++                if (newState == SOLID) {
++                    Object::set_attrib(&quot;kind&quot;, &quot;st_blocker&quot;);
++                }
++            }
++        }
++    }
++    
++    DEF_TRAITSM(BlockerStone, &quot;INVALID&quot;, st_INVALID, MOVABLE_BREAKABLE);
++    
++    BOOT_REGISTER_START
++        BootRegister(new BlockerStone(true), &quot;st_blocker&quot;);
++        BootRegister(new BlockerStone(false), &quot;st_blocker_new&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/BlockerStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/BlockerStone.hh
+===================================================================
+--- trunk/src/stones/BlockerStone.hh	2008-01-10 11:51:52 UTC (rev 979)
++++ trunk/src/stones/BlockerStone.hh	2008-01-10 23:51:58 UTC (rev 980)
+@@ -0,0 +1,72 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef BLOCKERSTONE_HH
++#define BLOCKERSTONE_HH
++
++#include &quot;stones.hh&quot;
++#include &quot;laser.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class BlockerStone : public Stone {
++        CLONEOBJ(BlockerStone);
++        DECL_TRAITS;
++    private:
++        enum iState {
++            SOLID,       ///&lt;  
++            SHRINKING,   ///&lt; 
++            GROWING      ///&lt; 
++        };
++    public:
++        BlockerStone(bool solid);
++        
++        // Object interface
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual void toggleState();
++        virtual int externalState() const;
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        
++        // ModelCallback interface
++        virtual void animcb();
++        
++        // Stone interface
++        virtual StoneResponse collision_response(const StoneContact &amp;sc);
++//        virtual void actor_hit(const StoneContact &amp;sc);
++        virtual void actor_contact (Actor * a);
++        virtual void actor_inside (Actor * a);
++//        virtual const char *collision_sound();
++        
++    private:
++        void setIState(iState newState);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/BlockerStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-01-10 11:51:52 UTC (rev 979)
++++ trunk/src/stones_complex.cc	2008-01-10 23:51:58 UTC (rev 980)
+@@ -28,6 +28,7 @@
+ #include &quot;stones/ConnectiveStone.hh&quot;
+ #include &quot;actors.hh&quot;
+ #include &quot;main.hh&quot;
++#include &quot;Value.hh&quot;
+ 
+ #include &quot;ecl_util.hh&quot;
+ 
+@@ -460,135 +461,6 @@
+ }
+ 
+ 
+-/* -------------------- BlockerStone -------------------- */
+-
+-/** \page st-blocker Blocker Stone
+-
+-The BlockerStone acts like a normal stone until it is hit by a
+-BolderStone. Then it shrinks and morphs into a 'Blocker' item.
+-
+-*/
+-
+-namespace
+-{
+-    class BlockerStone : public Stone {
+-        CLONEOBJ(BlockerStone);
+-        DECL_TRAITS;
+-    public:
+-        BlockerStone(bool solid)
+-        : Stone(solid ? &quot;st-blocker&quot; : &quot;st-blocker-growing&quot;), 
+-          state(solid ? SOLID : GROWING)
+-        {}
+-
+-    private:
+-        enum State { SOLID, SHRINKING, GROWING } state;
+-
+-        void init_model() {
+-            switch (state) {
+-            case SOLID:
+-                set_model(&quot;st-blocker&quot;);
+-                break;
+-
+-            case SHRINKING:
+-                set_anim(&quot;st-blocker-shrinking&quot;);
+-                break;
+-
+-            case GROWING:
+-                set_anim(&quot;st-blocker-growing&quot;);
+-                break;
+-            }
+-        }
+-
+-        void change_state(State newState) {
+-            if (state != newState) {
+-                if (state == GROWING &amp;&amp; newState == SHRINKING) {
+-                    state = SHRINKING;
+-                    get_model()-&gt;reverse();
+-                }
+-                else if (state == SHRINKING &amp;&amp; newState == GROWING) {
+-                    state = GROWING;
+-                    get_model()-&gt;reverse();
+-                }
+-                else {
+-                    state = newState;
+-                    init_model();
+-                    if (newState == SOLID) {
+-                        set_attrib(&quot;kind&quot;, &quot;st-blocker&quot;);
+-                    }
+-                }
+-            }
+-        }
+-
+-        void animcb() {
+-            switch (state) {
+-            case SHRINKING: {
+-                Item *it = MakeItem(&quot;it-blocker-new&quot;);
+-                SetItem(get_pos(), it);
+-                TransferObjectName(this, it);
+-                KillStone(get_pos());
+-                break;
+-            }
+-            case GROWING:
+-                change_state(SOLID);
+-                break;
+-            default :
+-                ASSERT(0, XLevelRuntime,
+-                    &quot;BlockerStone: animcb called with inconsistent state&quot;);
+-                break;
+-            }
+-        }
+-
+-        virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;_trigger&quot; || m.message == &quot;toggle&quot; || m.message == &quot;openclose&quot;) {
+-                if (state == SHRINKING) {
+-                    change_state(GROWING);
+-                }
+-                else {
+-                    change_state(SHRINKING);
+-                }
+-                return Value();
+-            }
+-            else if (m.message == &quot;signal&quot;) {
+-                int value = m.value;
+-//                 warning(&quot;received signal (value=%i)&quot;, value);
+-                if (value) {    // value == 1 -&gt; shrink
+-                    if (state != SHRINKING)
+-                        change_state(SHRINKING);
+-                }
+-                else {          // value == 0 -&gt; grow
+-                    if (state == SHRINKING)
+-                        change_state(GROWING);
+-                }
+-                return Value();
+-            }
+-            else if (m.message == &quot;open&quot;) { // aka &quot;shrink&quot;
+-                if (state != SHRINKING)
+-                    change_state(SHRINKING);
+-                return Value();
+-            }
+-            else if (m.message == &quot;close&quot;) { // aka &quot;grow&quot;
+-                if (state == SHRINKING)
+-                    change_state(GROWING);
+-                return Value();
+-            }
+-            return Stone::message(m);
+-        }
+-
+-        void actor_contact(Actor *a) {
+-            if (state == GROWING) {
+-                SendMessage(a, &quot;shatter&quot;);
+-            }
+-        }
+-        void actor_inside(Actor *a) {
+-            if (state == GROWING) {
+-                SendMessage(a, &quot;shatter&quot;);
+-            }
+-        }
+-    };
+-    DEF_TRAITSM(BlockerStone, &quot;INVALID&quot;, st_INVALID, MOVABLE_BREAKABLE);
+-}
+-
+-
+ /* -------------------- Volcano -------------------- */
+ namespace
+ {
+@@ -1802,7 +1674,8 @@
+                 change_state(PULSING);
+                 return Value();
+             }
+-            else if (m.message == &quot;signal&quot; &amp;&amp; to_double(m.value) != 0) {
++            else if (m.message == &quot;signal&quot; &amp;&amp; (to_double(m.value) != 0 || 
++                    (server::EnigmaCompatibility &lt; 1.10 &amp;&amp; m.value.getType() == Value::NIL))) { // hack for old trigger without value
+                 incoming = NODIR;
+                 change_state (PULSING);
+                 return Value();
+@@ -3066,10 +2939,6 @@
+ 
+ void Init_complex()
+ {
+-
+-    Register(new BlockerStone(true));
+-    Register(new BlockerStone(false));
+-
+     Register(new Door);
+     Register(&quot;st-door-h&quot;, new Door(&quot;h&quot;));
+     Register(&quot;st-door-v&quot;, new Door(&quot;v&quot;));
+
+Modified: trunk/src/video.cc
+===================================================================
+--- trunk/src/video.cc	2008-01-10 11:51:52 UTC (rev 979)
++++ trunk/src/video.cc	2008-01-10 23:51:58 UTC (rev 980)
+@@ -515,7 +515,7 @@
+             Rect (76, 216, 245, 26),         // inventory area
+             Rect (75, 217, 237, 17),         // text area
+             true, true,                      // available window, fullscreen
+-            &quot;-10-0-&quot;,&quot;-0-&quot;                   // fallback modes window, fullscreen
++            &quot;-10-0-&quot;,&quot;-10-0-&quot;                // fallback modes window, fullscreen
+         }
+     };
+ 
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-01-10 11:51:52 UTC (rev 979)
++++ trunk/src/world.cc	2008-01-10 23:51:58 UTC (rev 980)
+@@ -1823,7 +1823,7 @@
+     
+     Value dstValue(dst);
+     
+-    if (dst-&gt;is_kind(&quot;st-blocker&quot;) || dst-&gt;is_kind(&quot;st-blocker-growing&quot;) ||
++    if (dst-&gt;is_kind(&quot;st_blocker&quot;) || dst-&gt;is_kind(&quot;st_blocker_new&quot;) ||
+             dst-&gt;is_kind(&quot;it-blocker&quot;)) {
+         if (!dst-&gt;getAttr(&quot;name&quot;))
+             NameObject(dst, ecl::strf(&quot;$!oxyd!blocker%d&quot;, dst-&gt;getId()));
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000411.html">[Enigma-game-svn] r979 - in trunk: data src
+</A></li>
+	<LI>Next message: <A HREF="000413.html">[Enigma-game-svn] r981 - in trunk: data src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#412">[ date ]</a>
+              <a href="thread.html#412">[ thread ]</a>
+              <a href="subject.html#412">[ subject ]</a>
+              <a href="author.html#412">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

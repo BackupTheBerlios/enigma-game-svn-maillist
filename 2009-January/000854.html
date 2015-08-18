@@ -1,0 +1,192 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1425 - in trunk: data/schemas src src/actors	src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1425%20-%20in%20trunk%3A%20data/schemas%20src%20src/actors%0A%09src/stones&In-Reply-To=%3C200901011226.n01CQWgV004167%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   
+   <LINK REL="Next"  HREF="000855.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1425 - in trunk: data/schemas src src/actors	src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1425%20-%20in%20trunk%3A%20data/schemas%20src%20src/actors%0A%09src/stones&In-Reply-To=%3C200901011226.n01CQWgV004167%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1425 - in trunk: data/schemas src src/actors	src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Thu Jan  1 13:26:32 CET 2009</I>
+    <P><UL>
+        
+        <LI>Next message: <A HREF="000855.html">[Enigma-game-svn] r1426 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#854">[ date ]</a>
+              <a href="thread.html#854">[ thread ]</a>
+              <a href="subject.html#854">[ subject ]</a>
+              <a href="author.html#854">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-01-01 13:26:31 +0100 (Thu, 01 Jan 2009)
+New Revision: 1425
+
+Modified:
+   trunk/data/schemas/objects.xml
+   trunk/src/actors.cc
+   trunk/src/actors/Rotors.cc
+   trunk/src/stones/StoneImpulse.cc
+Log:
+Trunk 1.1:
+- fix pearls stuck beneath stones
+- fix missing fellows attribut declaration for actors
+- fix rotor, top attributes attacknearest and gohome
+- st_stoneimpulse:
+  - send impulses per wire with correct direction
+  - no more impulse per wire on slight, no push actor touches
+
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-12-31 21:41:32 UTC (rev 1424)
++++ trunk/data/schemas/objects.xml	2009-01-01 12:26:31 UTC (rev 1425)
+@@ -6,7 +6,7 @@
+     &lt;attr name=&quot;algorithm&quot; type=&quot;string&quot; default=&quot;std&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;anchor1&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;anchor2&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+-    &lt;attr name=&quot;attacknearest&quot; type=&quot;bool&quot; default=&quot;true&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;attacknearest&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;autoclose&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;burnable&quot; type=&quot;bool&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;charge&quot; type=&quot;double&quot; default=&quot;0&quot; rw=&quot;rw&quot;/&gt;
+@@ -171,6 +171,7 @@
+       &lt;attr name=&quot;adhesion&quot; default=&quot;1.0&quot;/&gt;
+       &lt;attr name=&quot;controllers&quot;/&gt;
+       &lt;attr name=&quot;color&quot;/&gt;
++      &lt;attr name=&quot;fellows&quot;/&gt;
+       &lt;attr name=&quot;player&quot;/&gt;
+       &lt;attr name=&quot;essential&quot;/&gt;
+       &lt;attr name=&quot;essential_id&quot;/&gt;
+
+Modified: trunk/src/actors/Rotors.cc
+===================================================================
+--- trunk/src/actors/Rotors.cc	2008-12-31 21:41:32 UTC (rev 1424)
++++ trunk/src/actors/Rotors.cc	2009-01-01 12:26:31 UTC (rev 1425)
+@@ -28,11 +28,12 @@
+ 
+ /* -------------------- RotorBase  -------------------- */
+ 
+-    RotorBase::RotorBase(const ActorTraits &amp;tr) : Actor (tr),  attackCurrentOnly(false), timeKeepAttackStrategy(0) {
++    RotorBase::RotorBase(const ActorTraits &amp;tr) : Actor (tr),  attacknearest (false), attackCurrentOnly (false),
++            timeKeepAttackStrategy (0) {
+         setAttr(&quot;range&quot;, 5.0);
+         setAttr(&quot;strength&quot;, 10.0);
+         setAttr(&quot;gohome&quot;, true);
+-        setAttr(&quot;attacknearest&quot;, true);
++        setAttr(&quot;attacknearest&quot;, false);
+         setAttr(&quot;prefercurrent&quot;, 0.0);
+     }
+ 
+@@ -42,9 +43,9 @@
+         else if (key == &quot;strength&quot;) 
+             force = val;
+         else if (key == &quot;gohome&quot;) 
+-            gohome = val;
+-        else if (key == &quot;attacknearest&quot;) 
+-            attacknearest = val;
++            gohome = val.to_bool();
++        else if (key == &quot;attacknearest&quot;)
++            attacknearest = val.to_bool();
+         else if (key == &quot;prefercurrent&quot;) 
+             prefercurrent = val;
+         Actor::setAttr(key, val);
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2008-12-31 21:41:32 UTC (rev 1424)
++++ trunk/src/actors.cc	2009-01-01 12:26:31 UTC (rev 1425)
+@@ -294,7 +294,7 @@
+ bool Actor::can_move() const { 
+     if (Stone *st = GetStone (get_gridpos())) {
+         if (!server::NoCollisions || !(get_traits().id_mask &amp;
+-                        (1&lt;&lt;ac_marble_white | 1&lt;&lt;ac_marble_black | 1&lt;&lt;ac_marble_white)))
++                        (1&lt;&lt;ac_marble_white | 1&lt;&lt;ac_marble_black | 1&lt;&lt;ac_pearl_white)))
+             return !st-&gt;is_sticky(this);
+     }
+     return true;
+
+Modified: trunk/src/stones/StoneImpulse.cc
+===================================================================
+--- trunk/src/stones/StoneImpulse.cc	2008-12-31 21:41:32 UTC (rev 1424)
++++ trunk/src/stones/StoneImpulse.cc	2009-01-01 12:26:31 UTC (rev 1425)
+@@ -198,9 +198,10 @@
+             if (hitman == NULL || !player::WieldedItemIs(hitman, &quot;it_magicwand&quot;)) {
+                 if (state == IDLE)
+                     setIState(EXPANDING, impulse.dir);
+-                else if (didMove &amp;&amp; state != EXPANDING)
++                else if (didMove &amp;&amp; state != EXPANDING) {
+                     // ensure that an impulse to neighbors will be emitted when moved
+-                    objFlags |= OBJBIT_REPULSE;
++                    objFlags = (objFlags &amp; ~OBJBIT_INCOMINGDIR) | (impulse.dir &lt;&lt; 29) | OBJBIT_REPULSE;
++                }
+             } else if (((objFlags &amp; OBJBIT_STEADY) &amp;&amp; (objFlags &amp; OBJBIT_LIGHTNEWDIRS) &amp;&amp; state == IDLE)) {
+                 setIState(EXPANDING, impulse.dir);
+             }
+@@ -209,7 +210,7 @@
+         }
+         
+         // direct impulse propagation
+-        if (objFlags &amp; OBJBIT_MOVABLE) { 
++        if (objFlags &amp; OBJBIT_MOVABLE &amp;&amp; (impulse.dir != NODIR)) { 
+             if (hitman != NULL) {
+                 objFlags &amp;= ~OBJBIT_PROPAGATE;
+                 propagateImpulse(impulse);
+@@ -230,7 +231,7 @@
+                     state = newState;
+                     if (objFlags &amp; OBJBIT_REPULSE) {
+                         objFlags &amp;= ~OBJBIT_REPULSE;
+-                        setIState(EXPANDING, NODIR);
++                        setIState(EXPANDING, (Direction)((objFlags &amp; OBJBIT_INCOMINGDIR) &gt;&gt; 29));
+                     } else
+                         init_model();
+                     break;
+@@ -270,7 +271,7 @@
+     }
+     
+     void StoneImpulse::propagateImpulse(const Impulse&amp; impulse) {
+-        if (!impulse.byWire) {
++        if (!impulse.byWire &amp;&amp; impulse.dir != NODIR) {
+             ObjectList olist = getAttr(&quot;fellows&quot;);
+             int sourceId = getDefaultedAttr(&quot;$impulse_source&quot;, 0);
+             for (ObjectList::iterator it = olist.begin(); it != olist.end(); ++it) {
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	
+	<LI>Next message: <A HREF="000855.html">[Enigma-game-svn] r1426 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#854">[ date ]</a>
+              <a href="thread.html#854">[ thread ]</a>
+              <a href="subject.html#854">[ subject ]</a>
+              <a href="author.html#854">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

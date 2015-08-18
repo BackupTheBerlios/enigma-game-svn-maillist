@@ -1,0 +1,3236 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r693 - in branches/1.0: data doc/reference src	src/gui src/lev
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r693%20-%20in%20branches/1.0%3A%20data%20doc/reference%20src%0A%09src/gui%20src/lev&In-Reply-To=%3C200704201202.l3KC2wZs022032%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000130.html">
+   <LINK REL="Next"  HREF="000132.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r693 - in branches/1.0: data doc/reference src	src/gui src/lev</H1>
+    <B>andreasl at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r693%20-%20in%20branches/1.0%3A%20data%20doc/reference%20src%0A%09src/gui%20src/lev&In-Reply-To=%3C200704201202.l3KC2wZs022032%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r693 - in branches/1.0: data doc/reference src	src/gui src/lev">andreasl at mail.berlios.de
+       </A><BR>
+    <I>Fri Apr 20 14:02:58 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000130.html">[Enigma-game-svn] r692 - in branches/1.0/src: gui lev
+</A></li>
+        <LI>Next message: <A HREF="000132.html">[Enigma-game-svn] r694 - branches/1.0/data/levels/lib
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#131">[ date ]</a>
+              <a href="thread.html#131">[ thread ]</a>
+              <a href="subject.html#131">[ subject ]</a>
+              <a href="author.html#131">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: andreasl
+Date: 2007-04-20 14:02:41 +0200 (Fri, 20 Apr 2007)
+New Revision: 693
+
+Added:
+   branches/1.0/data/sound-defaults.lua
+Modified:
+   branches/1.0/data/startup.lua
+   branches/1.0/doc/reference/sound.lua
+   branches/1.0/src/actors.cc
+   branches/1.0/src/actors.hh
+   branches/1.0/src/client.cc
+   branches/1.0/src/enigma-lua.pkg
+   branches/1.0/src/gui/LevelPackComposer.cc
+   branches/1.0/src/gui/LevelWidget.cc
+   branches/1.0/src/gui/Menu.cc
+   branches/1.0/src/gui/OptionsMenu.cc
+   branches/1.0/src/gui/OptionsMenu.hh
+   branches/1.0/src/gui/TextField.cc
+   branches/1.0/src/gui/widgets.cc
+   branches/1.0/src/items.cc
+   branches/1.0/src/laser.cc
+   branches/1.0/src/lev/Index.cc
+   branches/1.0/src/lev/Index.hh
+   branches/1.0/src/lua-display.cc
+   branches/1.0/src/lua-display.hh
+   branches/1.0/src/lua-ecl.cc
+   branches/1.0/src/lua-ecl.hh
+   branches/1.0/src/lua-editor.cc
+   branches/1.0/src/lua-editor.hh
+   branches/1.0/src/lua-enigma.cc
+   branches/1.0/src/lua-enigma.hh
+   branches/1.0/src/lua-global.cc
+   branches/1.0/src/lua-global.hh
+   branches/1.0/src/lua.cc
+   branches/1.0/src/lua.hh
+   branches/1.0/src/main.cc
+   branches/1.0/src/objects.cc
+   branches/1.0/src/objects_decl.hh
+   branches/1.0/src/oxyd.cc
+   branches/1.0/src/oxyd.hh
+   branches/1.0/src/oxyd_internal.hh
+   branches/1.0/src/player.cc
+   branches/1.0/src/sound.cc
+   branches/1.0/src/sound.hh
+   branches/1.0/src/sound_internal.hh
+   branches/1.0/src/stones_complex.cc
+   branches/1.0/src/world.cc
+   branches/1.0/src/world.hh
+   branches/1.0/src/world_internal.hh
+Log:
+Sound event rework, Part II
+ - disentagled C++ and Lua parts: Sound effect data is transfered to C++ on startup,
+   no lua requests during runtime for sound events anymore.
+ - added user sound set support
+ - moved damping code from world.cc to sound.cc
+ - moved lots of sound option menu code from OptionsMenu.cc to sound.cc
+ - moved not-oxyd-related parts of sound set initialisation from oxyd.cc to sound.cc
+ - damping additionally depends on sound effect name
+ - write &quot;silence string&quot; to command line when a non-existing sound is
+   requested by lua (needed for &quot;Acoustic Memory&quot; when using incomplete user
+   sound sets)
+ - silent sound set (deactivated by default)
+Todo:
+ - rename data/sound to data/soundsets
+ - move default sounds to data/soundsets/enigma (?)
+ - documentation in reference manual
+ - sound priorities
+ - correctly coalesce sounds with different volumes
+
+
+Added: branches/1.0/data/sound-defaults.lua
+===================================================================
+--- branches/1.0/data/sound-defaults.lua	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/data/sound-defaults.lua	2007-04-20 12:02:41 UTC (rev 693)
+@@ -0,0 +1,401 @@
++------------------------------------------------------------------------
++-- Copyright (C) 2002,2003,2004,2005 Daniel Heck
++-- Copyright (C) 2007 Andreas Lochmann
++--
++-- This program is free software; you can redistribute it and/or
++-- modify it under the terms of the GNU General Public License
++-- as published by the Free Software Foundation; either version 2
++-- of the License, or (at your option) any later version.
++--
++-- This program is distributed in the hope that it will be useful,
++-- but WITHOUT ANY WARRANTY; without even the implied warranty of
++-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++-- GNU General Public License for more details.
++--
++-- You should have received a copy of the GNU General Public License along
++-- with this program; if not, write to the Free Software Foundation, Inc.,
++-- 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
++--
++-- $Id: startup.lua,v 1.21 2004/02/15 11:54:36 dheck Exp $
++------------------------------------------------------------------------
++
++----------------------------------------------------------------------
++-- Sound handling
++----------------------------------------------------------------------
++
++default_sound = { name = &quot;&quot;,
++                  file = &quot;&quot;,
++                  volume = 1.0,
++                  loop = false,
++                  global = false,
++                  priority = 1,
++                  damp_max = 10.0,
++                  damp_inc = 1.0,
++                  damp_mult = 1.0,
++                  damp_min = 0.5,
++                  damp_tick = 0.9,
++                  silence_string = &quot;$default$&quot; }
++
++-- Complete a sound definition
++function complete_sound(k, t)
++    local tt = {}
++    if type(t) == &quot;string&quot; then
++        for key, value in pairs(default_sound) do
++            tt[key] = value
++        end
++        tt.file = t
++    elseif type(t) == &quot;table&quot; then
++        for key, value in pairs(default_sound) do
++            tt[key] = t[key] or value
++            -- Special fix for &quot;global&quot; and &quot;loop&quot; values of 1.00 sound sets
++            if (key == &quot;global&quot;) or (key == &quot;loop&quot;) then
++                if tt[key] == 1 then
++                    tt[key] = true
++                elseif tt[key] == 0 then
++                    tt[key] = false
++                end
++            end
++        end
++    else
++        error(&quot;Syntax error in sound table, effect name &quot;..k..&quot;.&quot;)
++        return default_sound
++    end
++    -- Fill in the silence string if requested
++    if (tt.silence_string == &quot;$default$&quot;) then
++        tt.silence_string = soundtable_silent[k].silence_string or k
++    end
++    return tt
++end
++
++-- Copy all key/value pairs only present in t1 to t2.
++function copy_missing (t1, t2)
++    for k,v in pairs(t1) do
++        t2[k] = t2[k] or v
++    end
++end
++
++-- Add a new sound set
++function AddSoundSet (tablename, t)
++    for key, value in pairs(t) do
++        r = complete_sound(key, value)  -- completed data set
++        sound.DefineSoundEffect(tablename, key, r.file, r.volume, r.loop,
++            r.global, r.priority, r.damp_max, r.damp_inc, r.damp_mult,
++            r.damp_min, r.damp_tick, r.silence_string)
++    end
++end
++
++-- Activate a sound set by name
++function ActivateSoundSet (name)
++    sound.SetActiveSoundSet(name)
++end
++
++-- Compatibility with 1.00 sound.lua's
++function Sound (t)  return t  end
++AddSoundTable = AddSoundSet
++
++---------------------------------
++-- Definition of sound effects --
++---------------------------------
++
++------------------------
++-- Enigma Sound table --
++------------------------
++
++-- Note that no &quot;#&quot; is allowed within a sound event name!
++
++soundtable_enigma = {
++    [&quot;&quot;]           = &quot;&quot;,        -- empty sound
++    ballcollision  = &quot;ballcollision&quot;,
++    blackbomb      = &quot;explosion1&quot;,
++    blockerdown    = &quot;&quot;,
++    blockerup      = &quot;&quot;,
++    booze          = &quot;&quot;,
++    bumper         = &quot;bumper&quot;,
++    cloth          = { file=&quot;st-thud&quot;, damp_max = 4.0 },
++    coinslotoff    = &quot;&quot;,
++    coinsloton     = &quot;st-coinslot&quot;,
++    crack          = &quot;&quot;,
++    doorclose      = &quot;doorclose&quot;,  -- missing
++    dooropen       = &quot;dooropen&quot;,   -- missing
++    drown          = &quot;drown&quot;,
++    dynamite       = &quot;explosion2&quot;, -- replace?
++    electric       = &quot;st-stone&quot;,   -- replace
++    exit           = { file=&quot;exit&quot;, global=true },  -- missing
++    extinguish     = &quot;&quot;,
++    fakeoxyd       = { file=&quot;st-fakeoxyd&quot;, volume=0.3 },
++    falldown       = &quot;falldown&quot;,   -- missing, unused (falling is shatter!)
++    fart           = &quot;fart&quot;,
++    finished       = { file=&quot;finished&quot;, global=true },  -- missing
++    floordestroy   = &quot;&quot;,
++    fourswitch     = &quot;st-switch&quot;, 
++    glass          = &quot;st-metal&quot;,   -- replace
++    hitfloor       = &quot;stone&quot;,      -- missing, used by it-vortex
++    impulse        = &quot;&quot;,
++    intro          = { file=&quot;intro&quot;, global=true },  -- missing
++    invrotate      = { file=&quot;invrotate&quot;, global=true },
++    itemtransform  = &quot;st-magic&quot;,
++    jump           = &quot;boink&quot;,
++    jumppad        = &quot;&quot;,
++    landmine       = &quot;explosion2&quot;,  -- replace?
++    laserloop      = &quot;&quot;,
++    laseron        = { file=&quot;st-laser&quot;, damp_max = 20.0, damp_inc = 2.0 },
++    laseroff       = &quot;&quot;,
++    lock           = &quot;&quot;,
++    magneton       = &quot;&quot;,
++    magnetoff      = &quot;&quot;,
++    mail           = &quot;&quot;,
++    menuexit        = { file=&quot;menuexit&quot;, global=true },
++    menumove        = { file=&quot;menumove&quot;, global=true },
++    menuok          = { file=&quot;menuok&quot;, global=true },
++    menustop        = { file=&quot;menustop&quot;, global=true },
++    menuswitch      = { file=&quot;menuswitch&quot;, global=true },
++    metal          = &quot;st-metal&quot;,
++    mirrorturn     = &quot;st-mirrorturn&quot;,
++    movebig        = &quot;st-move&quot;,
++    moveslow       = &quot;st-move&quot;,
++    movesmall      = { file=&quot;st-move&quot;, damp_max = 10.0, damp_inc = 2.0 },
++    oxydclose      = &quot;st-oxydclose&quot;,  -- missing, not neccessary I think
++    oxydopen       = { file=&quot;st-oxydopen&quot;, damp_max = 2000.0, damp_inc = 50.0 },
++    oxydopened     = &quot;st-oxydopened&quot;,
++    pickup         = { file=&quot;pickup&quot;, global=true },
++    puller         = &quot;&quot;,
++    puzzlerotate   = &quot;st-move&quot;,
++    rubberband     = &quot;boing&quot;,
++    scissors       = &quot;&quot;,
++    seedgrow       = &quot;seedgrow&quot;,  -- missing
++    shatter        = &quot;shatter&quot;,
++    shattersmall   = &quot;shatter&quot;,   -- replace, &quot;shattersmall&quot; is missing
++    shogunoff      = &quot;&quot;,
++    shogunon       = &quot;&quot;,
++    skull          = &quot;&quot;,
++    spade          = &quot;&quot;,
++    squish         = &quot;&quot;,
++    stone          = &quot;st-stone&quot;,
++    stonedestroy   = &quot;explosion0&quot;,
++    stonepaint     = &quot;st-magic&quot;,
++    stonetransform = &quot;st-magic&quot;,
++    swamp          = &quot;swamped&quot;,
++    switchmarbles  = &quot;warp&quot;,      -- missing
++    switchoff      = &quot;&quot;,
++    switchon       = &quot;st-switch&quot;,
++    switchplayer   = &quot;switch&quot;,
++    sword          = &quot;&quot;,
++    thief          = &quot;thief&quot;,     -- missing
++    triggerdown    = &quot;it-triggerdown&quot;,
++    triggerup      = &quot;it-triggerup&quot;,
++    turnstileleft  = &quot;turnstileleft&quot;,  -- missing
++    turnstileright = &quot;turnstileright&quot;, -- missing
++    umbrellaoff    = &quot;&quot;,
++    umbrellaon     = &quot;&quot;,
++    umbrellawarn   = &quot;&quot;,
++    unlock         = &quot;unlock&quot;,    -- missing
++    vortexclose    = &quot;doorclose&quot;, -- missing
++    vortexopen     = &quot;dooropen&quot;,  -- missing
++    warp           = &quot;warp&quot;,      -- missing, maybe suck2?
++    whitebomb      = &quot;explosion1&quot;,
++    wood           = &quot;wood&quot;,
++    yinyang        = &quot;st-magic&quot;,
++}
++
++soundtable_silent = {
++    [&quot;&quot;]           = &quot;&quot;,        -- empty sound
++    ballcollision  = { silence_string = &quot;tack&quot; },
++    blackbomb      = { silence_string = &quot;KABOOM!&quot; },
++    blockerdown    = &quot;&quot;,
++    blockerup      = &quot;&quot;,
++    booze          = &quot;&quot;,
++    bumper         = { silence_string = &quot;Doinc&quot; },
++    cloth          = { silence_string = &quot;bump&quot; },
++    coinslotoff    = &quot;&quot;,
++    coinsloton     = { silence_string = &quot;kachink&quot; },
++    crack          = { silence_string = &quot;Crrr...&quot; },
++    doorclose      = &quot;&quot;,
++    dooropen       = &quot;&quot;,
++    drown          = { silence_string = &quot;blupp&quot; },
++    dynamite       = { silence_string = &quot;Boom!&quot; },
++    electric       = { silence_string = &quot;cling&quot; },
++    exit           = &quot;&quot;,
++    extinguish     = { silence_string = &quot;pfff...&quot; },
++    fakeoxyd       = { silence_string = &quot;ding-dang&quot; },
++    falldown       = &quot;&quot;,
++    fart           = { silence_string = &quot;Prfft!&quot; },
++    finished       = { silence_string = &quot;Finished!&quot; },
++    floordestroy   = { silence_string = &quot;CrraaACK!&quot; },
++    fourswitch     = { silence_string = &quot;Clihick&quot; }, 
++    glass          = { silence_string = &quot;Cliorr&quot; },
++    hitfloor       = { silence_string = &quot;Bang&quot; },
++    impulse        = &quot;&quot;,
++    intro          = &quot;&quot;,
++    invrotate      = &quot;&quot;,
++    itemtransform  = { silence_string = &quot;Tatam!&quot; },
++    jump           = { silence_string = &quot;Doink&quot; },
++    jumppad        = { silence_string = &quot;da-Doink&quot; },
++    landmine       = { silence_string = &quot;click-BANG!&quot; },
++    laserloop      = &quot;&quot;,
++    laseron        = { silence_string = &quot;wuuiim!&quot; },
++    laseroff       = &quot;&quot;,
++    lock           = &quot;&quot;,
++    magneton       = &quot;&quot;,
++    magnetoff      = &quot;&quot;,
++    mail           = &quot;&quot;,
++    menuexit       = &quot;&quot;,
++    menumove       = &quot;&quot;,
++    menuok         = &quot;&quot;,
++    menustop       = &quot;&quot;,
++    menuswitch     = &quot;&quot;,
++    metal          = { silence_string = &quot;clang&quot; },
++    mirrorturn     = { silence_string = &quot;wrrr&quot; },
++    movebig        = { silence_string = &quot;swosh&quot; },
++    moveslow       = { silence_string = &quot;swosh&quot; },
++    movesmall      = { silence_string = &quot;swosh&quot; },
++    oxydclose      = &quot;&quot;,
++    oxydopen       = { silence_string = &quot;da-Ding&quot; },
++    oxydopened     = { silence_string = &quot;da-Dang!&quot; },
++    pickup         = { silence_string = &quot;pick&quot; },
++    puller         = &quot;&quot;,
++    puzzlerotate   = { silence_string = &quot;rot-rot&quot; },
++    rubberband     = { silence_string = &quot;Boing!&quot; },
++    scissors       = &quot;&quot;,
++    seedgrow       = { silence_string = &quot;krk...krk&quot; },
++    shatter        = { silence_string = &quot;CLIRR!!&quot; },
++    shattersmall   = { silence_string = &quot;CLIRR!&quot; },
++    shogunoff      = &quot;&quot;,
++    shogunon       = &quot;&quot;,
++    skull          = &quot;&quot;,
++    spade          = &quot;&quot;,
++    squish         = &quot;&quot;,
++    stone          = { silence_string = &quot;dopp&quot; },
++    stonedestroy   = { silence_string = &quot;BANG!&quot; },
++    stonepaint     = { silence_string = &quot;flatsh&quot; },
++    stonetransform = { silence_string = &quot;Tradam!&quot; },
++    swamp          = { silence_string = &quot;gulp&quot; },
++    switchmarbles  = &quot;&quot;,
++    switchoff      = &quot;&quot;,
++    switchon       = { silence_string = &quot;Click&quot; },
++    switchplayer   = { silence_string = &quot;switch-switch&quot; },
++    sword          = &quot;&quot;,
++    thief          = { silence_string = &quot;hehee!&quot; },
++    triggerdown    = { silence_string = &quot;ca-lik&quot; },
++    triggerup      = { silence_string = &quot;ca-lak&quot; },
++    turnstileleft  = &quot;&quot;,
++    turnstileright = &quot;&quot;,
++    umbrellaoff    = &quot;&quot;,
++    umbrellaon     = &quot;&quot;,
++    umbrellawarn   = &quot;&quot;,
++    unlock         = &quot;&quot;,
++    vortexclose    = &quot;&quot;,
++    vortexopen     = &quot;&quot;,
++    warp           = &quot;&quot;,
++    whitebomb      = { silence_string = &quot;KABOOOOM!!&quot; },
++    wood           = { silence_string = &quot;dok&quot; },
++    yinyang        = { silence_string = &quot;Tradim!&quot; },
++}
++
++soundtable_oxyd = {
++    [&quot;&quot;]           = &quot;&quot;,        -- empty sound
++    ballcollision  = &quot;OXKLICK3.SDD&quot;,
++    blackbomb      = &quot;OXCRASH2.SDD&quot;,
++    blockerdown    = &quot;&quot;,
++    blockerup      = &quot;&quot;,
++    booze          = &quot;&quot;,
++    bumper         = &quot;OXWOUOU.SDD&quot;,
++    cloth          = &quot;OXKLICK4.SDD&quot;,
++    coinslotoff    = &quot;&quot;,
++    coinsloton     = &quot;OXMONEY.SDD&quot;,
++    crack          = { file=&quot;OXCRACK.SDD&quot;, volume=0.7 },
++    doorclose      = &quot;OXMOTOR.SDD&quot;,
++    dooropen       = &quot;OXMOTOR.SDD&quot;,
++    drown          = &quot;OXBLOOP.SDD&quot;,
++    dynamite       = &quot;OXCRASH1.SDD&quot;,
++    electric       = &quot;OXKLICK6.SDD&quot;,
++    exit           = { file=&quot;OXEXIT.SDD&quot;, global=true },
++    extinguish     = &quot;&quot;,
++    fakeoxyd       = &quot;&quot;,
++    falldown       = &quot;&quot;,
++    fart           = &quot;OXUNTITL.SDD&quot;,
++    finished       = { file=&quot;OXFINITO.SDD&quot;, global=true },
++    floordestroy   = &quot;OXCRASH2&quot;,
++    fourswitch     = &quot;&quot;,
++    glass          = &quot;OXKLICK1.SDD&quot;,
++    hitfloor       = &quot;OXKLICK1.SDD&quot;,
++    impulse        = &quot;OXWOUOU.SDD&quot;,
++    intro          = { file=&quot;OXINTRO.SDD&quot;, global=true },
++    invrotate      = { file=&quot;OXINVROT.SDD&quot;, global=true },
++    itemtransform  = &quot;OXMAGIC1.SDD&quot;,
++    jump           = &quot;OXJUMP.SDD&quot;,
++    jumppad        = &quot;&quot;,
++    landmine       = &quot;explosion1&quot;,
++    laserloop      = &quot;&quot;,
++    laseron        = &quot;OXLASER.SDD&quot;,
++    laseroff       = &quot;&quot;,
++    lock           = &quot;&quot;,
++    magneton       = &quot;&quot;,
++    magnetoff      = &quot;&quot;,
++    mail           = &quot;&quot;,
++    metal          = &quot;OXKLICK2.SDD&quot;,
++    mirrorturn     = &quot;OXTURN.SDD&quot;,
++    movebig        = &quot;OXMOVE.SDD&quot;,
++    moveslow       = &quot;OXMOVE.SDD&quot;,
++    movesmall      = &quot;OXMOVE.SDD&quot;,
++    oxydclose      = &quot;OXMEMCL.SDD&quot;,
++    oxydopen       = &quot;OXMEMOP.SDD&quot;,
++    oxydopened     = &quot;OXMEMOK.SDD&quot;,
++    pickup         = &quot;OXINVENT.SDD&quot;,
++    puller         = &quot;OXPULLER.SDD&quot;,
++    puzzlerotate   = &quot;OXMOVE.SDD&quot;,
++    rubberband     = &quot;OXBOING.SDD&quot;,
++    scissors       = &quot;OXCUT.SDD&quot;,
++    seedgrow       = &quot;&quot;,
++    shatter        = &quot;OXKLIRR.SDD&quot;,
++    shattersmall   = &quot;OXKLIRR.SDD&quot;,
++    shogunoff      = &quot;&quot;,
++    shogunon       = &quot;&quot;,
++    skull          = &quot;&quot;,
++    spade          = &quot;&quot;,
++    squish         = &quot;OXMATSCH.SDD&quot;,
++    stone          = &quot;OXKLICK1.SDD&quot;,
++    stonedestroy   = &quot;OXCRASH2.SDD&quot;,
++    stonepaint     = &quot;OXMAGIC.SDD&quot;,
++    stonetransform = &quot;OXMAGIC.SDD&quot;,
++    swamp          = &quot;OXBLOOP.SDD&quot;,
++    switchmarbles  = &quot;&quot;,
++    switchoff      = &quot;&quot;,
++    switchon       = &quot;&quot;,
++    switchplayer   = &quot;&quot;,
++    sword          = &quot;&quot;,
++    thief          = &quot;OXTHIEF.SDD&quot;,
++    triggerdown    = &quot;OXSWON.SDD&quot;,
++    triggerup      = &quot;OXSWOFF.SDD&quot;,
++    turnstileleft  = &quot;OXMAGIC4.SDD&quot;,
++    turnstileright = &quot;OXMAGIC3.SDD&quot;,
++    umbrellaoff    = &quot;&quot;,
++    umbrellaon     = &quot;&quot;,
++    umbrellawarn   = &quot;&quot;,
++    unlock         = &quot;&quot;,
++    vortexclose    = &quot;OXMOTOR.SDD&quot;,
++    vortexopen     = &quot;OXMOTOR.SDD&quot;,
++    warp           = &quot;OXTRANS.SDD&quot;,
++    whitebomb      = &quot;OXCRASH2.SDD&quot;,
++    wood           = &quot;OXKLICK1.SDD&quot;,
++    yinyang        = &quot;OXMAGIC.SDD&quot;,
++}    
++copy_missing (soundtable_enigma, soundtable_oxyd)
++
++soundtable_oxm = {
++    turnstileleft = &quot;OXTURNL.SDD&quot;,
++    turnstileright = &quot;OXTURNL.SDD&quot;
++}
++copy_missing (soundtable_oxyd, soundtable_oxm)
++
++--------------------------------------
++-- Register predefined sound tables --
++--------------------------------------
++
++AddSoundSet (&quot;Oxyd*&quot;, soundtable_oxyd)
++AddSoundSet (&quot;Magnum*&quot;, soundtable_oxm)
++--AddSoundSet (&quot;Silent&quot;, soundtable_silent)
++AddSoundSet (&quot;Enigma&quot;, soundtable_enigma)
++
++ActivateSoundSet (&quot;Enigma&quot;)
++
++
+
+Modified: branches/1.0/data/startup.lua
+===================================================================
+--- branches/1.0/data/startup.lua	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/data/startup.lua	2007-04-20 12:02:41 UTC (rev 693)
+@@ -42,10 +42,11 @@
+     -- 0   = 'enigma' for enigma, appropriate oxyd sound sets for oxyd versions
+     -- 1   = 'enigma'
+     -- 2.. = OxydVersion-2
++    SoundSetName     = &quot;Enigma&quot;,
+ 
+     SkipSolvedLevels = 0,
+     TimeHunting      = 0,
+- 
++
+     SoundVolume      = 1.0,
+     MusicVolume      = 1.0,
+     StereoSeparation = 10.0,
+@@ -246,293 +247,3 @@
+ def_floor(&quot;fl-trigger&quot;,      3.0,   1.5,    true,   &quot;&quot;)
+ def_floor(&quot;fl-abyss_fake&quot;,   3.0,   2.0,   false,   &quot;&quot;)
+ 
+-----------------------------------------------------------------------
+--- Sound handling
+-----------------------------------------------------------------------
+-
+--- Create a new sound definition
+-function Sound(t)
+-    local tt = {}
+-    tt.file     = t.file
+-    tt.volume   = t.volume or 1.0
+-    tt.loop     = t.loop or nil
+-    tt.global   = t.global or nil
+-    tt.priority = t.priority or 1
+-    return tt
+-end
+-
+--- Copy all key/value pairs only present in t1 to t2.
+-function copy_missing (t1, t2)
+-    for k,v in pairs(t1) do
+-        if not t2[k] then
+-            t2[k] = v
+-        end
+-    end
+-end
+-
+-
+--- The list of available sound tables
+-soundtables = {}
+-
+--- The currently active sound table
+-soundtable = {}
+-soundtable_name = &quot;&quot;
+-
+-
+-function AddSoundTable (name, t)
+-    e = {}
+-    e.name = name
+-    e.table = t
+-    soundtables[name] = e
+-
+-    -- current soundtable has been replaced
+-    if (name == soundtable_name) then
+-        ActivateSoundTable (name)
+-    end
+-end
+-
+-
+-function ActivateSoundTable (name)
+-    st = soundtables[name]
+-    if st then
+-        soundtable = st.table
+-        soundtable_name = name
+-    end
+-end
+-
+-function SoundEvent (eventname, xpos, ypos, volume) 
+-    local s = soundtable[eventname]
+-    if s then
+-        if type(s) == &quot;string&quot; then
+-            enigma.PlaySound (s, xpos, ypos, volume, 1.0)
+-        elseif s.global then
+-            enigma.PlaySoundGlobal (s.file, s.volume * volume, s.priority)
+-        else
+-            enigma.PlaySound (s.file, xpos, ypos, s.volume * volume, s.priority)
+-        end
+-        return 1
+-    end
+-    print (&quot;Undefined sound event &quot; .. eventname .. &quot; @ &quot; .. xpos .. &quot;,&quot; .. ypos)
+-    return nil
+-end
+-
+-
+----------------------------------
+--- Definition of sound effects --
+----------------------------------
+-
+-------------------------
+--- Enigma Sound table --
+-------------------------
+-
+-soundtable_enigma = {
+-    [&quot;&quot;]           = &quot;&quot;,        -- empty sound
+-    ballcollision  = &quot;ballcollision&quot;,
+-    blackbomb      = &quot;explosion1&quot;,
+-    blockerdown    = &quot;&quot;,
+-    blockerup      = &quot;&quot;,
+-    booze          = &quot;&quot;,
+-    bumper         = &quot;bumper&quot;,
+-    cloth          = &quot;st-thud&quot;,
+-    coinslotoff    = &quot;&quot;,
+-    coinsloton     = &quot;st-coinslot&quot;,
+-    crack          = &quot;&quot;,
+-    doorclose      = &quot;doorclose&quot;,  -- missing
+-    dooropen       = &quot;dooropen&quot;,   -- missing
+-    drown          = &quot;drown&quot;,
+-    dynamite       = &quot;explosion2&quot;, -- replace?
+-    electric       = &quot;st-stone&quot;,   -- replace
+-    exit           = Sound { file=&quot;exit&quot;, global=1 },  -- missing
+-    extinguish     = &quot;&quot;,
+-    fakeoxyd       = Sound { file=&quot;st-fakeoxyd&quot;, volume=0.3 },
+-    falldown       = &quot;falldown&quot;,   -- missing, unused (falling is shatter!)
+-    fart           = &quot;fart&quot;,
+-    finished       = Sound { file=&quot;finished&quot;, global=1 },  -- missing
+-    floordestroy   = &quot;&quot;,
+-    fourswitch     = &quot;st-switch&quot;, 
+-    glass          = &quot;st-metal&quot;,   -- replace
+-    hitfloor       = &quot;stone&quot;,      -- missing, used by it-vortex
+-    impulse        = &quot;&quot;,
+-    intro          = Sound { file=&quot;intro&quot;, global=1 },  -- missing
+-    invrotate      = Sound { file=&quot;invrotate&quot;, global=1 },
+-    itemtransform  = &quot;st-magic&quot;,
+-    jump           = &quot;boink&quot;,
+-    jumppad        = &quot;&quot;,
+-    landmine       = &quot;explosion2&quot;,  -- replace?
+-    laserloop      = &quot;&quot;,
+-    laseron        = &quot;st-laser&quot;,
+-    laseroff       = &quot;&quot;,
+-    lock           = &quot;&quot;,
+-    magneton       = &quot;&quot;,
+-    magnetoff      = &quot;&quot;,
+-    mail           = &quot;&quot;,
+-    menuexit        = Sound { file=&quot;menuexit&quot;, global=1 },
+-    menumove        = Sound { file=&quot;menumove&quot;,global=1 },
+-    menuok          = Sound { file=&quot;menuok&quot;,global=1 },
+-    menustop        = Sound { file=&quot;menustop&quot;,global=1 },
+-    menuswitch      = Sound { file=&quot;menuswitch&quot;,global=1 },
+-    metal          = &quot;st-metal&quot;,
+-    mirrorturn     = &quot;st-mirrorturn&quot;,
+-    movebig        = &quot;st-move&quot;,
+-    moveslow       = &quot;st-move&quot;,
+-    movesmall      = &quot;st-move&quot;,
+-    oxydclose      = &quot;st-oxydclose&quot;,  -- missing, not neccessary I think
+-    oxydopen       = &quot;st-oxydopen&quot;,
+-    oxydopened     = &quot;st-oxydopened&quot;,
+-    pickup         = Sound {file=&quot;pickup&quot;, global=1},
+-    puller         = &quot;&quot;,
+-    puzzlerotate   = &quot;st-move&quot;,
+-    rubberband     = &quot;boing&quot;,
+-    scissors       = &quot;&quot;,
+-    seedgrow       = &quot;seedgrow&quot;,  -- missing
+-    shatter        = &quot;shatter&quot;,
+-    shattersmall   = &quot;shatter&quot;,   -- replace, &quot;shattersmall&quot; is missing
+-    shogunoff      = &quot;&quot;,
+-    shogunon       = &quot;&quot;,
+-    skull          = &quot;&quot;,
+-    spade          = &quot;&quot;,
+-    squish         = &quot;&quot;,
+-    stone          = &quot;st-stone&quot;,
+-    stonedestroy   = &quot;explosion0&quot;,
+-    stonepaint     = &quot;st-magic&quot;,
+-    stonetransform = &quot;st-magic&quot;,
+-    swamp          = &quot;swamped&quot;,
+-    switchmarbles  = &quot;warp&quot;,      -- missing
+-    switchoff      = &quot;&quot;,
+-    switchon       = &quot;st-switch&quot;,
+-    switchplayer   = &quot;switch&quot;,
+-    sword          = &quot;&quot;,
+-    thief          = &quot;thief&quot;,     -- missing
+-    triggerdown    = &quot;it-triggerdown&quot;,
+-    triggerup      = &quot;it-triggerup&quot;,
+-    turnstileleft  = &quot;turnstileleft&quot;,  -- missing
+-    turnstileright = &quot;turnstileright&quot;, -- missing
+-    umbrellaoff    = &quot;&quot;,
+-    umbrellaon     = &quot;&quot;,
+-    umbrellawarn   = &quot;&quot;,
+-    unlock         = &quot;unlock&quot;,    -- missing
+-    vortexclose    = &quot;doorclose&quot;, -- missing
+-    vortexopen     = &quot;dooropen&quot;,  -- missing
+-    warp           = &quot;warp&quot;,      -- missing, maybe suck2?
+-    whitebomb      = &quot;explosion1&quot;,
+-    wood           = &quot;wood&quot;,
+-    yinyang        = &quot;st-magic&quot;,
+-}
+-
+-
+-
+-soundtable_oxyd = {
+-    [&quot;&quot;]           = &quot;&quot;,        -- empty sound
+-    ballcollision  = &quot;OXKLICK3.SDD&quot;,
+-    blackbomb      = &quot;OXCRASH2.SDD&quot;,
+-    blockerdown    = &quot;&quot;,
+-    blockerup      = &quot;&quot;,
+-    booze          = &quot;&quot;,
+-    bumper         = &quot;OXWOUOU.SDD&quot;,
+-    cloth          = &quot;OXKLICK4.SDD&quot;,
+-    coinslotoff    = &quot;&quot;,
+-    coinsloton     = &quot;OXMONEY.SDD&quot;,
+-    crack          = Sound { file=&quot;OXCRACK.SDD&quot;, volume=0.7 },
+-    doorclose      = &quot;OXMOTOR.SDD&quot;,
+-    dooropen       = &quot;OXMOTOR.SDD&quot;,
+-    drown          = &quot;OXBLOOP.SDD&quot;,
+-    dynamite       = &quot;OXCRASH1.SDD&quot;,
+-    electric       = &quot;OXKLICK6.SDD&quot;,
+-    exit           = Sound { file=&quot;OXEXIT.SDD&quot;, global=1 },
+-    extinguish     = &quot;&quot;,
+-    fakeoxyd       = &quot;&quot;,
+-    falldown       = &quot;&quot;,
+-    fart           = &quot;OXUNTITL.SDD&quot;,
+-    finished       = Sound { file=&quot;OXFINITO.SDD&quot;, global=1 },
+-    floordestroy   = &quot;OXCRASH2&quot;,
+-    fourswitch     = &quot;&quot;,
+-    glass          = &quot;OXKLICK1.SDD&quot;,
+-    hitfloor       = &quot;OXKLICK1.SDD&quot;,
+-    impulse        = &quot;OXWOUOU.SDD&quot;,
+-    intro          = Sound { file=&quot;OXINTRO.SDD&quot;, global=1 },
+-    invrotate      = Sound { file=&quot;OXINVROT.SDD&quot;, global=1 },
+-    itemtransform  = &quot;OXMAGIC1.SDD&quot;,
+-    jump           = &quot;OXJUMP.SDD&quot;,
+-    jumppad        = &quot;&quot;,
+-    landmine       = &quot;explosion1&quot;,
+-    laserloop      = &quot;&quot;,
+-    laseron        = &quot;OXLASER.SDD&quot;,
+-    laseroff       = &quot;&quot;,
+-    lock           = &quot;&quot;,
+-    magneton       = &quot;&quot;,
+-    magnetoff      = &quot;&quot;,
+-    mail           = &quot;&quot;,
+-    metal          = &quot;OXKLICK2.SDD&quot;,
+-    mirrorturn     = &quot;OXTURN.SDD&quot;,
+-    movebig        = &quot;OXMOVE.SDD&quot;,
+-    moveslow       = &quot;OXMOVE.SDD&quot;,
+-    movesmall      = &quot;OXMOVE.SDD&quot;,
+-    oxydclose      = &quot;OXMEMCL.SDD&quot;,
+-    oxydopen       = &quot;OXMEMOP.SDD&quot;,
+-    oxydopened     = &quot;OXMEMOK.SDD&quot;,
+-    pickup         = &quot;OXINVENT.SDD&quot;,
+-    puller         = &quot;OXPULLER.SDD&quot;,
+-    puzzlerotate   = &quot;OXMOVE.SDD&quot;,
+-    rubberband     = &quot;OXBOING.SDD&quot;,
+-    scissors       = &quot;OXCUT.SDD&quot;,
+-    seedgrow       = &quot;&quot;,
+-    shatter        = &quot;OXKLIRR.SDD&quot;,
+-    shattersmall   = &quot;OXKLIRR.SDD&quot;,
+-    shogunoff      = &quot;&quot;,
+-    shogunon       = &quot;&quot;,
+-    skull          = &quot;&quot;,
+-    spade          = &quot;&quot;,
+-    squish         = &quot;OXMATSCH.SDD&quot;,
+-    stone          = &quot;OXKLICK1.SDD&quot;,
+-    stonedestroy   = &quot;OXCRASH2.SDD&quot;,
+-    stonepaint     = &quot;OXMAGIC.SDD&quot;,
+-    stonetransform = &quot;OXMAGIC.SDD&quot;,
+-    swamp          = &quot;OXBLOOP.SDD&quot;,
+-    switchmarbles  = &quot;&quot;,
+-    switchoff      = &quot;&quot;,
+-    switchon       = &quot;&quot;,
+-    switchplayer   = &quot;&quot;,
+-    sword          = &quot;&quot;,
+-    thief          = &quot;OXTHIEF.SDD&quot;,
+-    triggerdown    = &quot;OXSWON.SDD&quot;,
+-    triggerup      = &quot;OXSWOFF.SDD&quot;,
+-    turnstileleft  = &quot;OXMAGIC4.SDD&quot;,
+-    turnstileright = &quot;OXMAGIC3.SDD&quot;,
+-    umbrellaoff    = &quot;&quot;,
+-    umbrellaon     = &quot;&quot;,
+-    umbrellawarn   = &quot;&quot;,
+-    unlock         = &quot;&quot;,
+-    vortexclose    = &quot;OXMOTOR.SDD&quot;,
+-    vortexopen     = &quot;OXMOTOR.SDD&quot;,
+-    warp           = &quot;OXTRANS.SDD&quot;,
+-    whitebomb      = &quot;OXCRASH2.SDD&quot;,
+-    wood           = &quot;OXKLICK1.SDD&quot;,
+-    yinyang        = &quot;OXMAGIC.SDD&quot;,
+-}    
+-copy_missing (soundtable_enigma, soundtable_oxyd)
+-
+-soundtable_oxm = {
+-    turnstileleft = &quot;OXTURNL.SDD&quot;,
+-    turnstileright = &quot;OXTURNL.SDD&quot;
+-}
+-copy_missing (soundtable_oxyd, soundtable_oxm)
+-
+---------------------------------------
+--- Register predefined sound tables --
+---------------------------------------
+-
+-AddSoundTable (&quot;Oxyd&quot;, soundtable_oxyd)
+-AddSoundTable (&quot;OxydMag&quot;, soundtable_oxm)
+-AddSoundTable (&quot;Enigma&quot;, soundtable_enigma)
+-
+-ActivateSoundTable (&quot;Enigma&quot;)
+-
+-------------------------------------------
+--- Load external sound description file --
+-------------------------------------------
+--- local f = enigma.FindDataFile(&quot;sound/sound.lua&quot;)
+--- if f then                       -- present?
+---     dofile (f)
+--- end
+-
+---soundtable = soundtable_enigma
+
+Modified: branches/1.0/doc/reference/sound.lua
+===================================================================
+--- branches/1.0/doc/reference/sound.lua	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/doc/reference/sound.lua	2007-04-20 12:02:41 UTC (rev 693)
+@@ -1,16 +1,16 @@
+ --
+--- This file demonstrates how to change Enigma's default sound set.
++-- This file demonstrates how to add a sound set to Enigma.
+ --
+ -- Sound effects are triggered by so-called &quot;sound events&quot;.
+--- These sound events usually have a name (like &quot;dooropen&quot;) and an
+--- associated location (the coordinates of the door) which
+--- affect the way a sound effect is played.
++-- These sound events usually have a name (like &quot;dooropen&quot;) and
++-- an associated location (the coordinates of the door) which
++-- affects the way a sound effect is played.
+ --
+ -- The sound event is converted into a real sound effect using
+ -- tables similar to the one below.  Each entry in the table is
+ -- either a string like &quot;st-coinslot&quot;, which is interpreted as
+--- referring to file &quot;st-coinslot.wav&quot; or a list of sound
+--- attributes enclosed in curly braces &quot;{ ... }&quot;.
++-- referring to file &quot;st-coinslot.wav&quot; and default properties or
++-- a list of sound attributes enclosed in curly braces &quot;{ ... }&quot;.
+ --
+ -- Here is a complete example of such an attribute list:
+ --
+@@ -18,19 +18,33 @@
+ --
+ -- The meaning of these attributes is as follows:
+ --
+---      file     - The name of the sound file for this event, without
++--      file     - Path and name of the sound file for this event, without
+ --                 the&quot;.wav&quot; extension.
+ --
+ --      volume   - The sound volume: 1.0 is standard, 0.0 is silent.
+ --
+ --      priority - If many effects are active at the same time, high-priority
+ --                 effects can replace lower-priority effects. Use an integer
+---                 between 1 and 10.
++--                 between 1 and 10 (default 1).
+ --
+---      global   - Either 1 or 0.  If 1, no stereo effects are applied and
+---                 there is no attenuation.  Used for menu sound, level end
+---                 sounds, etc.
++--      global   - Either &quot;true&quot; or &quot;false&quot;.  If true, no stereo effects are
++--                 applied and there is no attenuation.  Used for menu sound,
++--                 level end sounds, etc. Default is &quot;false&quot;.
+ --
++--      loop     - &quot;true&quot; or &quot;false&quot;.  If true, the sound repeats infinitely
++--                 until canceled. Default is &quot;false&quot;. 
++--
++--      damp_max, damp_inc, damp_mult, damp_min, damp_tick
++--               - Parameters for sound damping.  Sounds from noisy objects
++--                 like light passengers are damped to reduce the noise.
++--                 For this, the sound event's frequency is estimated.
++--                 damp_max calibrates the maximal damping factor (high means
++--                 quiet), damp_inc how fast the damping accumulates,
++--                 damp_mult is an overall factor, damp_min defines a lower
++--                 bound for the damping entries (beyond which they are
++--                 removed from memory) and damp_tick the factor that's
++--                 applied all 0.1 seconds. Defaults: 10.0, 1.0, 1.0, 0.5, 0.9.
++--
+ -- To design a new sound set, proceed as follows.
+ --
+ -- 1) Create a new folder containing this file (named &quot;sound.lua&quot;)
+@@ -39,24 +53,30 @@
+ -- 2) Move this new folder into Enigma's &quot;sound&quot; folder.  The directory
+ --    structure should look something like this
+ --
+---      (enigma data folder)/sound/my_sounds/
+---                                          /sound.lua
+---                                          /a.wav
+---                                          /b.wav
+---                                          ...
+---    [On Unix systems, you can use ~/.enigma/sound/ for testing purposes.]
++--      (user path)/sound/my_sounds/
++--                                 /sound.lua
++--                                 /a.wav
++--                                 /b.wav
++--                                 ...
+ --
+ -- 3) Run Enigma.  Since this file sets does not map any sound effect to a
+ --    wav file, you should hear nothing
+ --
+--- 4) Edit the contents of this file to your liking.  If you need inspiration,
+---    take a look at &quot;startup.lua&quot; shipped with Enigma, which contains the
+---    default sound table.
++-- 4) Edit the contents of this file to your liking.  You can access the
++--    default sound files directly, but remember to add the subfolder for
++--    own sound files (like &quot;{ file=&quot;my_sounds/b.wav&quot; }&quot;).
+ --
++-- 5) Replace &quot;MY_SOUNDSET&quot; by a suitable variable name, and &quot;My Soundset&quot;
++--    by the name you want to see in the sound options menu.  Remember to
++--    make it short enough to fit on the button.
++--
++-- If you need inspiration, take a look at &quot;sound-defaults.lua&quot; shipped with
++-- Enigma, which contains the default sound table.
++--
+ -- If you have questions, don't hesitate to ask.  Have fun!
+ --
+ 
+-AddSoundTable (&quot;Enigma&quot;, {
++soundtable_MY_SOUNDSET = {
+     [&quot;&quot;]           = &quot;&quot;,        -- empty sound
+     ballcollision  = &quot;&quot;,
+     blackbomb      = &quot;&quot;,
+@@ -148,4 +168,10 @@
+     whitebomb      = &quot;&quot;,
+     wood           = &quot;&quot;,
+     yinyang        = &quot;&quot;,
+-})
++}
++
++-- Remove &quot;--&quot; from the line below to add missing sound entries
++-- from the default sound set.
++--copy_missing (soundtable_enigma, soundtable_MY_SOUNDSET)
++
++AddSoundSet (&quot;My Soundset&quot;, soundtable_MY_SOUNDSET)
+
+Modified: branches/1.0/src/actors.cc
+===================================================================
+--- branches/1.0/src/actors.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/actors.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -224,8 +224,8 @@
+     return Value();
+ }
+ 
+-bool Actor::sound_event (const char *name) {
+-    return sound::SoundEvent (name, get_pos(), getVolume(name, this));
++bool Actor::sound_event (const char *name, double vol) {
++    return sound::EmitSoundEvent (name, get_pos(), getVolume(name, this, vol));
+ }
+ 
+ void Actor::set_attrib(const string&amp; key, const Value &amp;val)
+
+Modified: branches/1.0/src/actors.hh
+===================================================================
+--- branches/1.0/src/actors.hh	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/actors.hh	2007-04-20 12:02:41 UTC (rev 693)
+@@ -127,7 +127,7 @@
+         void move ();
+         virtual void move_screen ();
+         void warp (const ecl::V2 &amp;newpos);
+-        bool sound_event (const char *name);
++        bool sound_event (const char *name, double vol = 1.0);
+ 
+         void      respawn();
+         void      set_respawnpos(const ecl::V2&amp; p);
+
+Modified: branches/1.0/src/client.cc
+===================================================================
+--- branches/1.0/src/client.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/client.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -937,12 +937,12 @@
+                             const ecl::V2 &amp;pos,
+                             double relative_volume)
+ {
+-    sound::SoundEvent (wavfile.c_str(), pos, relative_volume);
++    sound::EmitSoundEvent (wavfile.c_str(), pos, relative_volume);
+ }
+ 
+ void client::Msg_PlaySound (const std::string &amp;wavfile, double relative_volume)
+ {
+-    sound::SoundEvent (wavfile.c_str(), V2(), relative_volume);
++    sound::EmitSoundEvent (wavfile.c_str(), V2(), relative_volume);
+ }
+ 
+ void client::Msg_Sparkle (const ecl::V2 &amp;pos) {
+
+Modified: branches/1.0/src/enigma-lua.pkg
+===================================================================
+--- branches/1.0/src/enigma-lua.pkg	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/enigma-lua.pkg	2007-04-20 12:02:41 UTC (rev 693)
+@@ -111,3 +111,18 @@
+     void HideMouse();
+     void ShowMouse();
+ }
++
++/* -------------------- sound.cc -------------------- */
++
++$#include &quot;sound.hh&quot;
++$using namespace sound;
++
++module sound
++{
++    // Note that EmitSound is defined in lua.cc, due to its object reference.
++    void DefineSoundEffect(string table, string name, string filename,
++                           double volume, bool loop, bool global, int priority,
++                           double damp_max, double damp_inc, double damp_mult,
++                           double damp_min, double damp_tick, string silence_string);
++    void SetActiveSoundSet(string table);
++}
+
+Modified: branches/1.0/src/gui/LevelPackComposer.cc
+===================================================================
+--- branches/1.0/src/gui/LevelPackComposer.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/gui/LevelPackComposer.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -283,9 +283,9 @@
+                         var = curIndex-&gt;getVariation(curIndex-&gt;getCurrentPosition());
+                     clipboard-&gt;appendProxy(curProxy, var.ctrl, 
+                             var.unit, var.target, var.extensions);
+-                    sound::SoundEvent (&quot;menuok&quot;);
++                    sound::EmitSoundEvent (&quot;menuok&quot;);
+                 } else {
+-                    sound::SoundEvent (&quot;menustop&quot;);
++                    sound::EmitSoundEvent (&quot;menustop&quot;);
+                 }
+             }
+         } else if (w == but_back) {
+
+Modified: branches/1.0/src/gui/LevelWidget.cc
+===================================================================
+--- branches/1.0/src/gui/LevelWidget.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/gui/LevelWidget.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -75,9 +75,9 @@
+             iselected = curIndex-&gt;getCurrentPosition();
+             ifirst = curIndex-&gt;getScreenFirstPosition();
+             invalidate();
+-            sound::SoundEvent (&quot;menumove&quot;);
++            sound::EmitSoundEvent (&quot;menumove&quot;);
+         } else if (iselected != curIndex-&gt;getCurrentPosition()) {
+-            sound::SoundEvent (&quot;menumove&quot;);            
++            sound::EmitSoundEvent (&quot;menumove&quot;);            
+         }
+         // repair ifirst on boot and screen resolution changes
+         set_selected(curIndex-&gt;getScreenFirstPosition(), 
+@@ -191,9 +191,9 @@
+             iselected = newsel;
+     
+             if (!m_areas.empty()) {
+-                sound::SoundEvent (&quot;menumove&quot;);
++                sound::EmitSoundEvent (&quot;menumove&quot;);
+                 if (oldsel != newsel) 
+-                    sound::SoundEvent (&quot;menuswitch&quot;);
++                    sound::EmitSoundEvent (&quot;menuswitch&quot;);
+                 invalidate();
+             }
+         }
+@@ -201,7 +201,7 @@
+             iselected = newsel;
+     
+             if (!m_areas.empty()) {
+-                sound::SoundEvent (&quot;menuswitch&quot;);
++                sound::EmitSoundEvent (&quot;menuswitch&quot;);
+                 invalidate_area(m_areas[oldsel-ifirst]); // old selection
+                 invalidate_area(m_areas[iselected-ifirst]); // new selection
+             }
+@@ -414,7 +414,7 @@
+             for (unsigned i=0; i&lt;m_areas.size(); ++i)
+                 if (m_areas[i].contains(e-&gt;button.x, e-&gt;button.y))
+                 {
+-                    sound::SoundEvent (&quot;menuok&quot;);
++                    sound::EmitSoundEvent (&quot;menuok&quot;);
+                     iselected = ifirst+i;
+                     syncToIndexMgr();
+                     if (SDL_GetModState() &amp; KMOD_CTRL &amp;&amp; !(SDL_GetModState() &amp; KMOD_SHIFT)) {
+@@ -433,7 +433,7 @@
+             for (unsigned i=0; i&lt;m_areas.size(); ++i)
+                 if (m_areas[i].contains(e-&gt;button.x, e-&gt;button.y))
+                 {
+-                    sound::SoundEvent (&quot;menuok&quot;);
++                    sound::EmitSoundEvent (&quot;menuok&quot;);
+                     iselected = ifirst+i;
+                     syncToIndexMgr();
+                     LevelInspector m(curIndex-&gt;getProxy(iselected));
+
+Modified: branches/1.0/src/gui/Menu.cc
+===================================================================
+--- branches/1.0/src/gui/Menu.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/gui/Menu.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -75,7 +75,7 @@
+             tick (0.01);
+             refresh();
+         }
+-        sound::SoundEvent (&quot;menuexit&quot;);
++        sound::EmitSoundEvent (&quot;menuexit&quot;);
+         // protection against ESC D.o.S. attacks
+         Uint32 menuTickDuration = SDL_GetTicks() - enterTickTime;
+         Uint32 minMenuTickDuration = 300;
+@@ -106,7 +106,7 @@
+             switch_active_widget(next_widget);
+         }
+         else { // no more widgets into that direction found
+-            sound::SoundEvent (&quot;menustop&quot;);
++            sound::EmitSoundEvent (&quot;menustop&quot;);
+         }
+     }
+     
+
+Modified: branches/1.0/src/gui/OptionsMenu.cc
+===================================================================
+--- branches/1.0/src/gui/OptionsMenu.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/gui/OptionsMenu.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -157,51 +157,23 @@
+     /* -------------------- SoundSetButton -------------------- */
+     
+     SoundSetButton::SoundSetButton() : ValueButton(0, 1) {
+-        using namespace OxydLib;
+-        
+-        availableSoundSets.push_back(0);
+-        availableSoundSetsTitles.push_back(N_(&quot;Default&quot;));
+-        availableSoundSets.push_back(1);
+-        availableSoundSetsTitles.push_back(&quot;Enigma&quot;);
+-        int numAvail = 2;
+-        for (int i = OxydVersion_First; i&lt;= OxydVersion_Last; i++) {
+-            if (oxyd::FoundOxyd(OxydVersion(i))) {
+-                availableSoundSets.push_back(i+2);
+-                std::string title;
+-                switch (i) {
+-                case OxydVersion_Oxyd1:          title = &quot;Oxyd&quot;; break;
+-                case OxydVersion_OxydMagnum:     title = &quot;Magnum&quot;; break;
+-                case OxydVersion_OxydMagnumGold: title = &quot;Mag.Gold&quot;; break;
+-                case OxydVersion_OxydExtra:      title = &quot;Extra&quot;; break;
+-                case OxydVersion_PerOxyd:        title = &quot;Per.Oxyd&quot;; break;
+-                default:      title = &quot;unknown&quot;; break;
+-                }
+-                availableSoundSetsTitles.push_back(title);
+-                numAvail++;
+-            }
+-        }
++        int numAvail = sound::GetOptionSoundSetCount();
+         setMaxValue(numAvail - 1);
+         init();
+     }
+-    
++
+     int SoundSetButton::get_value() const {
+-        int soundSet = options::GetInt(&quot;SoundSet&quot;);
+-        for (int i = 0; i &lt; availableSoundSets.size(); i++) {
+-            if (availableSoundSets[i] == soundSet)
+-                return i;
+-        }
+-        return 0;  // default soundset
++        return sound::GetOptionSoundSet();
+     }
+-    
++
+     void SoundSetButton::set_value(int value) {
+-        options::SetOption(&quot;SoundSet&quot;, availableSoundSets[value]);
+-        oxyd::ChangeSoundset(availableSoundSets[value], false);        
++        sound::SetOptionSoundSet(value);
+     }
+-    
++
+     string SoundSetButton::get_text(int value) const {
+-        return _(availableSoundSetsTitles[value].c_str());
++        return _(sound::GetOptionSoundSetText(value).c_str());
+     }
+-    
++
+     
+     /* -------------------- StereoButton -------------------- */
+     
+
+Modified: branches/1.0/src/gui/OptionsMenu.hh
+===================================================================
+--- branches/1.0/src/gui/OptionsMenu.hh	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/gui/OptionsMenu.hh	2007-04-20 12:02:41 UTC (rev 693)
+@@ -73,10 +73,6 @@
+         int get_value() const;
+         void set_value(int value);
+         std::string get_text(int value) const;
+-        
+-    private:
+-        std::vector&lt;int&gt; availableSoundSets;
+-        std::vector&lt;std::string&gt; availableSoundSetsTitles;
+     };
+ 
+     class LanguageButton : public ValueButton {
+
+Modified: branches/1.0/src/gui/TextField.cc
+===================================================================
+--- branches/1.0/src/gui/TextField.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/gui/TextField.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -237,13 +237,13 @@
+                         }
+                         else {
+                             // chars like ctrl-a - ctrl-z
+-                            sound::SoundEvent (&quot;menustop&quot;);
++                            sound::EmitSoundEvent (&quot;menustop&quot;);
+                             break;
+                         }
+                         if ((maxChars &gt;= 0 &amp;&amp; (charSizesPreCursor.size() + charSizesPostCursor.size()) &gt;= maxChars) ||
+                                 realChar &lt; 0x100 &amp;&amp; invalidChars.find((char)realChar) != std::string::npos) {
+                             // string too long or invalid char
+-                            sound::SoundEvent (&quot;menustop&quot;);
++                            sound::EmitSoundEvent (&quot;menustop&quot;);
+                             break;
+                         }
+                         unsigned char utf8Char[4];
+@@ -264,7 +264,7 @@
+                     if (e.key.keysym.sym &lt; 300 || e.key.keysym.sym &gt; 314 ){
+                         // chars like PageUp, F1 but not key state modifier
+                         // like shift, alt,...
+-                        sound::SoundEvent (&quot;menustop&quot;);
++                        sound::EmitSoundEvent (&quot;menustop&quot;);
+                     }
+                     break;
+             }
+
+Modified: branches/1.0/src/gui/widgets.cc
+===================================================================
+--- branches/1.0/src/gui/widgets.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/gui/widgets.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -602,7 +602,7 @@
+ 
+ void Button::activate() 
+ {
+-    sound::SoundEvent (&quot;menuswitch&quot;);
++    sound::EmitSoundEvent (&quot;menuswitch&quot;);
+     m_activep = true;
+     invalidate();
+ }
+@@ -729,7 +729,7 @@
+         invalidate();
+         if (!m_pressedp) {
+             if (soundOk())
+-                sound::SoundEvent(&quot;menuok&quot;);
++                sound::EmitSoundEvent(&quot;menuok&quot;);
+             invoke_listener();
+         }
+     }
+@@ -894,12 +894,12 @@
+         stop = true;
+     }
+     if (inc_value(incr)) {
+-        sound::SoundEvent(&quot;menuswitch&quot;);
++        sound::EmitSoundEvent(&quot;menuswitch&quot;);
+     } else {
+         if (stop) {
+-            sound::SoundEvent(&quot;menustop&quot;);
++            sound::EmitSoundEvent(&quot;menustop&quot;);
+         } else {
+-            sound::SoundEvent(&quot;menuswitch&quot;);
++            sound::EmitSoundEvent(&quot;menuswitch&quot;);
+             if (incr == 1)
+                 update_value(get_value(), min_value);
+             else
+@@ -908,9 +908,10 @@
+     }
+ }
+ 
+-bool ValueButton::soundOk() {
++bool ValueButton::soundOk() {
+     return false;
+ }
++
+ 
+ /* -------------------- ImageButton -------------------- */
+ 
+
+Modified: branches/1.0/src/items.cc
+===================================================================
+--- branches/1.0/src/items.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/items.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -2161,7 +2161,7 @@
+             // Switch to other marble
+             player::SwapPlayers();
+             // play_sound(&quot;switch&quot;);   // don't! wrong coordinates!
+-            sound::SoundEvent (&quot;switchplayer&quot;, p.center());
++            sound::EmitSoundEvent (&quot;switchplayer&quot;, p.center());
+             return ITEM_KEEP;
+         }
+     };
+@@ -2178,7 +2178,7 @@
+ 
+         ItemAction activate(Actor *, GridPos p) {
+             if (Item *it=GetItem(p)) {
+-                sound::SoundEvent (&quot;spade&quot;, p.center());
++                sound::EmitSoundEvent (&quot;spade&quot;, p.center());
+                 SendMessage(it, &quot;shovel&quot;);
+                 return ITEM_KEEP;
+             }
+
+Modified: branches/1.0/src/laser.cc
+===================================================================
+--- branches/1.0/src/laser.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/laser.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -369,8 +369,8 @@
+     }
+ 
+     if (count) {
+-        sound::SoundEvent (&quot;laseron&quot;, ecl::V2(x/count+.5, y/count+.5),
+-                           getVolume(&quot;laseron&quot;, NULL));
++        sound::EmitSoundEvent (&quot;laseron&quot;, ecl::V2(x/count+.5, y/count+.5),
++                               getVolume(&quot;laseron&quot;, NULL));
+     }
+ 
+     old_laser_positions.clear();
+
+Modified: branches/1.0/src/lev/Index.cc
+===================================================================
+--- branches/1.0/src/lev/Index.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/lev/Index.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -21,7 +21,7 @@
+ #include &quot;errors.hh&quot;
+ #include &quot;main.hh&quot;
+ #include &quot;options.hh&quot;
+-#include &quot;oxyd.hh&quot;
++#include &quot;sound.hh&quot;
+ #include &quot;PreferenceManager.hh&quot;
+ #include &quot;StateManager.hh&quot;
+ #include &quot;lev/ScoreManager.hh&quot;
+@@ -323,7 +323,7 @@
+         Index * newIndex = findIndex(anIndexName);
+         if (newIndex != NULL) {
+             if (newIndex != currentIndex) {
+-                oxyd::ChangeSoundset(newIndex-&gt;get_default_SoundSet(), true);
++                sound::SetDefaultSoundSet(newIndex-&gt;get_default_SoundSet());
+                 currentIndex = newIndex;
+                 std::string group = currentIndex-&gt;getGroupName();
+                 if (group != INDEX_EVERY_GROUP &amp;&amp; 
+@@ -703,8 +703,8 @@
+     
+ 
+     /*! Return the default SoundSet (see options::SoundSet for meaning) */
+-    int Index::get_default_SoundSet() const { 
+-        return 1;
++    const char* Index::get_default_SoundSet() const { 
++        return &quot;Enigma&quot;;
+     }
+ 
+     /*! Returns true if it's a twoplayer levelpack, but has no
+
+Modified: branches/1.0/src/lev/Index.hh
+===================================================================
+--- branches/1.0/src/lev/Index.hh	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/lev/Index.hh	2007-04-20 12:02:41 UTC (rev 693)
+@@ -129,8 +129,8 @@
+         void updateFromProxies();
+ 
+         // ---------- LevelPack legacy methods ---to be renamed ------- */
+-       /*! Return the default SoundSet (see options::SoundSet for meaning) */
+-        virtual int get_default_SoundSet() const;
++        /*! Return the default SoundSet (see options::SoundSet for meaning) */
++        virtual const char* get_default_SoundSet() const;
+ 
+         /*! Returns true if it's a twoplayer levelpack, but has no
+           it-yinyang (needed to add it-yinyang to inventory if
+
+Modified: branches/1.0/src/lua-display.cc
+===================================================================
+--- branches/1.0/src/lua-display.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/lua-display.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: display
+-** Generated automatically by tolua++-1.0.92 on Wed Sep 27 01:52:17 2006.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 20 13:59:44 2007.
+ */
+ 
+ #ifndef __cplusplus
+
+Modified: branches/1.0/src/lua-display.hh
+===================================================================
+--- branches/1.0/src/lua-display.hh	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/lua-display.hh	2007-04-20 12:02:41 UTC (rev 693)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: display
+-** Generated automatically by tolua++-1.0.92 on Wed Sep 27 01:52:17 2006.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 20 13:59:44 2007.
+ */
+ 
+ /* Exported function */
+
+Modified: branches/1.0/src/lua-ecl.cc
+===================================================================
+--- branches/1.0/src/lua-ecl.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/lua-ecl.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: px
+-** Generated automatically by tolua++-1.0.92 on Wed Sep 27 01:52:17 2006.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 20 13:59:44 2007.
+ */
+ 
+ #ifndef __cplusplus
+
+Modified: branches/1.0/src/lua-ecl.hh
+===================================================================
+--- branches/1.0/src/lua-ecl.hh	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/lua-ecl.hh	2007-04-20 12:02:41 UTC (rev 693)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: px
+-** Generated automatically by tolua++-1.0.92 on Wed Sep 27 01:52:17 2006.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 20 13:59:44 2007.
+ */
+ 
+ /* Exported function */
+
+Modified: branches/1.0/src/lua-editor.cc
+===================================================================
+--- branches/1.0/src/lua-editor.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/lua-editor.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: editor
+-** Generated automatically by tolua++-1.0.92 on Wed Sep 27 01:52:17 2006.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 20 13:59:44 2007.
+ */
+ 
+ #ifndef __cplusplus
+
+Modified: branches/1.0/src/lua-editor.hh
+===================================================================
+--- branches/1.0/src/lua-editor.hh	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/lua-editor.hh	2007-04-20 12:02:41 UTC (rev 693)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: editor
+-** Generated automatically by tolua++-1.0.92 on Wed Sep 27 01:52:17 2006.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 20 13:59:44 2007.
+ */
+ 
+ /* Exported function */
+
+Modified: branches/1.0/src/lua-enigma.cc
+===================================================================
+--- branches/1.0/src/lua-enigma.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/lua-enigma.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: enigma
+-** Generated automatically by tolua++-1.0.92 on Wed Sep 27 01:52:17 2006.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 20 13:59:44 2007.
+ */
+ 
+ #ifndef __cplusplus
+@@ -25,6 +25,8 @@
+ #include &quot;video.hh&quot;
+ using namespace video;
+ using ecl::Screen;
++#include &quot;sound.hh&quot;
++using namespace sound;
+ 
+ /* function to register type */
+ static void tolua_reg_types (lua_State* tolua_S)
+@@ -1133,6 +1135,86 @@
+ }
+ #endif //#ifndef TOLUA_DISABLE
+ 
++/* function: DefineSoundEffect */
++#ifndef TOLUA_DISABLE_tolua_enigma_sound_DefineSoundEffect00
++static int tolua_enigma_sound_DefineSoundEffect00(lua_State* tolua_S)
++{
++#ifndef TOLUA_RELEASE
++ tolua_Error tolua_err;
++ if (
++     !tolua_iscppstring(tolua_S,1,0,&amp;tolua_err) ||
++     !tolua_iscppstring(tolua_S,2,0,&amp;tolua_err) ||
++     !tolua_iscppstring(tolua_S,3,0,&amp;tolua_err) ||
++     !tolua_isnumber(tolua_S,4,0,&amp;tolua_err) ||
++     !tolua_isboolean(tolua_S,5,0,&amp;tolua_err) ||
++     !tolua_isboolean(tolua_S,6,0,&amp;tolua_err) ||
++     !tolua_isnumber(tolua_S,7,0,&amp;tolua_err) ||
++     !tolua_isnumber(tolua_S,8,0,&amp;tolua_err) ||
++     !tolua_isnumber(tolua_S,9,0,&amp;tolua_err) ||
++     !tolua_isnumber(tolua_S,10,0,&amp;tolua_err) ||
++     !tolua_isnumber(tolua_S,11,0,&amp;tolua_err) ||
++     !tolua_isnumber(tolua_S,12,0,&amp;tolua_err) ||
++     !tolua_iscppstring(tolua_S,13,0,&amp;tolua_err) ||
++     !tolua_isnoobj(tolua_S,14,&amp;tolua_err)
++ )
++  goto tolua_lerror;
++ else
++#endif
++ {
++  string table = ((string)  tolua_tocppstring(tolua_S,1,0));
++  string name = ((string)  tolua_tocppstring(tolua_S,2,0));
++  string filename = ((string)  tolua_tocppstring(tolua_S,3,0));
++  double volume = ((double)  tolua_tonumber(tolua_S,4,0));
++  bool loop = ((bool)  tolua_toboolean(tolua_S,5,0));
++  bool global = ((bool)  tolua_toboolean(tolua_S,6,0));
++  int priority = ((int)  tolua_tonumber(tolua_S,7,0));
++  double damp_max = ((double)  tolua_tonumber(tolua_S,8,0));
++  double damp_inc = ((double)  tolua_tonumber(tolua_S,9,0));
++  double damp_mult = ((double)  tolua_tonumber(tolua_S,10,0));
++  double damp_min = ((double)  tolua_tonumber(tolua_S,11,0));
++  double damp_tick = ((double)  tolua_tonumber(tolua_S,12,0));
++  string silence_string = ((string)  tolua_tocppstring(tolua_S,13,0));
++  {
++   DefineSoundEffect(table,name,filename,volume,loop,global,priority,damp_max,damp_inc,damp_mult,damp_min,damp_tick,silence_string);
++  }
++ }
++ return 0;
++#ifndef TOLUA_RELEASE
++ tolua_lerror:
++ tolua_error(tolua_S,&quot;#ferror in function 'DefineSoundEffect'.&quot;,&amp;tolua_err);
++ return 0;
++#endif
++}
++#endif //#ifndef TOLUA_DISABLE
++
++/* function: SetActiveSoundSet */
++#ifndef TOLUA_DISABLE_tolua_enigma_sound_SetActiveSoundSet00
++static int tolua_enigma_sound_SetActiveSoundSet00(lua_State* tolua_S)
++{
++#ifndef TOLUA_RELEASE
++ tolua_Error tolua_err;
++ if (
++     !tolua_iscppstring(tolua_S,1,0,&amp;tolua_err) ||
++     !tolua_isnoobj(tolua_S,2,&amp;tolua_err)
++ )
++  goto tolua_lerror;
++ else
++#endif
++ {
++  string table = ((string)  tolua_tocppstring(tolua_S,1,0));
++  {
++   SetActiveSoundSet(table);
++  }
++ }
++ return 0;
++#ifndef TOLUA_RELEASE
++ tolua_lerror:
++ tolua_error(tolua_S,&quot;#ferror in function 'SetActiveSoundSet'.&quot;,&amp;tolua_err);
++ return 0;
++#endif
++}
++#endif //#ifndef TOLUA_DISABLE
++
+ /* Open function */
+ TOLUA_API int tolua_enigma_open (lua_State* tolua_S)
+ {
+@@ -1210,6 +1292,11 @@
+    tolua_function(tolua_S,&quot;HideMouse&quot;,tolua_enigma_video_HideMouse00);
+    tolua_function(tolua_S,&quot;ShowMouse&quot;,tolua_enigma_video_ShowMouse00);
+   tolua_endmodule(tolua_S);
++  tolua_module(tolua_S,&quot;sound&quot;,0);
++  tolua_beginmodule(tolua_S,&quot;sound&quot;);
++   tolua_function(tolua_S,&quot;DefineSoundEffect&quot;,tolua_enigma_sound_DefineSoundEffect00);
++   tolua_function(tolua_S,&quot;SetActiveSoundSet&quot;,tolua_enigma_sound_SetActiveSoundSet00);
++  tolua_endmodule(tolua_S);
+  tolua_endmodule(tolua_S);
+  return 1;
+ }
+
+Modified: branches/1.0/src/lua-enigma.hh
+===================================================================
+--- branches/1.0/src/lua-enigma.hh	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/lua-enigma.hh	2007-04-20 12:02:41 UTC (rev 693)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: enigma
+-** Generated automatically by tolua++-1.0.92 on Wed Sep 27 01:52:17 2006.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 20 13:59:44 2007.
+ */
+ 
+ /* Exported function */
+
+Modified: branches/1.0/src/lua-global.cc
+===================================================================
+--- branches/1.0/src/lua-global.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/lua-global.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: global
+-** Generated automatically by tolua++-1.0.92 on Wed Sep 27 01:52:17 2006.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 20 13:59:44 2007.
+ */
+ 
+ #ifndef __cplusplus
+
+Modified: branches/1.0/src/lua-global.hh
+===================================================================
+--- branches/1.0/src/lua-global.hh	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/lua-global.hh	2007-04-20 12:02:41 UTC (rev 693)
+@@ -1,6 +1,6 @@
+ /*
+ ** Lua binding: global
+-** Generated automatically by tolua++-1.0.92 on Wed Sep 27 01:52:17 2006.
++** Generated automatically by tolua++-1.0.92 on Fri Apr 20 13:59:44 2007.
+ */
+ 
+ /* Exported function */
+
+Modified: branches/1.0/src/lua.cc
+===================================================================
+--- branches/1.0/src/lua.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/lua.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -62,9 +62,8 @@
+ 
+ namespace lua
+ {
+-    int PlaySoundGlobal (lua_State *L);
+-    int PlaySound (lua_State *L);
+     int EmitSound (lua_State *L);
++    int EmitSoundGlobal (lua_State *L);
+     int MakeObject (lua_State *L);
+ }
+ 
+@@ -137,12 +136,6 @@
+     lua_pop (L, 1);
+ }
+ 
+-void lua::SetSoundTable (const char *name)
+-{
+-    CallFunc (global_state, &quot;ActivateSoundTable&quot;, name, NULL);
+-}
+-
+-
+ static void
+ push_value(lua_State *L, const Value &amp;val)
+ {
+@@ -391,42 +384,27 @@
+     return 0;
+ }
+ 
+-int lua::PlaySound (lua_State *L)
+-{
+-    const char *soundname = lua_tostring (L, 1);
+-    double      x         = lua_tonumber (L, 2);
+-    double      y         = lua_tonumber (L, 3);
+-    double      volume    = lua_tonumber (L, 4);
+-
+-    sound::PlaySound (soundname, ecl::V2 (x, y), volume);
+-
+-    return 0;
+-}
+-
+-int lua::PlaySoundGlobal (lua_State *L)
+-{
+-    const char *soundname = lua_tostring (L, 1);
+-    double      volume    = lua_tonumber (L, 2);
+-    int         priority  = static_cast&lt;int&gt; (lua_tonumber (L, 3));
+-
+-    sound::PlaySoundGlobal (soundname, volume, priority);
+-
+-    return 0;
+-}
+-
+-
+ int lua::EmitSound (lua_State *L)
+ {
+     Object     *obj       = to_object(L, 1);
+     const char *soundname = lua_tostring(L, 2);
++    double vol = 1.0;
+ 
++    if (lua_isnumber(L, 3)) 
++        vol  = lua_tonumber(L, 3);
+     if (!soundname)
+         throwLuaError(L,&quot;Illegal sound&quot;);
+     else if (obj) {
+         GridObject *gobj = dynamic_cast&lt;GridObject*&gt;(obj);
+         if (gobj) {
+-            if (!gobj-&gt;sound_event (soundname)) 
+-                throwLuaError(L, strf(&quot;Can't find sound '%s'&quot;, soundname).c_str());
++            if (!gobj-&gt;sound_event (soundname, vol)) {
++                //throwLuaError(L, strf(&quot;Can't find sound '%s'&quot;, soundname).c_str());
++                // Don't throw an error when no sound file was found.
++                // Remember that user sound sets might be incomplete, and
++                // absolutely correct levels could throw an error here.
++                // Instead, write the &quot;silence string&quot; to the command line:
++                sound::WriteSilenceString(soundname);
++            }
+         }
+     }
+     else
+@@ -435,11 +413,26 @@
+     return 0;
+ }
+ 
++int lua::EmitSoundGlobal (lua_State *L)
++{
++    const char *soundname = lua_tostring(L, 1);
++    double vol = 1.0;
++
++    if (lua_isnumber(L, 3)) 
++        vol  = lua_tonumber(L, 3);
++    if (!soundname)
++        throwLuaError(L,&quot;Illegal sound&quot;);
++    else
++        sound::EmitSoundEventGlobal(soundname, vol);
++
++    return 0;
++}
++
+ static int
+ en_name_object(lua_State *L)
+ {
+     Object     *obj  = to_object(L, 1);
+-    const char *name = lua_tostring(L,2);
++    const char *name = lua_tostring(L, 2);
+ 
+     if (!obj) 
+         throwLuaError(L, &quot;NameObject: Illegal object&quot;);
+@@ -632,8 +625,8 @@
+ 
+ static CFunction globalfuncs[] = {
+     {FindDataFile,          &quot;FindDataFile&quot;},
+-    {lua::PlaySoundGlobal,  &quot;PlaySoundGlobal&quot;},
+-    {lua::PlaySound,        &quot;PlaySound&quot;},
++//    {lua::PlaySoundGlobal,  &quot;PlaySoundGlobal&quot;},
++//    {lua::PlaySound,        &quot;PlaySound&quot;},
+     {en_get_ticks,             &quot;GetTicks&quot;},
+     {0,0}
+ };
+@@ -672,7 +665,6 @@
+     // sound effects
+ 
+     {lua::EmitSound,        &quot;EmitSound&quot;},
+-    {lua::PlaySound,        &quot;PlaySound&quot;},
+ 
+     // manipulating level
+ 
+
+Modified: branches/1.0/src/lua.hh
+===================================================================
+--- branches/1.0/src/lua.hh	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/lua.hh	2007-04-20 12:02:41 UTC (rev 693)
+@@ -72,8 +72,6 @@
+ 
+     int FindDataFile (lua_State *L);
+ 
+-    void SetSoundTable (const char *name);
+-
+ /* -------------------- Helper routines -------------------- */
+ 
+     /*! Register the C functions in `funcs'.  The end of the array is
+
+Modified: branches/1.0/src/main.cc
+===================================================================
+--- branches/1.0/src/main.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/main.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -319,12 +319,13 @@
+     errorInit = true;
+ 
+     // ----- Initialize sound subsystem
+-    lua::DoSubfolderfile (L, &quot;sound&quot;, &quot;sound.lua&quot;);
+     if (ap.nosound)
+         sound::DisableSound();
+     else if (ap.nomusic)
+         sound::DisableMusic();
+     sound::Init();
++    lua::CheckedDoFile (L, app.systemFS, &quot;sound-defaults.lua&quot;);
++    lua::DoSubfolderfile (L, &quot;sound&quot;, &quot;sound.lua&quot;);
+ 
+     // ----- Initialize network layer
+     if (enet_initialize () != 0) {
+@@ -357,10 +358,11 @@
+                     INDEX_DEFAULT_GROUP, emptyList, INDEX_SEARCH_PACK_LOCATION));
+     }
+ 
+-    oxyd::ChangeSoundset(options::GetInt(&quot;SoundSet&quot;), false);
+-
+     lev::Proxy::countLevels();
+ 
++    // ----- Initialize sound tables -- needs sound, oxyd, video (error messages!)
++    sound::InitSoundSets();
++
+     // initialize random
+     enigma::Randomize();
+     
+
+Modified: branches/1.0/src/objects.cc
+===================================================================
+--- branches/1.0/src/objects.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/objects.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -213,9 +213,9 @@
+     return m;
+ }
+ 
+-bool GridObject::sound_event (const char *name)
++bool GridObject::sound_event (const char *name, double vol)
+ {
+-    return sound::SoundEvent (name, get_pos().center(), getVolume(name, this));
++    return sound::EmitSoundEvent (name, get_pos().center(), getVolume(name, this, vol));
+ }
+ 
+ void GridObject::warning(const char *format, ...) const 
+
+Modified: branches/1.0/src/objects_decl.hh
+===================================================================
+--- branches/1.0/src/objects_decl.hh	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/objects_decl.hh	2007-04-20 12:02:41 UTC (rev 693)
+@@ -120,7 +120,7 @@
+         void warning(const char *format, ...) const;
+ 
+         // Helper functions
+-        bool sound_event (const char *name);
++        bool sound_event (const char *name, double vol = 1.0);
+         display::Model *set_anim (const std::string &amp;mname);
+ 
+     protected:
+
+Modified: branches/1.0/src/oxyd.cc
+===================================================================
+--- branches/1.0/src/oxyd.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/oxyd.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -760,10 +760,9 @@
+     Log &lt;&lt; &quot;Levelpack '&quot; &lt;&lt; get_name() &lt;&lt; &quot;' has &quot; &lt;&lt; nlevels &lt;&lt; &quot; levels.&quot; &lt;&lt; endl;
+ }
+ 
+-
+-int LevelPack_Oxyd::get_default_SoundSet() const 
++const char* LevelPack_Oxyd::get_default_SoundSet() const 
+ { 
+-    return m_datfile-&gt;getVersion() + 2; 
++    return sound::GetOxydSoundSet(m_datfile-&gt;getVersion()).c_str();
+ }
+ 
+ bool LevelPack_Oxyd::needs_twoplayers() const 
+@@ -1017,11 +1016,6 @@
+ namespace
+ {
+     vector&lt;GameInfo*&gt; games;
+-
+-    int active_soundset              = 1; // 1: enigma  2..: OxydVersion+2;
+-
+-    typedef std::map &lt;std::string, std::string&gt; SoundMap;
+-    SoundMap soundfx_map;
+ }
+ 
+ 
+@@ -1054,61 +1048,13 @@
+     return games[ver]-&gt;is_present();
+ }
+ 
+-
+-void oxyd::ChangeSoundset(int new_sound_set, bool isDefault) 
++bool oxyd::InitOxydSoundSet(OxydVersion ver)
+ {
+-    static int last_default_sound_set = 1; // default is Enigma
+-    static int last_user_sound_set = 0;    // user selection of default 
+-    int sound_set = last_user_sound_set;
+-    
+-    if (isDefault) {
+-        // new levelpack sets a default soundset
+-        ASSERT(new_sound_set &gt; 0, XFrontend, &quot;Default Soundset 0&quot;);
+-        
+-        // remember current default
+-        last_default_sound_set = new_sound_set;
+-        
+-        // select it if default is users selection
+-        if (last_user_sound_set == 0)
+-            sound_set = new_sound_set;
+-    } else {
+-        // user selects a soundset 
+-        last_user_sound_set = new_sound_set;
+-        if (new_sound_set == 0) 
+-            sound_set = last_default_sound_set;
+-        else
+-            sound_set = new_sound_set;
+-    }
+-
+-    if (sound_set == active_soundset) {
+-        return;
+-    }
+-
+-    // reset to enigma soundset
+-    soundfx_map.clear();
+-    active_soundset = 1;
+-
+-    sound::ClearCache();
+-
+-    if (sound_set == 1) {       // enigma -&gt; no mapping
+-        lua::SetSoundTable (&quot;Enigma&quot;);
+-        return;
+-    }
+-
+-    OxydVersion ver = OxydVersion(sound_set-2);
+     GameInfo&amp;   gi  = *(games[ver]);
+ 
+     if (!gi.is_present())
+-        return;                 // not installed -&gt; use enigma soundset
++        return false;                 // not installed -&gt; use enigma soundset
+ 
+-    if (ver == OxydVersion_OxydMagnum || ver == OxydVersion_OxydMagnumGold) {
+-        lua::SetSoundTable (&quot;Oxydm&quot;);
+-    }
+-    else {
+-        lua::SetSoundTable (&quot;Oxyd&quot;);
+-    }
+-    active_soundset = sound_set;
+-
+     static const char *oxydsounds[] = {
+         &quot;OXBLOOP.SDD&quot;, &quot;OXBOING.SDD&quot;, &quot;OXBOLD.SDD&quot;, &quot;OXCRACK.SDD&quot;,
+         &quot;OXCRASH1.SDD&quot;, &quot;OXCRASH2.SDD&quot;, &quot;OXCUT.SDD&quot;, &quot;OXDROP.SDD&quot;,
+@@ -1129,7 +1075,7 @@
+         const OxydLib::ByteVec *snddata = datfile-&gt;getChunk(chunkname);
+ 
+         if (snddata) {
+-            enigma::Log &lt;&lt; &quot;Loaded sound file &quot; &lt;&lt; chunkname&lt;&lt; &quot;\n&quot;;
++            //enigma::Log &lt;&lt; &quot;Loaded sound file &quot; &lt;&lt; chunkname&lt;&lt; &quot;\n&quot;;
+ 
+             sound::SoundData snd;
+             snd.buf.assign (snddata-&gt;begin(), snddata-&gt;end() - 4);
+@@ -1141,4 +1087,6 @@
+             sound::DefineSound (oxydsounds[i], snd);
+         }
+     }
++
++    return true;
+ }
+
+Modified: branches/1.0/src/oxyd.hh
+===================================================================
+--- branches/1.0/src/oxyd.hh	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/oxyd.hh	2007-04-20 12:02:41 UTC (rev 693)
+@@ -28,13 +28,8 @@
+ 
+     bool FoundOxyd (OxydLib::OxydVersion ver);
+ 
+-    /**
+-     * Select soundset or set default soundset.
+-     * @arg new_sound_set  Enigma = 1, OxydVersion number +2, or 0 for &quot;use default&quot;
+-     * @arg isDefault      true if a levelpack declares it default soundset,
+-     *                     false if the user selected soundset is given 
+-     */
+-    void ChangeSoundset(int new_sound_set, bool isDefault);
++    // Initialise an oxyd sound set
++    bool InitOxydSoundSet(OxydLib::OxydVersion ver);
+ }
+ 
+ #endif
+
+Modified: branches/1.0/src/oxyd_internal.hh
+===================================================================
+--- branches/1.0/src/oxyd_internal.hh	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/oxyd_internal.hh	2007-04-20 12:02:41 UTC (rev 693)
+@@ -155,7 +155,7 @@
+         /* ---------- LevelPack interface ---------- */
+         string get_name() const;
+         int size() const { return nlevels; }
+-        int get_default_SoundSet() const;
++        const char* get_default_SoundSet() const;
+         bool needs_twoplayers() const;
+     protected:
+         virtual bool has_easymode(size_t /*index*/) const;
+
+Modified: branches/1.0/src/player.cc
+===================================================================
+--- branches/1.0/src/player.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/player.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -558,7 +558,7 @@
+             item-&gt;on_pickup(a);
+             inv-&gt;add_item(item);
+             RedrawInventory (inv);
+-            sound::SoundEvent (&quot;pickup&quot;, p.center());
++            sound::EmitSoundEvent (&quot;pickup&quot;, p.center());
+         }
+     }
+ }
+@@ -578,7 +578,7 @@
+                 world::DisposeObject (stone);
+                 inv-&gt;add_item(item);
+                 player::RedrawInventory(inv);
+-                sound::SoundEvent (&quot;pickup&quot;, p.center());
++                sound::EmitSoundEvent (&quot;pickup&quot;, p.center());
+             }
+         }
+     }
+@@ -621,7 +621,7 @@
+ 
+ void player::RotateInventory(int dir) 
+ {
+-    sound::SoundEvent (&quot;invrotate&quot;, ecl::V2());
++    sound::EmitSoundEvent (&quot;invrotate&quot;, ecl::V2());
+     Inventory &amp;inv = players[icurrent_player].inventory;
+     if (dir == 1)
+         inv.rotate_left ();
+
+Modified: branches/1.0/src/sound.cc
+===================================================================
+--- branches/1.0/src/sound.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/sound.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Andreas Lochmann
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -16,11 +17,15 @@
+  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+  *
+  */
++#include &quot;errors.hh&quot;
+ #include &quot;enigma.hh&quot;
+ #include &quot;options.hh&quot;
+ #include &quot;sound.hh&quot;
+ #include &quot;main.hh&quot;
+-#include &quot;lua.hh&quot;
++#include &quot;oxyd.hh&quot;
++#include &quot;oxydlib/OxydVersion.h&quot;
++#include &quot;nls.hh&quot;
++#include &quot;client.hh&quot;
+ 
+ #include &quot;SDL.h&quot;
+ #include &quot;SDL_mixer.h&quot;
+@@ -30,18 +35,10 @@
+ #include &lt;cassert&gt;
+ #include &lt;memory&gt;
+ 
+-#ifndef CXXLUA
+-extern &quot;C&quot; {
+-#include &quot;lua.h&quot;
+-}
+-#else
+-#include &quot;lua.h&quot;
+-#endif 
+-
+-
+ using namespace std;
+ using namespace enigma;
+ using namespace sound;
++using namespace OxydLib;
+ 
+ #include &quot;sound_internal.hh&quot;
+ 
+@@ -52,8 +49,8 @@
+                          int freq, int format, int channels);
+ 
+ 
+-/* -------------------- SoundEffect implementation -------------------- */
+-SoundEffect::SoundEffect ()
++/* -------------------- SoundEvent implementation -------------------- */
++SoundEvent::SoundEvent ()
+ : name(&quot;&quot;), has_position(false), position(),
+   priority (0), volume (0.0),
+   left (0), right(0), active (false),
+@@ -61,12 +58,12 @@
+ {
+ }
+ 
+-bool not_active (const SoundEffect &amp;s)
++bool not_active (const SoundEvent &amp;s)
+ {
+     return !s.active;
+ }
+ 
+-bool lower_priority (const SoundEffect &amp;s, const SoundEffect &amp;t)
++bool lower_priority (const SoundEvent &amp;s, const SoundEvent &amp;t)
+ {
+     return s.priority &lt; t.priority;
+ }
+@@ -153,7 +150,6 @@
+ void SoundEngine_SDL::clear_cache() 
+ {
+     for (ecl::Dict&lt;Mix_Chunk*&gt;::iterator it = wav_cache.begin(); it != wav_cache.end(); ++it)
+-
+         Mix_FreeChunk(it-&gt;second);
+     wav_cache.clear();
+ }
+@@ -218,7 +214,7 @@
+     // How far can sound travel?
+     const double range = 30;    
+ 
+-    SoundEffect &amp;se = m_channelinfo[channel];
++    SoundEvent &amp;se = m_channelinfo[channel];
+ 
+     double volume;
+     int    left;
+@@ -249,7 +245,7 @@
+ int SoundEngine_SDL::already_playing (const SoundName &amp;name)
+ {
+     for (size_t i=0; i&lt;m_channelinfo.size(); ++i) {
+-        const SoundEffect &amp;se = m_channelinfo[i];
++        const SoundEvent &amp;se = m_channelinfo[i];
+ 
+         if (se.active &amp;&amp; se.name == name &amp;&amp; se.playing_time &lt; 0.05)
+             return static_cast&lt;int&gt; (i);
+@@ -269,48 +265,51 @@
+         if (ch != 0)
+             wav_cache.insert(name, ch);
+         else
+-	    enigma::Log &lt;&lt; &quot;Couldn't load sample '&quot; &lt;&lt; name &lt;&lt; &quot;': &quot; &lt;&lt; Mix_GetError() &lt;&lt; endl;
++            enigma::Log &lt;&lt; &quot;Couldn't load sample '&quot; &lt;&lt; name &lt;&lt; &quot;': &quot;
++                        &lt;&lt; Mix_GetError() &lt;&lt; endl;
+         return ch;
+     } else
+         return i-&gt;second;
+ }
+ 
+-void SoundEngine_SDL::play_sound (const SoundEffect &amp;s)
++bool SoundEngine_SDL::play_sound (const SoundEvent &amp;s)
+ {
+     int channel = already_playing (s.name);
+     if (channel != -1) {
+         MutexLock (m_instance-&gt;m_mutex);
+-        SoundEffect &amp;se = m_channelinfo [channel];
++        SoundEvent &amp;se = m_channelinfo [channel];
+         if (se.has_position) {
+             se.position = (se.position + s.position) / 2;
+             update_channel (channel);
+-            return;
++            return true;
+         }
+     }
+     
+     if (Mix_Chunk *chunk = cache_sound(s.name)) {
+-	channel = -1; //Mix_GroupOldest(-1);
++        channel = -1; //Mix_GroupOldest(-1);
+ 
+         channel = Mix_PlayChannel(channel, chunk, 0);
+ 
+         if (channel != -1) {
+             {
+                 MutexLock (m_instance-&gt;m_mutex);
+-                SoundEffect &amp;se = m_channelinfo[channel];
++                SoundEvent &amp;se = m_channelinfo[channel];
+                 se = s;
+                 se.active       = true;
+                 se.playing_time = 0.0;
+             }
+             update_channel (channel);
+         }
+-    }
++        return true; // even if no free channel was found
++    } else
++        return false;
+ }
+ 
+ void SoundEngine_SDL::tick (double dtime)
+ {
+     MutexLock (m_instance-&gt;m_mutex);
+     for (size_t i=0; i&lt;m_channelinfo.size(); ++i) {
+-        SoundEffect &amp;se = m_channelinfo[i];
++        SoundEvent &amp;se = m_channelinfo[i];
+         if (se.active)
+             se.playing_time += dtime;
+     }
+@@ -337,7 +336,7 @@
+ void SoundEngine_SDL::channel_finished (int channel)
+ {
+     MutexLock (m_instance-&gt;m_mutex);
+-    SoundEffect &amp;se = m_instance-&gt;m_channelinfo[channel];
++    SoundEvent &amp;se = m_instance-&gt;m_channelinfo[channel];
+     se.active = false;
+ }
+ 
+@@ -378,7 +377,7 @@
+ void sound::Shutdown() 
+ {
+     if (sound_engine.get())
+-	sound_engine-&gt;shutdown();
++        sound_engine-&gt;shutdown();
+ }
+ 
+ void sound::Tick (double dtime)
+@@ -418,12 +417,12 @@
+     sound_engine-&gt;set_listenerpos (pos);
+ }
+ 
+-void sound::PlaySound (const SoundName &amp;name, const ecl::V2 &amp;pos, double volume, int priority) 
++bool sound::PlaySound (const SoundName &amp;name, const ecl::V2 &amp;pos, double volume, int priority) 
+ {
+     if (!sound_enabled)
+-        return;
++        return false;
+ 
+-    SoundEffect se;
++    SoundEvent se;
+     se.name         = name;
+     se.has_position = true;
+     se.position     = pos;
+@@ -431,12 +430,12 @@
+     se.volume       = volume * options::GetDouble(&quot;SoundVolume&quot;);
+     se.left = se.right = 0;
+ 
+-    sound_engine-&gt;play_sound (se);
++    return sound_engine-&gt;play_sound (se);
+ }
+ 
+-void sound::PlaySoundGlobal (const SoundName &amp;name, double volume, int priority) 
++bool sound::PlaySoundGlobal (const SoundName &amp;name, double volume, int priority) 
+ {
+-    SoundEffect se;
++    SoundEvent se;
+     se.name         = name;
+     se.has_position = false;
+     se.position     = ecl::V2();
+@@ -445,7 +444,7 @@
+     se.left         = 255;
+     se.right        = 255;
+ 
+-    sound_engine-&gt;play_sound (se);
++    return sound_engine-&gt;play_sound (se);
+ }
+ 
+ void sound::FadeoutMusic() 
+@@ -686,18 +685,352 @@
+     return chunk;
+ }
+ 
+-bool sound::SoundEvent (const std::string &amp;eventname, const ecl::V2 &amp;pos, double volume)
++
++/* ------------- Conversion and helper functions ------------- */
++
++/*! This function defines how to put soundset_key and eventname together to
++  create an eventkey. */
++
++string SoundEngine::effectKey(string effect_name, string soundset_name)
+ {
+-    lua_State *L = lua::GlobalState();
++    if (soundset_name == &quot;&quot;)
++        return getActiveSoundSetKey() + &quot;#&quot; + effect_name;
++    else
++        return soundset_name + &quot;#&quot; + effect_name;
++}
+ 
+-    lua_getglobal (L, &quot;SoundEvent&quot;);
+-    lua_pushstring (L, eventname.c_str());
+-    lua_pushnumber (L, pos[0]);
+-    lua_pushnumber (L, pos[1]);
+-    lua_pushnumber (L, volume);
+-    lua_call (L, 4, 1);
++/*! This function searches the known sound sets for a sound set with given
++  oxyd version, and returns the sound set name (or empty string if none). */
+ 
+-    int success = static_cast&lt;int&gt; (lua_tonumber (L, 1));
+-    lua_pop (L, 1);
+-    return success != 0;
++string SoundEngine::getOxydSoundSet(OxydVersion oxyd_ver)
++{
++    for (SoundSetRepository::iterator i = sound_sets.begin();
++             i != sound_sets.end(); ++i)
++        if((*i).second.getOxydVersion() == oxyd_ver)
++            return (*i).first;
++    return &quot;&quot;;
+ }
++
++string sound::GetOxydSoundSet(OxydVersion oxyd_ver)
++{
++    return sound_engine-&gt;getOxydSoundSet(oxyd_ver);
++}
++
++/*! Enigma 1.00 only knew the option &quot;SoundSet&quot;, which was an integer. This
++  was quite unhandy if one wanted to add additional sound sets. Since 1.01
++  Enigma features the option &quot;SoundSetName&quot;. Still, old &quot;SoundSet&quot; is needed
++  if user wants to switch to &lt;= 1.00 again; so here are the conversion
++  functions. Any user sound set is mapped to 0 (&quot;Default&quot;).  */
++
++int SoundEngine::convertToOldSoundSetNumber(string soundset_name)
++{
++    if(soundset_name == &quot;Default&quot;)  return 0;
++    if(soundset_name == &quot;Enigma&quot;)   return 1;
++    SoundSet sd = sound_sets[soundset_name];
++    if(sd.isOxyd())
++        return ((int) sd.getOxydVersion()) + 2;
++    return 0;
++}
++
++string SoundEngine::convertFromOldSoundSetNumber(int soundset_number)
++{
++    if(soundset_number == 0)  return &quot;Default&quot;;
++    if(soundset_number == 1)  return &quot;Enigma&quot;;
++    return getOxydSoundSet((OxydVersion) (soundset_number - 2));
++}
++
++/* -------------------- Sound set handling -------------------- */
++
++/*! These functions fill in data for the sound sets, initialises and
++  activates them. Return false, if something went wrong, e.g. when an
++  oxyd sound set is mentioned to not accessible oxyd version. */
++
++bool SoundEngine::defineSoundSet(string soundset_name, string soundset_key,
++                                 int button_position)
++{
++    sound_sets[soundset_name] = SoundSet(soundset_key, button_position);
++    Log &lt;&lt; &quot;Added sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;' (key '&quot; &lt;&lt; soundset_key
++        &lt;&lt; &quot;') on position &quot; &lt;&lt; button_position &lt;&lt; &quot;.\n&quot;;
++    return true;
++}
++
++bool SoundEngine::defineSoundSetOxyd(string soundset_name, string soundset_key,
++                                     OxydVersion oxyd_ver, int button_position)
++{
++    if(oxyd::FoundOxyd(oxyd_ver)) {
++        sound_sets[soundset_name] =
++            SoundSet(soundset_key, button_position, (OxydVersion) oxyd_ver);
++        Log &lt;&lt; &quot;Added sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;' (key '&quot; &lt;&lt; soundset_key
++            &lt;&lt; &quot;') on position &quot; &lt;&lt; button_position &lt;&lt; &quot;.\n&quot;;
++        return true;
++    } else {
++        Log &lt;&lt; &quot;Skipped sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;'.\n&quot;;
++        return false;
++    }
++}
++
++bool SoundSet::activate()
++{
++    if(getSoundSetKey() == &quot;&quot;)
++        return false;
++    if(isOxyd() &amp;&amp;  !oxyd::InitOxydSoundSet(getOxydVersion()))
++        return false;
++    sound_engine-&gt;setActiveSoundSetKey(getSoundSetKey());
++    return true;
++}
++
++void sound::InitSoundSets() {
++    sound_engine-&gt;initSoundSets();
++}
++
++void SoundEngine::initSoundSets()
++{
++    // Define sound sets
++    sound_sets.clear();
++    assert(sound_sets.empty());
++    assert(defineSoundSet (&quot;Enigma&quot;,   &quot;Enigma&quot;,  1));
++    int pos = 2; // position in options menu button
++    if (defineSoundSetOxyd (&quot;Oxyd&quot;,     &quot;Oxyd*&quot;,   OxydVersion_Oxyd1,          pos))  pos++;
++    if (defineSoundSetOxyd (&quot;Magnum&quot;,   &quot;Magnum*&quot;, OxydVersion_OxydMagnum,     pos))  pos++;
++    if (defineSoundSetOxyd (&quot;Mag.Gold&quot;, &quot;Magnum*&quot;, OxydVersion_OxydMagnumGold, pos))  pos++;
++    if (defineSoundSetOxyd (&quot;Per.Oxyd&quot;, &quot;Oxyd*&quot;,   OxydVersion_PerOxyd,        pos))  pos++;
++    if (defineSoundSetOxyd (&quot;Extra&quot;,    &quot;Oxyd*&quot;,   OxydVersion_OxydExtra,      pos))  pos++;
++    // Define user sound sets, as given by sound_effects
++    for (SoundEffectRepository::iterator i = sound_effects.begin();
++         i != sound_effects.end(); ++i) {
++        string soundset_key = (*i).second.getSoundSetKey();
++        bool found = false;
++        // ignore Oxyd* and Magnum* sound effects, if no 
++        if ((soundset_key != &quot;Oxyd*&quot;) &amp;&amp; (soundset_key != &quot;Magnum*&quot;)) {
++            for (SoundSetRepository::iterator j = sound_sets.begin();
++                 j != sound_sets.end(); ++j)
++                if((*j).second.getSoundSetKey() == soundset_key)
++                    found = true;
++            if(!found)
++                if (defineSoundSet (soundset_key, soundset_key, pos))  pos++;
++        }
++    }
++    Log &lt;&lt; &quot;Found &quot; &lt;&lt; pos - 1 &lt;&lt; &quot; different sound sets.\n&quot;;
++    setSoundSetCount(pos - 1);
++    setDefaultSoundSet(&quot;Enigma&quot;);
++    // Extract sound set names and keys from options; activate!
++    string soundset_name = options::GetString(&quot;SoundSetName&quot;);
++    if (soundset_name == &quot;&quot;) { // just switched from 1.00 to higher
++        soundset_name = convertFromOldSoundSetNumber(options::GetInt(&quot;SoundSet&quot;));
++        options::SetOption(&quot;SoundSetName&quot;, soundset_name);
++    }
++    if (soundset_name == &quot;Default&quot;)
++        soundset_name = getDefaultSoundSet();
++    clear_cache();
++    if (sound_sets[soundset_name].activate()) 
++        Log &lt;&lt; &quot;Activated sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;'.\n&quot;;
++    else {
++        // Fallback, happens e.g. when oxyd sound set can't be established or 
++        // a user soundset is given which doesn't exist anymore.
++        Log &lt;&lt; &quot;Warning: Soundset '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;' not available.\n&quot;;
++        if (sound_sets[&quot;Enigma&quot;].activate()) {
++            options::SetOption(&quot;SoundSetName&quot;, &quot;Enigma&quot;);
++            options::SetOption(&quot;SoundSet&quot;, convertToOldSoundSetNumber(&quot;Enigma&quot;));
++        } else
++            ASSERT(false, XFrontend,
++                &quot;Soundsets defect and fallback 'Enigma' not available.&quot;);
++    }
++}
++
++void SoundEngine::setActiveSoundSet(string soundset_name)
++{
++    string soundset_key = sound_sets[soundset_name].getSoundSetKey();
++    if (soundset_key == getActiveSoundSetKey())
++        return;
++    if (soundset_key == &quot;Default&quot;) {
++        Log &lt;&lt; &quot;Warning: Tried to choose 'Default' as effective sound set.\n&quot;;
++        return;
++    }
++    if (soundset_key == &quot;&quot;) {
++        Log &lt;&lt; &quot;Warning: Tried to choose empty sound set key as effective sound set.\n&quot;;
++        return;
++    }
++    clear_cache();
++    if (sound_sets[soundset_name].activate()) {
++        Log &lt;&lt; &quot;Switched to sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;' (key '&quot; 
++            &lt;&lt; soundset_key &lt;&lt; &quot;').\n&quot;;
++    } else
++        Log &lt;&lt; &quot;Warning: Problems loading sound set '&quot; &lt;&lt; soundset_name &lt;&lt; &quot;' (key'&quot;
++            &lt;&lt; soundset_key &lt;&lt; &quot;').\n&quot;;
++}
++
++void sound::SetActiveSoundSet(string soundset_name)
++{
++    sound_engine-&gt;setActiveSoundSet(soundset_name);
++}
++
++void sound::SetDefaultSoundSet(string soundset_name)
++{
++    sound_engine-&gt;setDefaultSoundSet(soundset_name);
++    if(options::GetString(&quot;SoundSetName&quot;) == &quot;Default&quot;)
++        SetActiveSoundSet(soundset_name);
++}
++
++string SoundEngine::getSoundSetByPosition(int button_position)
++{
++    for (SoundSetRepository::iterator i = sound_sets.begin();
++             i != sound_sets.end(); ++i)
++        if((*i).second.getButtonPosition() == button_position)
++            return (*i).first;
++    return &quot;&quot;;
++}
++
++/* -------------------- Playing sound events -------------------- */
++
++/*! The first function creates an interface to add sound events to Enigma.
++  It is accessed via sound-defaults.lua and user sound definitions.
++  The second method is the interface between the formal SoundEffect
++  and the sound engine (via PlaySound[Global]). The last two functions
++  define the interface between level objects and SoundEffect. */
++
++void sound::DefineSoundEffect(string soundset_key, string name, string filename,
++                              double volume, bool loop, bool global, int priority,
++                              double damp_max, double damp_inc, double damp_mult,
++                              double damp_min, double damp_tick, string silence_string) {
++    assert(sound_engine.get());
++    if(soundset_key == &quot;&quot;) {
++        Log &lt;&lt; &quot;Warning: Tried to define sound event '&quot; &lt;&lt; name
++            &lt;&lt; &quot;' without sound set key. Skipped.\n&quot;;
++        return;
++    }
++    sound_engine-&gt;defineSoundEffect(soundset_key, name,
++        SoundEffect(name, soundset_key, filename, volume, loop, global, priority,
++        damp_max, damp_inc, damp_mult, damp_min, damp_tick, silence_string));
++}
++
++bool SoundEffect::play(const ecl::V2 &amp;pos, double vol, bool glob)
++{
++    if (filename == &quot;&quot;) {
++        Log &lt;&lt; &quot;No soundfile given for sound event &quot; &lt;&lt; name &lt;&lt; &quot;.\n&quot;;
++        return false;
++    }
++    if (glob || global)
++        return PlaySoundGlobal (filename, volume * vol, priority);
++    else
++        return PlaySound (filename, pos, volume * vol, priority);
++}
++
++bool SoundEngine::emitSoundEvent (const std::string &amp;eventname, const ecl::V2 &amp;pos,
++                            double volume, bool force_global)
++{
++    string effectkey = effectKey(eventname);
++    SoundEffectRepository::iterator i = sound_effects.find(effectkey);
++    if (i == sound_effects.end()) {
++        Log &lt;&lt; &quot;Undefined sound event &quot; &lt;&lt; effectkey &lt;&lt; &quot; @ &quot; 
++            &lt;&lt; pos[0] &lt;&lt; &quot;,&quot; &lt;&lt; pos[1] &lt;&lt; &quot;\n&quot;;
++        return false;
++    } else {
++        return (*i).second.play(pos, volume, force_global);
++    }
++}
++
++bool sound::EmitSoundEvent (const std::string &amp;eventname, const ecl::V2 &amp;pos,
++                            double volume, bool force_global)
++{
++    return sound_engine-&gt;emitSoundEvent(eventname, pos, volume, force_global);
++}
++
++bool sound::EmitSoundEventGlobal (const std::string &amp;eventname, double volume)
++{
++    return sound_engine-&gt;emitSoundEvent(eventname, ecl::V2(), volume, true);
++}
++
++void SoundEngine::writeSilenceString (const std::string &amp;eventname)
++{
++    string effectkey = effectKey(eventname);
++    SoundEffectRepository::iterator i = sound_effects.find(effectkey);
++    if (i != sound_effects.end()) {
++        string silence_string = (*i).second.getSilenceString();
++        if (silence_string != &quot;&quot;)
++            client::Msg_ShowText (silence_string, true);
++    }
++}
++
++void sound::WriteSilenceString (const std::string &amp;eventname)
++{
++    sound_engine-&gt;writeSilenceString(eventname);
++}
++
++/* -------------------- Sound damping implementation -------------------- */
++
++/*! These methods are connected to the sound damping mechanism, designed
++  to reduce the noise created by some objects like st-lightpassenger. */
++
++SoundDamping::SoundDamping(std::string effect_name_, const void *origin_)
++: effect_name(effect_name_), origin(origin_)
++{
++    damp = sound_engine-&gt;getDampingData(effect_name_);
++    factor = damp.incr;
++    //Log &lt;&lt; &quot;New damping entry &quot; &lt;&lt; effect_name &lt;&lt; &quot; with &quot; &lt;&lt; damp.incr &lt;&lt; &quot;.\n&quot;;
++}
++
++float SoundDamping::get_volume(float def_volume) {
++    if (factor &lt; damp.maxi)
++        factor += damp.incr;
++    //Log &lt;&lt; &quot;  Found entry &quot; &lt;&lt; effect_name &lt;&lt; &quot;. Factor is now &quot; &lt;&lt; i-&gt;factor &lt;&lt; &quot;.\n&quot;;
++    float q = factor * damp.mult;
++    if (q &gt; 1.0)
++        return def_volume / q;
++    return def_volume;
++}
++
++bool SoundDamping::tick() {
++    // return true, if this entity is to be destroyed.
++    factor *= damp.tick;
++    return (factor &lt;= damp.mini);
++}
++
++/* -------------------- Sound option helpers -------------------- */
++
++/*! These functions are used in OptionsMenu.cc for the Soundset-Button. */
++
++int sound::GetOptionSoundSetCount()
++{        
++    return sound_engine-&gt;getSoundSetCount() + 1;
++}
++
++int sound::GetOptionSoundSet()
++{
++    string soundSet = options::GetString(&quot;SoundSetName&quot;);
++    if (soundSet == &quot;Default&quot;)
++        return 0;
++    int pos = sound_engine-&gt;getButtonPosition(soundSet);
++    assert(pos &gt; 0);
++    return pos;
++}
++
++void sound::SetOptionSoundSet(int value)
++{
++    if(value == 0) {
++        // settting to default sound set
++        if (options::GetString(&quot;SoundSetName&quot;) == &quot;Default&quot;)
++            return;
++        options::SetOption(&quot;SoundSetName&quot;, &quot;Default&quot;);
++        options::SetOption(&quot;SoundSet&quot;, sound_engine-&gt;convertToOldSoundSetNumber(&quot;Default&quot;));
++        SetActiveSoundSet(sound_engine-&gt;getDefaultSoundSet());
++    } else {
++        string newSet = sound_engine-&gt;getSoundSetByPosition(value);
++        assert(newSet != &quot;&quot;);
++        if (options::GetString(&quot;SoundSetName&quot;) == newSet)
++            return;
++        options::SetOption(&quot;SoundSetName&quot;, newSet);
++        options::SetOption(&quot;SoundSet&quot;, sound_engine-&gt;convertToOldSoundSetNumber(newSet));
++        SetActiveSoundSet(newSet);
++    }
++}
++
++string sound::GetOptionSoundSetText(int value)
++{
++    if(value == 0)
++        return N_(&quot;Default&quot;);
++    string soundset_name = sound_engine-&gt;getSoundSetByPosition(value);
++    if(soundset_name == &quot;&quot;)
++        return &quot;INVALID&quot;;
++    return soundset_name;
++}
++
+
+Modified: branches/1.0/src/sound.hh
+===================================================================
+--- branches/1.0/src/sound.hh	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/sound.hh	2007-04-20 12:02:41 UTC (rev 693)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Andreas Lochmann
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -20,10 +21,114 @@
+ #define SOUND_HH
+ 
+ #include &quot;ecl_math.hh&quot;
++#include &quot;oxydlib/OxydVersion.h&quot;
+ 
+ #include &lt;string&gt;
+ #include &lt;vector&gt;
+ 
++/** ----------- Survey of the formal data structure -----------
++ *
++ *  The wav-files are not to be accessed directly. There are several layers
++ *  between the wav-data and the final EmitSoundEvent-function, to allow for the
++ *  following uses:
++ *    (a) Sound Sets, possibly user defined,
++ *    (b) Access to oxyd's sound data,
++ *    (c) Sound damping for loud objects with user defined data,
++ *    (d) A &quot;Default&quot; mode which switches the sound set between level packs.
++ *    (e) A &quot;silence string&quot; that can be written instead of playing the sound.
++ *  For this, six layers of sound information exist.
++ *  Note: A sound effect is given by a wav-file and several data how to play it.
++ *        An object may choose a sound effect to play. Then it becomes a sound
++ *        event (= sound effect + position etc.).
++ *
++ *    (1) SoundEngine
++ *         -&gt; Providing global information and methods for using SDL.
++ *    (2) SoundData
++ *         -&gt; Holding technical details about how to play the wav-files.
++ *    (3) SoundEffect
++ *         -&gt; Holding game-related information about how to play a sound
++ *            effect. This includes the effect's filename, default volume,
++ *            if it's looped, if it's played on a global scale by default,
++ *            the default damping information for this event, etc.
++ *    (4) SoundSet
++ *         -&gt; Holding the sound set key of a sound set (see below), and if
++ *            it is connected to Oxyd. It also provides methods to
++ *            activate a sound set.
++ *    (5) SoundEvent
++ *         -&gt; A struct to hold information about a sound event, like the
++ *            effect's name, position, priority, volume etc.
++ *    (6) SoundDamping
++ *         -&gt; Each time an object makes noise, a SoundDamping-record
++ *            is created with an entry of the objects address (as void *).
++ *            This class modulates the volume with which the next effect
++ *            connected to this object is played.
++ *
++ *  Sound events are normally invoked by &quot;EmitSoundEvent(EFFECTNAME, ...)&quot;.
++ *  EFFECTNAME can then be e.g. &quot;pickup&quot; or &quot;laseron&quot;. This effect name does not
++ *  yet define the sound effect completely. Instead, the actually activated sound
++ *  set is looked up. It holds a string called sound set key (e.g. &quot;Enigma&quot; or
++ *  &quot;Oxyd*&quot;), and together with the effect name they form the effect key, here
++ *  &quot;Enigma#pickup&quot; or &quot;Oxyd*#laseron&quot;. This effect key is looked up in the sound
++ *  effect repository and results in a SoundEffect-entry, which is then played.
++ *
++ */
++
++/** -------------- About the sound damping system --------------
++ *
++ *  The sound damping is not automatically used. Instead, it is called through
++ *  the &quot;World::getVolume&quot;-function:
++ *    sound::EmitSoundEvent (NAME, POS, getVolume(NAME, OBJECT_CALLING, DEF_VOLUME))
++ *  OBJECT_CALLING need not be a real address, it is never dereferenced. It just
++ *  holds as a representative of the calling object. The SoundDamping-records
++ *  are evaluated and finally erased by World::tick_sound_dampings. 
++ *
++ *  The values used in the sound damping systes can be user defined. In the
++ *  following, we use the defaults:
++ *
++ *  tick_sound_dampings is only to be evaluated every 10th tick (0.1s).
++ *  Each damping factor (the ivar connected to the noisy object and its sound
++ *  effect name) is reduced by 0.9. This is less than the 10th root of 0.5 (0.933),
++ *  so after 1s the damping factor is reduced by more than one half. If the factor
++ *  shrinks under 0.5, it is considered 0.
++ *
++ *  Examples:
++ *    1) Frequency less than one sound event per 0.6 seconds.
++ *       Then there is no damping at all.
++ *    2) N events per second. For each event, factor (F) is raised by
++ *       one. And each 0.1 seconds it is multiplied with 0.9. We now
++ *       have N/10 events per 0.1 seconds, hence in equilibrium f
++ *       oscillates between
++ *            f = (f + N/10) * 0.9   =&gt;   f = N
++ *       and  f + N/10 = N * 1.1 (geometric series!).
++ *  In particular, for large enough N, f is approximately proportional
++ *  to N with half-life of less than a second. This is then evaluated
++ *  in getVolume.
++ * 
++ *  World::getVolume returns the volume, if object OBJECT_CALLING wants
++ *  to play sound effect NAME with default volume DEF_VOLUME. Often played
++ *  sounds from always the same object are damped to reduce noise-level.
++ *  Note that OBJECT_CALLING == NULL is explicitly allowed and used e.g.
++ *  for all laser-sounds. The damping factor is increased by 1.0 for each
++ *  event, and multiplied with 0.9 each 0.1 seconds, thereby approximately
++ *  equals the average number of events per second.
++ *
++ */
++
++/** -------------- Compatibility with 1.00 --------------
++ *
++ *  Enigma 1.01 uses a new option &quot;SoundSetName&quot;, which replaces &quot;SoundSet&quot;.
++ *  To enable Enigma 1.00 to run on the same system, the &quot;SoundSet&quot; variable
++ *  still exists. It is set to 0 (= &quot;Default&quot;) for all user sound sets:
++ *  When exiting 1.01 with a user sound set and starting 1.00, the default
++ *  sound set will be activated for 1.00. Yet, as &quot;SoundSetName&quot; still shows
++ *  the old value, 1.01 will use it to find its user sound set. Even if
++ *  you change the sound set in 1.00, this will have no effect on the
++ *  chosen sound set for 1.01. In contrast to this, if you change the 1.01
++ *  sound set, the 1.00 &quot;SoundSet&quot;-variable will be adapted. Except for this
++ *  &quot;restriction&quot;, you can use two different sound sets for 1.00 and 1.01.
++ *
++ */
++
+ namespace sound
+ {
+ /* -------------------- Data types -------------------- */
+@@ -40,6 +145,35 @@
+         int      nchannels;
+     };
+ 
++/* -------------------- SoundDampingList ---------------- */
++
++/*! This class stores object addresses and assigns volumes to
++    sound events, based on the frequency of the event. */
++
++    struct DampingData {
++        double incr;
++        double maxi;
++        double mult;
++        double mini;
++        double tick;
++    };
++
++    class SoundDamping {
++    private:
++        std::string effect_name;
++        const void *origin;
++        float factor;
++        DampingData damp;
++
++    public:
++        SoundDamping(std::string effect_name_, const void *origin_);
++        bool is_equal(std::string name2, const void *origin2) {
++            return (origin2 == origin) &amp;&amp; (effect_name == name2);
++        }
++        float get_volume(float def_volume);
++        bool tick();  // returns true if this entry should be erased
++    };
++
+ /* -------------------- Functions -------------------- */
+ 
+     void Init();
+@@ -55,8 +189,9 @@
+     void TempReEnableSound();
+ 
+     void SetListenerPosition (const ecl::V2 &amp;pos);
+-    void PlaySound (const SoundName &amp;, const ecl::V2 &amp;pos, double relative_volume = 1.0, int priority=0);
+-    void PlaySoundGlobal (const SoundName &amp;, double relative_volume = 1.0, int priority=0);
++    bool PlaySound (const SoundName &amp;, const ecl::V2 &amp;pos,
++                    double relative_volume = 1.0, int priority=0);
++    bool PlaySoundGlobal (const SoundName &amp;, double relative_volume = 1.0, int priority=0);
+ 
+     void PlayMusic (const std::string &amp;name);
+     void FadeoutMusic();
+@@ -68,18 +203,39 @@
+       continue playing. */
+     void StopMusic (const std::string &amp;name);
+ 
+-    /*! Trigger a sound event that is dispatched to the Lua function
+-      `SoundEvent'.  Return true if the event was handles, false
+-      otherwise. */
+-    bool SoundEvent (const std::string &amp;eventname,
+-                     const ecl::V2 &amp;pos = ecl::V2 (), 
+-                     double volume = 1.0);
+-
+     void ClearCache();
+     void DefineSound (const SoundName &amp;, const SoundData &amp;);
+     void SetSoundVolume (double vol);
+     void SetMusicVolume (double vol);
+ 
++    /*! Helper function for oxyd.cc */
++    std::string GetOxydSoundSet(OxydLib::OxydVersion oxyd_ver);
++
++    /*! Sound set handling */
++    void InitSoundSets();
++    void SetActiveSoundSet(std::string soundset_name);
++    void SetDefaultSoundSet(std::string soundset_name);
++
++    /*! Define a new sound event. */
++    void DefineSoundEffect(std::string soundset_key, std::string name, std::string filename,
++                           double volume, bool loop, bool global, int priority,
++                           double damp_max, double damp_inc, double damp_mult,
++                           double damp_min, double damp_tick, std::string silence_string);
++
++    /*! Trigger a sound event.  Return whether the event was handled. */
++    bool EmitSoundEvent (const std::string &amp;eventname,
++                         const ecl::V2 &amp;pos = ecl::V2 (), 
++                         double volume = 1.0, bool force_global = false);
++    bool EmitSoundEventGlobal (const std::string &amp;eventname, double volume = 1.0);
++
++    /*! Send the silence string of a sound effect to command line. */
++    void WriteSilenceString (const std::string &amp;eventname);
++
++    /*! Helper functions for options menu */
++    int GetOptionSoundSetCount();
++    int GetOptionSoundSet();
++    void SetOptionSoundSet(int value);
++    std::string GetOptionSoundSetText(int value);
+ }
+ 
+ #endif
+
+Modified: branches/1.0/src/sound_internal.hh
+===================================================================
+--- branches/1.0/src/sound_internal.hh	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/sound_internal.hh	2007-04-20 12:02:41 UTC (rev 693)
+@@ -1,13 +1,13 @@
+ namespace
+ {
+ 
+-/* -------------------- SoundEffect -------------------- */
++/* -------------------- SoundEvent -------------------- */
+ 
+-    struct SoundEffect {
++    struct SoundEvent {
+         // Variables
+         SoundName name;
+         bool      has_position;
+-        ecl::V2    position;
++        ecl::V2   position;
+         int       priority;
+         double    volume;           // Volume between 0.0 and 1.0
+         int       left;
+@@ -18,9 +18,89 @@
+         double    playing_time;
+ 
+         // Constructor
+-        SoundEffect ();
++        SoundEvent ();
+     };
+ 
++/* -------------------- SoundEffect and SoundEffectRepository ---------------- */
++
++/*! This class stores information about how to play sound events
++    and provides methods to play them. */
++
++    class SoundEffect {
++    public:
++        SoundEffect(string name_, string soundset_key_, string filename_,
++                       double volume_, bool loop_, bool global_, int priority_,
++                       double damp_max_, double damp_inc_, double damp_mult_,
++                       double damp_min_, double damp_tick_, string silence_string_)
++        : name(name_), soundset_key(soundset_key_), filename(filename_), volume(volume_),
++          loop(loop_), global(global_), priority(priority_),
++          silence_string(silence_string_) {
++            damp.maxi = damp_max_;
++            damp.incr = damp_inc_;
++            damp.mult = damp_mult_;
++            damp.mini = damp_min_;
++            damp.tick = damp_tick_;
++        }
++
++        SoundEffect()  // standard empty data set, compare sound-defaults.lua
++        : name(&quot;EMPTY_EVENT&quot;), filename(&quot;&quot;), soundset_key(&quot;&quot;), volume(1.0),
++          loop(false), global(false), priority(1), silence_string(&quot;&quot;) {
++            damp.maxi = 20.0;
++            damp.incr =  1.0;
++            damp.mult =  1.0;
++            damp.mini =  0.5;
++            damp.tick =  0.9;
++        }
++
++        void setFilename(string filename_) { filename = filename_; }
++        bool play(const ecl::V2 &amp;pos = ecl::V2(), double vol = 1.0, bool glob = false);
++        DampingData getDampingData() { return damp; }
++        string getSoundSetKey() { return soundset_key; }
++        string getSilenceString() { return silence_string; }
++
++    private:
++        string name;
++        string filename;
++        string soundset_key;
++        string silence_string;
++        double volume;
++        bool loop;
++        bool global;
++        int priority;
++        DampingData damp;
++    };
++
++    class SoundSet {
++    public:
++        SoundSet(string soundset_key_, int button_position_, OxydLib::OxydVersion oxyd_ver_)
++        : soundset_key(soundset_key_), is_oxyd(true), oxyd_ver(oxyd_ver_),
++          button_position(button_position_) {}
++
++        SoundSet(string soundset_key_, int button_position_)
++        : soundset_key(soundset_key_), is_oxyd(false),
++          oxyd_ver(OxydLib::OxydVersion_Invalid), button_position(button_position_) {}
++
++        SoundSet()
++        : soundset_key(&quot;&quot;), is_oxyd(false),
++          oxyd_ver(OxydLib::OxydVersion_Invalid), button_position(-1) {}
++
++        bool activate();
++        OxydLib::OxydVersion getOxydVersion() { return oxyd_ver; }
++        bool isOxyd() { return is_oxyd; }
++        string getSoundSetKey() { return soundset_key; }
++        int getButtonPosition() { return button_position; }
++        void setButtonPosition(int pos) { button_position = pos; }
++
++    private:
++        string soundset_key;
++        bool is_oxyd;
++        OxydLib::OxydVersion oxyd_ver;
++        int button_position;
++    };
++
++    typedef map&lt;string, SoundEffect&gt; SoundEffectRepository;
++    typedef map&lt;string, SoundSet&gt; SoundSetRepository;
++        
+ /* -------------------- SoundEngine -------------------- */
+ 
+     class SoundEngine {
+@@ -46,13 +126,48 @@
+         virtual void clear_cache() = 0;
+         virtual void define_sound (const SoundName &amp;, const std::string &amp;filename)=0;
+         virtual void define_sound (const SoundName &amp;, const SoundData &amp;)=0;
+-        virtual void play_sound (const SoundEffect &amp;s) = 0;
++        virtual bool play_sound (const SoundEvent &amp;s) = 0;
+         virtual void set_listenerpos (ecl::V2 pos) = 0;
+-        virtual void tick (double dtime) 
+-        {}
++        virtual void tick (double dtime) {}
++
++        // ---------- Sound effect repository and sound sets ----------
++
++        void setActiveSoundSetKey(string soundset_key) {active_sound_set_key=soundset_key;}
++        string getActiveSoundSetKey() { return active_sound_set_key; }
++        void setDefaultSoundSet(string soundset_name) {default_sound_set=soundset_name;}
++        string getDefaultSoundSet() { return default_sound_set; }
++        string effectKey(string effect_name, string soundset_name = &quot;&quot;);
++        DampingData getDampingData(string effect_name) {
++            return sound_effects[effectKey(effect_name)].getDampingData(); }
++        void defineSoundEffect(string soundset_key, string name, SoundEffect se) {
++            sound_effects[effectKey(name, soundset_key)] = se;
++        }
++        bool emitSoundEvent (const std::string &amp;eventname, const ecl::V2 &amp;pos = ecl::V2 (), 
++                             double volume = 1.0, bool force_global = false);
++        void writeSilenceString (const std::string &amp;eventname);
++        void initSoundSets();
++        bool defineSoundSet(string soundset_name, string soundset_key, int button_position);
++        bool defineSoundSetOxyd(string soundset_name, string soundset_key,
++                                OxydLib::OxydVersion oxyd_ver, int button_position);
++        string getOxydSoundSet(OxydLib::OxydVersion oxyd_ver);
++        int convertToOldSoundSetNumber(string soundset_name);
++        string convertFromOldSoundSetNumber(int soundset_number);
++        void setActiveSoundSet(string soundset_name);
++        void setSoundSetCount(int count) { sound_set_count = count; }
++        int getSoundSetCount() { return sound_set_count; }
++        int getButtonPosition(string soundset_name) {
++            return sound_sets[soundset_name].getButtonPosition();
++        }
++        string getSoundSetByPosition(int button_position);
++
++    private:
++        SoundSetRepository       sound_sets;
++        SoundEffectRepository    sound_effects;
++        string                   active_sound_set_key;
++        string                   default_sound_set;
++        int                      sound_set_count;
+     };
+ 
+-
+     class SoundEngine_Null : public SoundEngine {
+     public:
+ 
+@@ -60,35 +175,16 @@
+         bool init() { return true; }
+         void shutdown() {}
+         void clear_cache() {}
+-
+-        bool is_initialized() const 
+-        { return true; }
+-
+-        void set_sound_volume(double /*soundvol*/)
+-        {}
+-
+-        void set_music_volume(double /*musicvol*/) 
+-        {}
+-
+-        bool play_music (const std::string &amp;/*filename*/) 
+-        { return false; }
+-
+-        void stop_music() 
+-        {}
+-
+-        void fadeout_music() 
+-        {}
+-
+-        void play_sound (const SoundEffect &amp;)
+-        {}
+-
+-        void define_sound (const SoundName &amp;, const std::string &amp;/*filename*/)
+-        {}
+-
+-        void define_sound (const SoundName &amp;, const SoundData &amp;)
+-        {}
+-        void set_listenerpos (ecl::V2 pos) 
+-        {}
++        bool is_initialized() const { return true; }
++        void set_sound_volume(double /*soundvol*/) {}
++        void set_music_volume(double /*musicvol*/) {}
++        bool play_music (const std::string &amp;/*filename*/) { return false; }
++        void stop_music() {}
++        void fadeout_music() {}
++        bool play_sound (const SoundEvent &amp;) {}
++        void define_sound (const SoundName &amp;, const std::string &amp;/*filename*/) {}
++        void define_sound (const SoundName &amp;, const SoundData &amp;) {}
++        void set_listenerpos (ecl::V2 pos) {}
+     };
+ 
+     class SoundEngine_SDL : public SoundEngine {
+@@ -108,7 +204,7 @@
+         void stop_music();
+         void fadeout_music();
+ 
+-        void play_sound(const SoundEffect &amp;s);
++        bool play_sound(const SoundEvent &amp;s);
+         void clear_cache();
+         void define_sound (const SoundName &amp;, const std::string &amp;filename);
+         void define_sound (const SoundName &amp;, const SoundData &amp;);
+@@ -136,7 +232,7 @@
+         Uint16     m_format;
+         int        m_channels;
+         ecl::Dict&lt;Mix_Chunk*&gt; wav_cache;
+-        vector&lt;SoundEffect&gt; m_channelinfo;
++        vector&lt;SoundEvent&gt; m_channelinfo;
+         ecl::V2      m_listenerpos;
+         SDL_mutex  *m_mutex;
+         static SoundEngine_SDL *m_instance;
+
+Modified: branches/1.0/src/stones_complex.cc
+===================================================================
+--- branches/1.0/src/stones_complex.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/stones_complex.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -1853,7 +1853,7 @@
+         NameObject(target, old_name);
+ 
+     server::IncMoveCounter();
+-    sound::SoundEvent (&quot;movesmall&quot;, my_pos.center());
++    sound::EmitSoundEvent (&quot;movesmall&quot;, my_pos.center());
+ }
+ 
+ 
+
+Modified: branches/1.0/src/world.cc
+===================================================================
+--- branches/1.0/src/world.cc	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/world.cc	2007-04-20 12:02:41 UTC (rev 693)
+@@ -829,7 +829,7 @@
+                         double volume = std::max (0.25, length(ai.vel)/8);
+                         volume = std::min (1.0, volume);
+                         volume = getVolume(sc.sound.c_str(), a, volume);
+-                        sound::SoundEvent (sc.sound.c_str(), sc.contact_point, volume);
++                        sound::EmitSoundEvent (sc.sound.c_str(), sc.contact_point, volume);
+                     }
+                 }
+             }
+@@ -923,8 +923,10 @@
+             if (!has_nearby_contact (a1.contacts, contact)) {
+                 double volume = length (force) * ActorTimeStep;
+                 volume = std::min(1.0, volume);
+-                if (volume &gt; 0.4)
+-                    sound::SoundEvent (&quot;ballcollision&quot;, contact.pos, volume);
++                if (volume &gt; 0.4) {
++                    volume = getVolume(&quot;ballcollision&quot;, NULL, volume);
++                    sound::EmitSoundEvent (&quot;ballcollision&quot;, contact.pos, volume);
++                }
+             }
+         }
+     }
+@@ -1076,24 +1078,7 @@
+ 
+ void World::tick_sound_dampings ()
+ {
+-    /* tick_sound_dampings is only to be evaluated every 10th tick (0.1s).
+-       Each damping factor is reduced by 0.9. This is less than the 10th
+-       root of 0.5 (0.933), so after 1s the damping factor is reduced by more
+-       than one half. If the factor shrinks under 0.5, it is considered 0.
+-
+-       Examples:
+-         1) Frequency less than one sound event per 0.6 seconds.
+-            Then there is no damping at all.
+-         2) N events per second. For each event, factor (F) is raised by
+-            one. And each 0.1 seconds it is multiplied with 0.9. We now
+-            have N/10 events per 0.1 seconds, hence in equilibrium f
+-            oscillates between
+-                 f = (f + N/10) * 0.9   =&gt;   f = N
+-            and  f + N/10 = N * 1.1 (geometric series!).
+-       In particular, for large enough N, f is approximately proportional
+-       to N with half-life of less than a second. This is then evaluated
+-       in getVolume. */
+-    
++    // See sound.hh and sound.cc for details.
+     static int counter = 0;
+     ++counter;
+ 
+@@ -1103,12 +1088,10 @@
+             end = level-&gt;sound_dampings.end();
+         int count = 0;
+         while (i != end) {
+-            i-&gt;factor *= 0.933;
+-            if (i-&gt;factor &lt;= 0.5) {
++            if(i-&gt;tick()) // return true if damping entry should be deleted
+                 i = level-&gt;sound_dampings.erase(i);
+-            } else {
++            else
+                 ++i;
+-            }
+         }
+     }
+ }
+@@ -1840,33 +1823,16 @@
+ 
+ float world::getVolume(const char *name, Object *obj, float def_volume)
+ {
+-    /* Return volume, if object OBJ wants to play sound event NAME with
+-       default volume DEF_VOLUME. Often played sounds from always the
+-       same object are damped to reduce noise-level. Note that OBJ == NULL
+-       is explicitly allowed and used e.g. for all laser-sounds. 
+-       The damping factor is increased by 1.0 for each event, and
+-       multiplied with 0.9 each 0.1 seconds, thereby approximately equals
+-       the average number of events per second (see tick_sound_dampings). */
+-
++    // See sound.hh and sound.cc for details.
+     SoundDampingList::iterator i = level-&gt;sound_dampings.begin(),
+         end = level-&gt;sound_dampings.end();
+-    //int count = 0; // only used for log-purposes
+     while (i != end) {
+-        //++count;
+-        if ((i-&gt;origin == obj) &amp;&amp; (i-&gt;event_name == name)) {
+-            if (i-&gt;factor &lt; 20.0)
+-                ++(i-&gt;factor);
+-	    //Log &lt;&lt; &quot;  Found entry &quot; &lt;&lt; count &lt;&lt; &quot;. Factor is now &quot; &lt;&lt; i-&gt;factor &lt;&lt; &quot;.\n&quot;;
+-            float vol = def_volume;
+-            if (i-&gt;factor &gt; 1.0)
+-                vol /= i-&gt;factor;
+-            return vol;
+-        }
++        if (i-&gt;is_equal(name, obj))
++            return i-&gt;get_volume(def_volume);
+         ++i;
+     }
+-    // No entry found for this object. Create a new one with debt 1.
+-    //Log &lt;&lt; &quot;Creating new entry.\n&quot;;
+-    level-&gt;sound_dampings.push_back(SoundDamping(name, obj, 1));
++    // No entry found for this object. Create a new one.
++    level-&gt;sound_dampings.push_back(sound::SoundDamping(name, obj));
+     return def_volume;
+ }
+ 
+
+Modified: branches/1.0/src/world.hh
+===================================================================
+--- branches/1.0/src/world.hh	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/world.hh	2007-04-20 12:02:41 UTC (rev 693)
+@@ -364,7 +364,7 @@
+     };
+     void SendExplosionEffect (GridPos p, ExplosionType type);
+ 
+-/* -------------------- Sound Damping -------------------- */
++/* -------------------- Sound Events and Damping -------------------- */
+ 
+     float getVolume(const char *name, Object *obj, float def_volume = 1.0);
+ 
+
+Modified: branches/1.0/src/world_internal.hh
+===================================================================
+--- branches/1.0/src/world_internal.hh	2007-04-17 22:46:27 UTC (rev 692)
++++ branches/1.0/src/world_internal.hh	2007-04-20 12:02:41 UTC (rev 693)
+@@ -186,23 +186,6 @@
+ 
+     typedef list&lt;DelayedImpulse&gt; ImpulseList;
+ 
+-/* -------------------- SoundDampingList ---------------- */
+-
+-/*! This class stores object addresses and assigns volumes to
+-    sound events, based on the frequency of the event. */
+-
+-    class SoundDamping {
+-    public:
+-        const char *event_name;
+-        const Object *origin;
+-        float factor;
+-
+-        SoundDamping(const char *event_name_, const Object *origin_, float factor_)
+-        : event_name(event_name_), origin(origin_), factor(factor_) {}
+-    };
+-
+-    typedef list&lt;SoundDamping&gt; SoundDampingList;
+-
+ /* -------------------- Layer -------------------- */
+ 
+     template &lt;class T&gt;
+@@ -273,7 +256,10 @@
+         BorderStone borderstone;
+     };
+ 
++/* ------------- Sound Damping List -------------- */
+ 
++typedef list&lt;sound::SoundDamping&gt; SoundDampingList;
++
+ /* -------------------- World -------------------- */
+ 
+     /*! Contains the level information (in theory everything that is
+@@ -354,7 +340,7 @@
+         ImpulseList          delayed_impulses;
+         vector&lt;GridPos&gt;      changed_stones;
+ 
+-        SoundDampingList     sound_dampings;
++        SoundDampingList     sound_dampings; // see sound.hh for details
+ 
+         FloorLayer      fl_layer;
+         ItemLayer       it_layer;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000130.html">[Enigma-game-svn] r692 - in branches/1.0/src: gui lev
+</A></li>
+	<LI>Next message: <A HREF="000132.html">[Enigma-game-svn] r694 - branches/1.0/data/levels/lib
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#131">[ date ]</a>
+              <a href="thread.html#131">[ thread ]</a>
+              <a href="subject.html#131">[ subject ]</a>
+              <a href="author.html#131">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

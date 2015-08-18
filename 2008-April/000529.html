@@ -1,0 +1,765 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1096 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1096%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200804082108.m38L8J7Q012397%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000528.html">
+   <LINK REL="Next"  HREF="000530.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1096 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1096%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200804082108.m38L8J7Q012397%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1096 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Apr  8 23:08:19 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000528.html">[Enigma-game-svn] r1095 - homepage/input
+</A></li>
+        <LI>Next message: <A HREF="000530.html">[Enigma-game-svn] r1097 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#529">[ date ]</a>
+              <a href="thread.html#529">[ thread ]</a>
+              <a href="subject.html#529">[ subject ]</a>
+              <a href="author.html#529">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-04-08 23:08:17 +0200 (Tue, 08 Apr 2008)
+New Revision: 1096
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/WorldProxy.cc
+   trunk/src/items.cc
+   trunk/src/ox_extra.cc
+   trunk/src/ox_magnum.cc
+   trunk/src/ox_oxyd1.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/oxyd.cc
+   trunk/src/stones/CoinSlot.cc
+   trunk/src/stones/CoinSlot.hh
+Log:
+Trunk 1.1: new API reengineering Coinslot, Coin
+- fix it_magnet - strength, range attributes set prior grid set
+- it-coin* to it_coin_s, it_coin_m, it_coin_l - a single class
+- coins have no longer a value, but coinslots have attributes
+  interval_s, interval_m, interval_l
+- coinslot with instant attribute/variation
+  - instant false (default) gets active after coin insertion, next coin
+      insertable after last one finished its insertion animation.
+  - instant true: immediately active on coin insertion, accepts coins
+      at any frequency
+- coinslot fully swappable in any state
+- coinslot state is read only, no &quot;on&quot; messages, etc are accepted
+- oxyd magnum activation of levels 110,121,126,127,128,129,159,166,181,182
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-04-06 19:48:28 UTC (rev 1095)
++++ trunk/data/api1init.lua	2008-04-08 21:08:17 UTC (rev 1096)
+@@ -47,6 +47,9 @@
+ RenamingObjectsNew2Old = {
+     it_blocker = &quot;it-blocker&quot;,
+     it_blocker_new = &quot;it-blocker-new&quot;,
++    it_coin_s = &quot;it-coin1&quot;,
++    it_coin_m = &quot;it-coin2&quot;,
++    it_coin_l = &quot;it-coin4&quot;,
+     it_extralife = &quot;it-extralife&quot;,
+     it_hammer = &quot;it-hammer&quot;,
+     it_magnet = &quot;it-magnet&quot;,
+@@ -240,6 +243,9 @@
+      if key == &quot;on&quot; then
+          _key = &quot;state&quot;
+      end
++     if key == &quot;value&quot; then
++         _key = &quot;coin_value&quot;
++     end
+      if key == &quot;targetx&quot; then
+          local d = enigma._GetAttrib(obj, &quot;destination&quot;)
+          if (en.usertype(d) == &quot;position&quot;) then
+@@ -294,6 +300,9 @@
+      if key == &quot;delay&quot; then
+          _key = &quot;interval&quot;
+      end
++     if key == &quot;value&quot; then
++         _key = &quot;coin_value&quot;
++     end
+      if key == &quot;blackball&quot; or key == &quot;whiteball&quot; then
+          _key = &quot;color&quot;
+      end
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-04-06 19:48:28 UTC (rev 1095)
++++ trunk/data/models-2d.lua	2008-04-08 21:08:17 UTC (rev 1096)
+@@ -395,9 +395,6 @@
+         &quot;it-booze-broken&quot;,
+         &quot;it-brush&quot;,
+         &quot;it-cherry&quot;,
+-        &quot;it-coin1&quot;,
+-        &quot;it-coin2&quot;,
+-        &quot;it-coin4&quot;,
+         &quot;it-cross&quot;,
+         &quot;it-document&quot;,
+         &quot;it-drop&quot;,
+@@ -436,6 +433,9 @@
+     DefImages(itemlist)
+ 
+     DefImage(&quot;it-brake&quot;, {filename=&quot;st-brake&quot;})
++    DefImage(&quot;it_coin_s&quot;, {filename=&quot;it-coin1&quot;})
++    DefImage(&quot;it_coin_m&quot;, {filename=&quot;it-coin2&quot;})
++    DefImage(&quot;it_coin_l&quot;, {filename=&quot;it-coin4&quot;})
+     DefImage(&quot;it_extralife&quot;, {filename=&quot;it-extralife&quot;})
+     DefImage(&quot;it_hammer&quot;, {filename=&quot;it-hammer&quot;})
+     DefImage(&quot;it_sword&quot;, {filename=&quot;it-sword&quot;})
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-04-06 19:48:28 UTC (rev 1095)
++++ trunk/data/schemas/objects.xml	2008-04-08 21:08:17 UTC (rev 1096)
+@@ -4,6 +4,7 @@
+     &lt;attr name=&quot;action&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;autoclose&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;cluster&quot; type=&quot;int&quot; default=&quot;nil&quot; min=&quot;0&quot; max=&quot;1&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;coin_value&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;color&quot; type=&quot;int&quot; default=&quot;nil&quot; min=&quot;0&quot; max=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;connections&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;counterclock&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+@@ -11,6 +12,9 @@
+     &lt;attr name=&quot;faces&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;instant&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;interval&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;interval_s&quot; type=&quot;double&quot; default=&quot;3&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;interval_m&quot; type=&quot;double&quot; default=&quot;6&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;interval_l&quot; type=&quot;double&quot; default=&quot;12&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;inverse&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;invisible&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;loop&quot; type=&quot;bool&quot; default=&quot;true&quot; rw=&quot;rw&quot;/&gt;
+@@ -71,6 +75,19 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;it_blocker_new&quot; init=&quot;true&quot;&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;it_coin&quot;&gt;
++      &lt;attr name=&quot;coin_value&quot; default=&quot;3&quot;/&gt;
++      &lt;attr name=&quot;state&quot; rw=&quot;r&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_coin_s&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;0&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_coin_m&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;1&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;it_coin_l&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;2&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;it_extralife&quot;/&gt;
+     &lt;object name=&quot;it_extralife_new&quot; init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;it_hammer&quot;/&gt;
+@@ -242,6 +259,16 @@
+     &lt;object name=&quot;st_brick_nesw&quot;&gt;
+       &lt;attr name=&quot;connections&quot; value=&quot;nesw&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_coinslot&quot;&gt;
++      &lt;attr name=&quot;instant&quot;/&gt;
++      &lt;attr name=&quot;interval_s&quot;/&gt;
++      &lt;attr name=&quot;interval_m&quot;/&gt;
++      &lt;attr name=&quot;interval_l&quot;/&gt;
++      &lt;attr name=&quot;state&quot; rw=&quot;r&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_coinslot_instant&quot;&gt;
++      &lt;attr name=&quot;instant&quot; value=&quot;true&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_floppy&quot;&gt;
+       &lt;msg name=&quot;on&quot;/&gt;
+       &lt;msg name=&quot;off&quot;/&gt;
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2008-04-06 19:48:28 UTC (rev 1095)
++++ trunk/src/WorldProxy.cc	2008-04-08 21:08:17 UTC (rev 1096)
+@@ -117,20 +117,24 @@
+             server::HoleForce = val;
+         } else if (key == &quot;IceFriction&quot;) {
+             server::IceFriction = val;
+-        } else if (key == &quot;MagnetForce&quot;) {
++        } else if (key == &quot;MagnetStrength&quot;) {
+             server::MagnetForce = val;
++            BroadcastMessage(&quot;_updateglobals&quot;, &quot;it_magnet&quot;, GRID_ITEMS_BIT);
+         } else if (key == &quot;MagnetRange&quot;) {
+             server::MagnetRange = val;
++            BroadcastMessage(&quot;_updateglobals&quot;, &quot;it_magnet&quot;, GRID_ITEMS_BIT);
+         } else if (key == &quot;SlopeForce&quot;) {
+             server::SlopeForce = val;
+         } else if (key == &quot;SwampSinkSpeed&quot;) {
+             server::SwampSinkSpeed = val;
+         } else if (key == &quot;WaterSinkSpeed&quot;) {
+             server::WaterSinkSpeed = val;
+-        } else if (key == &quot;WormholeForce&quot;) {
++        } else if (key == &quot;WormholeStrength&quot;) {
+             server::WormholeForce = val;
++            BroadcastMessage(&quot;_updateglobals&quot;, &quot;it_wormhole&quot;, GRID_ITEMS_BIT);
+         } else if (key == &quot;WormholeRange&quot;) {
+             server::WormholeRange = val;
++            BroadcastMessage(&quot;_updateglobals&quot;, &quot;it_wormhole&quot;, GRID_ITEMS_BIT);
+         }
+     }
+ 
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-04-06 19:48:28 UTC (rev 1095)
++++ trunk/src/items.cc	2008-04-08 21:08:17 UTC (rev 1096)
+@@ -666,66 +666,69 @@
+ 
+ /* -------------------- Coins -------------------- */
+ 
+-// :value    1,2,4: how many time-units this coin buys
+-namespace
+-{
+-    class Coin1 : public Item {
+-        CLONEOBJ(Coin1);
+-        DECL_TRAITS;
++// TODO id renaming when names are stable
+ 
+-        void processLight(Direction d) {
+-            sound_event (&quot;itemtransform&quot;);
+-            transform(&quot;it_umbrella_new&quot;);
+-        }
++    class Coin : public Item {
++        CLONEOBJ(Coin);
++        DECL_TRAITS_ARRAY(3, state);
+ 
+-        void on_stonehit(Stone *) {
+-            replace(it_coin2);
+-        }
++    public:
++        Coin(int type);
++        static void setup();
++        
++        // Object interface
++        virtual std::string getClass() const;
+ 
+-    public:
+-        Coin1() {
+-            setAttr(&quot;value&quot;, 3.0);
+-        }
++        // GridObject interface
++        virtual void processLight(Direction d);
++        
++        // Item interface
++        virtual void on_stonehit(Stone *st);
+     };
+-    DEF_TRAITS(Coin1, &quot;it-coin1&quot;, it_coin1);
++    
++    void Coin::setup() {
++        RegisterItem (new Coin(0));
++        RegisterItem (new Coin(1));
++        RegisterItem (new Coin(2));
++    }
+ 
+-    class Coin2 : public Item {
+-        CLONEOBJ(Coin2);
+-        DECL_TRAITS;
+-
+-        void processLight(Direction d) {
+-            sound_event (&quot;itemtransform&quot;);
+-            transform(&quot;it_hammer_new&quot;);
++    Coin::Coin(int type) {
++        state = type;
++        setAttr(&quot;coin_value&quot;, state == 0 ? 3.0 : (state == 1 ? 6.0 : 12.0));
++    }
++    
++    std::string Coin::getClass() const {
++        return &quot;Coin&quot;;
++    }
++    
++    void Coin::processLight(Direction d) {
++        sound_event(&quot;itemtransform&quot;);
++        switch (state) {
++            case 0 : 
++                transform(&quot;it_umbrella_new&quot;); break;
++            case 1 :
++                transform(&quot;it_hammer_new&quot;); break;
++            case 2 :
++                transform(&quot;it_extralife_new&quot;); break;
+         }
++    }
+ 
+-        void on_stonehit(Stone *) {
+-            replace(it_coin4);
++    void Coin::on_stonehit(Stone *) {
++        if (state &lt;= 1) {
++            state += 1;
++            init_model();
+         }
+ 
+-    public:
+-        Coin2() {
+-            setAttr(&quot;value&quot;, 6.0);
+-        }
++    }
++    
++    ItemTraits Coin::traits[3] = {
++        {&quot;it_coin_s&quot;,  it_coin1,  itf_none, 0.0},
++        {&quot;it_coin_m&quot;,  it_coin2,  itf_none, 0.0},
++        {&quot;it_coin_l&quot;,  it_coin4,  itf_none, 0.0},
+     };
+-    DEF_TRAITS(Coin2, &quot;it-coin2&quot;, it_coin2);
++    
+ 
+-    class Coin4 : public Item {
+-        CLONEOBJ(Coin4);
+-        DECL_TRAITS;
+ 
+-        void processLight(Direction d) {
+-            sound_event (&quot;itemtransform&quot;);
+-            transform(&quot;it_extralife_new&quot;);
+-        }
+-    public:
+-        Coin4() {
+-            setAttr(&quot;value&quot;, 12.0);
+-        }
+-    };
+-    DEF_TRAITS(Coin4, &quot;it-coin4&quot;, it_coin4);
+-}
+-
+-
+ /* -------------------- Hills and Hollows -------------------- */
+ 
+ /** \page it-hills Hills and Hollows
+@@ -1814,8 +1817,8 @@
+             squareRange = range * range;
+         } else if (key == &quot;strength&quot;) {
+             correctedStrength = 0.6 * ((val.getType() == Value::NIL) ? server::MagnetForce : (double)val);
+-        } else
+-            Item::setAttr(key, val);
++        }
++        Item::setAttr(key, val);
+     }
+     
+     Value Magnet::message(const Message &amp;m) {
+@@ -3944,9 +3947,7 @@
+     RegisterItem (new ChangeFloorItem);
+     RegisterItem (new Cherry);
+     RegisterItem (new Coffee);
+-    RegisterItem (new Coin1);
+-    RegisterItem (new Coin2);
+-    RegisterItem (new Coin4);
++    Coin::setup();
+     Crack::setup();
+     RegisterItem (new Cross);
+     RegisterItem (new Death);
+
+Modified: trunk/src/ox_extra.cc
+===================================================================
+--- trunk/src/ox_extra.cc	2008-04-06 19:48:28 UTC (rev 1095)
++++ trunk/src/ox_extra.cc	2008-04-08 21:08:17 UTC (rev 1096)
+@@ -222,7 +222,7 @@
+     UNUSED,              // OxydExtra stone 0x61
+     UNUSED,              // OxydExtra stone 0x62
+     UNUSED,              // OxydExtra stone 0x63
+-    &quot;st_coinslot&quot;,       // OxydExtra stone 0x64
++    &quot;st_coinslot_instant&quot;, // OxydExtra stone 0x64
+     &quot;st-thief&quot;,          // OxydExtra stone 0x65
+     &quot;st-shogun-s&quot;,       // OxydExtra stone 0x66
+     UNUSED,              // OxydExtra stone 0x67
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2008-04-06 19:48:28 UTC (rev 1095)
++++ trunk/src/ox_magnum.cc	2008-04-08 21:08:17 UTC (rev 1096)
+@@ -228,7 +228,7 @@
+     UNUSED,                     // OxydMagnum stone 0x67
+     &quot;st-bombs&quot;,                 // OxydMagnum stone 0x68 (common was 'st-shogun-l')
+     &quot;st-flash&quot;,                 // OxydMagnum stone 0x69
+-    &quot;st_coinslot&quot;,              // OxydMagnum stone 0x6a
++    &quot;st_coinslot_instant&quot;,      // OxydMagnum stone 0x6a
+     &quot;st-thief&quot;,                 // OxydMagnum stone 0x6b
+     &quot;st-shogun-s&quot;,              // OxydMagnum stone 0x6c
+     &quot;st-stoneimpulse&quot;,          // OxydMagnum stone 0x6d
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2008-04-06 19:48:28 UTC (rev 1095)
++++ trunk/src/ox_oxyd1.cc	2008-04-08 21:08:17 UTC (rev 1096)
+@@ -258,7 +258,7 @@
+     &quot;st-disco-light&quot;,           // Oxyd1 stone 0x67
+     &quot;st-bombs&quot;,                 // Oxyd1 stone 0x68
+     &quot;st-flash&quot;,                 // Oxyd1 stone 0x69
+-    &quot;st_coinslot&quot;,              // Oxyd1 stone 0x6a
++    &quot;st_coinslot_instant&quot;,      // Oxyd1 stone 0x6a
+     &quot;st-thief&quot;,                 // Oxyd1 stone 0x6b
+     &quot;st-shogun-s&quot;,              // Oxyd1 stone 0x6c
+     &quot;st-stoneimpulse&quot;,          // Oxyd1 stone 0x6d
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-04-06 19:48:28 UTC (rev 1095)
++++ trunk/src/ox_peroxyd.cc	2008-04-08 21:08:17 UTC (rev 1096)
+@@ -294,7 +294,7 @@
+     &quot;st-disco-medium&quot;,          // PerOxyd stone 0x61
+     &quot;st-bombs&quot;,                 // PerOxyd stone 0x62
+     &quot;st-flash&quot;,                 // PerOxyd stone 0x63
+-    &quot;st_coinslot&quot;,              // PerOxyd stone 0x64
++    &quot;st_coinslot_instant&quot;,      // PerOxyd stone 0x64
+     &quot;st-thief&quot;,                 // PerOxyd stone 0x65
+     &quot;st-shogun-s&quot;,              // PerOxyd stone 0x66
+     &quot;st-shogun-m&quot;,              // PerOxyd stone 0x67
+
+Modified: trunk/src/oxyd.cc
+===================================================================
+--- trunk/src/oxyd.cc	2008-04-06 19:48:28 UTC (rev 1095)
++++ trunk/src/oxyd.cc	2008-04-08 21:08:17 UTC (rev 1096)
+@@ -856,7 +856,7 @@
+ 
+ LP_OxydMagnum::LP_OxydMagnum(OxydVersion version, DatFile *dat)
+ : LevelPack_Oxyd (version, dat, 0, 
+-                  (version==OxydVersion_OxydMagnumGold) ? 120 : 99, 
++                  (version==OxydVersion_OxydMagnumGold) ? 120 : 182, 
+                   false)
+ {
+ }
+
+Modified: trunk/src/stones/CoinSlot.cc
+===================================================================
+--- trunk/src/stones/CoinSlot.cc	2008-04-06 19:48:28 UTC (rev 1095)
++++ trunk/src/stones/CoinSlot.cc	2008-04-08 21:08:17 UTC (rev 1096)
+@@ -20,54 +20,122 @@
+  */
+ 
+ #include &quot;stones/CoinSlot.hh&quot;
+-#include &quot;server.hh&quot;
++#include &quot;errors.hh&quot;
+ #include &quot;Inventory.hh&quot;
++#include &quot;main.hh&quot;
+ #include &quot;player.hh&quot;
+-#include &quot;errors.hh&quot;
++#include &quot;server.hh&quot;
+ 
+ namespace enigma {
+-    CoinSlot::CoinSlot() : Stone () {
++    CoinSlot::CoinSlot(bool isInstant) : Stone() {
++        if (isInstant)
++            objFlags |= OBJBIT_INSTANT;
+         state = OFF;
+-        remaining_time = 0;
++        setAttr(&quot;$addTime&quot;, 0);
+     }
+ 
+     CoinSlot::~CoinSlot() {
+         GameTimer.remove_alarm (this);
+     }
+ 
++    std::string CoinSlot::getClass() const {
++        return &quot;st_coinslot&quot;;
++    }
++
++    Value CoinSlot::getAttr(const std::string &amp;key) const {
++        if (key == &quot;instant&quot;) {
++            return (bool)(objFlags &amp; OBJBIT_INSTANT != 0);
++        }
++        return Stone::getAttr(key);
++    }
++    
++    void CoinSlot::setAttr(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;instant&quot;) {
++            if (val.to_bool())
++                objFlags |= OBJBIT_INSTANT;
++            else
++                objFlags &amp;= ~OBJBIT_INSTANT;
++            return;
++        }
++        Stone::setAttr(key, val);
++    }
++
++    Value CoinSlot::message(const Message &amp;m) {
++        if (m.message == &quot;_model_reanimated&quot;) {
++            // we are swapped - may be that an alarm switched off the slot meanwhile
++            if (state &lt;= ON)
++                init_model();  // replace potential bogus model
++        }
++        return Stone::message(m);
++    }
++
+     int CoinSlot::externalState() const {
+-        return state % 2; // 0 for OFF, TURNON, 1 for ON
++        return state % 2; 
+     }
+ 
+     void CoinSlot::setState(int extState) {
+-        if (isDisplayable()) {
+-            if (extState == 0)
+-                setIState(OFF);
+-            else if (extState == 1)
+-                setIState(ON);
+-        } else
+-            state = extState;
++        return;   // ignore any write attempts
+     }
+ 
+     void CoinSlot::init_model() {
+-        set_model(state==ON ? &quot;st-coinslot-active&quot; : &quot;st-coinslot&quot;);
++        // just static models
++        if (state &lt;= ON)
++            set_model(state==ON ? &quot;st-coinslot-active&quot; : &quot;st-coinslot&quot;);
+     }
+ 
+     void CoinSlot::animcb() {
+-        setIState(ON);
++        ASSERT(state &gt;= INSERT_OFF, XLevelRuntime, &quot;Coinslot - animcb on wrong state&quot;);
++        double rest = GameTimer.remove_alarm(this);   // stop alarm
++        iState newIState = ON;                        // standard follow up state
++        if (!(objFlags &amp; OBJBIT_INSTANT)) {
++            // start or update timer
++            rest += (double)getAttr(&quot;$addTime&quot;);
++            setAttr(&quot;$addTime&quot;, 0);
++        } else { // instant
++            if (rest == 0)
++                // the coin value is less than the animation time 
++                newIState = OFF;
++        }
++        if (rest &gt; 0)
++            GameTimer.set_alarm(this, (double)getAttr(&quot;$addTime&quot;) + rest, false);
++        setIState(newIState);
+     }
+ 
+     void CoinSlot::actor_hit(const StoneContact &amp;sc) {
++        // no coin insert if instant and coin is currently being inserted 
++        if (state &gt;= INSERT_OFF &amp;&amp; !(objFlags &amp; OBJBIT_INSTANT))
++            return;
++            
+         if (enigma::Inventory *inv = player::GetInventory(sc.actor)) {
+-            if (Item *it = inv-&gt;get_item (0)) {
++            if (Item *it = inv-&gt;get_item(0)) {
+                 ItemID id = get_id(it);
+                 if (id == it_coin1 || id == it_coin2 || id == it_coin4) {
+-                    double coin_value = it-&gt;getAttr(&quot;value&quot;);
+-                    remaining_time += coin_value;
++                    double interval;
++                    if (server::EnigmaCompatibility &lt; 1.10) 
++                        interval = it-&gt;getAttr(&quot;coin_value&quot;);
++                    else 
++                        switch (id) {
++                            case it_coin1:
++                                interval = getAttr(&quot;interval_s&quot;); break;
++                            case it_coin2:
++                                interval = getAttr(&quot;interval_m&quot;); break;
++                            case it_coin4:
++                                interval = getAttr(&quot;interval_l&quot;); break;
++                        }
++                    
++                    if (objFlags &amp; OBJBIT_INSTANT) {
++                        // start or update timer
++                        double rest = GameTimer.remove_alarm(this);
++                        GameTimer.set_alarm(this, interval + rest, false);
++                    } else {
++                        // remember time value for animcb evaluation
++                        setAttr(&quot;$addTime&quot;, (double)getAttr(&quot;$addTime&quot;) + interval);
++                    }
+                     inv-&gt;yield_first();
+-                    player::RedrawInventory (inv);
++                    player::RedrawInventory(inv);
+                     delete it;
+-                    setIState(TURNON);
++                    
++                    setIState((objFlags &amp; OBJBIT_INSTANT) ? INSERT_ON : (iState)(state + 2));
+                 }
+             }
+         }
+@@ -77,51 +145,74 @@
+          return &quot;metal&quot;;
+     }
+ 
+-    void CoinSlot::tick(double dtime) {
+-        ASSERT(remaining_time &gt; 0, XLevelRuntime, &quot;CoinSlot: tick called, but no remaining time&quot;);
+-
+-        remaining_time -= dtime;
+-        if (remaining_time &lt;= 0)
+-            setIState(OFF);
++    void CoinSlot::alarm() {
++        ASSERT((state &amp; 1) == ON, XLevelRuntime, &quot;Coinslot - alarm of not active slot&quot;);
++        setIState(state == ON ? OFF : INSERT_OFF);
+     }
+-
++    
+     void CoinSlot::setIState(iState newIState) {
+-        if (newIState == ON) {
+-            if (state == TURNON) {
+-                state = ON;
+-                performAction(state == ON);
+-                GameTimer.activate(this);
+-            }
+-            else if (state == ON) {
+-                // state is already ON, this was just a &quot;coin-supply&quot;
+-                // Do nothing but change the model
+-            }
+-            init_model();
++        bool doAction = false;
++        bool actionValue = false;
++        bool doInit = false;
++        
++        Log &lt;&lt; &quot;Coinslot state change from &quot; &lt;&lt; state &lt;&lt; &quot; to &quot; &lt;&lt; newIState &lt;&lt; &quot;\n&quot;;
++        switch (state) {
++            case OFF :
++                ASSERT(newIState != ON, XLevelRuntime, &quot;Coinslot - illegal state change from OFF to ON&quot;);
++                actionValue = true;
++                doAction = (newIState == INSERT_ON);
++                set_anim(&quot;st-coin2slot&quot;);
++                break;
++            case ON :
++                if (newIState == INSERT_ON)
++                    set_anim(&quot;st-coin2slot&quot;);
++                else if (newIState == OFF) {
++                    actionValue = false;
++                    doAction = true;
++                    doInit = true;
++                } else
++                    ASSERT(false , XLevelRuntime, &quot;Coinslot - illegal state change from &quot;);
++                break;
++            case INSERT_OFF:
++                ASSERT(newIState == ON, XLevelRuntime, &quot;Coinslot - illegal state change from &quot;);
++                doInit = true;
++                actionValue = true;
++                doAction = true;
++                break;
++            case INSERT_ON :
++                switch (newIState) {
++                    case INSERT_ON :
++                        set_anim(&quot;st-coin2slot&quot;);  // may restart anim!
++                        break;
++                    case ON :
++                        doInit = true;
++                        break;
++                    case OFF :
++                        doInit = true;
++                        // fall through
++                    case INSERT_OFF :  // continue insert animation
++                        actionValue = false;
++                        doAction = true;
++                        break;
++                }
++                break;
+         }
+-        else if (newIState == TURNON) {
+-            if (state == OFF) {
+-                state = TURNON;
+-            }
+-            else if (state == ON) {
+-                // state is already ON, this was just a &quot;coin-supply&quot;
+-                // Do nothing but play the anim
+-            }
+-            sound_event (&quot;coinsloton&quot;);
+-            set_anim(&quot;st-coin2slot&quot;);
+-        }
+-        else if (newIState == OFF) {
+-            state = OFF;
+-            performAction(state == ON);
+-            GameTimer.deactivate(this);
+-            sound_event (&quot;coinslotoff&quot;);
++        
++        state = newIState;
++
++        if (doInit &amp;&amp; isDisplayable())
+             init_model();
+-        }
++        
++        if (doAction)
++           performAction(actionValue);
++                
+     }
+ 
+     DEF_TRAITS(CoinSlot, &quot;st_coinslot&quot;, st_coinslot);
+ 
+     BOOT_REGISTER_START
+-        BootRegister(new CoinSlot(), &quot;st_coinslot&quot;);
++        BootRegister(new CoinSlot(false), &quot;st_coinslot&quot;);
++        BootRegister(new CoinSlot(true), &quot;st_coinslot_instant&quot;);
+     BOOT_REGISTER_END
+ 
+ } // namespace enigma
+
+Modified: trunk/src/stones/CoinSlot.hh
+===================================================================
+--- trunk/src/stones/CoinSlot.hh	2008-04-06 19:48:28 UTC (rev 1095)
++++ trunk/src/stones/CoinSlot.hh	2008-04-08 21:08:17 UTC (rev 1096)
+@@ -37,13 +37,28 @@
+         CLONEOBJ(CoinSlot);
+         DECL_TRAITS;
+     private:
+-        enum iState { OFF, ON, TURNON };
+-        double remaining_time;
++        enum iState { 
++            OFF, 
++            ON,
++            INSERT_OFF,   ///&lt; coin is currently inserted, switch is still off if not instant
++                          ///&lt; this state does not exist for instant switches
++            INSERT_ON     ///&lt; coin is currently inserted while switch in on
++        };
++        
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_INSTANT   =  1&lt;&lt;24  ///&lt; Object is instant active on coin insertion 
++        };
+ 
+     public:
+-        CoinSlot();
++        CoinSlot(bool isInstant);
+         ~CoinSlot();
+ 
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++        virtual Value getAttr(const std::string &amp;key) const;
++        virtual Value message(const Message &amp;m);
++
+         // StateObject interface
+         virtual int externalState() const;
+         virtual void setState(int extState);
+@@ -59,7 +74,7 @@
+         virtual const char *collision_sound();
+ 
+         // TimeHandler interface
+-        virtual void tick(double dtime);
++        virtual void alarm();
+ 
+     private:
+         void setIState(iState newIState);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000528.html">[Enigma-game-svn] r1095 - homepage/input
+</A></li>
+	<LI>Next message: <A HREF="000530.html">[Enigma-game-svn] r1097 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#529">[ date ]</a>
+              <a href="thread.html#529">[ thread ]</a>
+              <a href="subject.html#529">[ subject ]</a>
+              <a href="author.html#529">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

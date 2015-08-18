@@ -1,0 +1,386 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1378 - in trunk/src: . others stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-November/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1378%20-%20in%20trunk/src%3A%20.%20others%20stones&In-Reply-To=%3C200811232209.mANM9nn1001695%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000806.html">
+   <LINK REL="Next"  HREF="000808.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1378 - in trunk/src: . others stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1378%20-%20in%20trunk/src%3A%20.%20others%20stones&In-Reply-To=%3C200811232209.mANM9nn1001695%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1378 - in trunk/src: . others stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Nov 23 23:09:49 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000806.html">[Enigma-game-svn] r1377 - in trunk/data/levels: enigma_cross	enigma_iv enigma_v enigma_vii enigma_viii
+</A></li>
+        <LI>Next message: <A HREF="000808.html">[Enigma-game-svn] r1379 - in trunk/src: . others
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#807">[ date ]</a>
+              <a href="thread.html#807">[ thread ]</a>
+              <a href="subject.html#807">[ subject ]</a>
+              <a href="author.html#807">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-11-23 23:09:48 +0100 (Sun, 23 Nov 2008)
+New Revision: 1378
+
+Modified:
+   trunk/src/WorldProxy.cc
+   trunk/src/actors.cc
+   trunk/src/others/Rubberband.cc
+   trunk/src/others/Rubberband.hh
+   trunk/src/server.cc
+   trunk/src/server.hh
+   trunk/src/stones.cc
+   trunk/src/stones.hh
+   trunk/src/stones/OxydStone.cc
+   trunk/src/stones/OxydStone.hh
+Log:
+Trunk 1.1:  new API 
+- rubberband:
+  - smooth min/max limit corrections in case of max-min less epsilon
+  - add handling for min/max limit violations due to actor warping, actor
+    resurrection, new rubberbands directly violating limits and moving anchor
+    stones:
+    - limits can not be extended further than they happen to be
+    - a constant force that can be configured by the global attribute
+      RubberViolationStrength (default 10.0) pushes the actors back to the
+      limits.
+
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2008-11-07 11:26:53 UTC (rev 1377)
++++ trunk/src/WorldProxy.cc	2008-11-23 22:09:48 UTC (rev 1378)
+@@ -96,6 +96,8 @@
+             return server::MagnetRange;
+         } else if (key == &quot;MaxOxydColor&quot;) {
+             return server::MaxOxydColor;
++        } else if (key == &quot;RubberViolationStrength&quot;) {
++            return server::RubberViolationStrength;
+         } else if (key == &quot;SlopeForce&quot;) {
+             return server::SlopeForce;
+         } else if (key == &quot;SwampSinkSpeed&quot;) {
+@@ -186,6 +188,8 @@
+             server::MaxOxydColor = val;
+             ASSERT(server::MaxOxydColor &gt;= 0 &amp;&amp; server::MaxOxydColor &lt; OxydStone::COLORCOUNT, XLevelRuntime,
+                     &quot;Attribute 'MaxOxydColor' value is out of range.&quot;);
++        } else if (key == &quot;RubberViolationStrength&quot;) {
++            server::RubberViolationStrength = val;
+         } else if (key == &quot;SlopeForce&quot;) {
+             server::SlopeForce = val;
+         } else if (key == &quot;SwampSinkSpeed&quot;) {
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2008-11-07 11:26:53 UTC (rev 1377)
++++ trunk/src/actors.cc	2008-11-23 22:09:48 UTC (rev 1378)
+@@ -200,6 +200,10 @@
+     m_actorinfo.vel = V2();
+     m_sprite.move (newpos);
+     move ();
++    // notify rubberbands that may now exceed max/min limits
++    ObjectList olist = getAttr(&quot;rubbers&quot;);   // a private deletion resistant copy
++    for (ObjectList::iterator itr = olist.begin(); itr != olist.end(); ++itr)
++        SendMessage(*itr, &quot;_recheck&quot;);
+ }
+ 
+ void Actor::move () 
+
+Modified: trunk/src/others/Rubberband.cc
+===================================================================
+--- trunk/src/others/Rubberband.cc	2008-11-07 11:26:53 UTC (rev 1377)
++++ trunk/src/others/Rubberband.cc	2008-11-23 22:09:48 UTC (rev 1378)
+@@ -20,7 +20,8 @@
+ #include &quot;others/Rubberband.hh&quot;
+ #include &quot;actors.hh&quot;
+ #include &quot;errors.hh&quot;
+-#include &quot;main.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;server.hh&quot;
+ #include &quot;world.hh&quot;
+ 
+ namespace enigma {
+@@ -62,10 +63,10 @@
+             ASSERT(innerThreshold &gt;= 0, XLevelRuntime, &quot;Rubberband: inner threshold is negative&quot;);
+         } else if (key == &quot;max&quot;) {
+             maxLength = val;
+-            ASSERT(maxLength &gt;= 0, XLevelRuntime, &quot;Rubberband: max length is negative&quot;);
++            ASSERT((maxLength &gt;= 0) &amp;&amp; (maxLength == 0 || maxLength &gt;= minLength), XLevelRuntime, &quot;Rubberband: max length is negative or less min&quot;);
+         } else if (key == &quot;min&quot;) {
+             minLength = val;
+-            ASSERT(minLength &gt;= 0, XLevelRuntime, &quot;Rubberband: min length is negative&quot;);
++            ASSERT((minLength &gt;= 0) &amp;&amp; (maxLength == 0 || maxLength &gt;= minLength), XLevelRuntime, &quot;Rubberband: min length is negative or greater max&quot;);
+         }
+         Other::setAttr(key, val);
+     }
+@@ -89,8 +90,24 @@
+         return Other::getAttr(key);
+     }
+     
++    Value Rubberband::message(const Message &amp;m) {
++        if (m.message == &quot;_recheck&quot;) {
++            ecl::V2 v = posAnchor2() - anchor1-&gt;get_pos();
++            double len = ecl::length(v);
++            if (maxLength &gt; 0 &amp;&amp; len &gt; maxLength)
++                objFlags |= OBJBIT_MAXVIOLATION;
++            if (len &lt; minLength)
++                objFlags |= OBJBIT_MINVIOLATION;
++            return Value(); 
++        }
++        return Other::message(m);
++    }
++
+     void Rubberband::postAddition() {
++        ASSERT(anchor1 != NULL, XLevelRuntime, &quot;Rubberband: 'anchor1' is no actor&quot;);
++        ASSERT(anchor2.ac != NULL, XLevelRuntime, &quot;Rubberband: 'anchor2' is neither actor nor stone&quot;);
+         model = display::AddRubber(anchor1-&gt;get_pos(), posAnchor2(), 240, 140, 20, true);  // orange
++        SendMessage(this, &quot;_recheck&quot;);
+     }
+     
+     void Rubberband::preRemoval() {
+@@ -110,7 +127,14 @@
+         double len = ecl::length(v);
+         ecl::V2 force;
+         
++        // revalidate pending max/min violations
++        if ((objFlags &amp; OBJBIT_MAXVIOLATION) &amp;&amp; len &lt;= maxLength)
++            objFlags &amp;= ~OBJBIT_MAXVIOLATION;
++        if ((objFlags &amp; OBJBIT_MINVIOLATION) &amp;&amp; len &gt;= minLength)
++            objFlags &amp;= ~OBJBIT_MINVIOLATION;
++        
+         if (minLength + eps &lt;= len &amp;&amp; (len &lt;= maxLength -eps || maxLength == 0)) {
++            // length within the purly force controlled min/max limited region
+             if (len == 0) {
+                 force = V2(0, 0);
+             } else if (len &gt; outerThreshold) {
+@@ -127,6 +151,7 @@
+             }
+                 
+         } else if (objFlags &amp; OBJBIT_STONE) {
++            // min/max handling for stone contected rubberbands
+             ActorInfo *ai = anchor1-&gt;get_actorinfo();
+             ecl::V2 vn = normalize(v);
+             bool isMax = (len &gt; maxLength - eps);
+@@ -144,8 +169,16 @@
+             if (!isMin &amp;&amp; (relspeed &gt; 0) || !isMax &amp;&amp; (relspeed &lt; 0))
+                 relspeed = 0;
+             force = - (1 + 0.8 / numRubbers) * relspeed * vn / dt * ai-&gt;mass;  // damping for inverse friction and multiconnections
++//            Log &lt;&lt; &quot;Rubber stone force &quot;&lt;&lt; force1 &lt;&lt; &quot;  &quot; &lt;&lt;relspeed&lt;&lt; &quot;\n&quot;;
++            
++            // eliminate limit violations by moderate forces
++            if (isMax &amp;&amp; (objFlags &amp; OBJBIT_MAXVIOLATION)) {
++                force = server::RubberViolationStrength * vn;
++            } else if (isMin &amp;&amp; (objFlags &amp; OBJBIT_MINVIOLATION)) {
++                force = -server::RubberViolationStrength * vn;
++            }
++            
+             ai-&gt;collforce += force;
+-//            Log &lt;&lt; &quot;Rubber stone force &quot;&lt;&lt; force1 &lt;&lt; &quot;  &quot; &lt;&lt;relspeed&lt;&lt; &quot;\n&quot;;
+         } else {
+             // two actors bouncing on min/max limits
+             ActorInfo *ai1 = anchor1-&gt;get_actorinfo();
+@@ -190,10 +223,26 @@
+ 
+             // in case one actor is blocked the length can exceed the limits due to later force corrections
+             // in the last timestep - we need to correct possible small errors before they sum up
+-            if (isMax &amp;&amp; (len &gt; maxLength) &amp;&amp; (relspeed &gt;= 0))
+-                force = (dmu * (len - maxLength) / dt / dt) * vn;
+-            if (isMin &amp;&amp; (len &lt; minLength) &amp;&amp; (relspeed &lt;= 0))
+-                force = (dmu * (len - minLength) / dt / dt) * vn;
++            if (isMax &amp;&amp; (len &gt; maxLength) &amp;&amp; (relspeed &gt;= 0) &amp;&amp; !(objFlags &amp; OBJBIT_MAXVIOLATION)) {
++                double dlen = ecl::Min(len - maxLength, len - (minLength + eps));
++                dlen = ecl::Max(0.0, dlen);
++                force = (dmu * dlen / dt / dt) * vn;
++            }
++            if (isMin &amp;&amp; (len &lt; minLength) &amp;&amp; (relspeed &lt;= 0) &amp;&amp; !(objFlags &amp; OBJBIT_MINVIOLATION)) {
++                double dlen = len - minLength;
++                if (maxLength &gt; 0) {
++                    dlen = ecl::Max(len - minLength, len - (maxLength - eps));
++                    dlen = ecl::Min(0.0, dlen);
++                }
++                force = (dmu * dlen / dt / dt) * vn;
++            }
++            
++            // eliminate limit violations by moderate forces
++            if (isMax &amp;&amp; (objFlags &amp; OBJBIT_MAXVIOLATION)) {
++                force = server::RubberViolationStrength * vn;
++            } else if (isMax &amp;&amp; (objFlags &amp; OBJBIT_MINVIOLATION)) {
++                force = -server::RubberViolationStrength * vn;
++            }
+ 
+ //            Log &lt;&lt; &quot;Rubber force &quot; &lt;&lt; force1 &lt;&lt;  &quot;  &quot; &lt;&lt; force2 &lt;&lt; &quot;  relspeed  &quot; &lt;&lt; relspeed  &lt;&lt; &quot; both &quot; &lt;&lt; isBoth &lt;&lt; &quot;\n&quot;;
+             ai1-&gt;collforce += force;
+
+Modified: trunk/src/others/Rubberband.hh
+===================================================================
+--- trunk/src/others/Rubberband.hh	2008-11-07 11:26:53 UTC (rev 1377)
++++ trunk/src/others/Rubberband.hh	2008-11-23 22:09:48 UTC (rev 1378)
+@@ -33,7 +33,9 @@
+         CLONEOBJ(Rubberband)
+ 
+         enum ObjectPrivatFlagsBits {
+-            OBJBIT_STONE      =  1&lt;&lt;24   ///&lt; anchor2 is a stone
++            OBJBIT_STONE        =  1&lt;&lt;24,   ///&lt; anchor2 is a stone
++            OBJBIT_MAXVIOLATION =  1&lt;&lt;25,   ///&lt; max may be not fulfilled due to extraordinary events
++            OBJBIT_MINVIOLATION =  1&lt;&lt;26    ///&lt; min may be not fulfilled due to extraordinary events
+         };
+ 
+     public:
+@@ -43,6 +45,7 @@
+         virtual std::string getClass() const;
+         virtual void setAttr(const std::string &amp;key, const Value &amp;val);
+         virtual Value getAttr(const std::string &amp;key) const;
++        virtual Value message(const Message &amp;m);
+         
+         // Other interface
+         virtual void postAddition();
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2008-11-07 11:26:53 UTC (rev 1377)
++++ trunk/src/server.cc	2008-11-23 22:09:48 UTC (rev 1378)
+@@ -114,6 +114,7 @@
+ double   server::MagnetRange;
+ int      server::MaxOxydColor;
+ int32_t  server::RandomState;               // no Lua access
++double   server::RubberViolationStrength;
+ double   server::SlopeForce;
+ double   server::SwampSinkSpeed;
+ double   server::WaterSinkSpeed;
+@@ -273,6 +274,7 @@
+     server::MagnetForce       = 30;
+     server::MagnetRange       = 10;
+     server::MaxOxydColor      = 7;    // for compatibility
++    server::RubberViolationStrength = 10;
+     server::WormholeForce     = 30;
+     server::WormholeRange     = 10;
+     server::HoleForce         = 1.0;
+
+Modified: trunk/src/server.hh
+===================================================================
+--- trunk/src/server.hh	2008-11-07 11:26:53 UTC (rev 1377)
++++ trunk/src/server.hh	2008-11-23 22:09:48 UTC (rev 1378)
+@@ -99,6 +99,7 @@
+     extern double   WaterSinkSpeed;
+ 
+     extern double   SwampSinkSpeed;
++    extern double   RubberViolationStrength;
+     
+     extern int      GlassesVisibility;
+     extern int      ExtralifeGlasses;
+
+Modified: trunk/src/stones/OxydStone.cc
+===================================================================
+--- trunk/src/stones/OxydStone.cc	2008-11-07 11:26:53 UTC (rev 1377)
++++ trunk/src/stones/OxydStone.cc	2008-11-23 22:09:48 UTC (rev 1378)
+@@ -962,10 +962,11 @@
+             set_iState(CLOSING);
+     }
+     
+-    void OxydStone::on_creation (GridPos) {
++    void OxydStone::on_creation (GridPos p) {
+         std::string flavor(getDefaultedAttr(&quot;flavor&quot;, &quot;a&quot;));
+         set_model(string(&quot;st-oxyd&quot;) + flavor);
+         activatePhoto();
++        Stone::on_creation(p);
+     }
+     
+     void OxydStone::on_removal(GridPos p) {
+@@ -973,6 +974,9 @@
+         kill_model(p);
+     }
+     
++    void OxydStone::init_model() {
++    }
++    
+     void OxydStone::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
+         if (oldDirs == 0) {
+             // side independent light switch on
+
+Modified: trunk/src/stones/OxydStone.hh
+===================================================================
+--- trunk/src/stones/OxydStone.hh	2008-11-07 11:26:53 UTC (rev 1377)
++++ trunk/src/stones/OxydStone.hh	2008-11-23 22:09:48 UTC (rev 1378)
+@@ -95,6 +95,7 @@
+         // GridObject interface
+         virtual void on_creation(GridPos p);
+         virtual void on_removal (GridPos p);
++        virtual void init_model();
+         virtual void lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs);
+ 
+         // Stone interface
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-11-07 11:26:53 UTC (rev 1377)
++++ trunk/src/stones.cc	2008-11-23 22:09:48 UTC (rev 1378)
+@@ -31,6 +31,15 @@
+ 
+ /* -------------------- Helper routines -------------------- */
+ 
++void Stone::on_creation(GridPos p) {
++    // notify rubberbands that may now exceed max/min limits
++    ObjectList olist = getAttr(&quot;rubbers&quot;);   // a private deletion resistant copy
++    for (ObjectList::iterator itr = olist.begin(); itr != olist.end(); ++itr)
++        SendMessage(*itr, &quot;_recheck&quot;);
++    GridObject::on_creation(p);
++}
++
++
+ /*! Determine whether the actor hitting the stone can move stone
+   and return either the direction the stone should move or NODIR. */
+ Direction get_push_direction (const StoneContact &amp;sc) 
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2008-11-07 11:26:53 UTC (rev 1377)
++++ trunk/src/stones.hh	2008-11-23 22:09:48 UTC (rev 1378)
+@@ -244,6 +244,7 @@
+ 
+     protected:
+         // GridObject interface
++        virtual void on_creation(GridPos p);
+         virtual void set_model (const std::string &amp;mname) {
+             display::SetModel(GridLoc(GRID_STONES, get_pos()), mname);
+         }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000806.html">[Enigma-game-svn] r1377 - in trunk/data/levels: enigma_cross	enigma_iv enigma_v enigma_vii enigma_viii
+</A></li>
+	<LI>Next message: <A HREF="000808.html">[Enigma-game-svn] r1379 - in trunk/src: . others
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#807">[ date ]</a>
+              <a href="thread.html#807">[ thread ]</a>
+              <a href="subject.html#807">[ subject ]</a>
+              <a href="author.html#807">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

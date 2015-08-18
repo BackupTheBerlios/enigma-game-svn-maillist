@@ -1,0 +1,568 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1116 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1116%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200804292047.m3TKlfMr026958%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000548.html">
+   <LINK REL="Next"  HREF="000550.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1116 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1116%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200804292047.m3TKlfMr026958%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1116 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Apr 29 22:47:41 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000548.html">[Enigma-game-svn] r1115 - in trunk: data/gfx/flags25x15 src/gui
+</A></li>
+        <LI>Next message: <A HREF="000550.html">[Enigma-game-svn] r1117 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#549">[ date ]</a>
+              <a href="thread.html#549">[ thread ]</a>
+              <a href="subject.html#549">[ subject ]</a>
+              <a href="author.html#549">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-04-29 22:47:40 +0200 (Tue, 29 Apr 2008)
+New Revision: 1116
+
+Added:
+   trunk/src/stones/RotatorStone.cc
+   trunk/src/stones/RotatorStone.hh
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/Makefile.am
+   trunk/src/ox_peroxyd.cc
+   trunk/src/stones_complex.cc
+Log:
+Trunk 1.1: reengineering new API rotator stone
+- renaming to st_rotator, st_rotator_cw, st_rotator_ccw
+- state as rotation direction
+- attribute &quot;movable&quot; instead of stone variation
+- improved light behaviour: 
+  - every light addition causes change
+  - light changes on moves and swap are fully respected
+- fixed strange impulsing behaviour that could cause stones
+  to be pushed several grids at once or two rotators to move together
+- fixed all swap problems concerning light and crashed due to impulses
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-04-29 00:13:52 UTC (rev 1115)
++++ trunk/data/api1init.lua	2008-04-29 20:47:40 UTC (rev 1116)
+@@ -119,6 +119,10 @@
+     st_oxyd = &quot;st-oxyd&quot;,
+     st_panel = &quot;st-wood_001&quot;,
+     st_polarswitch = &quot;st-polarswitch&quot;,
++    st_rotator_cw = &quot;st-rotator-right&quot;,
++    st_rotator_ccw = &quot;st-rotator-left&quot;,
++    st_rotator_cw_movable = &quot;st-rotator_move-right&quot;,
++    st_rotator_ccw_movable = &quot;st-rotator_move-left&quot;,
+     st_switch = &quot;st-switch&quot;,
+     st_switch_black = &quot;st-switch_black&quot;,
+     st_switch_white = &quot;st-switch_white&quot;,
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-04-29 00:13:52 UTC (rev 1115)
++++ trunk/data/schemas/objects.xml	2008-04-29 20:47:40 UTC (rev 1116)
+@@ -20,6 +20,7 @@
+     &lt;attr name=&quot;inverse&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;invisible&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;loop&quot; type=&quot;bool&quot; default=&quot;true&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;movable&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;name&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;nopaction&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;noshuffle&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+@@ -438,6 +439,17 @@
+       &lt;msg name=&quot;off&quot;/&gt;
+       &lt;msg name=&quot;signal&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_rotator&quot;&gt;
++      &lt;attr name=&quot;counterclock&quot;/&gt;
++      &lt;attr name=&quot;movable&quot;/&gt;
++      &lt;msg name=&quot;_model_reanimated&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_rotator_cw&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;0&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_rotator_ccw&quot;&gt;
++      &lt;attr name=&quot;state&quot; value=&quot;1&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_switch&quot;&gt;
+       &lt;attr name=&quot;color&quot;/&gt;
+       &lt;attr name=&quot;instant&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-04-29 00:13:52 UTC (rev 1115)
++++ trunk/src/Makefile.am	2008-04-29 20:47:40 UTC (rev 1116)
+@@ -223,6 +223,8 @@
+ 	stones/OxydStone.hh	\
+ 	stones/PolarSwitchStone.cc	\
+ 	stones/PolarSwitchStone.hh	\
++	stones/RotatorStone.cc	\
++	stones/RotatorStone.hh	\
+ 	stones/Switch.cc	\
+ 	stones/Switch.hh	\
+ 	stones/TimerStone.cc	\
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-04-29 00:13:52 UTC (rev 1115)
++++ trunk/src/ox_peroxyd.cc	2008-04-29 20:47:40 UTC (rev 1116)
+@@ -339,8 +339,8 @@
+     &quot;st-rock2&quot;,                 // PerOxyd stone 0x8e
+     UNUSED,                     // PerOxyd stone 0x8f
+     &quot;st-rock8&quot;,                 // PerOxyd stone 0x90
+-    &quot;st-rotator_move-left&quot;,     // PerOxyd stone 0x91
+-    &quot;st-rotator_move-right&quot;,    // PerOxyd stone 0x92
++    &quot;st_rotator_ccw_movable&quot;,   // PerOxyd stone 0x91
++    &quot;st_rotator_cw_movable&quot;,    // PerOxyd stone 0x92
+     &quot;st-swap&quot;,                  // PerOxyd stone 0x93
+     &quot;st-spitter&quot;,               // PerOxyd stone 0x94
+     0,                          // PerOxyd stone 0x95 (dynamite holder, will implememnt it)(levels: 41 184 200)
+
+Added: trunk/src/stones/RotatorStone.cc
+===================================================================
+--- trunk/src/stones/RotatorStone.cc	2008-04-29 00:13:52 UTC (rev 1115)
++++ trunk/src/stones/RotatorStone.cc	2008-04-29 20:47:40 UTC (rev 1116)
+@@ -0,0 +1,172 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/RotatorStone.hh&quot;
++#include &quot;laser.hh&quot;
++#include &quot;main.hh&quot;
++#include &quot;player.hh&quot;
++
++namespace enigma {
++    RotatorStone::RotatorStone(bool isMovable, bool counterclockwise) : Stone () {
++        if (isMovable)
++            objFlags |= OBJBIT_MOVABLE;
++            
++        state = counterclockwise ? CCW : CW;
++    }
++
++    std::string RotatorStone::getClass() const {
++        return &quot;st_rotator&quot;;
++    }
++        
++    void RotatorStone::setAttr(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;counterclock&quot;) {
++            int newstate = val.to_bool() ? CCW : CW;
++            if (newstate != state) {
++                state = newstate;
++                if (isDisplayable())
++                    init_model();
++            } 
++        } else if (key == &quot;movable&quot;) {
++            if (val.to_bool())
++                objFlags |= OBJBIT_MOVABLE;
++            else
++                objFlags &amp;= ~OBJBIT_MOVABLE;
++        } else
++            Stone::setAttr(key, val);
++    }
++    
++    Value RotatorStone::getAttr(const std::string &amp;key) const {
++        if (key == &quot;counterclock&quot;) {
++            return state == CCW;
++        } else if (key == &quot;movable&quot;) {
++            return (bool)(objFlags &amp; OBJBIT_MOVABLE);
++        } else
++            return Stone::getAttr(key);
++    }
++            
++    void RotatorStone::setState(int extState) {
++        if (isDisplayable() &amp;&amp; state != extState) {
++            state = extState;
++            init_model();
++        } else  // object initialisation
++            state = extState;
++    }
++
++    void RotatorStone::init_model() {
++        set_anim(state == CW ? &quot;st-rotator-right&quot; : &quot;st-rotator-left&quot;);
++    }
++    
++    void RotatorStone::on_creation(GridPos p) {
++        // just update light status, do not react for new stones
++        // swapped and moved once are handled by the on_move method
++        updateCurrentLightDirs();
++            
++        activatePhoto();
++
++        Stone::on_creation(p);
++    }
++    
++    void RotatorStone::on_removal(GridPos p) {
++        // remember last enlightment for stone moves and swaps
++        objFlags &amp;= ~OBJBIT_LIGHT;
++        objFlags |= (objFlags &amp; OBJBIT_LIGHTNEWDIRS) &lt;&lt; 25;
++        GameTimer.remove_alarm(this);
++        Stone::on_removal(p);
++    }
++
++    void RotatorStone::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
++        if (added_dirs(oldDirs, newDirs)) {
++            state = 1 - state;  // change rotation direction
++            init_model();
++         }
++    }
++
++    void RotatorStone::animcb() {
++        init_model();
++        send_impulses();
++    }
++    
++    void RotatorStone::actor_hit(const StoneContact &amp;sc) {
++        if (player::WieldedItemIs (sc.actor, &quot;it_wrench&quot;)) {
++            state = 1 - state;  // change rotation direction
++            init_model();
++        }
++
++        if (objFlags &amp; OBJBIT_MOVABLE)
++            maybe_push_stone(sc);
++    }
++
++    void RotatorStone::on_impulse(const Impulse&amp; impulse) {
++        if (objFlags &amp; OBJBIT_MOVABLE) {
++            move_stone(impulse.dir);
++        }
++    }
++    
++    void RotatorStone::on_move() {
++        objFlags &amp;= ~OBJBIT_LIGHTNEWDIRS;
++        objFlags |= (objFlags &amp; OBJBIT_LIGHT) &gt;&gt; 25;
++        RecalcLight();   // necessary for rotators swapped out of light
++        
++        Stone::on_move();
++    }
++    
++    FreezeStatusBits RotatorStone::get_freeze_bits() {
++       return FREEZEBIT_IRREGULAR;
++    }    
++
++    void RotatorStone::alarm() {
++        GridPos p = get_pos();
++        
++        for (int i = WEST; i &lt;= NORTH; i++) {
++            if (Value id = getAttr(ecl::strf(&quot;$neighbour%d&quot;,i))) {
++                Stone *st = GetStone(move(get_pos(), (Direction)i));
++                if (st != NULL  &amp;&amp; id == st-&gt;getId()) {
++                    send_impulse(move(p, (Direction)i), state == CW ? rotate_cw((Direction)i) : rotate_ccw((Direction)i));
++                }
++            }
++        }
++    }
++
++    int RotatorStone::traitsIdx() const {
++        return (objFlags &amp; OBJBIT_MOVABLE) ? 1 : 0;
++    }
++
++    void RotatorStone::send_impulses() {
++        for (int i = WEST; i &lt;= NORTH; i++) {
++            Stone *st = GetStone(move(get_pos(), (Direction)i));
++            Stone::setAttr(ecl::strf(&quot;$neighbour%d&quot;,i), (st == NULL) ? Value() : Value(st-&gt;getId()));
++        }
++        GameTimer.set_alarm(this, 0.1);
++        
++    }
++    
++    StoneTraits RotatorStone::traits[2] = {
++        {&quot;st_rotator&quot;, st_rotator, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++        {&quot;st_rotator&quot;, st_rotator, stf_none, material_stone, 1.0, MOVABLE_STANDARD},
++    };
++    
++    BOOT_REGISTER_START
++        BootRegister(new RotatorStone(false, false), &quot;st_rotator&quot;);
++        BootRegister(new RotatorStone(false, false), &quot;st_rotator_cw&quot;);
++        BootRegister(new RotatorStone(false, true), &quot;st_rotator_ccw&quot;);
++        BootRegister(new RotatorStone(true, false), &quot;st_rotator_cw_movable&quot;);
++        BootRegister(new RotatorStone(true, true), &quot;st_rotator_ccw_movable&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/RotatorStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/RotatorStone.hh
+===================================================================
+--- trunk/src/stones/RotatorStone.hh	2008-04-29 00:13:52 UTC (rev 1115)
++++ trunk/src/stones/RotatorStone.hh	2008-04-29 20:47:40 UTC (rev 1116)
+@@ -0,0 +1,84 @@
++/*
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef ROTATORSTONE_HH
++#define ROTATORSTONE_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class RotatorStone : public Stone, public TimeHandler {
++        CLONEOBJ(RotatorStone);
++        DECL_TRAITS_ARRAY(2, traitsIdx());
++    private:
++        enum iState {
++            CW,   ///&lt; clockwise rotation 
++            CCW   ///&lt; counter clockwise rotation
++        };
++        
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_MOVABLE   =   1&lt;&lt;24,  ///&lt; Object is movable 
++            OBJBIT_LIGHT     =  15&lt;&lt;25   ///&lt; Light status kept for move, swap, pull operations 
++        };
++    public:
++        RotatorStone(bool isMovable, bool counterclockwise);
++        
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++        virtual Value getAttr(const std::string &amp;key) const;
++        
++        // StateObject interface
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
++        virtual void lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs);
++        
++        // ModelCallback interface
++        virtual void animcb();
++        
++        // Stone interface
++        virtual void actor_hit(const StoneContact &amp;sc);
++        virtual void on_impulse(const Impulse&amp; impulse);
++        virtual void on_move();
++        virtual FreezeStatusBits get_freeze_bits();
++
++        // TimeHandler interface
++        virtual void alarm();
++        
++    private:
++        int traitsIdx() const;
++        void send_impulses();
++    };
++
++} // namespace enigma
++
++#endif
++#ifndef ROTATORSTONE_HH_
++#define ROTATORSTONE_HH_
++
++#endif /*ROTATORSTONE_HH_*/
+
+
+Property changes on: trunk/src/stones/RotatorStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-04-29 00:13:52 UTC (rev 1115)
++++ trunk/src/stones_complex.cc	2008-04-29 20:47:40 UTC (rev 1116)
+@@ -39,105 +39,6 @@
+ 
+ namespace enigma { 
+ 
+-
+-/* -------------------- RotatorStone -------------------- */
+-namespace
+-{
+-    class RotatorStone : public PhotoStone {
+-    public:
+-        RotatorStone(bool clockwise_, bool movable_)
+-        : clockwise(clockwise_), movable(movable_)
+-        {
+-            traits.name = &quot;st-rotator&quot;;
+-            traits.id = st_rotator;
+-            traits.flags = stf_none;
+-            traits.material = material_stone;
+-            traits.restitution = 1.0;
+-            traits.movable = movable_ ? MOVABLE_STANDARD : MOVABLE_PERSISTENT;
+-        }
+-
+-    private:
+-        static const double RATE;
+-        static const double IMPULSE_DELAY;
+-
+-        bool clockwise;
+-        bool movable;
+-        StoneTraits traits;
+-
+-        Stone *clone() { return new RotatorStone(clockwise, movable); }
+-        void dispose() { delete this; }
+-        
+-        // Stone interface
+-        void on_creation (GridPos p) {
+-            Stone::on_creation(p);
+-            photo_activate();
+-        }
+-        void on_removal (GridPos p){
+-            photo_deactivate();
+-            Stone::on_removal(p);
+-        }
+-
+-        void send_impulses() {
+-            GridPos p = get_pos();
+-
+-            if (clockwise) {
+-                send_impulse (move(p, NORTH), EAST, IMPULSE_DELAY);
+-                send_impulse (move(p, EAST), SOUTH, IMPULSE_DELAY);
+-                send_impulse (move(p, SOUTH), WEST, IMPULSE_DELAY);
+-                send_impulse (move(p, WEST), NORTH, IMPULSE_DELAY);
+-            } else {
+-                send_impulse (move(p, NORTH), WEST, IMPULSE_DELAY);
+-                send_impulse (move(p, EAST), NORTH, IMPULSE_DELAY);
+-                send_impulse (move(p, SOUTH), EAST, IMPULSE_DELAY);
+-                send_impulse (move(p, WEST), SOUTH, IMPULSE_DELAY);
+-            }
+-        }
+-
+-
+-        void init_model() {
+-            set_anim(clockwise ? &quot;st-rotator-right&quot; : &quot;st-rotator-left&quot;);
+-        }
+-        void animcb() {
+-            init_model();
+-            send_impulses();
+-        }
+-
+-        void actor_hit (const StoneContact &amp;sc) {
+-            if (player::WieldedItemIs (sc.actor, &quot;it_wrench&quot;)) {
+-                clockwise = !clockwise;
+-                init_model();
+-            }
+-
+-            if (movable)
+-                maybe_push_stone(sc);
+-        }
+-
+-        void on_impulse(const Impulse&amp; impulse) {
+-            if (movable)
+-                move_stone(impulse.dir);
+-        }
+-
+-        // PhotoStone interface
+-        void notify_laseron() {
+-            clockwise = !clockwise;
+-            init_model();
+-        }
+-        void notify_laseroff() {}
+-
+-        const StoneTraits &amp;get_traits() const
+-        {
+-            return traits;
+-        }
+-
+-    private:
+-        FreezeStatusBits get_freeze_bits() { return FREEZEBIT_IRREGULAR; }    
+-    };
+-    
+-    const double RotatorStone::RATE          = 1.0;
+-    const double RotatorStone::IMPULSE_DELAY = 0.1;
+-}
+-
+-
+ /* -------------------- PullStone -------------------- */
+ 
+ // When pushed this stone acts like pulled.
+@@ -2979,12 +2880,6 @@
+     Register(&quot;st-puzzle2-esw&quot;, new PuzzleStone(8, true));
+     Register(&quot;st-puzzle2-nesw&quot;, new PuzzleStone(16, true));
+ 
+-
+-    Register (&quot;st-rotator-right&quot;, new RotatorStone(true, false));
+-    Register (&quot;st-rotator-left&quot;, new RotatorStone(false, false));
+-    Register (&quot;st-rotator_move-right&quot;, new RotatorStone(true, true));
+-    Register (&quot;st-rotator_move-left&quot;, new RotatorStone(false, true));
+-
+     Register(new ShogunStone);
+     Register(&quot;st-shogun-s&quot;, new ShogunStone(1));
+     Register(&quot;st-shogun-m&quot;, new ShogunStone(2));
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000548.html">[Enigma-game-svn] r1115 - in trunk: data/gfx/flags25x15 src/gui
+</A></li>
+	<LI>Next message: <A HREF="000550.html">[Enigma-game-svn] r1117 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#549">[ date ]</a>
+              <a href="thread.html#549">[ thread ]</a>
+              <a href="subject.html#549">[ subject ]</a>
+              <a href="author.html#549">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

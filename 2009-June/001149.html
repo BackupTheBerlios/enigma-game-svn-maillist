@@ -1,0 +1,212 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1720 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1720%20-%20trunk/src&In-Reply-To=%3C200906132355.n5DNtalK013850%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001148.html">
+   <LINK REL="Next"  HREF="001150.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1720 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1720%20-%20trunk/src&In-Reply-To=%3C200906132355.n5DNtalK013850%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1720 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Jun 14 01:55:36 CEST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001148.html">[Enigma-game-svn] r1719 - in trunk: data data/gfx16 data/gfx32	data/gfx40 data/gfx48 data/gfx64 src/stones
+</A></li>
+        <LI>Next message: <A HREF="001150.html">[Enigma-game-svn] r1721 - in trunk/src: . items
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1149">[ date ]</a>
+              <a href="thread.html#1149">[ thread ]</a>
+              <a href="subject.html#1149">[ subject ]</a>
+              <a href="author.html#1149">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-06-14 01:55:35 +0200 (Sun, 14 Jun 2009)
+New Revision: 1720
+
+Modified:
+   trunk/src/client.cc
+   trunk/src/client_internal.hh
+   trunk/src/server.cc
+   trunk/src/server.hh
+Log:
+Trunk 1.1:
+- another ESC DOS protection - less mouse control, mark cheat on 10th attempt
+
+
+Modified: trunk/src/client.cc
+===================================================================
+--- trunk/src/client.cc	2009-06-13 23:22:12 UTC (rev 1719)
++++ trunk/src/client.cc	2009-06-13 23:55:35 UTC (rev 1720)
+@@ -54,7 +54,7 @@
+ using namespace std;
+ 
+ #include &quot;client_internal.hh&quot;
+-
++
+ /* -------------------- Auxiliary functions -------------------- */
+ 
+ namespace
+@@ -212,7 +212,7 @@
+         case SDL_ACTIVEEVENT: {
+             update_mouse_button_state();
+             if (e.active.gain == 0 &amp;&amp; !video::IsFullScreen())
+-                show_menu();
++                show_menu(false);
+             break;
+         }
+ 
+@@ -426,7 +426,7 @@
+                 app.bossKeyPressed = true;
+                 abort();
+             } else {
+-                show_menu();
++                show_menu(true);
+             }
+             break;
+         case SDLK_LEFT:   set_mousespeed(options::GetMouseSpeed() - 1); break;
+@@ -524,8 +524,16 @@
+ }
+ 
+ 
+-void Client::show_menu() 
+-{
++void Client::show_menu(bool isESC) {
++    if (isESC &amp;&amp; server::LastMenuTime != 0.0 &amp;&amp; server::LevelTime - server::LastMenuTime &lt; 0.3) {
++        return; // protection against ESC D.o.S. attacks
++    }
++    if (isESC &amp;&amp; server::LastMenuTime != 0.0 &amp;&amp; server::LevelTime - server::LastMenuTime &lt; 0.35) {
++        server::MenuCount++;
++        if (server::MenuCount &gt; 10)
++            mark_cheater();
++    }
++    
+     server::Msg_Pause (true);
+ 
+     ecl::Screen *screen = video::GetScreen();
+@@ -545,7 +553,9 @@
+ 
+     server::Msg_Pause (false);
+     game::ResetGameTimer();
+-
++    
++    if (isESC)  // protection against ESC D.o.S. attacks
++        server::LastMenuTime = server::LevelTime;
+ }
+ 
+ void Client::draw_screen()
+
+Modified: trunk/src/client_internal.hh
+===================================================================
+--- trunk/src/client_internal.hh	2009-06-13 23:22:12 UTC (rev 1719)
++++ trunk/src/client_internal.hh	2009-06-13 23:55:35 UTC (rev 1720)
+@@ -126,7 +126,7 @@
+ 
+         /* ---------- Private methods ---------- */
+ 
+-        void show_menu();
++        void show_menu(bool isESC);
+         void show_help();
+ 
+         // Screen update (state dependant)
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2009-06-13 23:22:12 UTC (rev 1719)
++++ trunk/src/server.cc	2009-06-13 23:55:35 UTC (rev 1720)
+@@ -75,10 +75,11 @@
+ 
+ /* -------------------- Global variables -------------------- */
+ 
++double   server::LastMenuTime;
++int      server::MenuCount;
+ 
++bool     server::NoCollisions = false;
+ 
+-bool server::NoCollisions = false;
+-
+ bool     server::AllowSingleOxyds;
+ bool     server::AllowSuicide;
+ bool     server::AllowTogglePlayer;
+@@ -249,7 +250,9 @@
+ {
+     state = sv_waiting_for_clients;
+     
+-    server::NoCollisions = false;
++    server::LastMenuTime      = 0.0;
++    server::MenuCount         = 0;
++    server::NoCollisions      = false;
+     server::WorldInitialized  = false;
+     server::LevelTime         = 0.0;
+     server::ConserveLevel     = true;
+@@ -302,13 +305,13 @@
+     lua::ShutdownLevel();
+     lua_State *L = lua::InitLevel(api);
+     if (api == 1 &amp;&amp; lua::DoSysFile(L, &quot;compat.lua&quot;) != lua::NO_LUAERROR) {
+-        throw XLevelLoading(&quot;While processing 'compat.lua':\n&quot;+lua::LastError(L));
++        throw XLevelLoading(&quot;While processing 'compat.lua':\n&quot; + lua::LastError(L));
+     }
+     if (lua::DoSysFile(L, ecl::strf(&quot;api%dinit.lua&quot;, api)) != lua::NO_LUAERROR) {
+-        throw XLevelLoading(&quot;While processing 'init.lua':\n&quot;+lua::LastError(L));
++        throw XLevelLoading(ecl::strf(&quot;While processing 'api%dinit.lua':\n&quot;, api) + lua::LastError(L));
+     }
+     if (lua::DoSysFile(L, &quot;security.lua&quot;) != lua::NO_LUAERROR) {
+-        throw XLevelLoading(&quot;While processing 'security.lua':\n&quot;+lua::LastError(L));
++        throw XLevelLoading(&quot;While processing 'security.lua':\n&quot; + lua::LastError(L));
+     }
+ }
+ 
+
+Modified: trunk/src/server.hh
+===================================================================
+--- trunk/src/server.hh	2009-06-13 23:22:12 UTC (rev 1719)
++++ trunk/src/server.hh	2009-06-13 23:55:35 UTC (rev 1720)
+@@ -53,6 +53,8 @@
+ 
+     // The number of seconds passed since the level game started.
+     extern double LevelTime;
++    extern double LastMenuTime;
++    extern int MenuCount;
+     
+     extern int32_t  RandomState;
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001148.html">[Enigma-game-svn] r1719 - in trunk: data data/gfx16 data/gfx32	data/gfx40 data/gfx48 data/gfx64 src/stones
+</A></li>
+	<LI>Next message: <A HREF="001150.html">[Enigma-game-svn] r1721 - in trunk/src: . items
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1149">[ date ]</a>
+              <a href="thread.html#1149">[ thread ]</a>
+              <a href="subject.html#1149">[ subject ]</a>
+              <a href="author.html#1149">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

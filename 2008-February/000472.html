@@ -1,0 +1,323 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1040 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-February/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1040%20-%20trunk/src&In-Reply-To=%3C200802172201.m1HM1P0X016170%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000471.html">
+   <LINK REL="Next"  HREF="000473.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1040 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1040%20-%20trunk/src&In-Reply-To=%3C200802172201.m1HM1P0X016170%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1040 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Feb 17 23:01:25 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000471.html">[Enigma-game-svn] r1039 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000473.html">[Enigma-game-svn] r1041 - trunk/lib-src/oxydlib
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#472">[ date ]</a>
+              <a href="thread.html#472">[ thread ]</a>
+              <a href="subject.html#472">[ subject ]</a>
+              <a href="author.html#472">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-02-17 23:01:24 +0100 (Sun, 17 Feb 2008)
+New Revision: 1040
+
+Modified:
+   trunk/src/items.cc
+   trunk/src/world.cc
+   trunk/src/world.hh
+   trunk/src/world_internal.hh
+Log:
+Trunk 1.1: Performance Tuning 
+- Hollow speedup of evaluation of meditation finish check
+  (replace quadratic algorithm by a constant one)
+- fix Hollow: any actor leaving grid did reset hollow whiteball reference
+  even if whiteball was still in hollow.
+Note:
+- reengineering of hollow is still necessary - see TODOs
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-02-15 19:49:35 UTC (rev 1039)
++++ trunk/src/items.cc	2008-02-17 22:01:24 UTC (rev 1040)
+@@ -672,11 +672,13 @@
+      * if they have each a small white marble inside them.
+      */
+     class Hollow : public HillHollow {
++        CLONEOBJ(Hollow);
+         DECL_TRAITS;
+     public:
+         Hollow(Type t = HOLLOW);
++        virtual void on_creation(GridPos p);
++        virtual void on_removal(GridPos p);
+     protected:
+-        INSTANCELISTOBJ(Hollow);    // TinyHollow needs access
+         virtual void setup_successor(Item *newitem);
+     private:
+         // Item interface.
+@@ -685,7 +687,6 @@
+ 
+         // Functions.
+         bool near_center_p (Actor *a);
+-        void check_if_level_finished();
+ 
+         // Variables.
+         Actor *whiteball;   // The small white ball that is currently being tracked
+@@ -695,15 +696,7 @@
+ 
+ 
+     class TinyHollow : public Hollow {
+-        TinyHollow *clone() {
+-            TinyHollow *o = new TinyHollow(*this);
+-            instances.push_back(o);
+-            return o;
+-        }
+-        void dispose() {
+-            instances.erase(find(instances.begin(), instances.end(), this));
+-            delete this;
+-        }
++        CLONEOBJ(TinyHollow);
+         DECL_TRAITS;
+     public:
+         TinyHollow() : Hollow(TINYHOLLOW) {}
+@@ -791,12 +784,24 @@
+ 
+ /* ---------- Hollow ---------- */
+ 
+-Hollow::InstanceList Hollow::instances;
++// TODO handle set of essential attribute
+ 
+ Hollow::Hollow(Type t)
+ : HillHollow(t), whiteball(0)
+ {}
+ 
++void Hollow::on_creation(GridPos p) {
++    if (getDefaultedAttr(&quot;essential&quot;, 0) == 1)
++        ChangeMeditation(0, +1, 0, 0);
++    HillHollow::on_creation(p);
++}
++
++void Hollow::on_removal(GridPos p) {   //TODO a change from Hollow to TinyHollow is critical -&gt; single class with state reengineering
++    if (getDefaultedAttr(&quot;essential&quot;, 0) == 1)
++        ChangeMeditation(0, -1, 0, 0);
++    HillHollow::on_removal(p);
++}
++
+ bool Hollow::near_center_p (Actor *a)
+ {
+     return (length(vec_to_center(a-&gt;get_pos())) &lt; get_radius()*0.8);
+@@ -804,62 +809,46 @@
+ 
+ bool Hollow::actor_hit(Actor *a)
+ {
++    const double MINTIME = 1.0;
+     ItemID id = get_id (this);
+ 
+     if (id == it_hollow || id == it_tinyhollow) {
+-        if (whiteball==0 &amp;&amp; get_id(a)==ac_meditation &amp;&amp; near_center_p(a))
+-        {
++        if (whiteball==NULL &amp;&amp; get_id(a)==ac_meditation &amp;&amp; near_center_p(a)) {
++            // meditatist entered a free hollow
+             whiteball  = a;
+             enter_time = server::LevelTime;
++        } else if (whiteball == a) {
++            if (!near_center_p(a)) {
++                // meditatist left hollow
++                whiteball = NULL;
++                if (enter_time == 0) {   // meditatist is registered
++                    bool indispensable = (getDefaultedAttr(&quot;essential&quot;, 0) == 1);
++                    ChangeMeditation(0, 0, indispensable ? -1 : 0, indispensable ? 0 : -1);
++                }
++            } else  if (enter_time != 0 &amp;&amp; (server::LevelTime - enter_time) &gt;= MINTIME) {
++                    // just meditated enough to mark hollow as engaged
++                    bool indispensable = (getDefaultedAttr(&quot;essential&quot;, 0) == 1);
++                    ChangeMeditation(0, 0, indispensable ? +1 : 0, indispensable ? 0 : +1);
++                    enter_time = 0;  // mark as registered
++            }
+         }
+-        else if (whiteball==a) {
+-            if (!near_center_p(a))
+-                whiteball = 0;
+-            else
+-                check_if_level_finished();
+-        }
+     }
+ 
+     return false;
+ }
+ 
+-void Hollow::actor_leave(Actor *)
+-{
+-    whiteball = 0;
+-}
+-
+-/* If (a) every small white ball is in a hollow and (b) each ball has
+-   been inside the hollow for at least MINTIME milliseconds, finish
+-   the level. */
+-void Hollow::check_if_level_finished()
+-{
+-    const double MINTIME = 1.0;
+-
+-    unsigned wcnt     = 0;      // counts normal hollows with whiteball
+-    unsigned ess_wcnt = 0;      // counts essential hollows with whiteball
+-    unsigned ess_cnt  = 0;      // counts all essential hollows
+-
+-    for (Hollow::InstanceList::const_iterator hi = instances.begin();
+-         hi != instances.end(); ++hi)
+-    {
+-        const Hollow&amp; h         = **hi;
+-        bool          essential = (h.getAttr(&quot;essential&quot;) != 0);
+-
+-        if (h.whiteball &amp;&amp; (server::LevelTime - h.enter_time) &gt;= MINTIME) {
+-            if (essential) ess_wcnt++;
+-            else           wcnt++;
++void Hollow::actor_leave(Actor *a) {
++    if (whiteball == a) {
++        // meditatist left hollow (warp, ...)
++        whiteball = NULL;
++        if (enter_time == 0) {   // meditatist is registered
++            bool indispensable = (getDefaultedAttr(&quot;essential&quot;, 0) == 1);
++            ChangeMeditation(0, 0, indispensable ? -1 : 0, indispensable ? 0 : -1);
+         }
+-
+-        if (essential) ess_cnt++;
+     }
+-
+-    if (ess_cnt == ess_wcnt &amp;&amp;
+-        (wcnt+ess_wcnt) == CountActorsOfKind (ac_meditation))
+-    {
+-        server::FinishLevel();
+-    }
+ }
+ 
++
+ void Hollow::setup_successor(Item *newitem) {
+     newitem-&gt;setAttr(&quot;essential&quot;, getAttr(&quot;essential&quot;));
+ }
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2008-02-15 19:49:35 UTC (rev 1039)
++++ trunk/src/world.cc	2008-02-17 22:01:24 UTC (rev 1040)
+@@ -297,11 +297,9 @@
+ 
+ const double World::contact_e = 0.02;  // epsilon distant limit for contacts
+ 
+-World::World(int ww, int hh) 
+-: fields(ww,hh),
+-  preparing_level(true),
+-  leftmost_actor (NULL), rightmost_actor (NULL)
+-{
++World::World(int ww, int hh) : fields(ww,hh), preparing_level(true),
++        leftmost_actor (NULL), rightmost_actor (NULL), numMeditatists (0), 
++        indispensableHollows (0), engagedIndispensableHollows(0), engagedDispensableHollows (0) {
+     w = ww;
+     h = hh;
+ 
+@@ -403,6 +401,9 @@
+         // if game is already running, call on_creation() from here
+         a-&gt;on_creation(pos);
+     }
++    
++    if (get_id(a) == ac_meditation)
++        ChangeMeditation(+1, 0, 0, 0);
+ }
+ 
+ Actor * World::yield_actor(Actor *a) {
+@@ -2249,6 +2250,21 @@
+ 
+ /* -------------------- Functions -------------------- */
+ 
++void ChangeMeditation(int diffMeditatists, int diffIndispensableHollows,
++        int diffEngagedIndispensableHollows, int diffEngagedDispensableHollows) {
++    level-&gt;numMeditatists += diffMeditatists;
++    level-&gt;indispensableHollows += diffIndispensableHollows;
++    level-&gt;engagedIndispensableHollows += diffEngagedIndispensableHollows;
++    level-&gt;engagedDispensableHollows += diffEngagedDispensableHollows;
++
++    if (!level-&gt;preparing_level 
++            &amp;&amp; level-&gt;indispensableHollows == level-&gt;engagedIndispensableHollows
++            &amp;&amp; (level-&gt;engagedIndispensableHollows + level-&gt;engagedDispensableHollows) == level-&gt;numMeditatists) {
++        server::FinishLevel();
++    }
++    
++}
++
+ void addDelayedImpulse (const Impulse&amp; impulse, double delay, 
+                                const Stone *estimated_receiver) 
+ {
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2008-02-15 19:49:35 UTC (rev 1039)
++++ trunk/src/world.hh	2008-02-17 22:01:24 UTC (rev 1040)
+@@ -234,6 +234,11 @@
+       and `st'. */
+     bool HasRubberBand (Actor *a, Stone *st);
+ 
++/* -------------------- Meditation Control ---------------------- */
++
++    void ChangeMeditation(int diffMeditatists, int diffIndispensableHollows,
++            int diffEngagedIndispensableHollows, int diffEngagedDispensableHollows);
++
+ /* -------------------- Puzzle Stone Scrambling -------------------- */
+ 
+     void SetScrambleIntensity(int intensity);
+
+Modified: trunk/src/world_internal.hh
+===================================================================
+--- trunk/src/world_internal.hh	2008-02-15 19:49:35 UTC (rev 1039)
++++ trunk/src/world_internal.hh	2008-02-17 22:01:24 UTC (rev 1040)
+@@ -340,6 +340,10 @@
+         MouseForce           m_mouseforce;
+         ConstantForce        m_flatforce;
+         int                  scrambleIntensity;
++        int                  numMeditatists; 
++        int                  indispensableHollows;
++        int                  engagedIndispensableHollows;
++        int                  engagedDispensableHollows;
+ 
+         //! True if game is not running yet
+         bool                 preparing_level;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000471.html">[Enigma-game-svn] r1039 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000473.html">[Enigma-game-svn] r1041 - trunk/lib-src/oxydlib
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#472">[ date ]</a>
+              <a href="thread.html#472">[ thread ]</a>
+              <a href="subject.html#472">[ subject ]</a>
+              <a href="author.html#472">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

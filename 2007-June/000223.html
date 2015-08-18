@@ -1,0 +1,811 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r786 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r786%20-%20trunk/src&In-Reply-To=%3C200706102243.l5AMhVGo016765%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000222.html">
+   <LINK REL="Next"  HREF="000224.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r786 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r786%20-%20trunk/src&In-Reply-To=%3C200706102243.l5AMhVGo016765%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r786 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Mon Jun 11 00:43:31 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000222.html">[Enigma-game-svn] r785 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="000224.html">[Enigma-game-svn] r787 - in trunk: data data/gfx32 data/gfx40	data/gfx48 data/gfx64 src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#223">[ date ]</a>
+              <a href="thread.html#223">[ thread ]</a>
+              <a href="subject.html#223">[ subject ]</a>
+              <a href="author.html#223">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-06-11 00:43:23 +0200 (Mon, 11 Jun 2007)
+New Revision: 786
+
+Modified:
+   trunk/src/stones.hh
+   trunk/src/stones_complex.cc
+   trunk/src/stones_internal.hh
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+   trunk/src/world_internal.hh
+Log:
+Trunk 1.1: 
+- add 4 sides st-window with collision code for all faces and joins
+Note:
+- new collision code is only partially tested
+- st-window images still missing - south face onlyis always displayed
+
+
+Modified: trunk/src/stones.hh
+===================================================================
+--- trunk/src/stones.hh	2007-06-09 17:53:48 UTC (rev 785)
++++ trunk/src/stones.hh	2007-06-10 22:43:23 UTC (rev 786)
+@@ -104,6 +104,9 @@
+ 
+         virtual const char *collision_sound();
+ 
++        /**
++         * 
++         */
+         virtual StoneResponse collision_response(const StoneContact &amp;sc);
+ 
+         /*! Is this stone movable? Affects impulse-stones, fire, ordinary pushes... */
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2007-06-09 17:53:48 UTC (rev 785)
++++ trunk/src/stones_complex.cc	2007-06-10 22:43:23 UTC (rev 786)
+@@ -25,6 +25,7 @@
+ #include &quot;Inventory.hh&quot;
+ #include &quot;stones_internal.hh&quot;
+ #include &quot;actors.hh&quot;
++#include &quot;main.hh&quot;
+ 
+ #include &quot;ecl_util.hh&quot;
+ 
+@@ -775,46 +776,6 @@
+ }
+ 
+ 
+-/* -------------------- ConnectiveStone -------------------- */
+-
+-// base class for PuzzleStone and BigBrick
+-
+-namespace {
+-    class ConnectiveStone : public Stone {
+-    public:
+-        ConnectiveStone(const char *kind, int connections)
+-        : Stone(kind)
+-        {
+-            set_attrib(&quot;connections&quot;, connections);
+-        }
+-
+-        DirectionBits get_connections() const;
+-    protected:
+-        void init_model();
+-    private:
+-        virtual int get_modelno() const;
+-    };
+-}
+-
+-DirectionBits
+-ConnectiveStone::get_connections() const
+-{
+-    int conn = (int)getAttr(&quot;connections&quot;) - 1;
+-    if (conn &gt;=0 &amp;&amp; conn &lt;16)
+-        return DirectionBits(conn);
+-    else
+-        return NODIRBIT;
+-}
+-
+-void ConnectiveStone::init_model() {
+-    set_model(get_kind()+ecl::strf(&quot;%d&quot;, get_modelno()));
+-}
+-
+-int ConnectiveStone::get_modelno() const {
+-    return getAttr(&quot;connections&quot;);
+-}
+-
+-
+ /* -------------------- BigBrick -------------------- */
+ 
+ // BigBricks allow to build stones of any size
+@@ -847,6 +808,82 @@
+     };
+ }
+ 
++/* -------------------- Window -------------------- */
++
++/** \page st-window Breakable Stone
++
++Hit this window heavily with your marble to blast it into smithereens.
++
++\image html st-window.png
++*/
++
++namespace
++{
++    class Window : public ConnectiveStone {
++        CLONEOBJ(Window);
++        DECL_TRAITS;
++        const char *collision_sound() {return &quot;glass&quot;;}
++
++        bool is_transparent (Direction) const { return true; }
++        bool is_floating() const { return state != IDLE; }
++        enum State { IDLE, BREAK } state;
++
++        void actor_hit(const StoneContact &amp;sc) {
++            Actor *a = sc.actor;
++            if (state == IDLE) {
++            double impulse = -(a-&gt;get_vel() * sc.normal) * get_mass(a);
++            if (impulse &gt; 35) {
++                SendMessage(a, &quot;shatter&quot;);
++            }
++
++        if (impulse &gt; 25) {
++                    sound_event (&quot;shatter&quot;);
++                    state = BREAK;
++                    set_anim(&quot;st-window-anim&quot;);
++                }
++            }
++        }
++        void animcb() {
++            KillStone(get_pos());
++        }
++        
++        void init_model() {   // temp - delete when the images are ready
++            set_model(&quot;st-window&quot;);
++        }
++
++    public:
++        Window(int connections) : ConnectiveStone(&quot;st-window&quot;, connections),
++                state(IDLE) {
++        }
++        virtual bool is_sticky(const Actor *a) const;
++        StoneResponse collision_response(const StoneContact &amp;sc);
++    };
++    DEF_TRAITS(Window, &quot;st-window&quot;, st_window);
++
++    bool Window::is_sticky(const Actor *a) const  {
++        return false;
++    }
++    
++    StoneResponse Window::collision_response(const StoneContact &amp;sc) {
++        const double face_width = 3.0/32.0; 
++//        DirectionBits dirs = contact_faces(sc);
++        DirectionBits faces = get_connections();
++//        Log &lt;&lt; &quot;coll respo: dirs &quot; &lt;&lt; dirs &lt;&lt; &quot;  faces &quot; &lt;&lt; faces &lt;&lt; &quot;  c-x &quot; &lt;&lt; sc.contact_point[0] &lt;&lt; &quot;  s-x &quot; &lt;&lt;get_pos().x;
++            
++
++        if (((sc.contact_point[0] &lt;= get_pos().x + face_width) &amp;&amp; faces&amp;WESTBIT) ||
++                ((sc.contact_point[0] &gt;= get_pos().x + 1 - face_width) &amp;&amp; faces&amp;EASTBIT) ||
++                ((sc.contact_point[1] &lt;= get_pos().y + face_width) &amp;&amp; faces&amp;NORTHBIT) ||
++                ((sc.contact_point[1] &gt;= get_pos().y + 1 - face_width) &amp;&amp; faces&amp;SOUTHBIT)) {
++//            Log &lt;&lt; &quot; - rebound\n&quot;;
++            return STONE_REBOUND;
++        } else {
++//            Log &lt;&lt; &quot; - pass\n&quot;;
++            return STONE_PASS;
++        }
++    }
++}
++
+ 
+ /* -------------------- Puzzle stones -------------------- */ 
+ 
+@@ -3517,6 +3554,23 @@
+     Register (&quot;st-rotator_move-right&quot;, new RotatorStone(true, true));
+     Register (&quot;st-rotator_move-left&quot;, new RotatorStone(false, true));
+ 
++    Register(&quot;st-window&quot;, new Window(3));    // compatibility window with south face only
++    Register(&quot;st-window-w&quot;, new Window(2));
++    Register(&quot;st-window-s&quot;, new Window(3));
++    Register(&quot;st-window-sw&quot;, new Window(4));
++    Register(&quot;st-window-e&quot;, new Window(5));
++    Register(&quot;st-window-ew&quot;, new Window(6));
++    Register(&quot;st-window-es&quot;, new Window(7));
++    Register(&quot;st-window-esw&quot;, new Window(8));
++    Register(&quot;st-window-n&quot;, new Window(9));
++    Register(&quot;st-window-nw&quot;, new Window(10));
++    Register(&quot;st-window-ns&quot;, new Window(11));
++    Register(&quot;st-window-nsw&quot;, new Window(12));
++    Register(&quot;st-window-ne&quot;, new Window(13));
++    Register(&quot;st-window-new&quot;, new Window(14));
++    Register(&quot;st-window-nes&quot;, new Window(15));
++    Register(&quot;st-window-nesw&quot;, new Window(16));
++    
+     Register(new ShogunStone);
+     Register(&quot;st-shogun-s&quot;, new ShogunStone(1));
+     Register(&quot;st-shogun-m&quot;, new ShogunStone(2));
+
+Modified: trunk/src/stones_internal.hh
+===================================================================
+--- trunk/src/stones_internal.hh	2007-06-09 17:53:48 UTC (rev 785)
++++ trunk/src/stones_internal.hh	2007-06-10 22:43:23 UTC (rev 786)
+@@ -115,5 +115,34 @@
+             return Value();
+         }
+     };
++/* -------------------- ConnectiveStone -------------------- */
++
++// base class for PuzzleStone and BigBrick
++
++
++    class ConnectiveStone : public Stone {
++    public:
++        ConnectiveStone(const char *kind, int connections): Stone(kind) {
++            set_attrib(&quot;connections&quot;, connections);
++        }
++
++        DirectionBits ConnectiveStone::get_connections() const {
++            int conn = (int)getAttr(&quot;connections&quot;) - 1;
++            if (conn &gt;=0 &amp;&amp; conn &lt;16)
++                return DirectionBits(conn);
++            else
++                return NODIRBIT;
++        }
++    protected:
++
++        void ConnectiveStone::init_model() {
++            set_model(get_kind()+ecl::strf(&quot;%d&quot;, get_modelno()));
++        }
++    private:
++        int ConnectiveStone::get_modelno() const {
++            return getAttr(&quot;connections&quot;);
++        }
++    };
++
+ }
+ #endif
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2007-06-09 17:53:48 UTC (rev 785)
++++ trunk/src/stones_simple.cc	2007-06-10 22:43:23 UTC (rev 786)
+@@ -518,50 +518,7 @@
+ };
+ 
+ 
+-/* -------------------- Window -------------------- */
+ 
+-/** \page st-window Breakable Stone
+-
+-Hit this window heavily with your marble to blast it into smithereens.
+-
+-\image html st-window.png
+-*/
+-
+-namespace
+-{
+-    class Window : public Stone {
+-        CLONEOBJ(Window);
+-        DECL_TRAITS;
+-        const char *collision_sound() {return &quot;glass&quot;;}
+-
+-        bool is_transparent (Direction) const { return true; }
+-        bool is_floating() const { return state != IDLE; }
+-        enum State { IDLE, BREAK } state;
+-
+-        void actor_hit(const StoneContact &amp;sc) {
+-            Actor *a = sc.actor;
+-            if (state == IDLE) {
+-	    	double impulse = -(a-&gt;get_vel() * sc.normal) * get_mass(a);
+-        	if (impulse &gt; 35) {
+-        	    SendMessage(a, &quot;shatter&quot;);
+-        	}
+-
+-		if (impulse &gt; 25) {
+-                    sound_event (&quot;shatter&quot;);
+-                    state = BREAK;
+-                    set_anim(&quot;st-window-anim&quot;);
+-                }
+-            }
+-        }
+-        void animcb() {
+-            KillStone(get_pos());
+-        }
+-    public:
+-        Window() : state(IDLE) {}
+-    };
+-    DEF_TRAITS(Window, &quot;st-window&quot;, st_window);
+-}
+-
+ // -----------------------
+ //      BreakableStone
+ // -----------------------
+@@ -2293,7 +2250,6 @@
+ 
+     Register(new ThiefStone);
+     Register(new TimerStone);
+-    Register(new Window);
+ 
+     Register(new RandomWoodenStone); // random flavor
+     Register(new WoodenStone(&quot;st-wood1&quot;, &quot;fl-stwood1&quot;)); // horizontal planks
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2007-06-09 17:53:48 UTC (rev 785)
++++ trunk/src/world.cc	2007-06-10 22:43:23 UTC (rev 786)
+@@ -676,14 +676,22 @@
+       is filled is filled with information about the closest feature
+       on the stone and `is_contact' is set to false. 
+ */
+-void World::find_contact_with_stone(Actor *a, GridPos p, StoneContact &amp;c, bool isRounded, Stone *st) 
+-{
++void World::find_contact_with_stone(Actor *a, GridPos p, StoneContact &amp;c,
++        DirectionBits winFacesActorStone, bool isRounded, Stone *st) {
++            
+     c.is_contact = false;
++    bool isInnerContact = false;
+ 
+     Stone *stone = (st != NULL) ? st : world::GetStone(p);
+     if (!stone)
+         return;
+ 
++    bool isWindow = stone-&gt;get_traits().id == st_window;
++    DirectionBits wsides;
++    if (isWindow) {
++        wsides = dynamic_cast&lt;stones::ConnectiveStone *&gt;(stone)-&gt;get_connections();
++    }
++    
+     const ActorInfo &amp;ai = *a-&gt;get_actorinfo();
+     double r = ai.radius;
+ 
+@@ -692,17 +700,90 @@
+     double ax = ai.pos[0];
+     double ay = ai.pos[1];
+ //    const double contact_e = 0.02;
+-    const double erad_const = 2.0/32; // edge radius
+-    double erad = isRounded ? erad_const : 0.0;
++    const double erad_const = 2.0/32;      // edge radius
++    const double erad_window_const = 1.5/32; // edge radius for window - the windows glass
++                                             // is 3/32 thick - needs to less than minimal
++                                             // actor radius!
++    double cdist = isWindow ? erad_window_const : erad_const;
++    double erad = isRounded ? cdist : 0.0;
+ 
++    // Inner bounce of a window stone
++    if ((ax &gt;= x) &amp;&amp; (ax &lt; x+1) &amp;&amp; (ay &gt;= y) &amp;&amp; (ay &lt; y+1) ) {
++        if (isWindow) {
++            int xcorner = (ax &gt;= x+0.5);
++            int ycorner = (ay &gt;= y+0.5);
++            int xoff_neighbour = (ax &lt; x+erad_window_const) ? -1 : (ax &gt; x+1-erad_window_const); 
++            int yoff_neighbour = (ay &lt; y+erad_window_const) ? -1 : (ay &gt; y+1-erad_window_const);
++            
++//            Log &lt;&lt; &quot;xc &quot; &lt;&lt; xcorner &lt;&lt; &quot;  yc &quot; &lt;&lt; ycorner &lt;&lt; &quot;  xn &quot; &lt;&lt; xoff_neighbour &lt;&lt; &quot;  yn &quot; &lt;&lt; yoff_neighbour &lt;&lt; &quot;\n&quot;;
++            
++            DirectionBits face = NODIRBIT;
++            if      (!xcorner &amp;&amp; yoff_neighbour) face = WESTBIT;
++            else if ( xcorner &amp;&amp; yoff_neighbour) face = EASTBIT;
++            else if (!ycorner &amp;&amp; xoff_neighbour) face = NORTHBIT;
++            else if ( ycorner &amp;&amp; xoff_neighbour) face = SOUTHBIT;
++            
++            stones::ConnectiveStone * neighbour = dynamic_cast&lt;stones::ConnectiveStone *&gt;
++                    (world::GetStone(GridPos(x+xoff_neighbour, y+yoff_neighbour)));
++            DirectionBits face_neighbour = (neighbour) ? neighbour-&gt;get_connections() : NODIRBIT;
++            
++//            Log &lt;&lt; &quot;face &quot; &lt;&lt; face &lt;&lt; &quot;  facen &quot; &lt;&lt; face_neighbour &lt;&lt; &quot;  winface &quot; &lt;&lt; winFacesActorStone &lt;&lt; &quot;\n&quot;;
++            
++            if ((winFacesActorStone&amp;face) &amp;&amp; !(face_neighbour&amp;face)) {
++                // contact to a inner corner of a window stone
++                // same code as external corner below
++                Log &lt;&lt; &quot;inner corner\n&quot;;
++                double cx[2] = {cdist, -cdist};
++        
++                V2 corner(x+xcorner+cx[xcorner], y+ycorner+cx[ycorner]);
++                V2 b=V2(ax,ay) - corner;
++                
++                // fix 45 degree collisions that may require precision
++                if (abs(abs(b[0]) - abs(b[1])) &lt; 1.0e-7) {
++                    b[1] = (b[1] &gt;= 0) ? abs(b[0]) : -abs(b[0]);
++                }
++        
++                c.is_contact    = (length(b)-r-cdist &lt; contact_e);
++                c.normal        = normalize(b);
++                c.contact_point = corner + c.normal*cdist;
++                isInnerContact = true;
++                
++            } else if ((winFacesActorStone&amp;SOUTHBIT) &amp;&amp; (ay &gt; y+1-2*erad_window_const-r-contact_e)) {
++                c.contact_point = V2(ax, y+1-2*erad_window_const);
++                c.normal        = V2(0,-1);
++                c.is_contact = true;
++                isInnerContact = true;
++            } else if ((winFacesActorStone&amp;NORTHBIT) &amp;&amp; (ay &lt;= y+2*erad_window_const+r+contact_e)) {
++                c.contact_point = V2(ax, y+2*erad_window_const);
++                c.normal        = V2(0,+1);
++                c.is_contact = true;
++                isInnerContact = true;
++            } else if ((winFacesActorStone&amp;WESTBIT) &amp;&amp; (ax &lt;= x+2*erad_window_const+r+contact_e)) {
++                c.contact_point = V2(x+2*erad_window_const, ay);
++                c.normal        = V2(+1, 0);
++                c.is_contact = true;
++                isInnerContact = true;
++            } else if ((winFacesActorStone&amp;EASTBIT) &amp;&amp; (ax &lt;= x+1-2*erad_window_const-r-contact_e)) {
++                c.contact_point = V2(x+1-2*erad_window_const, ay);
++                c.normal        = V2(-1,0);
++                c.is_contact = true;
++                isInnerContact = true;
++            }
++        }
++        // ignore all inner collisions of other stones
++    }
+     // Closest feature == north or south face of the stone?
+-    if (ax&gt;=x+erad &amp;&amp; ax&lt;x+1-erad) {
++    else if (ax&gt;=x+erad &amp;&amp; ax&lt;x+1-erad &amp;&amp; (!isWindow || ((ay&gt;y+1)&amp;&amp;(wsides&amp;SOUTHBIT)) ||
++            ((ay&lt;y)&amp;&amp;(wsides&amp;NORTHBIT)) || (ax&lt;=x+erad_window_const) || (ax&gt;=x+1-erad_window_const))) {
++        // the last two terms are straight reflections on rectangular window sides due
++        // to a join with the neighbour stone
++        
+         double dist = r+5;
+ 
+         // south
+         if (ay&gt;y+1) {
+             c.contact_point = V2(ax, y+1);
+-            c.normal        = V2(0,+1);
++            c.normal        = V2(0, +1);
+             dist            = ay-(y+1);
+         }
+         // north
+@@ -714,25 +795,32 @@
+         c.is_contact = (dist-r &lt; contact_e);
+     }
+     // Closest feature == west or east face of the stone?
+-    else if (ay&gt;=y+erad &amp;&amp; ay&lt;y+1-erad) {
++    else if (ay&gt;=y+erad &amp;&amp; ay&lt;y+1-erad &amp;&amp; (!isWindow || ((ax&gt;x+1)&amp;&amp;(wsides&amp;EASTBIT)) ||
++            ((ax&lt;x)&amp;&amp;(wsides&amp;WESTBIT)) || (ay&lt;=y+erad_window_const) || (ay&gt;=y+1-erad_window_const))) {
+         double dist=r+5;
+         if (ax&gt;x+1) { // east
+-            c.contact_point = V2(x+1,ay);
+-            c.normal        = V2(+1,0);
++            c.contact_point = V2(x+1, ay);
++            c.normal        = V2(+1, 0);
+             dist            = ax-(x+1);
+         }
+         else if (ax&lt;x) { // west
+-            c.contact_point = V2(x,ay);
+-            c.normal        = V2(-1,0);
++            c.contact_point = V2(x, ay);
++            c.normal        = V2(-1, 0);
+             dist            = x-ax;
+         }
+ 	c.is_contact = (dist-r &lt; contact_e);
+     }
+     // Closest feature == any of the four corners
+-    else if (isRounded) {
+-        int xcorner=(ax &gt;= x+1-erad);
+-        int ycorner=(ay &gt;= y+1-erad);
+-        double cx[2] = {erad, -erad};
++    else if (!isWindow || !(
++            ((ax &gt; x+cdist) &amp;&amp; (ax &lt; x+0.5) &amp;&amp; (wsides&amp;WESTBIT) &amp;&amp; (winFacesActorStone&amp;WESTBIT)) ||
++            ((ax &gt;= x+0.5) &amp;&amp; (ax &lt; x+1-cdist) &amp;&amp; (wsides&amp;EASTBIT) &amp;&amp; (winFacesActorStone&amp;EASTBIT)) ||
++            ((ay &gt; y+cdist) &amp;&amp; (ay &lt; y+0.5) &amp;&amp; (wsides&amp;NORTHBIT) &amp;&amp; (winFacesActorStone&amp;NORTHBIT)) ||
++            ((ay &gt;= y+0.5) &amp;&amp; (ay &lt; y+1-cdist) &amp;&amp; (wsides&amp;SOUTHBIT) &amp;&amp; (winFacesActorStone&amp;SOUTHBIT)))) {
++        // the 4 terms exclude collisions from inner corners of windows if they are joined
++        // with a window stone face on the grid of the actor itself
++        int xcorner=(ax &gt;= x+0.5);
++        int ycorner=(ay &gt;= y+0.5);
++        double cx[2] = {cdist, -cdist};
+ 
+         V2 corner(x+xcorner+cx[xcorner], y+ycorner+cx[ycorner]);
+         V2 b=V2(ax,ay) - corner;
+@@ -742,15 +830,15 @@
+             b[1] = (b[1] &gt;= 0) ? abs(b[0]) : -abs(b[0]);
+         }
+ 
+-        c.is_contact    = (length(b)-r-erad &lt; contact_e);
++        c.is_contact    = (length(b)-r-cdist &lt; contact_e);
+         c.normal        = normalize(b);
+-        c.contact_point = corner + c.normal*erad;
++        c.contact_point = corner + c.normal*cdist;
+     }
+ 
+     if (c.is_contact) {
+         // treat this as a collision only if actor not inside the stone
+         // and velocity towards stone
+-        if (ax &gt;= x &amp;&amp; ax &lt; x+1 &amp;&amp; ay &gt;= y &amp;&amp; ay &lt; y+1)
++        if (!isInnerContact &amp;&amp; ax &gt;= x &amp;&amp; ax &lt; x+1 &amp;&amp; ay &gt;= y &amp;&amp; ay &lt; y+1)
+             c.is_collision = false;
+         else
+             c.is_collision  = c.normal*ai.vel &lt; 0;
+@@ -764,8 +852,22 @@
+     }
+ }
+ 
++/**
++ * Examines all contacts of an actor that is the edge of a grid in a distance to touch
++ * any stone on the three adjacent grid positions.
++ * @arg a   the actor that causes contacts
++ * @arg p0  the grid position that is diagonal to the actors grid at the give edge
++ * @arg c0  the contact info for p0 initialized with a normal pointing to the actors grid
++ * @arg p1  one of the grid positions that is a side neighbour to the actors grid at the give edge
++ * @arg c1  the contact info for p1 initialized with a normal pointing to the actors grid
++ * @arg p2  one of the grid positions that is a side neighbour to the actors grid at the give edge
++ * @arg c2  the contact info for p0 initialized with a normal pointing to the actors grid
++ * @arg winFacesActorStone  the faces of a Window stone on the actors grid position that
++ *          could cause joins with others Window stones faces on the examined positions.
++ *          Just inner corners of Window faces are affected.
++ */
+ void World::find_contact_with_edge(Actor *a, GridPos p0, GridPos p1, GridPos p2, 
+-        StoneContact &amp;c0, StoneContact &amp;c1, StoneContact &amp;c2) {
++        StoneContact &amp;c0, StoneContact &amp;c1, StoneContact &amp;c2, DirectionBits winFacesActorStone) {
+     Stone *s0 = world::GetStone(p0);
+     Stone *s1 = world::GetStone(p1);
+     Stone *s2 = world::GetStone(p2);
+@@ -775,24 +877,57 @@
+     
+     if (s1 &amp;&amp; s2 &amp;&amp; c1.response==STONE_REBOUND &amp;&amp; c2.response==STONE_REBOUND) {
+         // a real edge bounce - no rounded edges
+-        find_contact_with_stone(a, p1, c1, false, s1);  // collision with both straight neighbours
+-        find_contact_with_stone(a, p2, c2, false, s2);  // collision with both straight neighbours
++        find_contact_with_stone(a, p1, c1, winFacesActorStone, false, s1);  // collision with both straight neighbours
++        find_contact_with_stone(a, p2, c2, winFacesActorStone, false, s2);  // collision with both straight neighbours
+     } else if (s0 &amp;&amp; s1 &amp;&amp; c0.response==STONE_REBOUND &amp;&amp; c1.response==STONE_REBOUND) {
+         // join stones to a block without rounded edges
+-        find_contact_with_stone(a, p1, c1, false, s1);  // collision with straight neighbour only
+-        find_contact_with_stone(a, p2, c2, true, s2);   // register contact without collision
++        find_contact_with_stone(a, p1, c1, winFacesActorStone, false, s1);  // collision with straight neighbour only
++        find_contact_with_stone(a, p2, c2, winFacesActorStone, true, s2);   // register contact without collision
+     } else if (s0 &amp;&amp; s2 &amp;&amp; c0.response==STONE_REBOUND &amp;&amp; c2.response==STONE_REBOUND) {
+         // join stones to a block without rounded edges
+-        find_contact_with_stone(a, p2, c2, false, s2);  // contact with straight neighbour only
+-        find_contact_with_stone(a, p1, c1, true, s1);   // register contact without collision
++        find_contact_with_stone(a, p2, c2, winFacesActorStone, false, s2);  // contact with straight neighbour only
++        find_contact_with_stone(a, p1, c1, winFacesActorStone, true, s1);   // register contact without collision
+     } else {
+         // register single stone collisions and contacts
+-        if (s0) find_contact_with_stone(a, p0, c0, true, s0);
+-        if (s1) find_contact_with_stone(a, p1, c1, true, s1);
+-        if (s2) find_contact_with_stone(a, p2, c2, true, s2);
++        if (s0) find_contact_with_stone(a, p0, c0, winFacesActorStone, true, s0);
++        if (s1) find_contact_with_stone(a, p1, c1, winFacesActorStone, true, s1);
++        if (s2) find_contact_with_stone(a, p2, c2, winFacesActorStone, true, s2);
+     }
+ }
+ 
++/**
++ * Examines all contacts of an actor with a Window stone on the grid position of the
++ * actor.
++ * @arg a   the actor that causes contacts
++ * @arg p   the grid position of the actor and the Window stone
++ * @arg c0  a contact info for a contact. The normal has no need of being intialized
++ * @arg c1  a contact info for a contact. The normal has no need of being intialized
++ * @arg winFacesActorStone  the faces of a Window stone on the actors grid position
++ */
++void World::find_contact_with_window(Actor *a, GridPos p, StoneContact &amp;c0, StoneContact &amp;c1,
++        DirectionBits winFacesActorStone) {
++    if (winFacesActorStone != NODIRBIT) {
++        // as the actor cannot contact opposite face at the same time
++        // we reuse the contact structure for optimization
++        if (winFacesActorStone&amp;WESTBIT) 
++            find_contact_with_stone(a, p, c0, WESTBIT);
++        if ((winFacesActorStone&amp;EASTBIT) &amp;&amp; c0.is_contact == false)
++            find_contact_with_stone(a, p, c0, EASTBIT);
++        if (winFacesActorStone&amp;SOUTHBIT) 
++            find_contact_with_stone(a, p, c1, SOUTHBIT);
++        if ((winFacesActorStone&amp;NORTHBIT) &amp;&amp; c1.is_contact == false)
++            find_contact_with_stone(a, p, c1, NORTHBIT);
++    }
++    
++}
++
++/**
++ * Examins all contacts of an actor with stones on and around it.
++ * @arg a   the actor that causes contacts
++ * @arg c0  an uninitialized contact info that will be filled with possible contact data
++ * @arg c1  an uninitialized contact info that will be filled with possible contact data
++ * @arg c2  an uninitialized contact info that will be filled with possible contact data
++ */
+ void World::find_stone_contacts(Actor *a, StoneContact &amp;c0, StoneContact &amp;c1,
+         StoneContact &amp;c2) {
+     // time critical routine that is performance optimized
+@@ -810,8 +945,18 @@
+     double x = ai.pos[0];
+     double y = ai.pos[1];
+     
++    // info about a Window stone on the Gridpos of the actor that may cause
++    // contacts within the grid
++    stones::ConnectiveStone * actorWinStone = dynamic_cast&lt;stones::ConnectiveStone *&gt;(world::GetStone(g));
++    DirectionBits winFacesActorStone = (actorWinStone) ? actorWinStone-&gt;get_connections() : NODIRBIT;
++    
+     // distinguish 9 squares within gridpos that may cause contacts
+-    // low cost reduction of cases that need to be examined in detail
++    // low cost reduction of cases that need to be examined in detail:
++    // - within the edges no inner contacts to a Window are possible
++    // - middle parts can contact to a Window on the grid and one stone aside
++    // - the center part can contact two faces of a Window on the grid
++    // the contact info is prepared with normal vectors that allow quick checks
++    // with stone faces
+     if (y - g.y &lt; re) {
+         // upper grid part
+         if (x - g.x &lt; re) {
+@@ -819,18 +964,21 @@
+             c0.normal = V2(+1, +1);  // no need of normalization - just direction
+             c1.normal = V2(0, +1);
+             c2.normal = V2(+1, 0);
++            c0.contact_point = c1.contact_point = c2.contact_point = V2(g.x, g.y);
+             find_contact_with_edge(a, GridPos(g.x - 1, g.y - 1), GridPos(g.x, g.y - 1),
+-                    GridPos(g.x - 1, g.y), c0, c1, c2);
++                    GridPos(g.x - 1, g.y), c0, c1, c2, winFacesActorStone);
+         } else if (-x + (g.x + 1) &lt; re) {
+             // upper right edge
+             c0.normal = V2(-1, +1);  // no need of normalization - just direction
+             c1.normal = V2(0, +1);
+             c2.normal = V2(-1, 0);
++            c0.contact_point = c1.contact_point = c2.contact_point = V2(g.x+1, g.y);
+             find_contact_with_edge(a, GridPos(g.x + 1, g.y -1), GridPos(g.x, g.y - 1),
+-                    GridPos(g.x + 1, g.y), c0, c1, c2);
++                    GridPos(g.x + 1, g.y), c0, c1, c2, winFacesActorStone);
+         } else {
+             // upper middle part
+-            find_contact_with_stone(a, GridPos(g.x, g.y - 1), c0);
++            find_contact_with_stone(a, GridPos(g.x, g.y - 1), c0, winFacesActorStone);
++            find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
+         }
+     } else if (-y + (g.y +1) &lt; re) {
+         // lower grid part
+@@ -839,29 +987,36 @@
+             c0.normal = V2(+1, -1);  // no need of normalization - just direction
+             c1.normal = V2(0, -1);
+             c2.normal = V2(+1, 0);
++            c0.contact_point = c1.contact_point = c2.contact_point = V2(g.x, g.y+1);
+             find_contact_with_edge(a, GridPos(g.x - 1, g.y + 1), GridPos(g.x, g.y + 1),
+-                    GridPos(g.x - 1, g.y), c0, c1, c2);
++                    GridPos(g.x - 1, g.y), c0, c1, c2, winFacesActorStone);
+         } else if (-x + (g.x + 1) &lt; re) {
+             // lower right edge
+             c0.normal = V2(-1, -1);  // no need of normalization - just direction
+             c1.normal = V2(0, -1);
+             c2.normal = V2(-1, 0);
++            c0.contact_point = c1.contact_point = c2.contact_point = V2(g.x+1, g.y+1);
+             find_contact_with_edge(a, GridPos(g.x + 1, g.y + 1), GridPos(g.x, g.y +1),
+-                    GridPos(g.x + 1, g.y), c0, c1, c2);
++                    GridPos(g.x + 1, g.y), c0, c1, c2, winFacesActorStone);
+         } else {
+             // lower middle part
+-            find_contact_with_stone(a, GridPos(g.x, g.y + 1), c0);
++            find_contact_with_stone(a, GridPos(g.x, g.y + 1), c0, winFacesActorStone);
++            find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
+         }
+     } else {
+         // middle grid part
+         if (x - g.x &lt; re) {
+             // left middle part
+-            find_contact_with_stone(a, GridPos(g.x - 1, g.y), c0);
++            find_contact_with_stone(a, GridPos(g.x - 1, g.y), c0, winFacesActorStone);
++            find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
+         } else if (-x + (g.x + 1) &lt; re) {
+             // right middle part
+-            find_contact_with_stone(a, GridPos(g.x + 1, g.y), c0);
++            find_contact_with_stone(a, GridPos(g.x + 1, g.y), c0, winFacesActorStone);
++            find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
++        } else {
++            // actor in center of grid - just inner window contacts
++            find_contact_with_window(a, GridPos(g.x, g.y), c0, c1, winFacesActorStone);
+         }
+-        // no contact possible if actor in center of grid
+     }
+ }
+ 
+@@ -1021,18 +1176,23 @@
+     }
+ }
+ 
+-void World::handle_contacts (unsigned actoridx) 
++void World::handle_stone_contacts (unsigned actoridx) 
+ {
+-    static StoneContact contacts[3];
++    // Three contact structures are used to store info about contact candidates.
++    // No more than two stone contacts per actor are possible, but it is more
++    // efficient to provide three structures for candidates and to check afterwards.
++    
++    static StoneContact contacts[3];   // recycle structures for efficiency
+ 
+-    Actor *actor1 = actorlist[actoridx];
+-    ActorInfo &amp;a1 = *actor1-&gt;get_actorinfo();
++    Actor *actor = actorlist[actoridx];
+ 
+-    if (a1.ignore_contacts)     // used by the cannonball for example
++    if (actor-&gt;m_actorinfo.ignore_contacts)     // used by the cannonball for example
+         return;
+ 
+-    // Handle contacts with stones
+-    find_stone_contacts(actor1, contacts[0], contacts[1], contacts[2]);
++    // Find contacts without any sideeffects
++    find_stone_contacts(actor, contacts[0], contacts[1], contacts[2]);
++    
++    // Handle contacts with stones - forces and stone hit, touch callback
+     if (contacts[0].is_contact)
+         handle_stone_contact(contacts[0]);
+     if (contacts[1].is_contact)
+@@ -1091,7 +1251,7 @@
+             Actor     *a  = actorlist[i];
+             ActorInfo &amp;ai = * a-&gt;get_actorinfo();
+             if (!ai.grabbed)
+-                handle_contacts(i);
++                handle_stone_contacts(i);
+         }
+ 
+         for (unsigned i=0; i&lt;nactors; ++i) {
+@@ -1102,8 +1262,7 @@
+                 if (length(ai.force) &gt; 30)
+                     client::Msg_Sparkle (ai.pos);
+                 ai.vel = V2();
+-            }
+-            else if (!a-&gt;is_dead() &amp;&amp; a-&gt;is_movable() &amp;&amp; !ai.grabbed) {
++            } else if (!a-&gt;is_dead() &amp;&amp; a-&gt;is_movable() &amp;&amp; !ai.grabbed) {
+                 advance_actor(a, dt);
+             }
+             a-&gt;move ();         // 'move' nevertheless, to pick up items etc
+
+Modified: trunk/src/world_internal.hh
+===================================================================
+--- trunk/src/world_internal.hh	2007-06-09 17:53:48 UTC (rev 785)
++++ trunk/src/world_internal.hh	2007-06-10 22:43:23 UTC (rev 786)
+@@ -318,15 +318,20 @@
+ 
+         void advance_actor (Actor *a, double h);
+         void move_actors (double dtime);
+-        void find_contact_with_stone (Actor *a, GridPos p, StoneContact &amp;c, bool isRounded = true,  Stone *st = NULL);
++        void find_contact_with_stone(Actor *a, GridPos p, StoneContact &amp;c, 
++                DirectionBits winFacesActorStone = NODIRBIT,
++                bool isRounded = true, Stone *st = NULL);
+         void find_contact_with_edge(Actor *a, GridPos pe, GridPos p1, GridPos p2, 
+-                StoneContact &amp;c0, StoneContact &amp;c1, StoneContact &amp;c2);
+-        void find_stone_contacts (Actor *a, StoneContact &amp;c0, StoneContact &amp;c1,
++                StoneContact &amp;c0, StoneContact &amp;c1, StoneContact &amp;c2,
++                DirectionBits winFacesActorStone = NODIRBIT);
++        void find_contact_with_window(Actor *a, GridPos p, StoneContact &amp;c0, StoneContact &amp;c1,
++                DirectionBits winFacesActorStone);
++        void find_stone_contacts(Actor *a, StoneContact &amp;c0, StoneContact &amp;c1,
+                 StoneContact &amp;c2);
+         void handle_stone_contact (StoneContact &amp;sc);
+         void handle_actor_contacts ();
+         void handle_actor_contact (Actor *actor1, Actor *actor2);
+-        void handle_contacts (unsigned actoridx);
++        void handle_stone_contacts(unsigned actoridx);
+         void handle_delayed_impulses (double dtime);
+         void stone_change (GridPos p);
+         void tick_sound_dampings ();
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000222.html">[Enigma-game-svn] r785 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="000224.html">[Enigma-game-svn] r787 - in trunk: data data/gfx32 data/gfx40	data/gfx48 data/gfx64 src
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#223">[ date ]</a>
+              <a href="thread.html#223">[ thread ]</a>
+              <a href="subject.html#223">[ subject ]</a>
+              <a href="author.html#223">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

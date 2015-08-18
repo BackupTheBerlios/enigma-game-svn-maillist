@@ -1,0 +1,421 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r941 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-December/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r941%20-%20trunk/src&In-Reply-To=%3C200712102324.lBANOkAa007795%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000372.html">
+   <LINK REL="Next"  HREF="000374.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r941 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r941%20-%20trunk/src&In-Reply-To=%3C200712102324.lBANOkAa007795%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r941 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Dec 11 00:24:46 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000372.html">[Enigma-game-svn] r940 - trunk/src/gui
+</A></li>
+        <LI>Next message: <A HREF="000374.html">[Enigma-game-svn] r942 - homepage/input/lotm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#373">[ date ]</a>
+              <a href="thread.html#373">[ thread ]</a>
+              <a href="subject.html#373">[ subject ]</a>
+              <a href="author.html#373">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-12-11 00:24:46 +0100 (Tue, 11 Dec 2007)
+New Revision: 941
+
+Modified:
+   trunk/src/enigma.cc
+   trunk/src/enigma.hh
+   trunk/src/lua.cc
+   trunk/src/lua.hh
+   trunk/src/world.cc
+Log:
+Trunk 1.1: new API - multitarget, multiaction
+- new Value type TOKENS suited for strings, objects, groups and tables of
+  these types as need for multitargets and multiactions
+- reengineering of PerformAction as described in Draft 0.5
+Note:
+- This is a very critical patch - still needs some testing with existing
+  levels.
+
+Modified: trunk/src/enigma.cc
+===================================================================
+--- trunk/src/enigma.cc	2007-12-09 22:49:58 UTC (rev 940)
++++ trunk/src/enigma.cc	2007-12-10 23:24:46 UTC (rev 941)
+@@ -175,6 +175,34 @@
+ //    Log &lt;&lt; &quot;Value ObjectList '&quot; &lt;&lt; descriptor &lt;&lt; &quot;'\n&quot;;
+ }
+ 
++Value::Value(TokenList aList) : type (TOKENS) {
++    std::string descriptor;
++    TokenList::iterator it;
++    for (it = aList.begin(); it != aList.end(); ++it) {
++        switch ((*it).type) {
++            case STRING :
++                ASSERT((*it).val.str[0] != 0, XLevelRuntime, &quot;TokenList: illegal empty string value&quot;);                
++                descriptor.append((*it).val.str);
++                break;
++            case OBJECT :
++                descriptor.append(ecl::strf(&quot;$%d&quot;, (int)((*it).val.dval[0])));
++                break;
++            case GROUP :
++                descriptor.append(&quot;%&quot;);
++                descriptor.append((*it).val.str);
++                break;
++            default :
++                ASSERT(false, XLevelRuntime, &quot;TokenList: illegal value type&quot;);
++                break;
++        }
++        descriptor.append(&quot;;&quot;);
++    }
++    val.str =  new char[descriptor.size() + 1];
++    strcpy(val.str, descriptor.c_str());
++ 
++//    Log &lt;&lt; &quot;Value TokenList '&quot; &lt;&lt; descriptor &lt;&lt; &quot;'\n&quot;;
++}
++
+ Value::Value(ecl::V2 pos) : type (POSITION) {
+      val.dval[0] = pos[0];
+      val.dval[1] = pos[1];
+@@ -195,6 +223,7 @@
+             break;
+         case STRING :
+         case GROUP :
++        case TOKENS :
+             val.str = new char[1];
+             val.str[0] = 0;
+             break;
+@@ -251,6 +280,7 @@
+                 return val.dval[0] == other.val.dval[0];
+             case STRING :
+             case GROUP :
++            case TOKENS :
+                 return strcmp(val.str, other.val.str) == 0;
+             case POSITION :
+                 return (val.dval[0] == other.val.dval[0]) &amp;&amp; (val.dval[1] == other.val.dval[1]);
+@@ -306,15 +336,22 @@
+             return Object::getObject(round_nearest&lt;int&gt;(val.dval[0]));
+         case STRING:
+             return GetNamedObject(val.str);            
+-        default: return NULL;
++        default: 
++            return NULL;
+     }
+ }
+ 
+ Value::operator ObjectList() const {
+     ObjectList result;
+     switch (type) {
++        case STRING:
++            if (std::string(val.str).find_first_of(&quot;*?&quot;) != std::string::npos) {
++                // wildcards in object name - we need to add all objects
++                result = GetNamedGroup(val.str);
++                break;
++            }
++            // else it is a single object name - fall through
+         case OBJECT:
+-        case STRING:
+             result.push_back(*this);
+             break;
+         case GROUP:
+@@ -323,7 +360,7 @@
+             for (std::vector&lt;std::string&gt;::iterator it = vs.begin(); it != vs.end(); ++it) {
+                 if (it-&gt;size() &gt; 0) {
+                     if ((*it)[0] == '$') {
+-                        result.push_back(Object::getObject(atoi((it-&gt;c_str()) + 1)));
++                        result.push_back(Object::getObject(atoi((*it).c_str() + 1)));
+                     } else {
+                         result.push_back(GetNamedObject(*it));
+                     }
+@@ -334,6 +371,41 @@
+     return result;
+ }
+ 
++Value::operator TokenList() const {
++    TokenList result;
++    switch (type) {
++        case OBJECT:
++        case STRING:
++        case GROUP:
++            result.push_back(*this);
++            break;
++        case TOKENS:
++            std::vector&lt;std::string&gt; vs;
++            ecl::split_copy(std::string(val.str), ';', back_inserter(vs));
++            for (std::vector&lt;std::string&gt;::iterator it = vs.begin(); it != vs.end(); ++it) {
++                if (it-&gt;size() &gt; 0) {
++                    if ((*it)[0] == '$') {
++                        // an object id
++                        Value v(OBJECT);
++                        v.val.dval[0] = atoi((*it).c_str() + 1);
++                        result.push_back(v);
++                    } else if ((*it)[0] == '%'){
++                        // a group
++                        Value v(NIL);
++                        v.assign((*it).c_str() + 1);
++                        v.type = GROUP;
++                        result.push_back(v);
++                    } else {
++                        // a string
++                        result.push_back(Value(*it));
++                    }
++                }
++            }
++            break;
++    }
++    return result;
++}
++
+ Value::operator ecl::V2() const {
+     switch (type) {
+         case POSITION:
+
+Modified: trunk/src/enigma.hh
+===================================================================
+--- trunk/src/enigma.hh	2007-12-09 22:49:58 UTC (rev 940)
++++ trunk/src/enigma.hh	2007-12-10 23:24:46 UTC (rev 941)
+@@ -40,6 +40,7 @@
+ namespace enigma { 
+ 
+     class Object;
++    class Value;
+     
+ /* -------------------- Various types -------------------- */
+ 
+@@ -192,6 +193,7 @@
+ /* -------------------- Value -------------------- */
+ 
+     typedef std::list&lt;Object *&gt; ObjectList;
++    typedef std::list&lt;Value&gt; TokenList;
+ 
+     /**
+      * A flexible container for various types of data. This class is one
+@@ -249,7 +251,8 @@
+             OBJECT,   ///&lt; Value is an object id. The id is a persistent object
+                       ///&lt; identifier.
+             GROUP,    ///&lt; Value is a group of objects.
+-            POSITION  ///&lt; Value is a position
++            POSITION, ///&lt; Value is a position
++            TOKENS    ///&lt; Value is a list of token values
+         };
+ 
+         Value();                       ///&lt; Constructor for NIL value that 
+@@ -265,6 +268,8 @@
+                                        ///&lt; represents a persistent reference to an object
+         Value(ObjectList aList);       ///&lt; Constructor for OBJECT value that properly
+                                        ///&lt; represents a set of objects
++        Value(TokenList aList);        ///&lt; Constructor for TOKENS value that properly
++                                       ///&lt; represents a list of tokens
+         Value(ecl::V2 pos);            ///&lt; Constructor for POSITION value
+         Value(GridPos gpos);           ///&lt; Constructor for POSITION value
+         Value(Type t);                 ///&lt; Constructor for a given type. The
+@@ -333,6 +338,11 @@
+         operator ObjectList() const;
+         
+         /**
++         * Conversion of a value to a list of tokens.
++         */
++        operator TokenList() const;
++        
++        /**
+          * Conversion of a value to a position vector.
+          */
+         operator ecl::V2() const;
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2007-12-09 22:49:58 UTC (rev 940)
++++ trunk/src/lua.cc	2007-12-10 23:24:46 UTC (rev 941)
+@@ -354,6 +354,16 @@
+         case Value::POSITION:
+             pushNewPosition(L, val);
+             break;
++        case Value::TOKENS: {
++            TokenList tokens = val;
++            lua_newtable(L);
++            int n = 1;
++            for (TokenList::iterator it = tokens.begin(); it != tokens.end(); ++it, n++) {
++                push_value(L, *it);
++                lua_rawseti(L, -2, n);
++            }
++            break;
++        }
+     }
+ }
+ 
+@@ -374,6 +384,19 @@
+                 return Value(toObjectList(L, idx));
+             else  if (is_position(L, idx))
+                 return Value(toPosition(L, idx));
++        case LUA_TTABLE: {
++            TokenList tokens;
++            int i = 1;
++            lua_rawgeti(L, idx, i);
++            while (!lua_isnil(L, -1)) {
++                tokens.push_back(to_value(L, -1));
++                lua_pop(L, 1);  // this value
++                i++;
++                lua_rawgeti(L, idx, i);
++            }
++            lua_pop(L, 1);  // nil value
++            return Value(tokens);
++        }
+         default: 
+             throwLuaError(L,&quot;Cannot convert type to Value.&quot;);
+     }
+@@ -2429,6 +2452,15 @@
+     }
+ }
+ 
++bool IsFunc(lua_State *L, const char *funcname) {
++    bool result;
++    
++    lua_getglobal(L, funcname);
++    result = lua_isfunction(L, -1);
++    lua_pop(L, 1);
++    return result;
++}
++
+ Error CallFunc(lua_State *L, const char *funcname, const Value&amp; arg, Object *obj) {
+     int retval;
+     lua_getglobal(L, funcname);
+
+Modified: trunk/src/lua.hh
+===================================================================
+--- trunk/src/lua.hh	2007-12-09 22:49:58 UTC (rev 940)
++++ trunk/src/lua.hh	2007-12-10 23:24:46 UTC (rev 941)
+@@ -87,6 +87,8 @@
+     /*! Set the value of entry `name' in the global table `tablename'. */
+     void SetTableVar (lua_State *L, const char *tablename, const char *name, double value);
+ 
++    bool IsFunc(lua_State *L, const char *funcname);
++    
+     /*! Call a Lua function with one argument.  This is mainly used
+       for callbacks during the game. */
+     Error CallFunc(lua_State *L, const char *funcname, const enigma::Value&amp; arg, Object *obj);
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2007-12-09 22:49:58 UTC (rev 940)
++++ trunk/src/world.cc	2007-12-10 23:24:46 UTC (rev 941)
+@@ -1966,35 +1966,53 @@
+ }
+ 
+ 
+-void PerformAction (Object *o, bool onoff) 
+-{
+-    string action = &quot;idle&quot;;
+-    string target(o-&gt;getAttr(&quot;target&quot;));
+-
+-    if (Value v = o-&gt;getAttr(&quot;action&quot;)) action = v.to_string();
+-
+-#if defined(VERBOSE_MESSAGES)
+-    o-&gt;warning(&quot;PerformAction action=%s target=%s&quot;, action.c_str(), target.c_str());
+-#endif // VERBOSE_MESSAGES
+-
+-    if (action == &quot;callback&quot;) {
+-        if (lua::CallFunc(lua::LevelState(), target.c_str(), Value(onoff), o) != 0) {
+-            throw XLevelRuntime(string(&quot;callback '&quot;)+target+&quot;' failed:\n&quot;+lua::LastError(lua::LevelState()));
++void PerformAction (Object *obj, bool onoff) {
++    TokenList targets = obj-&gt;getAttr(&quot;target&quot;);
++    TokenList actions = obj-&gt;getAttr(&quot;action&quot;);
++    if (Value state = obj-&gt;getAttr(&quot;state&quot;)) {
++        int s = state;
++        if (Value stateTargets = obj-&gt;getAttr(ecl::strf(&quot;target_%d&quot;, s)))
++            targets = stateTargets;
++        if (Value actionTargets = obj-&gt;getAttr(ecl::strf(&quot;action_%d&quot;, s)))
++            actions = actionTargets;
++    }
++    
++    TokenList::iterator ait = actions.begin();
++    std::string action;  // empty string as default
++    for (TokenList::iterator tit = targets.begin(); tit != targets.end(); ++tit) {
++        action = (ait != actions.end()) ? ait-&gt;to_string() : &quot;&quot;;
++        
++        ObjectList ol = *tit;  // get all objects described by target token
++        if (ol.size() == 0 || (ol.size() == 1 &amp;&amp; ol.front() == NULL)) {  // no target object
++            if ((action == &quot;callback&quot; || action == &quot;&quot;) &amp;&amp; (tit-&gt;getType() == Value::STRING) 
++                    &amp;&amp; lua::IsFunc(lua::LevelState(), tit-&gt;get_string())) {
++                // it is an existing callback function
++                if (lua::CallFunc(lua::LevelState(), tit-&gt;get_string(), Value(onoff), obj) != lua::NO_LUAERROR) {
++                    throw XLevelRuntime(string(&quot;callback '&quot;) + tit-&gt;get_string() + &quot;' failed:\n&quot;+lua::LastError(lua::LevelState()));
++                }
++            }
++            // else ignore this no longer valid target
++        } else {
++            // send message to all objects
++            if (action == &quot;&quot;) 
++                action = &quot;toggle&quot;;
++            for (ObjectList::iterator oit = ol.begin(); oit != ol.end(); ++oit) {
++                if (*oit != NULL) {
++                    if (GridObject *go = dynamic_cast&lt;GridObject*&gt;(*oit))
++                        SendMessage(*oit, Message(action, Value(onoff), go-&gt;get_pos()));
++                    else
++                        SendMessage(*oit, Message(action, Value(onoff)));
++                }
++            }
+         }
++        
++        if (ait != actions.end()) ++ait;
+     }
+-    else if (action == &quot;signal&quot;) {
+-        emit_from (level-&gt;m_signals, o, onoff);
++    
++    if ((targets.size() == 0) &amp;&amp; (actions.size() == 1) &amp;&amp; actions.front().to_string() == &quot;signal&quot;) {
++        // pre 1.10 signal handling
++        emit_from(level-&gt;m_signals, obj, onoff);
+     }
+-    else if (Object *t = GetNamedObject(target)) {
+-        if (GridObject *go = dynamic_cast&lt;GridObject*&gt;(o))
+-            SendMessage (t, Message (action, Value(onoff), go-&gt;get_pos()));
+-        else
+-            SendMessage (t, Message (action, Value(onoff)));
+-    }
+-    else if (action != &quot;idle&quot;) {
+-        fprintf (stderr, &quot;Unknown target '%s' for action '%s'\n&quot;,
+-                 target.c_str(), action.c_str());
+-    }
+ }
+ 
+ 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000372.html">[Enigma-game-svn] r940 - trunk/src/gui
+</A></li>
+	<LI>Next message: <A HREF="000374.html">[Enigma-game-svn] r942 - homepage/input/lotm
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#373">[ date ]</a>
+              <a href="thread.html#373">[ thread ]</a>
+              <a href="subject.html#373">[ subject ]</a>
+              <a href="author.html#373">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

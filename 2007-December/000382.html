@@ -1,0 +1,580 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r950 - trunk/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-December/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r950%20-%20trunk/src&In-Reply-To=%3C200712221349.lBMDncVP002811%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000381.html">
+   <LINK REL="Next"  HREF="000383.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r950 - trunk/src</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r950%20-%20trunk/src&In-Reply-To=%3C200712221349.lBMDncVP002811%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r950 - trunk/src">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Dec 22 14:49:38 CET 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000381.html">[Enigma-game-svn] r949 - trunk/src
+</A></li>
+        <LI>Next message: <A HREF="000383.html">[Enigma-game-svn] r951 - in trunk/src: . stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#382">[ date ]</a>
+              <a href="thread.html#382">[ thread ]</a>
+              <a href="subject.html#382">[ subject ]</a>
+              <a href="author.html#382">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2007-12-22 14:49:37 +0100 (Sat, 22 Dec 2007)
+New Revision: 950
+
+Modified:
+   trunk/src/items.cc
+   trunk/src/objects.cc
+   trunk/src/objects.hh
+   trunk/src/st_switches.cc
+   trunk/src/stones_complex.cc
+   trunk/src/stones_simple.cc
+   trunk/src/world.cc
+   trunk/src/world.hh
+Log:
+Trunk 1.1: 
+- substitute global PerformAction() by Object::performAction(Value v) method
+- vortex: action delivers passed actor instead of true/false
+- doorknocking: new API is action, PerOxyd disabled, other signal to item
+Note:
+- actions can now take arbitrary values besides the classical bool onoff
+
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2007-12-22 12:13:17 UTC (rev 949)
++++ trunk/src/items.cc	2007-12-22 13:49:37 UTC (rev 950)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -1321,7 +1322,7 @@
+ 
+         virtual Value on_message (const Message &amp;m) {
+             if (m.message == &quot;signal&quot;) {
+-                PerformAction (this, to_double (m.value) != 0.0);
++                performAction(m.value.to_bool());  // convert 1/0 values to true/false
+             }
+             else if (m.message == &quot;init&quot;) {
+                 update_state();
+@@ -1364,10 +1365,10 @@
+         init_model();
+         if (m_pressedp) {
+             sound_event (&quot;triggerdown&quot;);
+-            PerformAction(this, true);
++            performAction(true);
+         } else {
+             sound_event (&quot;triggerup&quot;);
+-            PerformAction(this, false);
++            performAction(false);
+         }
+     }
+ }
+@@ -1517,7 +1518,7 @@
+         if (st == 0) {
+             warning(&quot;stone_change: Stone disappeared w/o sending me a proper message!&quot;);
+             activated = false;
+-            PerformAction(this, false);
++            performAction(false);
+         }
+     }
+ }
+@@ -1526,7 +1527,7 @@
+     if (str == &quot;noshogun&quot;) {
+         if (activated) {
+             activated = false;
+-            PerformAction(this, false);
++            performAction(false);
+         }
+     }
+     else {
+@@ -1538,7 +1539,7 @@
+ 
+         if (size_matches != activated) {
+             activated = size_matches;
+-            PerformAction(this, activated);
++            performAction(activated);
+         }
+     }
+     return Value();
+@@ -1926,7 +1927,7 @@
+     }
+     
+     if (msg == &quot;_passed&quot;)
+-        PerformAction(this, true);
++        performAction(getAttr(&quot;$grabbed_actor&quot;));
+     return Value();
+ }
+ 
+@@ -2045,13 +2046,13 @@
+                 KillRubberBands(actor);
+         }
+     }
+-    set_attrib(&quot;$grabbed_actor&quot;, (Object *)NULL);
+-
+     state = OPEN;
+     if (this != destVortex &amp;&amp; getAttr(&quot;autoclose&quot;).to_bool())  // do not close source vortex if destination is currently blocked
+         close();
+     if (this != destVortex)
+-        PerformAction(this, false);
++        performAction(getAttr(&quot;$grabbed_actor&quot;));
++
++    set_attrib(&quot;$grabbed_actor&quot;, (Object *)NULL);
+ }
+ 
+ void Vortex::warp_to(const V2 &amp;target) {
+@@ -2064,12 +2065,12 @@
+         if (isScissor)
+             KillRubberBands(actor);
+     }
+-    set_attrib(&quot;$grabbed_actor&quot;, (Object *)NULL);
+-
+     state = OPEN;
+     if (getAttr(&quot;autoclose&quot;).to_bool())
+         close();
+-    PerformAction(this, false);
++
++    performAction(getAttr(&quot;$grabbed_actor&quot;));
++    set_attrib(&quot;$grabbed_actor&quot;, (Object *)NULL);
+ }
+ 
+ void Vortex::perform_warp() {
+@@ -2892,7 +2893,7 @@
+         Sensor() {}
+ 
+         void actor_enter (Actor *) {
+-            PerformAction (this, true);
++            performAction(true);
+         }
+     };
+     DEF_TRAITSF(Sensor, &quot;it-sensor&quot;, it_sensor, itf_static | itf_invisible);
+@@ -2904,7 +2905,7 @@
+         InverseSensor() {}
+ 
+         void actor_enter (Actor *) {
+-            PerformAction (this, false);
++            performAction (false);
+         }
+     };
+     DEF_TRAITSF(InverseSensor, &quot;it-inversesensor&quot;, it_inversesensor,
+@@ -2928,7 +2929,7 @@
+                 int value = to_int(val);
+ //                 warning(&quot;received signal with value %i&quot;, value);
+                 if (value)
+-                    PerformAction(this, type != 0);
++                    performAction(type != 0);
+             }
+             return Value();
+         }
+@@ -3170,14 +3171,14 @@
+         }
+ 
+         void alarm() {
+-            PerformAction (this, true);
++            performAction(true);
+         }
+ 
+         virtual Value on_message (const Message &amp;m) {
+             if (server::GameCompatibility == enigma::GAMET_PEROXYD) {
+                 // Crosses can be used to invert signals in Per.Oxyd
+                 if (m.message == &quot;signal&quot;) {
+-                    PerformAction (this, to_double (m.value) != 1.0);
++                    performAction(m.value.to_bool()); // convert 1/0 values to true/false
+                 }
+             } else if (enigma_server::GameCompatibility == GAMET_ENIGMA) {
+                 if (m.message == &quot;brush&quot;)
+@@ -3474,7 +3475,7 @@
+         DECL_TRAITS;
+ 
+         virtual Value on_message (const Message &amp;) {
+-            PerformAction (this, true);
++            performAction(true);
+             return Value();
+         }
+     public:
+
+Modified: trunk/src/objects.cc
+===================================================================
+--- trunk/src/objects.cc	2007-12-22 12:13:17 UTC (rev 949)
++++ trunk/src/objects.cc	2007-12-22 13:49:37 UTC (rev 950)
+@@ -20,6 +20,7 @@
+ 
+ #include &quot;errors.hh&quot;
+ #include &quot;game.hh&quot;
++#include &quot;lua.hh&quot;
+ #include &quot;sound.hh&quot;
+ #include &quot;world.hh&quot;
+ 
+@@ -175,6 +176,50 @@
+     return Value(Value::DEFAULT);
+ }
+ 
++void Object::performAction (const Value&amp; val) {
++    TokenList targets = getAttr(&quot;target&quot;);
++    TokenList actions = getAttr(&quot;action&quot;);
++    if (Value state = getAttr(&quot;state&quot;)) {
++        int s = state;
++        if (Value stateTargets = getAttr(ecl::strf(&quot;target_%d&quot;, s)))
++            targets = stateTargets;
++        if (Value actionTargets = getAttr(ecl::strf(&quot;action_%d&quot;, s)))
++            actions = actionTargets;
++    }
++    
++    TokenList::iterator ait = actions.begin();
++    std::string action;  // empty string as default
++    for (TokenList::iterator tit = targets.begin(); tit != targets.end(); ++tit) {
++        action = (ait != actions.end()) ? ait-&gt;to_string() : &quot;&quot;;
++        
++        ObjectList ol = *tit;  // get all objects described by target token
++        if (ol.size() == 0 || (ol.size() == 1 &amp;&amp; ol.front() == NULL)) {  // no target object
++            if ((action == &quot;callback&quot; || action == &quot;&quot;) &amp;&amp; (tit-&gt;getType() == Value::STRING) 
++                    &amp;&amp; lua::IsFunc(lua::LevelState(), tit-&gt;get_string())) {
++                // it is an existing callback function
++                if (lua::CallFunc(lua::LevelState(), tit-&gt;get_string(), val, this) != lua::NO_LUAERROR) {
++                    throw XLevelRuntime(string(&quot;callback '&quot;) + tit-&gt;get_string() + &quot;' failed:\n&quot;+lua::LastError(lua::LevelState()));
++                }
++            }
++            // else ignore this no longer valid target
++//            Log &lt;&lt; &quot;PerformAction target not valid\n&quot;;
++        } else {
++            // send message to all objects
++            if (action == &quot;&quot;) 
++                action = &quot;toggle&quot;;
++            for (ObjectList::iterator oit = ol.begin(); oit != ol.end(); ++oit) {
++                if (*oit != NULL) {
++                    if (GridObject *go = dynamic_cast&lt;GridObject*&gt;(this)) {
++                        SendMessage(*oit, Message(action, val, go-&gt;get_pos()));
++                    } else
++                        SendMessage(*oit, Message(action, val));
++                }
++            }
++        }
++        
++        if (ait != actions.end()) ++ait;
++    }
++}
+ 
+ /* Send an impulse to position 'dest' into direction dir.  If 'dest'
+    contains a stone, on_impulse() is called for that stone */
+
+Modified: trunk/src/objects.hh
+===================================================================
+--- trunk/src/objects.hh	2007-12-22 12:13:17 UTC (rev 949)
++++ trunk/src/objects.hh	2007-12-22 13:49:37 UTC (rev 950)
+@@ -158,6 +158,12 @@
+ 
+     protected:
+         virtual Value getDefaultValue(const string &amp;key) const;
++        /** This function is used by all triggers, switches etc. that
++         * perform some particular action when activated (like opening
++         * doors or switching lasers on and off). It interprets the
++         * &quot;action&quot; and &quot;target&quot; attributes of `o'. 
++         */
++        void performAction(const Value&amp; val);
+     private:
+         friend void InitWorld();   // for bootFinished() access
+         
+
+Modified: trunk/src/st_switches.cc
+===================================================================
+--- trunk/src/st_switches.cc	2007-12-22 12:13:17 UTC (rev 949)
++++ trunk/src/st_switches.cc	2007-12-22 13:49:37 UTC (rev 950)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -57,7 +58,7 @@
+                     set_anim(&quot;st-switch-turnon&quot;);
+                 else
+                     set_anim(&quot;st-switch-turnoff&quot;);
+-                PerformAction(this, newon);
++                performAction(newon);
+             }
+         }
+ 
+@@ -101,7 +102,7 @@
+                     set_anim(&quot;st-switch_black-turnon&quot;);
+                 else
+                     set_anim(&quot;st-switch_black-turnoff&quot;);
+-                PerformAction(this, newon);
++                performAction(newon);
+             }
+         }
+         void animcb() {
+@@ -145,7 +146,7 @@
+                     set_anim(&quot;st-switch_white-turnon&quot;);
+                 else
+                     set_anim(&quot;st-switch_white-turnoff&quot;);
+-                PerformAction(this, newon);
++                performAction(newon);
+             }
+         }
+         void animcb() {
+@@ -211,11 +212,11 @@
+ 
+     switch (newstate) {
+     case ACTIVE:
+-        PerformAction(this, true);
++        performAction(true);
+         GameTimer.activate(this);
+         break;
+     case INACTIVE:
+-        PerformAction(this, false);
++        performAction(false);
+         GameTimer.deactivate(this);
+         sound_event (&quot;coinslotoff&quot;);
+         break;
+@@ -354,7 +355,7 @@
+ 
+     if (toggle) {
+         set_on (!is_on());
+-        PerformAction (this, is_on());
++        performAction(is_on());
+     }
+ }
+ 
+@@ -396,7 +397,7 @@
+             bool isGlobalTarget = getAttr(&quot;target&quot;);
+             
+             if (!m_inactive_so_far &amp;&amp; !isGlobalTarget) {
+-                PerformAction(this, false);  // signal off for old direction state
++                performAction(false);  // signal off for old direction state
+             } else
+                 m_inactive_so_far = false;
+ 
+@@ -406,9 +407,9 @@
+             sound_event(&quot;fourswitch&quot;);
+ 
+             if (isGlobalTarget) {
+-                PerformAction(this, (server::EnigmaCompatibility &lt; 1.10) ? is_on() : 3 - m_direction);
++                performAction((server::EnigmaCompatibility &lt; 1.10) ? is_on() : 3 - m_direction);
+             } else {
+-                PerformAction(this, true);  // signal on for new direction state
++                performAction(true);  // signal on for new direction state
+             }
+         }
+ 
+@@ -532,7 +533,7 @@
+     if (state == IDLE) {
+ //         sound_event (&quot;st-switch&quot;);
+         set_model(get_active_model());
+-        PerformAction(this, !inverse());
++        performAction(!inverse());
+         if (newstate == TOUCHED) {
+             double delay = timer_delay();
+             ASSERT(delay&gt;0.0, XLevelRuntime, &quot;LaserTimeSwitchBase: delay non-positive&quot;);
+@@ -542,7 +543,7 @@
+     else if (newstate == IDLE) {
+ //         sound_event (&quot;st-switch&quot;);
+         set_model(get_inactive_model());
+-        PerformAction(this, inverse());
++        performAction(inverse());
+     }
+     else {
+         // it's not allowed to switch from LIGHTED to TOUCHED
+@@ -672,13 +673,13 @@
+             if (!inv-&gt;is_full()) {
+                 inv-&gt;add_item (MakeItem(&quot;it-floppy&quot;));
+                 set_on(false);
+-                PerformAction(this, is_on());
++                performAction(is_on());
+             }
+         }
+         else if (player::WieldedItemIs (sc.actor, &quot;it-floppy&quot;)) {
+             DisposeObject (inv-&gt;yield_first());
+             set_on(true);
+-            PerformAction(this, is_on());
++            performAction(is_on());
+         }
+         player::RedrawInventory (inv);
+     }
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2007-12-22 12:13:17 UTC (rev 949)
++++ trunk/src/stones_complex.cc	2007-12-22 13:49:37 UTC (rev 950)
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2007 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/ or
+  * modify it under the terms of the GNU General Public License
+@@ -1676,8 +1677,13 @@
+ 
+         void actor_hit(const StoneContact &amp;)
+         {
+-            if (Item *it = GetItem (get_pos()))
+-                PerformAction (it, true);
++            // door knocking
++            Item *it = GetItem(get_pos());
++            if (it != NULL &amp;&amp; server::GameCompatibility != GAMET_PEROXYD 
++                    &amp;&amp; (server::GameCompatibility != GAMET_ENIGMA || server::EnigmaCompatibility &lt; 1.10 ))
++                SendMessage(it, &quot;signal&quot;, 1);
++            else
++                performAction(true);
+         }
+ 
+         string model_basename() { return string(&quot;st-door&quot;)+get_type(); }
+@@ -2464,7 +2470,7 @@
+ 	    rotate_arms(arms, clockwise);
+         handleActorsAndItems(clockwise, impulse_sender);
+ 
+-        PerformAction (this, clockwise == 0);
++        performAction(clockwise == 0);
+         server::IncMoveCounter();
+     }
+     return can_rotate;
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2007-12-22 12:13:17 UTC (rev 949)
++++ trunk/src/stones_simple.cc	2007-12-22 13:49:37 UTC (rev 950)
+@@ -1127,7 +1127,7 @@
+             sound_event(&quot;scissors&quot;);
+             set_anim(&quot;st-scissors-snip&quot;);
+             if (KillRubberBands (sc.actor))
+-                PerformAction(this, false);
++                performAction(false);
+         }
+         void animcb() {
+             set_model(&quot;st-scissors&quot;);
+@@ -1288,7 +1288,7 @@
+         void alarm() {
+             if (is_on()) {
+ //                 sound::PlaySound(&quot;st-timer&quot;);
+-                PerformAction(this, m_signalvalue != 0);
++                performAction(m_signalvalue != 0);
+                 m_signalvalue = 1-m_signalvalue;
+                 if(!get_is_looped())
+                     set_on(false); // Switch to &quot;off&quot;-model.
+@@ -1496,7 +1496,7 @@
+ 
+ Value ThiefStone::message(const string &amp;msg, const Value &amp;v) {
+     if(msg == &quot;signal&quot; &amp;&amp; server::GameCompatibility != GAMET_ENIGMA) {
+-        PerformAction(this, v.to_bool());  // signal multiplier
++        performAction(v.to_bool());  // signal multiplier
+     } else if(msg == &quot;capture&quot; &amp;&amp; state == IDLE) {
+         state = CAPTURED;
+         Item * it =  GetItem(get_pos());
+
+Modified: trunk/src/world.cc
+===================================================================
+--- trunk/src/world.cc	2007-12-22 12:13:17 UTC (rev 949)
++++ trunk/src/world.cc	2007-12-22 13:49:37 UTC (rev 950)
+@@ -1938,50 +1938,6 @@
+ }
+ 
+ 
+-void PerformAction (Object *obj, bool onoff) {
+-    TokenList targets = obj-&gt;getAttr(&quot;target&quot;);
+-    TokenList actions = obj-&gt;getAttr(&quot;action&quot;);
+-    if (Value state = obj-&gt;getAttr(&quot;state&quot;)) {
+-        int s = state;
+-        if (Value stateTargets = obj-&gt;getAttr(ecl::strf(&quot;target_%d&quot;, s)))
+-            targets = stateTargets;
+-        if (Value actionTargets = obj-&gt;getAttr(ecl::strf(&quot;action_%d&quot;, s)))
+-            actions = actionTargets;
+-    }
+-    
+-    TokenList::iterator ait = actions.begin();
+-    std::string action;  // empty string as default
+-    for (TokenList::iterator tit = targets.begin(); tit != targets.end(); ++tit) {
+-        action = (ait != actions.end()) ? ait-&gt;to_string() : &quot;&quot;;
+-        
+-        ObjectList ol = *tit;  // get all objects described by target token
+-        if (ol.size() == 0 || (ol.size() == 1 &amp;&amp; ol.front() == NULL)) {  // no target object
+-            if ((action == &quot;callback&quot; || action == &quot;&quot;) &amp;&amp; (tit-&gt;getType() == Value::STRING) 
+-                    &amp;&amp; lua::IsFunc(lua::LevelState(), tit-&gt;get_string())) {
+-                // it is an existing callback function
+-                if (lua::CallFunc(lua::LevelState(), tit-&gt;get_string(), Value(onoff), obj) != lua::NO_LUAERROR) {
+-                    throw XLevelRuntime(string(&quot;callback '&quot;) + tit-&gt;get_string() + &quot;' failed:\n&quot;+lua::LastError(lua::LevelState()));
+-                }
+-            }
+-            // else ignore this no longer valid target
+-//            Log &lt;&lt; &quot;PerformAction target not valid\n&quot;;
+-        } else {
+-            // send message to all objects
+-            if (action == &quot;&quot;) 
+-                action = &quot;toggle&quot;;
+-            for (ObjectList::iterator oit = ol.begin(); oit != ol.end(); ++oit) {
+-                if (*oit != NULL) {
+-                    if (GridObject *go = dynamic_cast&lt;GridObject*&gt;(obj)) {
+-                        SendMessage(*oit, Message(action, Value(onoff), go-&gt;get_pos()));
+-                    } else
+-                        SendMessage(*oit, Message(action, Value(onoff)));
+-                }
+-            }
+-        }
+-        
+-        if (ait != actions.end()) ++ait;
+-    }
+-}
+ 
+ 
+ namespace
+
+Modified: trunk/src/world.hh
+===================================================================
+--- trunk/src/world.hh	2007-12-22 12:13:17 UTC (rev 949)
++++ trunk/src/world.hh	2007-12-22 13:49:37 UTC (rev 950)
+@@ -254,11 +254,6 @@
+     Value SendMessage (Object *o, const string &amp;msg, const Value&amp; value);
+     Value SendMessage (Object *o, const Message &amp;m);
+ 
+-    /*! This function is used by all triggers, switches etc. that
+-      perform some particular action when activated (like opening
+-      doors or switching lasers on and off). It interprets the
+-      &quot;action&quot; and &quot;target&quot; attributes of `o'. */
+-    void PerformAction (Object *o, bool onoff);
+ 
+ 
+ /* -------------------- Actors -------------------- */
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000381.html">[Enigma-game-svn] r949 - trunk/src
+</A></li>
+	<LI>Next message: <A HREF="000383.html">[Enigma-game-svn] r951 - in trunk/src: . stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#382">[ date ]</a>
+              <a href="thread.html#382">[ thread ]</a>
+              <a href="subject.html#382">[ subject ]</a>
+              <a href="author.html#382">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

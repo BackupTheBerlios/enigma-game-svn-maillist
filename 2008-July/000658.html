@@ -1,0 +1,299 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1224 - in trunk: data data/schemas src	src/others src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-July/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1224%20-%20in%20trunk%3A%20data%20data/schemas%20src%0A%09src/others%20src/stones&In-Reply-To=%3C200807082125.m68LP3Tq014086%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000657.html">
+   <LINK REL="Next"  HREF="000659.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1224 - in trunk: data data/schemas src	src/others src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1224%20-%20in%20trunk%3A%20data%20data/schemas%20src%0A%09src/others%20src/stones&In-Reply-To=%3C200807082125.m68LP3Tq014086%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1224 - in trunk: data data/schemas src	src/others src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Tue Jul  8 23:25:03 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000657.html">[Enigma-game-svn] r1223 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000659.html">[Enigma-game-svn] r1225 - in trunk: data src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#658">[ date ]</a>
+              <a href="thread.html#658">[ thread ]</a>
+              <a href="subject.html#658">[ subject ]</a>
+              <a href="author.html#658">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-07-08 23:25:02 +0200 (Tue, 08 Jul 2008)
+New Revision: 1224
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/d_engine.hh
+   trunk/src/display.cc
+   trunk/src/display.hh
+   trunk/src/items.cc
+   trunk/src/others/Rubberband.cc
+   trunk/src/others/Wire.cc
+   trunk/src/others/Wire.hh
+   trunk/src/stones/ScissorsStone.cc
+Log:
+Trunk 1.1: new API reengineering
+- support thick lines for rubberbands and wires
+- change st_scissors action value from false to true
+- it_rubberband: 
+  - transfer identity to ot_rubberband
+  - let ot_rubberband perform action on behalf of it_rubberband
+
+Note:
+- currently both rubberbands and wires are configured thick for test purposes
+- Wire.cc has an outcommented line for an alternative color for test purposes
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-07-07 23:52:25 UTC (rev 1223)
++++ trunk/data/api1init.lua	2008-07-08 21:25:02 UTC (rev 1224)
+@@ -260,6 +260,10 @@
+         return enigma._MakeObject(&quot;st_mirror_slab_e&quot;)
+     elseif name == &quot;st-3mirror&quot; then
+         return enigma._MakeObject(&quot;st_mirror_triangle_s&quot;)
++    elseif name == &quot;st-scissors&quot; then
++        local obj = enigma._MakeObject(&quot;st_scissors&quot;)
++        enigma._SetAttrib(obj, &quot;inverse&quot;, true)
++        return obj
+     end
+     
+     newname = RenamingObjectsOld2New[name]
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-07-07 23:52:25 UTC (rev 1223)
++++ trunk/data/schemas/objects.xml	2008-07-08 21:25:02 UTC (rev 1224)
+@@ -280,6 +280,7 @@
+       &lt;attr name=&quot;threshold&quot;/&gt;
+       &lt;attr name=&quot;max&quot;/&gt;
+       &lt;attr name=&quot;min&quot;/&gt;
++      &lt;msg name=&quot;_performaction&quot;/&gt;
+     &lt;/object&gt;
+     &lt;object name=&quot;ot_wire&quot;&gt;
+       &lt;attr name=&quot;anchor1&quot;/&gt;
+
+Modified: trunk/src/d_engine.hh
+===================================================================
+--- trunk/src/d_engine.hh	2008-07-07 23:52:25 UTC (rev 1223)
++++ trunk/src/d_engine.hh	2008-07-08 21:25:02 UTC (rev 1224)
+@@ -296,9 +296,10 @@
+         V2 start, end;
+         V2 oldstart, oldend;
+         unsigned short r,g,b;
++        bool thick;
+ 
+-        Line(const V2 &amp;s, const V2 &amp;e, unsigned short rc, unsigned short gc, unsigned short bc) :
+-                start (s), end (e), r (rc), g (gc), b (bc) {
++        Line(const V2 &amp;s, const V2 &amp;e, unsigned short rc, unsigned short gc, unsigned short bc, bool isThick) :
++                start (s), end (e), r (rc), g (gc), b (bc), thick (isThick) {
+         }
+         Line() {}
+     };
+@@ -316,7 +317,7 @@
+         {}
+         void draw_onepass (ecl::GC &amp;gc);
+ 
+-        RubberHandle add_line (const V2 &amp;p1, const V2 &amp;p2, unsigned short rc, unsigned short gc, unsigned short bc);
++        RubberHandle add_line (const V2 &amp;p1, const V2 &amp;p2, unsigned short rc, unsigned short gc, unsigned short bc, bool isThick);
+         void set_startpoint (unsigned id, const V2 &amp;p1);
+         void set_endpoint (unsigned id, const V2 &amp;p2);
+         void kill_line (unsigned id);
+@@ -354,7 +355,7 @@
+         SpriteHandle add_effect (const V2&amp; pos, Model *m, bool isDispensible = false);
+         SpriteHandle add_sprite (const V2 &amp;pos, Model *m);
+ 
+-        RubberHandle add_line (V2 p1, V2 p2, unsigned short rc, unsigned short gc, unsigned short bc);
++        RubberHandle add_line (V2 p1, V2 p2, unsigned short rc, unsigned short gc, unsigned short bc, bool isThick);
+ 
+         void new_world (int w, int h);
+         void redraw();
+
+Modified: trunk/src/display.cc
+===================================================================
+--- trunk/src/display.cc	2008-07-07 23:52:25 UTC (rev 1223)
++++ trunk/src/display.cc	2008-07-08 21:25:02 UTC (rev 1224)
+@@ -1081,6 +1081,11 @@
+ 
+         set_color(gc, i-&gt;second.r, i-&gt;second.g, i-&gt;second.b, 255);
+         line (gc, x1, y1, x2, y2);
++        if (i-&gt;second.thick) {
++            line (gc, x1-1, y1, x2-1, y2);
++            line (gc, x1, y1-1, x2, y2-1);
++            line (gc, x1-1, y1-1, x2-1, y2-1);
++        }
+     }
+ }
+ 
+@@ -1140,9 +1145,9 @@
+     }
+ }
+ 
+-RubberHandle DL_Lines::add_line (const V2 &amp;p1, const V2 &amp;p2, unsigned short rc, unsigned short gc, unsigned short bc)
++RubberHandle DL_Lines::add_line (const V2 &amp;p1, const V2 &amp;p2, unsigned short rc, unsigned short gc, unsigned short bc, bool isThick)
+ {
+-    m_rubbers[m_id] = Line(p1, p2, rc, gc, bc);
++    m_rubbers[m_id] = Line(p1, p2, rc, gc, bc, isThick);
+     mark_redraw_line (m_rubbers[m_id]);
+     return RubberHandle(this, m_id++);
+ }
+@@ -1876,9 +1881,9 @@
+ 
+ 
+ RubberHandle
+-CommonDisplay::add_line (V2 p1, V2 p2, unsigned short rc, unsigned short gc, unsigned short bc)
++CommonDisplay::add_line (V2 p1, V2 p2, unsigned short rc, unsigned short gc, unsigned short bc, bool isThick)
+ {
+-    return line_layer-&gt;add_line (p1, p2, rc, gc, bc);
++    return line_layer-&gt;add_line (p1, p2, rc, gc, bc, isThick);
+ }
+ 
+ SpriteHandle
+@@ -2227,8 +2232,8 @@
+ }
+ 
+ RubberHandle
+-display::AddRubber (const V2 &amp;p1, const V2 &amp;p2, unsigned short rc, unsigned short gc, unsigned short bc) {
+-    return gamedpy-&gt;add_line(p1, p2, rc, gc, bc);
++display::AddRubber(const V2 &amp;p1, const V2 &amp;p2, unsigned short rc, unsigned short gc, unsigned short bc, bool isThick) {
++    return gamedpy-&gt;add_line(p1, p2, rc, gc, bc, isThick);
+ }
+ 
+ void display::SetTextSpeed(int newspeed) {
+
+Modified: trunk/src/display.hh
+===================================================================
+--- trunk/src/display.hh	2008-07-07 23:52:25 UTC (rev 1223)
++++ trunk/src/display.hh	2008-07-08 21:25:02 UTC (rev 1224)
+@@ -189,7 +189,7 @@
+         unsigned id;
+     };
+ 
+-    RubberHandle AddRubber (const ecl::V2 &amp;p1, const ecl::V2 &amp;p2, unsigned short rc, unsigned short gc, unsigned short bc);
++    RubberHandle AddRubber (const ecl::V2 &amp;p1, const ecl::V2 &amp;p2, unsigned short rc, unsigned short gc, unsigned short bc, bool isThick);
+ }
+ 
+ 
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-07-07 23:52:25 UTC (rev 1223)
++++ trunk/src/items.cc	2008-07-08 21:25:02 UTC (rev 1224)
+@@ -4185,7 +4185,8 @@
+             obj-&gt;setAttr(&quot;max&quot;, getAttr(&quot;max&quot;));
+             obj-&gt;setAttr(&quot;min&quot;, getAttr(&quot;min&quot;));
+             AddOther(dynamic_cast&lt;Other *&gt;(obj));
+-            performAction(true);
++            transferIdentity(obj);
++            SendMessage(obj, &quot;_performaction&quot;);
+         }
+ 
+         return ITEM_KILL;
+
+Modified: trunk/src/others/Rubberband.cc
+===================================================================
+--- trunk/src/others/Rubberband.cc	2008-07-07 23:52:25 UTC (rev 1223)
++++ trunk/src/others/Rubberband.cc	2008-07-08 21:25:02 UTC (rev 1224)
+@@ -90,7 +90,7 @@
+     }
+     
+     void Rubberband::postAddition() {
+-        model = display::AddRubber(anchor1-&gt;get_pos(), posAnchor2(), 240, 140, 20);  // orange
++        model = display::AddRubber(anchor1-&gt;get_pos(), posAnchor2(), 240, 140, 20, true);  // orange
+     }
+     
+     void Rubberband::preRemoval() {
+
+Modified: trunk/src/others/Wire.cc
+===================================================================
+--- trunk/src/others/Wire.cc	2008-07-07 23:52:25 UTC (rev 1223)
++++ trunk/src/others/Wire.cc	2008-07-08 21:25:02 UTC (rev 1224)
+@@ -56,8 +56,17 @@
+         return Other::getAttr(key);
+     }
+     
++    Value Wire::message(const Message &amp;m) {
++        if (m.message == &quot;_performaction&quot;) {
++            performAction(true);
++            return Value();
++        }
++        return Other::message(m);
++    }
++
+     void Wire::postAddition() {
+-        model = display::AddRubber(anchor1-&gt;getOwnerPos().center(), anchor2-&gt;getOwnerPos().center(), 200, 50, 150);    // purple
++//        model = display::AddRubber(anchor1-&gt;getOwnerPos().center(), anchor2-&gt;getOwnerPos().center(), 100, 255, 30, true);    // lime
++        model = display::AddRubber(anchor1-&gt;getOwnerPos().center(), anchor2-&gt;getOwnerPos().center(), 200, 50, 150, true);    // purple
+     }
+     
+     void Wire::preRemoval() {
+
+Modified: trunk/src/others/Wire.hh
+===================================================================
+--- trunk/src/others/Wire.hh	2008-07-07 23:52:25 UTC (rev 1223)
++++ trunk/src/others/Wire.hh	2008-07-08 21:25:02 UTC (rev 1224)
+@@ -38,6 +38,7 @@
+         virtual std::string getClass() const;
+         virtual void setAttr(const std::string &amp;key, const Value &amp;val);
+         virtual Value getAttr(const std::string &amp;key) const;
++        virtual Value message(const Message &amp;m);
+         
+         // Other interface
+         virtual void postAddition();
+
+Modified: trunk/src/stones/ScissorsStone.cc
+===================================================================
+--- trunk/src/stones/ScissorsStone.cc	2008-07-07 23:52:25 UTC (rev 1223)
++++ trunk/src/stones/ScissorsStone.cc	2008-07-08 21:25:02 UTC (rev 1224)
+@@ -41,7 +41,7 @@
+         sound_event(&quot;scissors&quot;);
+         set_anim(&quot;st-scissors-snip&quot;);
+         if (SendMessage(sc.actor, &quot;disconnect&quot;).to_bool())
+-            performAction(false);
++            performAction(true);
+     }
+ 
+     DEF_TRAITS(ScissorsStone, &quot;st_scissors&quot;, st_scissors);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000657.html">[Enigma-game-svn] r1223 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000659.html">[Enigma-game-svn] r1225 - in trunk: data src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#658">[ date ]</a>
+              <a href="thread.html#658">[ thread ]</a>
+              <a href="subject.html#658">[ subject ]</a>
+              <a href="author.html#658">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

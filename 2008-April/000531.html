@@ -1,0 +1,461 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1098 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1098%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200804112242.m3BMgCTJ016612%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000530.html">
+   <LINK REL="Next"  HREF="000532.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1098 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1098%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200804112242.m3BMgCTJ016612%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1098 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Apr 12 00:42:12 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000530.html">[Enigma-game-svn] r1097 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000532.html">[Enigma-game-svn] r1099 - in trunk: data data/schemas src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#531">[ date ]</a>
+              <a href="thread.html#531">[ thread ]</a>
+              <a href="subject.html#531">[ subject ]</a>
+              <a href="author.html#531">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-04-12 00:42:10 +0200 (Sat, 12 Apr 2008)
+New Revision: 1098
+
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/api2init.lua
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/src/items.cc
+   trunk/src/stones/FloppySwitch.cc
+   trunk/src/stones/OxydStone.cc
+   trunk/src/stones/OxydStone.hh
+   trunk/src/stones/TimerStone.cc
+Log:
+Trunk 1.1: new API reengineering item floppy
+- oxyd stone: reengineering from PhotoStone to GridStone laser support
+- oxyd stone: fix swapping problems on closeall and pair opening
+- fix timer stone: model update on state change
+- fix coins in old API: correct default values on stone hit
+- renaming it-floppy to it_floppy
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-04-08 23:18:59 UTC (rev 1097)
++++ trunk/data/api1init.lua	2008-04-11 22:42:10 UTC (rev 1098)
+@@ -51,6 +51,7 @@
+     it_coin_m = &quot;it-coin2&quot;,
+     it_coin_l = &quot;it-coin4&quot;,
+     it_extralife = &quot;it-extralife&quot;,
++    it_floppy = &quot;it-floppy&quot;,
+     it_hammer = &quot;it-hammer&quot;,
+     it_magnet = &quot;it-magnet&quot;,
+     it_magnet_on = &quot;it-magnet-on&quot;,
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2008-04-08 23:18:59 UTC (rev 1097)
++++ trunk/data/api2init.lua	2008-04-11 22:42:10 UTC (rev 1098)
+@@ -62,10 +62,11 @@
+ ----------------
+ 
+ -- state
+-OFF = 0
+-ON  = 1
+-CLOSED = 0
+-OPEN   = 1
++OFF      = 0
++ON       = 1
++CLOSED   = 0
++OPEN     = 1
++OXYDPAIR = 2
+ 
+ -- color
+ BLACK = 0
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-04-08 23:18:59 UTC (rev 1097)
++++ trunk/data/models-2d.lua	2008-04-11 22:42:10 UTC (rev 1098)
+@@ -402,7 +402,6 @@
+         &quot;it-dynamite&quot;,
+         &quot;it-flagblack&quot;,
+         &quot;it-flagwhite&quot;,
+-        &quot;it-floppy&quot;,
+         &quot;it-glasses&quot;,
+         &quot;it-glasses-broken&quot;,
+         &quot;it-hill&quot;,
+@@ -437,6 +436,7 @@
+     DefImage(&quot;it_coin_m&quot;, {filename=&quot;it-coin2&quot;})
+     DefImage(&quot;it_coin_l&quot;, {filename=&quot;it-coin4&quot;})
+     DefImage(&quot;it_extralife&quot;, {filename=&quot;it-extralife&quot;})
++    DefImage(&quot;it_floppy&quot;, {filename=&quot;it-floppy&quot;})
+     DefImage(&quot;it_hammer&quot;, {filename=&quot;it-hammer&quot;})
+     DefImage(&quot;it_sword&quot;, {filename=&quot;it-sword&quot;})
+     DefImage(&quot;it_umbrella&quot;, {filename=&quot;it-umbrella&quot;})
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-04-08 23:18:59 UTC (rev 1097)
++++ trunk/data/schemas/objects.xml	2008-04-11 22:42:10 UTC (rev 1098)
+@@ -10,6 +10,7 @@
+     &lt;attr name=&quot;counterclock&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;destination&quot; type=&quot;tokens&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;faces&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;flavor&quot; type=&quot;string&quot; default=&quot;b&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;instant&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;interval&quot; type=&quot;double&quot; default=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;interval_s&quot; type=&quot;double&quot; default=&quot;3&quot; rw=&quot;rw&quot;/&gt;
+@@ -20,7 +21,9 @@
+     &lt;attr name=&quot;loop&quot; type=&quot;bool&quot; default=&quot;true&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;name&quot; type=&quot;string&quot; default=&quot;nil&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;nopaction&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;noshuffle&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;orientation&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;3&quot; rw=&quot;rw&quot;/&gt;
++    &lt;attr name=&quot;oxydcolor&quot; type=&quot;int&quot; default=&quot;-1&quot; min=&quot;-4&quot; max=&quot;7&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;range&quot; type=&quot;double&quot; default=&quot;1.0&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;scissor&quot; type=&quot;bool&quot; default=&quot;true&quot; rw=&quot;rw&quot;/&gt;
+     &lt;attr name=&quot;state&quot; type=&quot;int&quot; default=&quot;0&quot; min=&quot;0&quot; max=&quot;1&quot; rw=&quot;rw&quot;/&gt;
+@@ -49,6 +52,7 @@
+     &lt;msg name=&quot;_model_reanimated&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_passed&quot; type=&quot;nil&quot;/&gt;            &lt;!-- check type--&gt;
+     &lt;msg name=&quot;_performaction&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;_spitter&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_start&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;_trigger&quot; type=&quot;bool&quot;/&gt;
+     &lt;msg name=&quot;_updateglobals&quot; type=&quot;string&quot;/&gt;
+@@ -90,6 +94,7 @@
+     &lt;/object&gt;
+     &lt;object name=&quot;it_extralife&quot;/&gt;
+     &lt;object name=&quot;it_extralife_new&quot; init=&quot;true&quot;/&gt;
++    &lt;object name=&quot;it_floppy&quot;/&gt;
+     &lt;object name=&quot;it_hammer&quot;/&gt;
+     &lt;object name=&quot;it_hammer_new&quot; init=&quot;true&quot;/&gt;
+     &lt;object name=&quot;it_magnet&quot;&gt;
+@@ -317,6 +322,32 @@
+       &lt;msg name=&quot;on&quot;/&gt;
+       &lt;msg name=&quot;signal&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_oxyd&quot;&gt;
++      &lt;attr name=&quot;flavor&quot;/&gt;
++      &lt;attr name=&quot;noshuffle&quot;/&gt;
++      &lt;attr name=&quot;oxydcolor&quot;/&gt;
++      &lt;attr name=&quot;static&quot;/&gt;
++      &lt;msg name=&quot;closeall&quot;/&gt;
++      &lt;msg name=&quot;shuffle&quot;/&gt;
++      &lt;msg name=&quot;_trigger&quot;/&gt;
++      &lt;msg name=&quot;_spitter&quot;/&gt;
++      &lt;msg name=&quot;_init&quot;/&gt;
++      &lt;msg name=&quot;open&quot;/&gt;
++      &lt;msg name=&quot;close&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_oxyd_a&quot;&gt;
++      &lt;attr name=&quot;flavor&quot; value=&quot;a&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_oxyd_b&quot;&gt;
++      &lt;attr name=&quot;flavor&quot; value=&quot;b&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_oxyd_c&quot;&gt;
++      &lt;attr name=&quot;flavor&quot; value=&quot;c&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_oxyd_d&quot;&gt;
++      &lt;attr name=&quot;flavor&quot; value=&quot;d&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_panel&quot; super=&quot;st_clusterstone&quot;/&gt;
+     &lt;object name=&quot;st_panel_w&quot;&gt;
+       &lt;attr name=&quot;connections&quot; value=&quot;w&quot;/&gt;
+
+Modified: trunk/src/items.cc
+===================================================================
+--- trunk/src/items.cc	2008-04-08 23:18:59 UTC (rev 1097)
++++ trunk/src/items.cc	2008-04-11 22:42:10 UTC (rev 1098)
+@@ -184,7 +184,7 @@
+ namespace
+ {
+     DEF_ITEM(MagicWand, &quot;it-magicwand&quot;, it_magicwand);
+-    DEF_ITEM(Floppy,    &quot;it-floppy&quot;, it_floppy);
++    DEF_ITEM(Floppy,    &quot;it_floppy&quot;, it_floppy);
+     DEF_ITEM(Odometer,  &quot;it-odometer&quot;, it_odometer);
+     DEF_ITEM(Wrench,    &quot;it-wrench&quot;, it_wrench);
+     DEF_ITEM(BrokenGlasses, &quot;it-glasses-broken&quot;, it_glasses_broken);
+@@ -716,6 +716,7 @@
+     void Coin::on_stonehit(Stone *) {
+         if (state &lt;= 1) {
+             state += 1;
++            setAttr(&quot;coin_value&quot;, (state == 1 ? 6.0 : 12.0));  // API 1 compatibility
+             init_model();
+         }
+ 
+
+Modified: trunk/src/stones/FloppySwitch.cc
+===================================================================
+--- trunk/src/stones/FloppySwitch.cc	2008-04-08 23:18:59 UTC (rev 1097)
++++ trunk/src/stones/FloppySwitch.cc	2008-04-11 22:42:10 UTC (rev 1098)
+@@ -48,11 +48,11 @@
+         if (enigma::Inventory *inv = player::GetInventory(sc.actor)) {
+             if (state == ON) {
+                 if (!inv-&gt;is_full()) {
+-                    inv-&gt;add_item (MakeItem(&quot;it-floppy&quot;));
++                    inv-&gt;add_item (MakeItem(&quot;it_floppy&quot;));
+                     setState(OFF);
+                 }
+             }
+-            else if (player::WieldedItemIs (sc.actor, &quot;it-floppy&quot;)) {
++            else if (player::WieldedItemIs (sc.actor, &quot;it_floppy&quot;)) {
+                 DisposeObject(inv-&gt;yield_first());
+                 setState(ON);
+             }
+
+Modified: trunk/src/stones/OxydStone.cc
+===================================================================
+--- trunk/src/stones/OxydStone.cc	2008-04-08 23:18:59 UTC (rev 1097)
++++ trunk/src/stones/OxydStone.cc	2008-04-11 22:42:10 UTC (rev 1098)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2007 Ronald Lamprecht
++ * Copyright (C) 2007,2008 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -836,7 +836,7 @@
+     
+     // Instance Methods
+     
+-    OxydStone::OxydStone(std::string flavor) : PhotoStone(&quot;st_oxyd&quot;) {
++    OxydStone::OxydStone(std::string flavor) : Stone(&quot;st_oxyd&quot;) {
+         setAttr(&quot;flavor&quot;, flavor);
+         setAttr(&quot;oxydcolor&quot;, AUTO);
+     }
+@@ -870,8 +870,23 @@
+         else if (m.message == &quot;_init&quot;) {
+             initColors();
+             return Value();
++        } else if (m.message == &quot;_model_reanimated&quot;) {
++            if (objFlags &amp; OBJBIT_CLOSED) {
++                state = CLOSED;
++                std::string flavor(getAttr(&quot;flavor&quot;));
++                set_model(string(&quot;st-oxyd&quot;) + flavor);
++                objFlags &amp;= ~OBJBIT_CLOSED;
++            } else if (objFlags &amp; OBJBIT_OPENPAIR) {
++                state = OPEN_PAIR;
++                std::string flavor(getAttr(&quot;flavor&quot;));
++                string color(getDefaultedAttr(&quot;oxydcolor&quot;, 0));
++                set_model(string(&quot;st-oxyd&quot;) + flavor + color + &quot;-open&quot;);
++                objFlags &amp;= ~OBJBIT_OPENPAIR;
++            }
++            return Value();
+         }
+-        return PhotoStone::message(m);
++        
++        return Stone::message(m);
+     }
+     
+     void OxydStone::setAttr(const string&amp; key, const Value &amp;val) {
+@@ -881,7 +896,7 @@
+             ASSERT(state == CLOSED, XLevelRuntime, &quot;OxydStone error - reflavoring of an not closed stone&quot;);
+         }
+         
+-        PhotoStone::setAttr(key, val);   // do value checking
++        Stone::setAttr(key, val);   // do value checking
+         
+         if (key == &quot;flavor&quot; &amp;&amp; IsInsideLevel(get_pos()))
+             set_model(string(&quot;st-oxyd&quot;)+(std::string)val);
+@@ -918,7 +933,6 @@
+     }
+     
+     void OxydStone::setState(int extState) {
+-        ASSERT(extState &lt;= 1, XLevelRuntime, &quot;OxydStone error - attempt to set state OPEN_PAIR&quot;);
+         if (isDisplayable()) {
+             if (state == OPEN_PAIR)
+                 return;      // ignore - no change possible
+@@ -943,22 +957,29 @@
+         else if (state == OPENING)
+             set_iState(OPEN_SINGLE);
+         else if (state == OPEN_PAIR)     // end of opening anim for second oxyd in a pair
+-            set_iState(OPEN_PAIR);      // set the right model
++            set_iState(OPEN_PAIR);       // set the right model
+         else if (state == OPEN_SINGLE)   // pseudo animation
+             set_iState(CLOSING);
+     }
+     
+     void OxydStone::on_creation (GridPos) {
+-        string flavor(getDefaultedAttr(&quot;flavor&quot;, &quot;a&quot;));
++        std::string flavor(getDefaultedAttr(&quot;flavor&quot;, &quot;a&quot;));
+         set_model(string(&quot;st-oxyd&quot;) + flavor);
+-        photo_activate();
++        activatePhoto();
+     }
+     
+     void OxydStone::on_removal(GridPos p) {
+-        photo_deactivate();
+-        kill_model (p);
++        deactivatePhoto();
++        kill_model(p);
+     }
+     
++    void OxydStone::lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs) {
++        if (oldDirs == 0) {
++            // side independent light switch on
++            tryOpen();
++        }
++    }
++    
+     void OxydStone::tryOpen() {
+         bool isSingleOpened = false;
+         OxydStone *pairCandidate = NULL;
+@@ -1024,11 +1045,28 @@
+     
+     void OxydStone::closeAllStandardOxyds() {
+         for (unsigned i=0; i&lt;levelOxyds.size(); ++i)
+-            if ((int)(levelOxyds[i]-&gt;getAttr(&quot;oxydcolor&quot;)) &gt;= AUTO)
+-                levelOxyds[i]-&gt;set_iState(CLOSING);
++            if ((int)(levelOxyds[i]-&gt;getAttr(&quot;oxydcolor&quot;)) &gt;= AUTO) {
++                    levelOxyds[i]-&gt;set_iState(CLOSING);
++            }
+     }
+     
+     void OxydStone::set_iState(iState newState) {
++        if (!isDisplayable()) {
++            // an oxyd yielded while swapping - mark oxyd to set state when reset to the grid
++            switch (newState) {
++                case CLOSING :
++                    objFlags |= OBJBIT_CLOSED;
++                    break;
++                case OPEN_PAIR :
++                    objFlags |= OBJBIT_OPENPAIR;
++                    break;
++                default :
++                    ASSERT(false, XLevelRuntime, &quot;OxydStone error - unexpected new iState&quot;);
++                    break;
++            }
++            return;
++        }
++        
+         string flavor(getDefaultedAttr(&quot;flavor&quot;,&quot;a&quot;));
+         string color(getDefaultedAttr(&quot;oxydcolor&quot;, 0));
+     
+
+Modified: trunk/src/stones/OxydStone.hh
+===================================================================
+--- trunk/src/stones/OxydStone.hh	2008-04-08 23:18:59 UTC (rev 1097)
++++ trunk/src/stones/OxydStone.hh	2008-04-11 22:42:10 UTC (rev 1098)
+@@ -1,6 +1,6 @@
+ /*
+  * Copyright (C) 2002,2003,2004 Daniel Heck
+- * Copyright (C) 2007 Ronald Lamprecht
++ * Copyright (C) 2007,2008 Ronald Lamprecht
+  *
+  * This program is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU General Public License
+@@ -21,7 +21,6 @@
+ #define OXYDSTONE_HH_INCLUDED
+ 
+ #include &quot;stones.hh&quot;
+-#include &quot;laser.hh&quot;
+ #include &lt;stdint.h&gt;
+ 
+ /* -------------------- Oxyd stone -------------------- */
+@@ -61,7 +60,7 @@
+     /**
+      * 
+      */
+-    class OxydStone : public PhotoStone {
++    class OxydStone : public Stone {
+     public:
+         enum RuleType {RULE_SINGLE_MIN, RULE_SINGLE_MAX, RULE_PAIR_MIN, RULE_PAIR_MAX};
+         enum Color {BLUE = 0, RED, GREEN, YELLOW, CYAN, PURPLE, WHITE, BLACK, 
+@@ -92,26 +91,27 @@
+         virtual int externalState() const;
+         virtual void setState(int extState);
+ 
++        // GridObject interface
++        virtual void on_creation(GridPos p);
++        virtual void on_removal (GridPos p);
++        virtual void lightDirChanged(DirectionBits oldDirs, DirectionBits newDirs);
++
+         // Stone interface
+         virtual void actor_hit(const StoneContact &amp;sc);
+         virtual const char *collision_sound() { return &quot;stone&quot;; }
+         virtual bool is_removable() const;
+         
+-        // PhotoStone interface
+-        virtual void notify_laseron() { tryOpen(); }
+-        virtual void notify_laseroff() {}
+-
+         // ModelCallback interface  - Animation callback
+         virtual void animcb();
+     
+-    protected:
+-        // GridObject interface
+-        void on_creation (GridPos p);
+-        void on_removal (GridPos p);
+-            
+     private:
+         enum iState { CLOSED, OPEN_PAIR, OPENING, CLOSING, OPEN_SINGLE };
+         
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_CLOSED   =  1&lt;&lt;24,  ///&lt; force a closed state on grid set
++            OBJBIT_OPENPAIR =  1&lt;&lt;25   ///&lt; force an open state on grid set
++        };
++
+         typedef std::vector&lt;OxydStone *&gt; InstanceVector;
+         
+         typedef struct {
+
+Modified: trunk/src/stones/TimerStone.cc
+===================================================================
+--- trunk/src/stones/TimerStone.cc	2008-04-08 23:18:59 UTC (rev 1097)
++++ trunk/src/stones/TimerStone.cc	2008-04-11 22:42:10 UTC (rev 1098)
+@@ -59,6 +59,7 @@
+                 } else {
+                     GameTimer.remove_alarm(this);
+                 }
++                init_model();
+             }
+         } else {
+             state = extState;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000530.html">[Enigma-game-svn] r1097 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000532.html">[Enigma-game-svn] r1099 - in trunk: data data/schemas src src/stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#531">[ date ]</a>
+              <a href="thread.html#531">[ thread ]</a>
+              <a href="subject.html#531">[ subject ]</a>
+              <a href="author.html#531">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

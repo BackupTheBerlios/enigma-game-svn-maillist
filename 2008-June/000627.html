@@ -1,0 +1,1361 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1193 - in trunk: data data/schemas src src/stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-June/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1193%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200806251838.m5PIcpEw002901%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000626.html">
+   <LINK REL="Next"  HREF="000628.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1193 - in trunk: data data/schemas src src/stones</H1>
+    <B>ral at mail.berlios.de</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1193%20-%20in%20trunk%3A%20data%20data/schemas%20src%20src/stones&In-Reply-To=%3C200806251838.m5PIcpEw002901%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1193 - in trunk: data data/schemas src src/stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Wed Jun 25 20:38:51 CEST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000626.html">[Enigma-game-svn] r1192 - in trunk: data data/schemas src
+</A></li>
+        <LI>Next message: <A HREF="000628.html">[Enigma-game-svn] r1194 - in trunk/src: . stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#627">[ date ]</a>
+              <a href="thread.html#627">[ thread ]</a>
+              <a href="subject.html#627">[ subject ]</a>
+              <a href="author.html#627">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-06-25 20:38:38 +0200 (Wed, 25 Jun 2008)
+New Revision: 1193
+
+Added:
+   trunk/src/stones/ChessStone.cc
+   trunk/src/stones/ChessStone.hh
+   trunk/src/stones/DeathStone.cc
+   trunk/src/stones/DeathStone.hh
+Modified:
+   trunk/data/api1init.lua
+   trunk/data/api2init.lua
+   trunk/data/models-2d.lua
+   trunk/data/schemas/objects.xml
+   trunk/data/schemas/objects.xsd
+   trunk/src/Makefile.am
+   trunk/src/ox_extra.cc
+   trunk/src/ox_magnum.cc
+   trunk/src/ox_oxyd1.cc
+   trunk/src/ox_peroxyd.cc
+   trunk/src/stones_complex.cc
+   trunk/src/stones_simple.cc
+Log:
+Trunk 1.1: new API reengineering
+- st-death reengineering
+  - new name st_death, st_death_invisible
+  - invisible death can be toggled for temporary visibility
+- st-chess reengineering
+  - new name st_chess, st_chess_black, st_chess_white
+  - removed messages move_nne,...
+  - message &quot;move&quot; takes a position as move direction
+  - attributes direction1, direction2 are no longer supported
+  - message made safe
+  - constants for move directions NNE,NEE,...
+Note:
+- st-chess needs some internal cleanup as marked with TODOs
+
+
+Modified: trunk/data/api1init.lua
+===================================================================
+--- trunk/data/api1init.lua	2008-06-25 11:27:17 UTC (rev 1192)
++++ trunk/data/api1init.lua	2008-06-25 18:38:38 UTC (rev 1193)
+@@ -113,7 +113,11 @@
+     st_brick_new = &quot;st-bigbrick-new&quot;,
+     st_brick_nes = &quot;st-bigbrick-nes&quot;,
+     st_brick_nesw = &quot;st-bigbrick-nesw&quot;,
++    st_chess_black = &quot;st-chess_black&quot;,
++    st_chess_white = &quot;st-chess_white&quot;,
+     st_coinslot = &quot;st-coinslot&quot;,
++    st_death = &quot;st-death&quot;,
++    st_death_invisible = &quot;st-death_invisible&quot;,
+     st_floppy = &quot;st-floppy&quot;,
+     st_fourswitch = &quot;st-fourswitch&quot;,
+     st_laser_w = &quot;st-laser-w&quot;,
+
+Modified: trunk/data/api2init.lua
+===================================================================
+--- trunk/data/api2init.lua	2008-06-25 11:27:17 UTC (rev 1192)
++++ trunk/data/api2init.lua	2008-06-25 18:38:38 UTC (rev 1193)
+@@ -107,6 +107,16 @@
+ SLASH      = 2
+ VERTICAL   = 3
+ 
++-- multidirections as used by st_chess
++NNE = po(1, -2)
++NEE = po(2, -1)
++SEE = po(2, 1)
++SSE = po(1, 2)
++SSW = po(-1, 2)
++SWW = po(-2, 1)
++NWW = po(-2, -1)
++NNW = po(-2, -1)
++
+ -- essential
+ DISPENSIBLE   = 0
+ INDISPENSIBLE = 1
+@@ -121,6 +131,7 @@
+ SPOT_LIGHTPASSENGER =  16
+ SPOT_TRAP           =  32
+ 
++
+ -- Follower
+ FOLLOW_NO     = 0
+ FOLLOW_SCROLL = 1
+
+Modified: trunk/data/models-2d.lua
+===================================================================
+--- trunk/data/models-2d.lua	2008-06-25 11:27:17 UTC (rev 1192)
++++ trunk/data/models-2d.lua	2008-06-25 18:38:38 UTC (rev 1193)
+@@ -849,11 +849,11 @@
+         --local f2 = BuildFrames(img2, 40)
+         local f2 = f1
+         local f3 = BuildFrames(img1, 500)
+-        DefAnim(&quot;st-chess&quot;..colour..&quot;-disappearing&quot;, f1);
+-        DefAnim(&quot;st-chess&quot;..colour..&quot;-appearing&quot;, ReverseFrames(f1))
+-        DefAnim(&quot;st-chess&quot;..colour..&quot;-captured&quot;, f2);
+-        DefAnim(&quot;st-chess&quot;..colour..&quot;-swamp&quot;, f3);
+-        DefRoundStone(&quot;st-chess&quot;..colour, img1[1])
++        DefAnim(&quot;st_chess&quot;..colour..&quot;-disappearing&quot;, f1);
++        DefAnim(&quot;st_chess&quot;..colour..&quot;-appearing&quot;, ReverseFrames(f1))
++        DefAnim(&quot;st_chess&quot;..colour..&quot;-captured&quot;, f2);
++        DefAnim(&quot;st_chess&quot;..colour..&quot;-swamp&quot;, f3);
++        DefRoundStone(&quot;st_chess&quot;..colour, img1[1])
+     end
+ 
+     make_chess(&quot;_black&quot;)
+
+Modified: trunk/data/schemas/objects.xml
+===================================================================
+--- trunk/data/schemas/objects.xml	2008-06-25 11:27:17 UTC (rev 1192)
++++ trunk/data/schemas/objects.xml	2008-06-25 18:38:38 UTC (rev 1193)
+@@ -44,11 +44,14 @@
+     &lt;attr name=&quot;transparent&quot; type=&quot;bool&quot; default=&quot;false&quot; rw=&quot;rw&quot;/&gt;
+   &lt;/attributes&gt;
+   &lt;messages&gt;
++    &lt;msg name=&quot;capture&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;close&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;closeall&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;flip&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;hit&quot; type=&quot;object&quot;/&gt;
+     &lt;msg name=&quot;inner_pull&quot; type=&quot;dir&quot;/&gt;
+     &lt;msg name=&quot;kill&quot; type=&quot;nil&quot;/&gt;
++    &lt;msg name=&quot;move&quot; type=&quot;pos&quot;/&gt;
+     &lt;msg name=&quot;off&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;on&quot; type=&quot;nil&quot;/&gt;
+     &lt;msg name=&quot;open&quot; type=&quot;nil&quot;/&gt;
+@@ -343,6 +346,19 @@
+     &lt;object name=&quot;st_brick_nesw&quot;&gt;
+       &lt;attr name=&quot;connections&quot; value=&quot;nesw&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_chess&quot;&gt;
++      &lt;attr name=&quot;color&quot; default=&quot;0&quot;/&gt;
++      &lt;msg name=&quot;capture&quot;/&gt;
++      &lt;msg name=&quot;flip&quot;/&gt;
++      &lt;msg name=&quot;move&quot;/&gt;
++      &lt;msg name=&quot;signal&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_chess_black&quot;&gt;
++      &lt;attr name=&quot;color&quot; value=&quot;0&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_chess_white&quot;&gt;
++      &lt;attr name=&quot;color&quot; value=&quot;1&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_coinslot&quot;&gt;
+       &lt;attr name=&quot;instant&quot;/&gt;
+       &lt;attr name=&quot;interval_s&quot;/&gt;
+@@ -353,6 +369,13 @@
+     &lt;object name=&quot;st_coinslot_instant&quot;&gt;
+       &lt;attr name=&quot;instant&quot; value=&quot;true&quot;/&gt;
+     &lt;/object&gt;
++    &lt;object name=&quot;st_death&quot;&gt;
++      &lt;attr name=&quot;invisible&quot;/&gt;
++      &lt;msg name=&quot;_model_reanimated&quot;/&gt;
++    &lt;/object&gt;
++    &lt;object name=&quot;st_death_invisible&quot;&gt;
++      &lt;attr name=&quot;invisible&quot; value=&quot;true&quot;/&gt;
++    &lt;/object&gt;
+     &lt;object name=&quot;st_floppy&quot;&gt;
+       &lt;msg name=&quot;on&quot;/&gt;
+       &lt;msg name=&quot;off&quot;/&gt;
+
+Modified: trunk/data/schemas/objects.xsd
+===================================================================
+--- trunk/data/schemas/objects.xsd	2008-06-25 11:27:17 UTC (rev 1192)
++++ trunk/data/schemas/objects.xsd	2008-06-25 18:38:38 UTC (rev 1193)
+@@ -113,7 +113,7 @@
+       &lt;xs:enumeration value=&quot;double&quot;/&gt;
+       &lt;xs:enumeration value=&quot;nil&quot;/&gt;
+       &lt;xs:enumeration value=&quot;dir&quot;/&gt;
+-&lt;!--      &lt;xs:enumeration value=&quot;pos&quot;/&gt;  --&gt;
++      &lt;xs:enumeration value=&quot;pos&quot;/&gt;
+       &lt;xs:enumeration value=&quot;string&quot;/&gt;
+       &lt;xs:enumeration value=&quot;enum&quot;/&gt;
+       &lt;xs:enumeration value=&quot;object&quot;/&gt;
+
+Modified: trunk/src/Makefile.am
+===================================================================
+--- trunk/src/Makefile.am	2008-06-25 11:27:17 UTC (rev 1192)
++++ trunk/src/Makefile.am	2008-06-25 18:38:38 UTC (rev 1193)
+@@ -203,12 +203,16 @@
+ 	stones/BlockerStone.hh	\
+ 	stones/BoulderStone.cc	\
+ 	stones/BoulderStone.hh	\
++	stones/ChessStone.cc	\
++	stones/ChessStone.hh	\
+ 	stones/ClusterStone.cc	\
+ 	stones/ClusterStone.hh	\
+ 	stones/CoinSlot.cc	\
+ 	stones/CoinSlot.hh	\
+ 	stones/ConnectiveStone.cc	\
+ 	stones/ConnectiveStone.hh	\
++	stones/DeathStone.cc	\
++	stones/DeathStone.hh	\
+ 	stones/FloppySwitch.cc   \
+ 	stones/FloppySwitch.hh   \
+ 	stones/FourSwitch.cc	\
+
+Modified: trunk/src/ox_extra.cc
+===================================================================
+--- trunk/src/ox_extra.cc	2008-06-25 11:27:17 UTC (rev 1192)
++++ trunk/src/ox_extra.cc	2008-06-25 18:38:38 UTC (rev 1193)
+@@ -169,8 +169,8 @@
+     UNUSED,              // OxydExtra stone 0x2c
+     &quot;st_floppy&quot;,         // OxydExtra stone 0x2d
+     UNUSED,              // OxydExtra stone 0x2e
+-    &quot;st-death&quot;,          // OxydExtra stone 0x2f
+-    &quot;st-death_invisible&quot;, // OxydExtra stone 0x30
++    &quot;st_death&quot;,          // OxydExtra stone 0x2f
++    &quot;st_death_invisible&quot;, // OxydExtra stone 0x30
+     &quot;st-oneway_black-w&quot;, // OxydExtra stone 0x31
+     UNUSED,              // OxydExtra stone 0x32
+     &quot;st-oneway_black-n&quot;, // OxydExtra stone 0x33
+
+Modified: trunk/src/ox_magnum.cc
+===================================================================
+--- trunk/src/ox_magnum.cc	2008-06-25 11:27:17 UTC (rev 1192)
++++ trunk/src/ox_magnum.cc	2008-06-25 18:38:38 UTC (rev 1193)
+@@ -174,8 +174,8 @@
+     &quot;st_floppy&quot;,                // OxydMagnum stone 0x31
+     &quot;st-knight&quot;,                // OxydMagnum stone 0x32
+     &quot;st_fourswitch&quot;,            // OxydMagnum stone 0x33 (Level 51 and 100)
+-    &quot;st-death&quot;,                 // OxydMagnum stone 0x34
+-    &quot;st-death_invisible&quot;,       // OxydMagnum stone 0x35
++    &quot;st_death&quot;,                 // OxydMagnum stone 0x34
++    &quot;st_death_invisible&quot;,       // OxydMagnum stone 0x35
+     &quot;st-oneway_black-w&quot;,        // OxydMagnum stone 0x36
+     &quot;st-oneway_black-e&quot;,        // OxydMagnum stone 0x37
+     &quot;st-oneway_black-n&quot;,        // OxydMagnum stone 0x38
+
+Modified: trunk/src/ox_oxyd1.cc
+===================================================================
+--- trunk/src/ox_oxyd1.cc	2008-06-25 11:27:17 UTC (rev 1192)
++++ trunk/src/ox_oxyd1.cc	2008-06-25 18:38:38 UTC (rev 1193)
+@@ -204,8 +204,8 @@
+     &quot;st_floppy&quot;,                // Oxyd1 stone 0x31
+     &quot;st-knight&quot;,                // Oxyd1 stone 0x32
+     0,                          // Oxyd1 stone 0x33 oscillator (properties set in oxyd.cc)
+-    &quot;st-death&quot;,                 // Oxyd1 stone 0x34
+-    &quot;st-death_invisible&quot;,       // Oxyd1 stone 0x35
++    &quot;st_death&quot;,                 // Oxyd1 stone 0x34
++    &quot;st_death_invisible&quot;,       // Oxyd1 stone 0x35
+     &quot;st-oneway_black-w&quot;,        // Oxyd1 stone 0x36
+     &quot;st-oneway_black-e&quot;,        // Oxyd1 stone 0x37
+     &quot;st-oneway_black-n&quot;,        // Oxyd1 stone 0x38
+
+Modified: trunk/src/ox_peroxyd.cc
+===================================================================
+--- trunk/src/ox_peroxyd.cc	2008-06-25 11:27:17 UTC (rev 1192)
++++ trunk/src/ox_peroxyd.cc	2008-06-25 18:38:38 UTC (rev 1193)
+@@ -241,8 +241,8 @@
+     &quot;st_key&quot;,                   // PerOxyd stone 0x2c
+     &quot;st_floppy&quot;,                // PerOxyd stone 0x2d
+     &quot;&quot;,                         // PerOxyd stone 0x2e (?)
+-    &quot;st-death&quot;,                 // PerOxyd stone 0x2f
+-    &quot;st-death_invisible&quot;,       // PerOxyd stone 0x30
++    &quot;st_death&quot;,                 // PerOxyd stone 0x2f
++    &quot;st_death_invisible&quot;,       // PerOxyd stone 0x30
+     &quot;st-oneway_black-w&quot;,        // PerOxyd stone 0x31
+     &quot;st-oneway_black-e&quot;,        // PerOxyd stone 0x32
+     &quot;st-oneway_black-n&quot;,        // PerOxyd stone 0x33
+
+Added: trunk/src/stones/ChessStone.cc
+===================================================================
+--- trunk/src/stones/ChessStone.cc	2008-06-25 11:27:17 UTC (rev 1192)
++++ trunk/src/stones/ChessStone.cc	2008-06-25 18:38:38 UTC (rev 1193)
+@@ -0,0 +1,292 @@
++/*
++ * Copyright (C) 2007 Andreas Lochmann
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/ChessStone.hh&quot;
++#include &quot;errors.hh&quot;
++//#include &quot;main.hh&quot;
++#include &quot;player.hh&quot;
++
++namespace enigma {
++    double ChessStone::capture_interval = 0.1;
++    double ChessStone::hit_threshold = 1.5;
++
++    ChessStone::ChessStone(int color) {
++        newcolor = color;
++        Stone::setAttr(&quot;color&quot;, color);
++        destination = GridPos(0,0);
++        capture_retry = 0;
++        rememberFalling = false;
++        rememberSwamp = false;
++        state = IDLE;
++    }
++
++    ChessStone::~ChessStone() {
++        GameTimer.remove_alarm (this);
++    }
++    
++    std::string ChessStone::getClass() const {
++        return &quot;st_chess&quot;;
++    }
++    
++    void ChessStone::setAttr(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;color&quot;) {
++            set_color(to_int(val));
++        } else
++            Stone::setAttr(key, val);
++    }
++
++    Value ChessStone::message(const Message &amp;m) {
++        if (m.message == &quot;capture&quot;) {
++            if (isDisplayable() &amp;&amp; state == IDLE &amp;&amp; m.value.to_string() != getKind())
++                if (try_state(CAPTURED)) {
++                    set_anim(get_model_name() + &quot;-captured&quot;);
++                    return true;
++                }
++            return Value();
++        } else if(m.message == &quot;move&quot;) {
++            if (isDisplayable())
++                return message_move(m.value);
++            else
++                return Value();
++        } else if (m.message == &quot;signal&quot;) {
++            set_color(to_int(m.value));
++            return Value();
++        } else if (m.message == &quot;flip&quot;) {
++            set_color(1 - newcolor); //(int)getAttr(&quot;color&quot;));
++            return Value();
++        }
++        return Stone::message(m);
++    }
++    
++    void setState(int extState) {
++        // block any write attempts
++    }
++
++    void ChessStone::init_model() { 
++        set_model(get_model_name());
++    }
++
++    void ChessStone::animcb() {
++        Stone *st;
++        switch (state) {
++            case APPEARING:
++                if (try_state(IDLE))
++                // Maybe falling in the meantime? Otherwise:
++                    init_model();
++                break;
++            case DISAPPEARING:
++                // Maybe the floor has changed into swamp or abyss?
++                if (!rememberFalling &amp;&amp; !rememberSwamp) {
++                    if (try_state(APPEARING)) {
++                        st = GetStone(destination);
++                        if (st) {
++                            // Something went wrong while killing the old
++                            // stone, or maybe a third one intervened.
++                            // Don't move, just reappear at old position.                
++                        } else {
++                            move_stone(destination, &quot;movesmall&quot;);
++                            SendMessage(GetFloor(destination), &quot;capture&quot;);
++                        }
++                        // maybe a floor-change has happened, but during
++                        // state APPEARING this doesn't mean anything:
++                        set_anim(get_model_name()+&quot;-appearing&quot;);
++                    }
++                    break;
++                }
++                // Else: If floor is swamp or abyss, kill the stone. Do this
++                // just by continuing to the next case:
++            case CAPTURED:
++            case FALLING:
++            case SWAMP:
++                KillStone(get_pos());
++                break;
++            default:
++               ASSERT(0, XLevelRuntime, &quot;ChessStone: inconsistent state in animcb()&quot;);
++        }
++    }
++
++    void ChessStone::actor_hit(const StoneContact &amp;sc) {
++         Value accolor = sc.actor-&gt;getAttr(&quot;color&quot;);
++         if (player::WieldedItemIs (sc.actor, &quot;it-magicwand&quot;)) {
++             sound_event (&quot;stonepaint&quot;);
++             set_color(1 - (int)getAttr(&quot;color&quot;));
++             // If not IDLE, color will be set next time IDLE is set.
++         } else if (accolor &amp;&amp; getAttr(&quot;color&quot;) == accolor) {
++            V2 v = sc.actor-&gt;get_vel();
++            Direction dir1 = get_push_direction(sc);
++            if(dir1 == NODIR)  return;
++            Direction dir2 = NODIR;
++            if (dir1 == SOUTH || dir1 == NORTH) {
++                dir2 = v[0] &gt;  hit_threshold ? EAST :
++                       v[0] &lt; -hit_threshold ? WEST : NODIR;
++            } else {
++                dir2 = v[1] &gt;  hit_threshold ? SOUTH :
++                       v[1] &lt; -hit_threshold ? NORTH : NODIR;
++            }
++            if(dir2 == NODIR)  return;
++            // maybe_move_to tests for state == IDLE by itself.
++            maybe_move_to(dir1, dir2);
++        }
++    }
++
++    void ChessStone::on_impulse(const Impulse&amp; impulse) {
++    }
++    
++    bool ChessStone::is_removable() const {    // Interface for st-swap and st-pull
++        return state == IDLE;
++    }
++
++    void ChessStone::on_floor_change() {
++        Floor *fl = GetFloor(get_pos());
++        if (fl != NULL) {
++            if (fl-&gt;is_kind(&quot;fl-abyss&quot;))
++                try_state(FALLING);
++            if (fl-&gt;is_kind(&quot;fl-swamp&quot;))
++                try_state(SWAMP);
++        }
++    }
++    
++    void ChessStone::alarm() {
++        switch(state) {
++            case CAPTURING:
++                if(!GetStone(destination)) {
++                    if(try_state(DISAPPEARING))
++                        set_anim(get_model_name() + &quot;-disappearing&quot;);
++                    break;
++                } else if(capture_retry &lt; max_capture_retry) {
++                    ++capture_retry;
++                    GameTimer.set_alarm(this, capture_interval, false);
++                } else {
++                    // Cancel efforts to capture foreign stone.
++                    capture_retry = 0;
++                    try_state(IDLE);
++                }
++                break;
++            default:
++               ASSERT(0, XLevelRuntime, &quot;ChessStone: inconsistent state in alarm()&quot;);
++        }
++    }
++
++
++    std::string ChessStone::get_model_name() {
++        return getClass() + ((getAttr(&quot;color&quot;) == 0) ? &quot;_black&quot; : &quot;_white&quot;);
++    }
++    
++    Value ChessStone::maybe_move_to(Direction dir1, Direction dir2) {
++        if (state == IDLE) {
++            // check for fire, step by step
++            destination = move(get_pos(), dir1);
++            if (Item *it = GetItem(destination))
++                if (get_id(it) == it_burnable_burning)
++                    return Value();
++            destination = move(destination, dir2);
++            if (Item *it = GetItem(destination))
++                if (get_id(it) == it_burnable_burning)
++                    return Value();
++            destination = move(destination, dir1);
++            if (Item *it = GetItem(destination))
++                if (get_id(it) == it_burnable_burning)
++                    return Value();
++            // check for boundary
++            if (!IsInsideLevel(destination))  return Value();
++            // check for stone
++            if (!GetStone(destination)) {
++                // Simple case: Just move.
++                if (try_state(DISAPPEARING)) {
++                    set_anim(get_model_name() + &quot;-disappearing&quot;);
++                    return true;
++                } else
++                    return Value();
++            } else {
++                // Test stone. Is it opposite chess stone or totally another one?
++                Stone *st = GetStone(destination);
++                if(to_int(SendMessage(st, &quot;capture&quot;, Value(get_model_name()))) ) {
++                    // Give it some time for animation, then replace it.
++                    ASSERT(try_state(CAPTURING), XLevelRuntime,
++                        &quot;ChessStone: strange things happening in maybe_move_to&quot;);
++                    // must work, because state is IDLE
++                    GameTimer.set_alarm(this, capture_interval, false);
++                    capture_retry = 0;
++                    return true;
++                }
++                return Value();
++            }
++        }
++        return Value();
++    }
++
++    Value ChessStone::message_move(Value moveDir) {
++        GridPos dir = moveDir;
++        if (std::abs(dir.x) == 2 &amp;&amp; std::abs(dir.y) == 1)
++            return maybe_move_to(dir.x &gt; 0 ? EAST : WEST, dir.y &gt; 0 ? SOUTH : NORTH);
++        if (std::abs(dir.x) == 1 &amp;&amp; std::abs(dir.y) == 2)
++            return maybe_move_to(dir.y &gt; 0 ? SOUTH : NORTH, dir.x &gt; 0 ? EAST : WEST);
++
++        return Value();
++    }
++
++    bool ChessStone::try_state(State newstate) {
++        if (state != FALLING &amp;&amp; state != SWAMP) {
++            // Switch to FALLING or SWAMP only when IDLE,
++            // but remember them!
++            if (newstate == FALLING)
++                rememberFalling = true;
++            else if (newstate == SWAMP)
++                rememberSwamp = true;
++            else
++                state = newstate;        
++            if (state == IDLE &amp;&amp;  getAttr(&quot;color&quot;) != newcolor)
++                set_color(newcolor);
++            if (state == IDLE &amp;&amp; rememberFalling) {
++                state = FALLING;
++                set_anim(get_model_name() + &quot;-disappearing&quot;);
++            }
++            if (state == IDLE &amp;&amp; rememberSwamp) {
++                state = SWAMP;
++                set_anim(get_model_name() + &quot;-swamp&quot;);
++            }
++        }
++        return state == newstate;
++    }
++
++    void ChessStone::set_color(int color) {
++        if(color != 0 &amp;&amp; color != 1) {
++            ASSERT(0, XLevelRuntime, &quot;ChessStone: argument to color not 0 or 1&quot;);
++        }
++        if(state == IDLE) {
++            Stone::setAttr(&quot;color&quot;, color);
++            newcolor = color;
++            if (isDisplayable())
++                init_model();
++        } else {
++            // Remember this color and set it the next time IDLE is set.
++            newcolor = color;
++        }
++    }
++    
++    DEF_TRAITSM(ChessStone, &quot;st_chess&quot;, st_chess, MOVABLE_IRREGULAR);
++    
++    BOOT_REGISTER_START
++        BootRegister(new ChessStone(0), &quot;st_chess&quot;);
++        BootRegister(new ChessStone(0), &quot;st_chess_black&quot;);
++        BootRegister(new ChessStone(1), &quot;st_chess_white&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/ChessStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/ChessStone.hh
+===================================================================
+--- trunk/src/stones/ChessStone.hh	2008-06-25 11:27:17 UTC (rev 1192)
++++ trunk/src/stones/ChessStone.hh	2008-06-25 18:38:38 UTC (rev 1193)
+@@ -0,0 +1,91 @@
++/*
++ * Copyright (C) 2007 Andreas Lochmann
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef CHESSSTONE_HH
++#define CHESSSTONE_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     * Note: this stone is made safe for swap/pull grid take offs by restriction of
++     * all critical operations to the IDLE state.
++     */
++    class ChessStone : public Stone, public TimeHandler {
++        CLONEOBJ(ChessStone);
++        DECL_TRAITS;
++
++    private:
++        // Variables and Constants
++        enum State {IDLE, APPEARING, DISAPPEARING, CAPTURING,
++                    CAPTURED, FALLING, SWAMP};
++        
++    public:
++        ChessStone(int color);
++        virtual ~ChessStone();
++        
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        
++        // ModelCallback interface
++        virtual void animcb();
++        
++        // Stone interface
++        virtual void actor_hit(const StoneContact &amp;sc);
++        virtual void on_impulse(const Impulse&amp; impulse);
++        virtual bool is_removable() const;
++        virtual void on_floor_change();
++
++        // TimeHandler interface
++        void alarm();
++        
++    private:
++        static double capture_interval;
++        static double hit_threshold;
++        static const int max_capture_retry = 20;
++
++        GridPos destination;   // TODO -&gt; attribute
++        int newcolor;  // Buffers a color-changing message while not IDLE.  // TODO -&gt; objFlags
++        int capture_retry;    // TODO -&gt; objFlags
++        bool rememberFalling; // TODO -&gt; objFlags
++        bool rememberSwamp;   // TODO -&gt; objFlags
++
++        // Methods
++        string get_model_name();
++        Value maybe_move_to(Direction dir1, Direction dir2);
++        Value message_move(Value moveDir);
++        bool try_state(State newstate);
++        void set_color(int color);
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/ChessStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/DeathStone.cc
+===================================================================
+--- trunk/src/stones/DeathStone.cc	2008-06-25 11:27:17 UTC (rev 1192)
++++ trunk/src/stones/DeathStone.cc	2008-06-25 18:38:38 UTC (rev 1193)
+@@ -0,0 +1,118 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *  
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++
++#include &quot;stones/DeathStone.hh&quot;
++//#include &quot;main.hh&quot;
++
++namespace enigma {
++    DeathStone::DeathStone(bool isInvisible) : Stone () {
++        if (isInvisible)
++            objFlags |= OBJBIT_INVISIBLE;
++            
++        state = IDLE;
++    }
++
++    std::string DeathStone::getClass() const {
++        return &quot;st_death&quot;;
++    }
++        
++    void DeathStone::setAttr(const string&amp; key, const Value &amp;val) {
++        if (key == &quot;invisible&quot;) {
++            if (val.to_bool() != ((objFlags &amp; OBJBIT_INVISIBLE) != 0)) {
++                // change of visibility
++                objFlags ^= OBJBIT_INVISIBLE;
++                if (isDisplayable())
++                    init_model();
++            }
++        } else
++            Stone::setAttr(key, val);
++    }
++    
++    Value DeathStone::getAttr(const std::string &amp;key) const {
++        if (key == &quot;invisible&quot;) {
++            return (objFlags &amp; OBJBIT_INVISIBLE) != 0;
++        } else
++            return Stone::getAttr(key);
++    }
++    
++    Value DeathStone::message(const Message &amp;m) {
++        if (m.message == &quot;_model_reanimated&quot;) {
++            state = IDLE;   // reset any running anim, be ready to bump again on new grid
++            init_model();   // visibility might have changed
++        } else if (m.message == &quot;_glasses&quot;) {
++            init_model();
++            return Value();
++        }
++        return Stone::message(m);
++    }
++            
++    void DeathStone::setState(int extState) {
++        if (state == IDLE &amp;&amp; extState == 1 &amp;&amp; isDisplayable()) {
++            state = PULSING;
++            set_anim(&quot;st-death-anim&quot;);
++        }
++    }
++
++    void DeathStone::init_model() {
++        if (state == IDLE) {
++            if ((objFlags &amp; OBJBIT_INVISIBLE) &amp;&amp; ((server::GlassesVisibility &amp; 1) == 0))
++                set_model(&quot;invisible&quot;);
++            else
++                set_model(&quot;st-death&quot;);
++        }
++        // PULSING anim is always visible and should continue independent on init_model calls
++    }
++    
++    void DeathStone::animcb() {
++        if (state == PULSING) {
++            state = IDLE;
++            init_model();
++        }
++    }
++    
++    void DeathStone::actor_hit(const StoneContact &amp;sc) {
++        SendMessage(sc.actor, &quot;shatter&quot;);
++        if (state == IDLE) {
++            state = PULSING;
++            set_anim(&quot;st-death-anim&quot;);
++        }
++    }
++
++    void DeathStone::actor_touch(const StoneContact &amp;sc) {
++        // even a slight touch should shatter the actor: 
++         actor_hit(sc);
++    }
++
++    int DeathStone::traitsIdx() const {
++        return (objFlags &amp; OBJBIT_INVISIBLE) ? 1 : 0;
++    }
++
++    
++    StoneTraits DeathStone::traits[2] = {
++        {&quot;st_death&quot;, st_death, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++        {&quot;st_death_invisible&quot;, st_death_invisible, stf_none, material_stone, 1.0, MOVABLE_PERSISTENT},
++    };
++    
++    BOOT_REGISTER_START
++        BootRegister(new DeathStone(false), &quot;st_death&quot;);
++        BootRegister(new DeathStone(true), &quot;st_death_invisible&quot;);
++    BOOT_REGISTER_END
++
++} // namespace enigma
+
+
+Property changes on: trunk/src/stones/DeathStone.cc
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Added: trunk/src/stones/DeathStone.hh
+===================================================================
+--- trunk/src/stones/DeathStone.hh	2008-06-25 11:27:17 UTC (rev 1192)
++++ trunk/src/stones/DeathStone.hh	2008-06-25 18:38:38 UTC (rev 1193)
+@@ -0,0 +1,72 @@
++/*
++ * Copyright (C) 2002,2003,2004 Daniel Heck
++ * Copyright (C) 2008 Ronald Lamprecht
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ *
++ */
++#ifndef DEATHSTONE_HH
++#define DEATHSTONE_HH
++
++#include &quot;stones.hh&quot;
++
++#include &quot;stones_internal.hh&quot;
++
++namespace enigma {
++
++    /** 
++     * 
++     */
++    class DeathStone : public Stone {
++        CLONEOBJ(DeathStone);
++        DECL_TRAITS_ARRAY(2, traitsIdx());
++    private:
++        enum iState {
++            IDLE,     ///&lt; 
++            PULSING   ///&lt; kill animation
++        };
++        
++        enum ObjectPrivatFlagsBits {
++            OBJBIT_INVISIBLE   =   1&lt;&lt;24,  ///&lt; Object is invisible 
++        };
++    public:
++        DeathStone(bool isInvisible);
++        
++        // Object interface
++        virtual std::string getClass() const;
++        virtual void setAttr(const string&amp; key, const Value &amp;val);
++        virtual Value getAttr(const std::string &amp;key) const;
++        virtual Value message(const Message &amp;m);
++        
++        // StateObject interface
++        virtual void setState(int extState);
++
++        // GridObject interface
++        virtual void init_model();
++        
++        // ModelCallback interface
++        virtual void animcb();
++        
++        // Stone interface
++        virtual void actor_hit(const StoneContact &amp;sc);
++        virtual void actor_touch (const StoneContact &amp;sc);
++
++    private:
++        int traitsIdx() const;
++    };
++
++} // namespace enigma
++
++#endif
+
+
+Property changes on: trunk/src/stones/DeathStone.hh
+___________________________________________________________________
+Name: svn:eol-style
+   + native
+
+Modified: trunk/src/stones_complex.cc
+===================================================================
+--- trunk/src/stones_complex.cc	2008-06-25 11:27:17 UTC (rev 1192)
++++ trunk/src/stones_complex.cc	2008-06-25 18:38:38 UTC (rev 1193)
+@@ -2298,293 +2298,6 @@
+ }
+ 
+ 
+-/* -------------------- Chess stone -------------------- */
+-
+-namespace
+-{
+-    class ChessStone : public Stone, public TimeHandler {
+-        CLONEOBJ(ChessStone);
+-        DECL_TRAITS;
+-    public:
+-        ChessStone (int color) {
+-            newcolor = color;
+-            Stone::setAttr(&quot;color&quot;, color);
+-            destination = GridPos(0,0);
+-            capture_retry = 0;
+-            rememberFalling = false;
+-            rememberSwamp = false;
+-            state = IDLE;
+-        }
+-        virtual ~ChessStone() {
+-            GameTimer.remove_alarm (this);
+-        }
+-        void init_model();
+-        void animcb();
+-        void setAttr(const string&amp; key, const Value &amp;val);
+-        virtual Value message(const Message &amp;m);
+-        void actor_hit(const StoneContact &amp;sc);
+-        void on_impulse(const Impulse&amp; impulse) {}
+-        void alarm();
+-    private:
+-        // Variables and Constants
+-        enum State {IDLE, APPEARING, DISAPPEARING, CAPTURING,
+-                    CAPTURED, FALLING, SWAMP} state;
+-        GridPos destination;
+-        int newcolor;  // Buffers a color-changing message while not IDLE.
+-        int capture_retry;
+-        static const int max_capture_retry = 20;
+-        static double capture_interval;
+-        static double hit_threshold;
+-        bool rememberFalling;
+-        bool rememberSwamp;
+-
+-        // Methods
+-        string get_model_name();
+-        Value maybe_move_to(Direction dir1, Direction dir2);
+-        virtual Value message_move(Direction dir1, Direction dir2);
+-        bool try_state(State newstate);
+-        void set_color(int color);
+-        void on_floor_change();
+-
+-        // Interface for st-swap and st-pull
+-        bool is_removable() const { return state == IDLE; }
+-    };
+-    DEF_TRAITSM(ChessStone, &quot;st-chess&quot;, st_chess, MOVABLE_IRREGULAR);
+-    
+-    double ChessStone::capture_interval = 0.1;
+-    double ChessStone::hit_threshold = 1.5;
+-
+-    string ChessStone::get_model_name() {
+-        string mname = get_kind();
+-        mname += (getAttr(&quot;color&quot;) == 0) ? &quot;_black&quot; : &quot;_white&quot;;
+-        return mname;
+-    }
+-
+-    void ChessStone::init_model() { set_model(get_model_name()); }
+-
+-    void ChessStone::animcb() {
+-        Stone *st;
+-        switch (state) {
+-        case APPEARING:
+-            if(try_state(IDLE))
+-            // Maybe falling in the meantime? Otherwise:
+-                init_model();
+-            break;
+-        case DISAPPEARING:
+-            // Maybe the floor has changed into swamp or abyss?
+-            if(!rememberFalling &amp;&amp; !rememberSwamp) {
+-                if(try_state(APPEARING)) {
+-                    st = GetStone(destination);
+-                    if(st) {
+-                        // Something went wrong while killing the old
+-                        // stone, or maybe a third one intervened.
+-                        // Don't move, just reappear at old position.                
+-                    } else {
+-                        move_stone(destination, &quot;movesmall&quot;);
+-                        SendMessage(GetFloor(destination), &quot;capture&quot;);
+-                    }
+-                    // maybe a floor-change has happened, but during
+-                    // state APPEARING this doesn't mean anything:
+-                    set_anim(get_model_name()+&quot;-appearing&quot;);
+-                }
+-                break;
+-            }
+-            // Else: If floor is swamp or abyss, kill the stone. Do this
+-            // just by continuing to the next case:
+-        case CAPTURED:
+-        case FALLING:
+-        case SWAMP:
+-            KillStone(get_pos());
+-            break;
+-        default:
+-           ASSERT(0, XLevelRuntime, &quot;ChessStone: inconsistent state in animcb()&quot;);
+-        }
+-    }
+-
+-    void ChessStone::actor_hit(const StoneContact &amp;sc) {
+-         Value accolor = sc.actor-&gt;getAttr(&quot;color&quot;);
+-         if (player::WieldedItemIs (sc.actor, &quot;it-magicwand&quot;)) {
+-             sound_event (&quot;stonepaint&quot;);
+-             set_color(1 - (int)getAttr(&quot;color&quot;));
+-             // If not IDLE, color will be set next time IDLE is set.
+-         } else if (accolor &amp;&amp; getAttr(&quot;color&quot;) == accolor) {
+-            V2 v = sc.actor-&gt;get_vel();
+-            Direction dir1 = get_push_direction(sc);
+-            if(dir1 == NODIR)  return;
+-            Direction dir2 = NODIR;
+-            if (dir1 == SOUTH || dir1 == NORTH) {
+-                dir2 = v[0] &gt;  hit_threshold ? EAST :
+-                       v[0] &lt; -hit_threshold ? WEST : NODIR;
+-            } else {
+-                dir2 = v[1] &gt;  hit_threshold ? SOUTH :
+-                       v[1] &lt; -hit_threshold ? NORTH : NODIR;
+-            }
+-            if(dir2 == NODIR)  return;
+-            // maybe_move_to tests for state == IDLE by itself.
+-            maybe_move_to(dir1, dir2);
+-        }
+-    }
+-
+-    Value ChessStone::maybe_move_to(Direction dir1, Direction dir2) {
+-        if(state == IDLE) {
+-            // check for fire, step by step
+-            destination = move(get_pos(), dir1);
+-            if(Item *it = GetItem(destination))
+-                if(get_id(it) == it_burnable_burning)
+-                    return Value();
+-            destination = move(destination, dir2);
+-            if(Item *it = GetItem(destination))
+-                if(get_id(it) == it_burnable_burning)
+-                    return Value();
+-            destination = move(destination, dir1);
+-            if(Item *it = GetItem(destination))
+-                if(get_id(it) == it_burnable_burning)
+-                    return Value();
+-            // check for boundary
+-            if(!IsInsideLevel(destination))  return Value();
+-            // check for stone
+-            if(!GetStone(destination)) {
+-                // Simple case: Just move.
+-                if(try_state(DISAPPEARING)) {
+-                    set_anim(get_model_name() + &quot;-disappearing&quot;);
+-                    return true;
+-                } else
+-                    return Value();
+-            } else {
+-                // Test stone. Is it opposite chess stone or totally another one?
+-                Stone *st = GetStone(destination);
+-                if(to_int(SendMessage(st, &quot;capture&quot;, Value(get_model_name()))) ) {
+-                    // Give it some time for animation, then replace it.
+-                    ASSERT(try_state(CAPTURING), XLevelRuntime,
+-                        &quot;ChessStone: strange things happening in maybe_move_to&quot;);
+-                    // must work, because state is IDLE
+-                    GameTimer.set_alarm(this, capture_interval, false);
+-                    capture_retry = 0;
+-                    return true;
+-                }
+-                return Value();
+-            }
+-        }
+-        return Value();
+-    }
+-
+-    void ChessStone::alarm() {
+-        switch(state) {
+-        case CAPTURING:
+-            if(!GetStone(destination)) {
+-                if(try_state(DISAPPEARING))
+-                    set_anim(get_model_name() + &quot;-disappearing&quot;);
+-                break;
+-            } else if(capture_retry &lt; max_capture_retry) {
+-                ++capture_retry;
+-                GameTimer.set_alarm(this, capture_interval, false);
+-            } else {
+-                // Cancel efforts to capture foreign stone.
+-                capture_retry = 0;
+-                try_state(IDLE);
+-            }
+-            break;
+-        default:
+-           ASSERT(0, XLevelRuntime, &quot;ChessStone: inconsistent state in alarm()&quot;);
+-        }
+-    }
+-
+-    Value ChessStone::message(const Message &amp;m) {
+-        if(m.message == &quot;capture&quot;) {
+-            if(state == IDLE &amp;&amp; m.value.to_string() != get_model_name())
+-                if(try_state(CAPTURED)) {
+-                    set_anim(get_model_name() + &quot;-captured&quot;);
+-                    return true;
+-                }
+-            return Value();
+-        } else if(m.message == &quot;move_nne&quot;) { return message_move(NORTH, EAST); }
+-        else   if(m.message == &quot;move_een&quot;) { return message_move(EAST, NORTH); }
+-        else   if(m.message == &quot;move_ees&quot;) { return message_move(EAST, SOUTH); }
+-        else   if(m.message == &quot;move_sse&quot;) { return message_move(SOUTH, EAST); }
+-        else   if(m.message == &quot;move_ssw&quot;) { return message_move(SOUTH, WEST); }
+-        else   if(m.message == &quot;move_wws&quot;) { return message_move(WEST, SOUTH); }
+-        else   if(m.message == &quot;move_wwn&quot;) { return message_move(WEST, NORTH); }
+-        else   if(m.message == &quot;move_nnw&quot;) { return message_move(NORTH, WEST); }
+-        else   if(m.message == &quot;move&quot;) {
+-            Direction dir1 = to_direction(getAttr(&quot;direction1&quot;));
+-            Direction dir2 = to_direction(getAttr(&quot;direction2&quot;));
+-            return message_move(dir1, dir2);
+-        } else if(m.message == &quot;signal&quot;) {
+-            set_color(to_int(m.value));
+-            return Value();
+-        } else if(m.message == &quot;flip&quot;) {
+-            set_color(1 - newcolor); //(int)getAttr(&quot;color&quot;));
+-            return Value();
+-        }
+-        return Stone::message(m);
+-    }
+-
+-    Value ChessStone::message_move(Direction dir1, Direction dir2) {
+-        // Restrict message-moves to chess-knight-moves
+-        // state == IDLE is tested by maybe_move_to.
+-        if((((dir1==NORTH || dir1==SOUTH) &amp;&amp; (dir2==EAST || dir2==WEST))
+-           || ((dir1==EAST || dir1==WEST) &amp;&amp; (dir2==SOUTH || dir2==NORTH))))
+-            return maybe_move_to(dir1, dir2);
+-        return Value();
+-    }
+-
+-    bool ChessStone::try_state(State newstate) {
+-        if (state != FALLING &amp;&amp; state != SWAMP) {
+-            // Switch to FALLING or SWAMP only when IDLE,
+-            // but remember them!
+-            if (newstate == FALLING)
+-                rememberFalling = true;
+-            else if (newstate == SWAMP)
+-                rememberSwamp = true;
+-            else
+-                state = newstate;        
+-            if(state == IDLE &amp;&amp;  getAttr(&quot;color&quot;) != newcolor)
+-                set_color(newcolor);
+-            if(state == IDLE &amp;&amp; rememberFalling) {
+-                state = FALLING;
+-                set_anim(get_model_name() + &quot;-disappearing&quot;);
+-            }
+-            if(state == IDLE &amp;&amp; rememberSwamp) {
+-                state = SWAMP;
+-                set_anim(get_model_name() + &quot;-swamp&quot;);
+-            }
+-        }
+-        return state == newstate;
+-    }
+-
+-    void ChessStone::setAttr(const string&amp; key, const Value &amp;val) {
+-        if(key == &quot;color&quot;) {
+-            set_color(to_int(val));
+-        } else
+-            Stone::setAttr(key, val);
+-    }
+-
+-    void ChessStone::set_color(int color) {
+-        if(color != 0 &amp;&amp; color != 1) {
+-            ASSERT(0, XLevelRuntime, &quot;ChessStone: argument to color not 0 or 1&quot;);
+-        }
+-        if(state == IDLE) {
+-            Stone::setAttr(&quot;color&quot;, color);
+-            newcolor = color;
+-            init_model();
+-        } else {
+-            // Remember this color and set it the next time IDLE is set.
+-            newcolor = color;
+-        }
+-    }
+-
+-    void ChessStone::on_floor_change() {
+-        Floor *fl = GetFloor(get_pos());
+-        if (fl != NULL) {
+-            if (fl-&gt;is_kind(&quot;fl-abyss&quot;))
+-                try_state(FALLING);
+-            if (fl-&gt;is_kind(&quot;fl-swamp&quot;))
+-                try_state(SWAMP);
+-        }
+-    }
+-}
+-
+-
+ // --------------------------------------------------------------------------------
+ 
+ void Init_complex()
+@@ -2683,9 +2396,6 @@
+     Register (new Turnstile_E);
+     Register (new Turnstile_W);
+ 
+-    Register(&quot;st-chess_black&quot;, new ChessStone(0));
+-    Register(&quot;st-chess_white&quot;, new ChessStone(1));
+-
+ }
+ 
+ } // namespace enigma
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-06-25 11:27:17 UTC (rev 1192)
++++ trunk/src/stones_simple.cc	2008-06-25 18:38:38 UTC (rev 1193)
+@@ -1688,94 +1688,6 @@
+ }
+ 
+ 
+-/* -------------------- DeathStone -------------------- */
+-
+-/** \page st-death Death's Head Stone
+-
+-Simply kills all actors that touch it (except for actors that are
+-immune to these stones).
+-
+-\image html st-death.png
+-*/
+-namespace
+-{
+-    class DeathStone : public Stone {
+-        CLONEOBJ(DeathStone);
+-        DECL_TRAITS;
+-        bool active;
+-      
+-        void actor_hit(const StoneContact &amp;sc) {
+-            SendMessage(sc.actor, &quot;shatter&quot;);
+-            if (!active) {
+-                active=true;
+-                set_anim(&quot;st-death-anim&quot;);
+-            }
+-        }
+-
+-        // even a slight touch should shatter the actor: 
+-        void actor_touch(const StoneContact &amp;sc) { actor_hit(sc); }
+-
+-    protected:
+-        void animcb() { set_model(&quot;st-death&quot;); active=false; }
+-    public:
+-        DeathStone() : active(false)
+-        {}
+-    };
+-    DEF_TRAITS(DeathStone, &quot;st-death&quot;, st_death);
+-}
+-
+-
+-/* -------------------- Invisible DeathStone -------------------- */
+-
+-/** \page st-death_invisible Death's Head Stone invivible
+-
+-Simply kills all actors that touch it (except for actors that are
+-immune to these stones). This variant is invisible.
+-
+-\image html st-death.png
+-*/
+-namespace
+-{
+-    class DeathStoneInvisible : public DeathStone {
+-        CLONEOBJ(DeathStoneInvisible);
+-        DECL_TRAITS;
+-
+-        bool visible; // seen through glasses
+-
+-        void set_visible_model() {
+-            set_model(visible ? &quot;st-death&quot; : &quot;st-death_invisible&quot;);
+-        }
+-
+-        void animcb() {
+-            DeathStone::animcb();
+-            set_visible_model();
+-        }
+-
+-        virtual Value message(const Message &amp;m) {
+-            if (m.message == &quot;_glasses&quot;) {
+-                if (to_int(m.value) &amp; 1) {   // Glasses::DEATH
+-                    if (!visible) {
+-                        visible = true;
+-                        set_visible_model();
+-                    }
+-                }
+-                else {
+-                    if (visible) {
+-                        visible = false;
+-                        set_visible_model();
+-                    }
+-                }
+-                return Value();
+-            }
+-            return DeathStone::message(m);
+-        }
+-    public:
+-        DeathStoneInvisible() : visible(false) {}
+-    };
+-    DEF_TRAITS(DeathStoneInvisible, &quot;st-death_invisible&quot;, st_death_invisible);
+-}
+-
+-
+ /* -------------------- Brake stone -------------------- */
+ 
+ /** \page st-brake Brake
+@@ -2102,8 +2014,6 @@
+ 
+     RegisterStone (new ChameleonStone);
+ 
+-    RegisterStone (new DeathStone);
+-    RegisterStone (new DeathStoneInvisible);
+     Register(new DiscoLight);
+     Register(new DiscoMedium);
+     Register(new DiscoDark);
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000626.html">[Enigma-game-svn] r1192 - in trunk: data data/schemas src
+</A></li>
+	<LI>Next message: <A HREF="000628.html">[Enigma-game-svn] r1194 - in trunk/src: . stones
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#627">[ date ]</a>
+              <a href="thread.html#627">[ thread ]</a>
+              <a href="subject.html#627">[ subject ]</a>
+              <a href="author.html#627">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

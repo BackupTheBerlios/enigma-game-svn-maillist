@@ -1,0 +1,174 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r689 - branches/1.0/src
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2007-April/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r689%20-%20branches/1.0/src&In-Reply-To=%3C200704132220.l3DMKYmZ019720%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000126.html">
+   <LINK REL="Next"  HREF="000128.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r689 - branches/1.0/src</H1>
+    <B>raoul at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r689%20-%20branches/1.0/src&In-Reply-To=%3C200704132220.l3DMKYmZ019720%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r689 - branches/1.0/src">raoul at mail.berlios.de
+       </A><BR>
+    <I>Sat Apr 14 00:20:34 CEST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000126.html">[Enigma-game-svn] r688 - branches/1.0/src
+</A></li>
+        <LI>Next message: <A HREF="000128.html">[Enigma-game-svn] r690 - in branches/1.0/src: . gui lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#127">[ date ]</a>
+              <a href="thread.html#127">[ thread ]</a>
+              <a href="subject.html#127">[ subject ]</a>
+              <a href="author.html#127">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: raoul
+Date: 2007-04-14 00:20:34 +0200 (Sat, 14 Apr 2007)
+New Revision: 689
+
+Modified:
+   branches/1.0/src/items.cc
+   branches/1.0/src/stones_complex.cc
+Log:
+-&gt; Bugfix for circular mailpipes
+-&gt; Bugfix for recursive Vortex/Wormhole roundtrips
+
+
+
+Modified: branches/1.0/src/items.cc
+===================================================================
+--- branches/1.0/src/items.cc	2007-04-10 20:17:28 UTC (rev 688)
++++ branches/1.0/src/items.cc	2007-04-13 22:20:34 UTC (rev 689)
+@@ -1695,7 +1695,6 @@
+ 
+     protected:
+         virtual ~WormHole() {
+-            ASSERT(!justWarping, XLevelRuntime, &quot;Tried to kill a busy wormhole. Please use another way.&quot;);
+             GameTimer.remove_alarm (this);
+         }
+     private:
+@@ -1709,10 +1708,7 @@
+             Item::on_creation (p);
+             set_forcefield();
+         }
+-        void on_removal (GridPos p) {
+-            world::RemoveForceField(&amp;ff);
+-            Item::on_removal(p);
+-        }
++        void on_removal (GridPos p);
+ 
+         void set_forcefield() {
+             if (is_on()) {
+@@ -1807,6 +1803,12 @@
+         set_anim(&quot;it-wormhole-off&quot;);
+ }
+ 
++void WormHole::on_removal(GridPos p) {
++    GameTimer.remove_alarm (this);
++    world::RemoveForceField(&amp;ff);
++    Item::on_removal(p);
++    ASSERT(!justWarping, XLevelRuntime, &quot;Tried to kill a busy wormhole. Please use another way.&quot;);
++}
+ 
+ /* -------------------- Vortex -------------------- */
+ 
+@@ -1876,6 +1878,8 @@
+ 
+         bool is_open() const { return state == OPEN; }
+ 
++        void on_removal(GridPos p);
++
+         // Variables
+         enum State {
+             OPEN,
+@@ -1915,9 +1919,14 @@
+ }
+ 
+ Vortex::~Vortex() {
++    GameTimer.remove_alarm(this);
++}
++
++void Vortex::on_removal(GridPos p) {
++    GameTimer.remove_alarm(this);
++    Item::on_removal(p);
+     ASSERT(state != WARPING &amp;&amp; state != SWALLOWING &amp;&amp; state != EMITTING,
+         XLevelRuntime, &quot;Tried to kill a busy vortex. Please use another way.&quot;);
+-    GameTimer.remove_alarm(this);
+ }
+ 
+ void Vortex::prepare_for_warp (Actor *actor)
+
+Modified: branches/1.0/src/stones_complex.cc
+===================================================================
+--- branches/1.0/src/stones_complex.cc	2007-04-10 20:17:28 UTC (rev 688)
++++ branches/1.0/src/stones_complex.cc	2007-04-13 22:20:34 UTC (rev 689)
+@@ -2879,10 +2879,21 @@
+     }
+ }
+ 
++/** About recursion detection while finding the end of a mailpipe
++ *  
++ *  Since there are no possibilities for forking a mailpipe, there is only one 
++ *  cause that may lead to a closed, circular mailpipe. This is if a pipeitem is
++ *  placed exactly under the mailstone. But not every pipepiece is dangerous,
++ *  there are some that can be placed under the mailstone without problems.
++ * 
++ *  The mailpipe is only closed to a circular one if the pipepiece under the
++ *  mailstone has the same 'output'-direction as the stone.
++ */
+ GridPos MailStone::find_pipe_endpoint() 
+ {
+     GridPos p = get_pos();
+     Direction move_dir = m_dir;
++    GridPos q = p; // Store the stonepos for recursion detection.
+ 
+     while (move_dir != NODIR) {
+         p.move (move_dir);
+@@ -2921,6 +2932,9 @@
+             }
+         } else
+             move_dir = NODIR;
++
++        if (p == q)
++            ASSERT(move_dir != m_dir, XLevelRuntime, &quot;Mailpipe is circular! Recursion detected!&quot;);   
+     }
+     return p;
+ }
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000126.html">[Enigma-game-svn] r688 - branches/1.0/src
+</A></li>
+	<LI>Next message: <A HREF="000128.html">[Enigma-game-svn] r690 - in branches/1.0/src: . gui lev
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#127">[ date ]</a>
+              <a href="thread.html#127">[ thread ]</a>
+              <a href="subject.html#127">[ subject ]</a>
+              <a href="author.html#127">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

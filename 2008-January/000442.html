@@ -1,0 +1,253 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1010 - in trunk/src: . stones
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2008-January/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1010%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200801262212.m0QMCkPR032403%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000441.html">
+   <LINK REL="Next"  HREF="000443.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1010 - in trunk/src: . stones</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1010%20-%20in%20trunk/src%3A%20.%20stones&In-Reply-To=%3C200801262212.m0QMCkPR032403%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1010 - in trunk/src: . stones">ral at mail.berlios.de
+       </A><BR>
+    <I>Sat Jan 26 23:12:46 CET 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000441.html">[Enigma-game-svn] r1009 - team_levelpacks/team_test_new_api
+</A></li>
+        <LI>Next message: <A HREF="000443.html">[Enigma-game-svn] r1011 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#442">[ date ]</a>
+              <a href="thread.html#442">[ thread ]</a>
+              <a href="subject.html#442">[ subject ]</a>
+              <a href="author.html#442">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2008-01-26 23:12:45 +0100 (Sat, 26 Jan 2008)
+New Revision: 1010
+
+Modified:
+   trunk/src/enigma.hh
+   trunk/src/lua.cc
+   trunk/src/st_switches.cc
+   trunk/src/stones.cc
+   trunk/src/stones/ClusterStone.cc
+   trunk/src/stones/ClusterStone.hh
+   trunk/src/stones/OxydStone.cc
+   trunk/src/stones_simple.cc
+Log:
+Trunk 1.1: Fixes
+- Lua stack error on st_nil, it_nil, fl_nil (crash fix, especially on group usage)
+- FartStone did no more close oxyds (typo)
+- YieldedGridStone: temporary fix known cases of false model placement
+  send system message &quot;_model_reanimated&quot;, react on ClusterStone,
+  ChameleonStone, LaserTrigger
+- SwapStone fix bug on kill of a coming swap stone - the gone swap stone
+  remained with a half image in a dead state:
+  revert swap in this case and reactivate &quot;gone&quot; swap stone.
+- comment error on random support
+
+Modified: trunk/src/enigma.hh
+===================================================================
+--- trunk/src/enigma.hh	2008-01-26 15:48:15 UTC (rev 1009)
++++ trunk/src/enigma.hh	2008-01-26 22:12:45 UTC (rev 1010)
+@@ -205,7 +205,7 @@
+ /* -------------------- Random Numbers -------------------- */
+ 
+ /**
+- * Maximum random number 2^16-1 that is valid for all operating systems
++ * Maximum random number 2^31-1 that is valid for all operating systems
+  * and processor types. 
+  */
+ #define ENIGMA_RAND_MAX  2147483647
+
+Modified: trunk/src/lua.cc
+===================================================================
+--- trunk/src/lua.cc	2008-01-26 15:48:15 UTC (rev 1009)
++++ trunk/src/lua.cc	2008-01-26 22:12:45 UTC (rev 1010)
+@@ -1695,12 +1695,15 @@
+     
+     if (name == &quot;fl_nil&quot;) {
+         KillFloor(GridPos(xi, yi));
++        lua_pop(L, 1);   // object type
+         return 0;
+     } else if (name == &quot;st_nil&quot;) {
+         KillStone(GridPos(xi, yi));
++        lua_pop(L, 1);   // object type
+         return 0;
+     } else if (name == &quot;it_nil&quot;) {
+         KillItem(GridPos(xi, yi));
++        lua_pop(L, 1);   // object type
+         return 0;
+     }
+     
+
+Modified: trunk/src/st_switches.cc
+===================================================================
+--- trunk/src/st_switches.cc	2008-01-26 15:48:15 UTC (rev 1009)
++++ trunk/src/st_switches.cc	2008-01-26 22:12:45 UTC (rev 1010)
+@@ -169,6 +169,7 @@
+         CLONEOBJ(LaserSwitch);
+     public:
+         LaserSwitch();
++        virtual Value message(const Message &amp;m);
+     private:
+         // LaserTimeSwitchBase interface
+         const char *get_active_model() const;
+@@ -273,6 +274,13 @@
+ : LaserTimeSwitchBase(&quot;st-laserswitch&quot;)
+ {}
+ 
++Value LaserSwitch::message(const Message &amp;m) {
++    if (m.message == &quot;_model_reanimated&quot;) {
++        RecalcLight(); // we may be swapped out of a laser beam
++    }
++    return LaserTimeSwitchBase::message(m);
++}
++
+ const char *LaserSwitch::get_active_model() const { 
+     return &quot;st-laserswitch1&quot;; 
+ }
+
+Modified: trunk/src/stones/ClusterStone.cc
+===================================================================
+--- trunk/src/stones/ClusterStone.cc	2008-01-26 15:48:15 UTC (rev 1009)
++++ trunk/src/stones/ClusterStone.cc	2008-01-26 22:12:45 UTC (rev 1010)
+@@ -36,6 +36,13 @@
+         }
+         Stone::set_attrib(key, val);
+     }
++    
++    Value ClusterStone::message(const Message &amp;m) {
++        if (m.message == &quot;_model_reanimated&quot;) {
++            init_model();
++        }
++        return Stone::message(m);
++    }
+ 
+     void ClusterStone::on_creation(GridPos p) {
+         autoJoinCluster();
+
+Modified: trunk/src/stones/ClusterStone.hh
+===================================================================
+--- trunk/src/stones/ClusterStone.hh	2008-01-26 15:48:15 UTC (rev 1009)
++++ trunk/src/stones/ClusterStone.hh	2008-01-26 22:12:45 UTC (rev 1010)
+@@ -35,7 +35,7 @@
+         
+         // Object interface
+         virtual void set_attrib(const string&amp; key, const Value &amp;val);
+-
++        virtual Value message(const Message &amp;m);
+         // GridObject interface
+         virtual void on_creation(GridPos p);
+         virtual void on_removal(GridPos p);
+
+Modified: trunk/src/stones/OxydStone.cc
+===================================================================
+--- trunk/src/stones/OxydStone.cc	2008-01-26 15:48:15 UTC (rev 1009)
++++ trunk/src/stones/OxydStone.cc	2008-01-26 22:12:45 UTC (rev 1010)
+@@ -856,8 +856,7 @@
+     
+     Value OxydStone::message(const Message &amp;m) {
+         if (m.message == &quot;closeall&quot;) {
+-            if (isDisplayable())
+-                closeAllStandardOxyds();
++            closeAllStandardOxyds();
+             return Value();
+         }
+         else if (m.message == &quot;shuffle&quot;) {
+
+Modified: trunk/src/stones.cc
+===================================================================
+--- trunk/src/stones.cc	2008-01-26 15:48:15 UTC (rev 1009)
++++ trunk/src/stones.cc	2008-01-26 22:12:45 UTC (rev 1010)
+@@ -469,7 +469,9 @@
+ {
+     SetStone(pos, stone);
+     display::SetModel(GridLoc(GRID_STONES, stone-&gt;get_pos()), model);
+-    stone-&gt;on_move();
++    stone-&gt;on_move();    // continue animations -- this is buggy if the stone has another
++                         // model on the new position like st-chameleon
++    SendMessage(stone, &quot;_model_reanimated&quot;);  // temp fix: reset bad models
+     stone = 0;
+     model = 0;
+ }
+
+Modified: trunk/src/stones_simple.cc
+===================================================================
+--- trunk/src/stones_simple.cc	2008-01-26 15:48:15 UTC (rev 1009)
++++ trunk/src/stones_simple.cc	2008-01-26 22:12:45 UTC (rev 1010)
+@@ -346,6 +346,13 @@
+         CLONEOBJ(ChameleonStone);
+         DECL_TRAITS;
+ 
++        Value message(const Message &amp;m) {
++            if (m.message == &quot;_model_reanimated&quot;) {
++                init_model();
++            }
++            return Stone::message(m);
++        }
++        
+         void init_model() {
+             string modelname = &quot;fl-gray&quot;;
+             if (Floor *fl = GetFloor(get_pos()))
+@@ -428,6 +435,12 @@
+ void SwapStone::on_removal(GridPos p) {
+     if (state == COME) {
+         GameTimer.remove_alarm(this);
++        GridPos oldPos = move(get_pos(), reverse(move_dir));
++        SwapStone *other = dynamic_cast&lt;SwapStone *&gt;(GetStone(oldPos));
++        if (other != NULL) {
++            other-&gt;state = IDLE;
++            other-&gt;init_model();
++        }
+     }
+     GridObject::on_removal(p);
+ }
+@@ -1371,7 +1384,7 @@
+     case FARTING:
+     case BREAKING:
+         if (state == IDLE) {
+-            Object *ox = GetObjectTemplate(&quot;st-oxyd&quot;);
++            Object *ox = GetObjectTemplate(&quot;st_oxyd&quot;);
+             SendMessage(ox, &quot;closeall&quot;);
+             sound_event(&quot;fart&quot;);
+             if (newstate == BREAKING) {
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000441.html">[Enigma-game-svn] r1009 - team_levelpacks/team_test_new_api
+</A></li>
+	<LI>Next message: <A HREF="000443.html">[Enigma-game-svn] r1011 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#442">[ date ]</a>
+              <a href="thread.html#442">[ thread ]</a>
+              <a href="subject.html#442">[ subject ]</a>
+              <a href="author.html#442">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,338 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [Enigma-game-svn] r1912 - in trunk/src: . actors
+   </TITLE>
+   <LINK REL="Index" HREF="http://lists.berlios.de/pipermail/enigma-game-svn/2009-December/index.html" >
+   <LINK REL="made" HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1912%20-%20in%20trunk/src%3A%20.%20actors&In-Reply-To=%3C200912131447.nBDElP2r008459%40sheep.berlios.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <style type="text/css">
+       pre {
+           white-space: pre-wrap;       /* css-2.1, curent FF, Opera, Safari */
+           }
+   </style>
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001340.html">
+   <LINK REL="Next"  HREF="001342.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[Enigma-game-svn] r1912 - in trunk/src: . actors</H1>
+    <B>ral at BerliOS</B> 
+    <A HREF="mailto:enigma-game-svn%40lists.berlios.de?Subject=Re%3A%20%5BEnigma-game-svn%5D%20r1912%20-%20in%20trunk/src%3A%20.%20actors&In-Reply-To=%3C200912131447.nBDElP2r008459%40sheep.berlios.de%3E"
+       TITLE="[Enigma-game-svn] r1912 - in trunk/src: . actors">ral at mail.berlios.de
+       </A><BR>
+    <I>Sun Dec 13 15:47:25 CET 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001340.html">[Enigma-game-svn] r1911 - branches/1.01/src
+</A></li>
+        <LI>Next message: <A HREF="001342.html">[Enigma-game-svn] r1913 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1341">[ date ]</a>
+              <a href="thread.html#1341">[ thread ]</a>
+              <a href="subject.html#1341">[ subject ]</a>
+              <a href="author.html#1341">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Author: ral
+Date: 2009-12-13 15:47:19 +0100 (Sun, 13 Dec 2009)
+New Revision: 1912
+
+Modified:
+   trunk/src/WorldProxy.cc
+   trunk/src/actors.cc
+   trunk/src/actors.hh
+   trunk/src/actors/Balls.cc
+   trunk/src/laser.cc
+   trunk/src/server.cc
+   trunk/src/server.hh
+Log:
+Trunk 1.1:
+- improve laser:
+  - shatter actors that approach laser beam center by 0.2 grids
+  - marble shatter in an unchanged distance
+  - pearls shatter earlier in a reasonable distance to the beam.
+- add auto respawn feature:
+ - global attribute &quot;AutoRespawn&quot;, default false
+ - on auto respawn last secure positions are recorded for every actor
+ - on death the following resurrection position is choosen:
+   - if it_flag has been dropped choose its position
+   - if no it_flag has been dropped, or it_flag has been picked up:
+     - center of last position where actor has not been moribund and
+       the floor adhesion allows actor to move (resurrect aside of water,
+       abyss, death, do not resurrect on space)
+     - if killed by laser, choose nearest grid edge to avoid endless laser
+       deaths
+     - on suicide choose the exactly last secure position - no center, no edge
+       offset to avoid shortcuts
+
+
+Modified: trunk/src/WorldProxy.cc
+===================================================================
+--- trunk/src/WorldProxy.cc	2009-12-13 14:35:50 UTC (rev 1911)
++++ trunk/src/WorldProxy.cc	2009-12-13 14:47:19 UTC (rev 1912)
+@@ -51,6 +51,8 @@
+             return server::AllowSingleOxyds;
+         } else if (key == &quot;AllowSuicide&quot;) {
+             return server::AllowSuicide;
++        } else if (key == &quot;AutoRespawn&quot;) {
++            return server::AutoRespawn;
+         } else if (key == &quot;TogglePlayerOnDeath&quot;) {
+             return server::AllowTogglePlayer;
+         } else if (key == &quot;ConserveLevel&quot;) {
+@@ -145,6 +147,8 @@
+             server::AllowSingleOxyds = val.to_bool();
+         } else if (key == &quot;AllowSuicide&quot;) {
+             server::AllowSuicide = val.to_bool();
++        } else if (key == &quot;AutoRespawn&quot;) {
++            server::AutoRespawn = val.to_bool();
+         } else if (key == &quot;TogglePlayerOnDeath&quot;) {
+             server::AllowTogglePlayer = val.to_bool();
+         } else if (key == &quot;ConserveLevel&quot;) {
+
+Modified: trunk/src/actors/Balls.cc
+===================================================================
+--- trunk/src/actors/Balls.cc	2009-12-13 14:35:50 UTC (rev 1911)
++++ trunk/src/actors/Balls.cc	2009-12-13 14:47:19 UTC (rev 1912)
+@@ -45,9 +45,11 @@
+                     change_state_noshield(SHATTERING);
+                     handled = true;
+                 } else if (m.message == &quot;_suicide&quot;) {
++                    inplaceRespawn = true;
+                     change_state(SHATTERING);
+                     handled = true;
+                 } else if (m.message == &quot;_laserhit&quot;) {
++                    centerRespawn = false;
+                     change_state_noshield(SHATTERING);
+                     handled = true;
+                 } else if (m.message == &quot;_fall&quot;) {
+
+Modified: trunk/src/actors.cc
+===================================================================
+--- trunk/src/actors.cc	2009-12-13 14:35:50 UTC (rev 1911)
++++ trunk/src/actors.cc	2009-12-13 14:47:19 UTC (rev 1912)
+@@ -90,7 +90,7 @@
+   m_actorinfo(),
+   m_sprite(),
+   startingpos(), 
+-  respawnpos(), use_respawnpos(false),
++  respawnpos(), flagRespawn(false), centerRespawn (true), inplaceRespawn (false),
+   spikes(false), controllers (0), left (NULL), right (NULL)
+ {
+     setAttr(&quot;adhesion&quot;, 0.0);
+@@ -190,21 +190,21 @@
+ void Actor::set_respawnpos(const V2&amp; p)
+ {
+     respawnpos     = p;
+-    use_respawnpos = true;
++    flagRespawn = true;
+ }
+ 
+ void Actor::remove_respawnpos() {
+-    use_respawnpos = false;
++    flagRespawn = false;
+ }
+ 
+ void Actor::find_respawnpos() {
+-//    V2&amp; what_pos = use_respawnpos ? respawnpos : startingpos;
++//    V2&amp; what_pos = flagRespawn ? respawnpos : startingpos;
+ //    FreeRespawnLocationFinder unblocked(what_pos, *this);
+ //    what_pos = unblocked.get_position();
+ }
+ 
+ const V2&amp; Actor::get_respawnpos() const {
+-    return use_respawnpos ? respawnpos : startingpos;
++    return flagRespawn ? respawnpos : startingpos;
+ }
+ 
+ const V2 &amp;Actor::get_startpos() const {
+@@ -212,8 +212,29 @@
+ }
+ 
+ void Actor::respawn() {
+-    V2 p =(use_respawnpos) ? respawnpos : startingpos;
+-    warp (p);
++    ecl::V2 p = startingpos; // default respawn on initial position
++    if (flagRespawn || server::AutoRespawn) {
++        if (inplaceRespawn)
++            p = respawnpos;
++        else if (centerRespawn)
++            p = GridPos(respawnpos).center();
++        else {  // respawn in nearest edge of grid (thus avoiding laser beams)
++            p = respawnpos;
++            GridPos gp(respawnpos);
++            double dx = respawnpos[0] - gp.x;
++            double dy = respawnpos[1] - gp.y;
++            if (dx &gt; 0.28 &amp;&amp; dx &lt; 0.5)
++                p[0] = gp.x + 0.28;
++            else if (dx &lt; 0.72 &amp;&amp; dx &gt;= 0.5)
++                p[0] = gp.x + 0.72;
++                
++            if (dy &gt; 0.28 &amp;&amp; dy &lt; 0.5)
++                p[1] = gp.y + 0.28;
++            else if (dy &lt; 0.72 &amp;&amp; dy &gt;= 0.5)
++                p[1] = gp.y + 0.72;
++       }
++    }
++    warp(p);
+     on_respawn(p);
+ }
+ 
+@@ -242,6 +263,7 @@
+ }
+ 
+ void Actor::on_respawn (const ecl::V2 &amp;/*pos*/) {
++    centerRespawn = true;
+ }
+ 
+ void Actor::warp(const ecl::V2 &amp;newpos) {
+@@ -263,6 +285,7 @@
+             // Actor entered a new field -&gt; notify floor and item objects
+             // first leave old - avoid the possibility that an actor presses
+             // two triggers at once.
++            firstGridStep = true;
+             if (const Field *of = GetField(last_gridpos)) {
+                 if (Floor *fl = of-&gt;floor)
+                     fl-&gt;actor_leave(this);
+@@ -283,6 +306,13 @@
+ 
+         if (Stone *st = m_actorinfo.field-&gt;stone)
+             st-&gt;actor_inside (this);
++        
++        if (firstGridStep) {
++            firstGridStep = false;
++        } else if (!flagRespawn &amp;&amp; !isMoribund())
++            if (m_actorinfo.field-&gt;floor-&gt;getAdhesion() != 0) {
++                respawnpos = m_actorinfo.pos;
++        }
+     }
+     last_gridpos = m_actorinfo.gridpos;
+ }
+
+Modified: trunk/src/actors.hh
+===================================================================
+--- trunk/src/actors.hh	2009-12-13 14:35:50 UTC (rev 1911)
++++ trunk/src/actors.hh	2009-12-13 14:47:19 UTC (rev 1912)
+@@ -204,17 +204,20 @@
+ 
+         /* ---------- Variables ---------- */
+         ActorInfo             m_actorinfo;
++        bool         centerRespawn;   // default, like on flag drop or sink, fall, shatter
++        bool         inplaceRespawn;  // respawn on exactly last valid position, use on suicide to prevent shortcuts
+     private:
+         Actor       *left;   // x-coordinate sorted double linked list
+         Actor       *right;
+         display::SpriteHandle m_sprite;
+-        ecl::V2                startingpos;
+-        ecl::V2                respawnpos;
+-        bool                  use_respawnpos;
+-        bool                  spikes; // set by &quot;it-pin&quot;
+-        int                   controllers;
+-        double                adhesion;
+-        GridPos               last_gridpos;   // last pos handled by actor move
++        ecl::V2      startingpos;
++        ecl::V2      respawnpos;
++        bool         flagRespawn;
++        bool         firstGridStep;
++        bool         spikes; // set by &quot;it-pin&quot;
++        int          controllers;
++        double       adhesion;
++        GridPos      last_gridpos;   // last pos handled by actor move
+     };
+ 
+     inline ActorID get_id (Actor *a) {
+
+Modified: trunk/src/laser.cc
+===================================================================
+--- trunk/src/laser.cc	2009-12-13 14:35:50 UTC (rev 1911)
++++ trunk/src/laser.cc	2009-12-13 14:47:19 UTC (rev 1912)
+@@ -146,21 +146,19 @@
+     }
+ }
+ 
+-bool LaserBeam::actor_hit(Actor *actor)
+-{
++bool LaserBeam::actor_hit(Actor *actor) {
+     DirectionBits directions = (DirectionBits)(objFlags &amp; 15);
+ 
+     double r = get_radius(actor);
+-    V2 p = actor-&gt;get_pos();
++    ecl::V2 p = actor-&gt;get_pos();
+     GridPos gp = get_pos();
+ 
+     // distance of actor from center of the grid
+-    double dx = fabs(p[0] - gp.x - 0.5) - r;
+-    double dy = fabs(p[1] - gp.y - 0.5) - r;
++    double dx = fabs(p[0] - gp.x - 0.5);
++    double dy = fabs(p[1] - gp.y - 0.5);
+ 
+-    if ((directions &amp; (EASTBIT | WESTBIT) &amp;&amp; dy&lt;-0.1) ||
+-        (directions &amp; (NORTHBIT | SOUTHBIT)) &amp;&amp; dx&lt;-0.1)
+-    {
++    if ((directions &amp; (EASTBIT | WESTBIT) &amp;&amp; dy &lt; 0.21) ||
++            (directions &amp; (NORTHBIT | SOUTHBIT)) &amp;&amp; dx &lt; 0.21) {
+         SendMessage(actor, &quot;_laserhit&quot;);
+     }
+ 
+
+Modified: trunk/src/server.cc
+===================================================================
+--- trunk/src/server.cc	2009-12-13 14:35:50 UTC (rev 1911)
++++ trunk/src/server.cc	2009-12-13 14:47:19 UTC (rev 1912)
+@@ -88,6 +88,7 @@
+ bool     server::AllowSingleOxyds;
+ bool     server::AllowSuicide;
+ bool     server::AllowTogglePlayer;
++bool     server::AutoRespawn;
+ bool     server::CreatingPreview = false;   // read only for Lua
+ bool     server::ConserveLevel;
+ bool     server::IsDifficult;               // read only for Lua
+@@ -281,6 +282,7 @@
+     server::AllowSingleOxyds  = false;
+     server::AllowSuicide      = true;
+     server::AllowTogglePlayer = true;
++    server::AutoRespawn       = false;
+     server::FollowAction      = GridPos(19, 12);   // inner space of a room
+     server::FollowGrid        = true;
+     server::FollowMethod      = display::FOLLOW_FLIP;      // FLIP
+
+Modified: trunk/src/server.hh
+===================================================================
+--- trunk/src/server.hh	2009-12-13 14:35:50 UTC (rev 1911)
++++ trunk/src/server.hh	2009-12-13 14:47:19 UTC (rev 1912)
+@@ -95,6 +95,9 @@
+     // Allow F3
+     extern bool     AllowSuicide;
+     
++    // Respawn on last secure position
++    extern bool     AutoRespawn;
++    
+     // level compatibility
+     extern double   EnigmaCompatibility;
+    
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001340.html">[Enigma-game-svn] r1911 - branches/1.01/src
+</A></li>
+	<LI>Next message: <A HREF="001342.html">[Enigma-game-svn] r1913 - team_levelpacks/team_test_new_api
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1341">[ date ]</a>
+              <a href="thread.html#1341">[ thread ]</a>
+              <a href="subject.html#1341">[ subject ]</a>
+              <a href="author.html#1341">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="https://lists.berlios.de/mailman/listinfo/enigma-game-svn">More information about the Enigma-game-svn
+mailing list</a><br>
+</body></html>
